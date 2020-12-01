@@ -287,10 +287,10 @@ pub fn from_txdata<'txin>(
 mod tests {
 
     use super::*;
-    use bitcoin::blockdata::script;
     use bitcoin::hashes::hex::FromHex;
     use bitcoin::hashes::{hash160, sha256, Hash};
-    use bitcoin::{self, Script};
+    use elements::script;
+    use elements::{self, OutPoint, Script, Transaction, TxIn, TxOut};
     use std::str::FromStr;
 
     struct KeyTestData {
@@ -587,13 +587,8 @@ mod tests {
         let miniscript: ::Miniscript<bitcoin::PublicKey, NoChecks> =
             ::Miniscript::from_str_insane(&format!("hash160({})", hash)).unwrap();
 
-<<<<<<< HEAD
         let spk = miniscript.encode();
-        let blank_script = bitcoin::Script::new();
-=======
-        let spk = miniscript.encode(NullCtx);
         let blank_script = elements::Script::new();
->>>>>>> 488666c... ported to elements: tests passing
 
         // bare script has no validity requirements beyond being a sane script
         let (inner, stack, script_code) =
