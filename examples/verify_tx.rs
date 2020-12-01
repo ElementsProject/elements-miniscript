@@ -139,7 +139,7 @@ fn main() {
     // Restrict to sighash_all just to demonstrate how to add additional filters
     // `&_` needed here because of https://github.com/rust-lang/rust/issues/79187
     let vfyfn = move |pk: &_, bitcoinsig: miniscript::BitcoinSig| {
-        bitcoinsig.1 == bitcoin::SigHashType::All && vfyfn(pk, bitcoinsig)
+        bitcoinsig.1 == elements::SigHashType::All && vfyfn(pk, bitcoinsig)
     };
 
     println!("\nExample two");
@@ -167,7 +167,7 @@ fn main() {
     .unwrap();
 
     let iter = interpreter.iter(|pk, (sig, sighashtype)| {
-        sighashtype == bitcoin::SigHashType::All && secp.verify(&message, &sig, &pk.key).is_ok()
+        sighashtype == elemnets::SigHashType::All && secp.verify(&message, &sig, &pk.key).is_ok()
     });
     println!("\nExample three");
     for elem in iter {

@@ -36,7 +36,7 @@ use ScriptContext;
 use Terminal;
 
 /// Type alias for a signature/hashtype pair
-pub type BitcoinSig = (secp256k1::Signature, bitcoin::SigHashType);
+pub type BitcoinSig = (secp256k1::Signature, elements::SigHashType);
 /// Type alias for 32 byte Preimage.
 pub type Preimage32 = [u8; 32];
 
@@ -45,7 +45,7 @@ pub type Preimage32 = [u8; 32];
 /// Returns underlying secp if the Signature is not of correct format
 pub fn bitcoinsig_from_rawsig(rawsig: &[u8]) -> Result<BitcoinSig, Error> {
     let (flag, sig) = rawsig.split_last().unwrap();
-    let flag = bitcoin::SigHashType::from_u32(*flag as u32);
+    let flag = elements::SigHashType::from_u32(*flag as u32);
     let sig = secp256k1::Signature::from_der(sig)?;
     Ok((sig, flag))
 }
