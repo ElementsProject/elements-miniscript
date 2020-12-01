@@ -22,8 +22,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::{cmp, i64, mem};
 
-use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d};
-use bitcoin::{self, secp256k1};
+use elements::hashes::{hash160, ripemd160, sha256, sha256d};
+use elements::secp256k1;
 use {MiniscriptKey, ToPublicKey};
 
 use miniscript::limits::{

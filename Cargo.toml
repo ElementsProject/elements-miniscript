@@ -17,6 +17,7 @@ rand = ["bitcoin/rand"]
 
 [dependencies]
 bitcoin = "0.25"
+elements = {git = "https://github.com/ElementsProject/rust-elements", branch = "2020-09-add-script-opcodes-to-elements"}
 
 [dependencies.serde]
 version = "1.0"
@@ -32,11 +33,9 @@ name = "parse"
 [[example]]
 name = "sign_multisig"
 
-[[example]]
-name = "verify_tx"
-
-[[example]]
-name = "psbt"
+# FIXME: Add later
+# [[example]]
+# name = "verify_tx"
 
 [[example]]
 name = "xpub_descriptors"

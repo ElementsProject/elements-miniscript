@@ -15,10 +15,11 @@
 //! Example: Verifying a signed transaction
 
 extern crate bitcoin;
+extern crate elements;
 extern crate miniscript;
 
-use bitcoin::consensus::Decodable;
-use bitcoin::secp256k1; // secp256k1 re-exported from rust-bitcoin
+use elements::encode::Decodable;
+use elements::secp256k1; // secp256k1 re-exported from rust-bitcoin
 use std::str::FromStr;
 
 fn main() {
@@ -77,9 +78,9 @@ fn main() {
         0xe7, 0x87, 0x09, 0x5d, 0x07, 0x00,
     ];
     let transaction =
-        bitcoin::Transaction::consensus_decode(&mut &tx_bytes[..]).expect("decode transaction");
+        eleme::Transaction::consensus_decode(&mut &tx_bytes[..]).expect("decode transaction");
 
-    let spk_input_1 = bitcoin::Script::from(vec![
+    let spk_input_1 = elements::Script::from(vec![
         0xa9, 0x14, 0x92, 0x09, 0xa8, 0xf9, 0x0c, 0x58, 0x4b, 0xb5, 0x97, 0x4d, 0x58, 0x68, 0x72,
         0x49, 0xe5, 0x32, 0xde, 0x59, 0xf4, 0xbc, 0x87,
     ]);

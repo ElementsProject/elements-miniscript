@@ -18,7 +18,7 @@
 
 use std::{fmt, str::FromStr};
 
-use bitcoin::{self, Script};
+use elements::{self, Script};
 
 use expression::{self, FromTree};
 use miniscript::context::{ScriptContext, ScriptContextError};
@@ -154,13 +154,15 @@ where
         Ok(())
     }
 
-    fn address(&self, network: bitcoin::Network) -> Result<bitcoin::Address, Error>
+    fn address(&self, params: &'static elements::AddressParams) -> Result<elements::Address, Error>
     where
         Pk: ToPublicKey,
     {
         match self.inner {
-            WshInner::SortedMulti(ref smv) => Ok(bitcoin::Address::p2wsh(&smv.encode(), network)),
-            WshInner::Ms(ref ms) => Ok(bitcoin::Address::p2wsh(&ms.encode(), network)),
+            WshInner::SortedMulti(ref smv) => {
+                Ok(elements::Address::p2wsh(&smv.encode(), None, params))
+            }
+            WshInner::Ms(ref ms) => Ok(elements::Address::p2wsh(&ms.encode(), None, params)),
         }
     }
 
@@ -346,20 +348,26 @@ where
         }
     }
 
-    fn address(&self, network: bitcoin::Network) -> Result<bitcoin::Address, Error>
+    fn address(&self, params: &'static elements::AddressParams) -> Result<elements::Address, Error>
     where
         Pk: ToPublicKey,
     {
-        Ok(bitcoin::Address::p2wpkh(&self.pk.to_public_key(), network)
-            .expect("Rust Miniscript types don't allow uncompressed pks in segwit descriptors"))
+        Ok(elements::Address::p2wpkh(
+            &self.pk.to_public_key(),
+            None,
+            params,
+        ))
     }
 
     fn script_pubkey(&self) -> Script
     where
         Pk: ToPublicKey,
     {
-        let addr = bitcoin::Address::p2wpkh(&self.pk.to_public_key(), bitcoin::Network::Bitcoin)
-            .expect("wpkh descriptors have compressed keys");
+        let addr = elements::Address::p2wpkh(
+            &self.pk.to_public_key(),
+            None,
+            &elements::AddressParams::ELEMENTS,
+        );
         addr.script_pubkey()
     }
 
@@ -405,7 +413,11 @@ where
         // the previous txo's scriptPubKey.
         // The item 5:
         //     - For P2WPKH witness program, the scriptCode is `0x1976a914{20-byte-pubkey-hash}88ac`.
-        let addr = bitcoin::Address::p2pkh(&self.pk.to_public_key(), bitcoin::Network::Bitcoin);
+        let addr = elements::Address::p2pkh(
+            &self.pk.to_public_key(),
+            None,
+            &elements::AddressParams::ELEMENTS,
+        );
         addr.script_pubkey()
     }
 }
