@@ -17,7 +17,7 @@
 //! Functionality to parse a Bitcoin Script into a `Miniscript`
 //!
 
-use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
+use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use std::marker::PhantomData;
 use {bitcoin, Miniscript};
 

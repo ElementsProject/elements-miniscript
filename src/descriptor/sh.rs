@@ -20,7 +20,7 @@
 
 use std::{fmt, str::FromStr};
 
-use bitcoin::{self, blockdata::script, Script};
+use elements::{self, script, Script};
 
 use expression::{self, FromTree};
 use miniscript::context::ScriptContext;
@@ -199,24 +199,30 @@ where
     fn address<ToPkCtx: Copy>(
         &self,
         to_pk_ctx: ToPkCtx,
-        network: bitcoin::Network,
-    ) -> Option<bitcoin::Address>
+        params: &'static elements::AddressParams,
+    ) -> Option<elements::Address>
     where
         Pk: ToPublicKey<ToPkCtx>,
     {
         match self.inner {
-            ShInner::Wsh(ref wsh) => Some(bitcoin::Address::p2sh(
+            ShInner::Wsh(ref wsh) => Some(elements::Address::p2sh(
                 &wsh.script_pubkey(to_pk_ctx),
-                network,
+                None,
+                params,
             )),
-            ShInner::Wpkh(ref wpkh) => Some(bitcoin::Address::p2sh(
+            ShInner::Wpkh(ref wpkh) => Some(elements::Address::p2sh(
                 &wpkh.script_pubkey(to_pk_ctx),
-                network,
+                None,
+                params,
             )),
-            ShInner::SortedMulti(ref smv) => {
-                Some(bitcoin::Address::p2sh(&smv.encode(to_pk_ctx), network))
+            ShInner::SortedMulti(ref smv) => Some(elements::Address::p2sh(
+                &smv.encode(to_pk_ctx),
+                None,
+                params,
+            )),
+            ShInner::Ms(ref ms) => {
+                Some(elements::Address::p2sh(&ms.encode(to_pk_ctx), None, params))
             }
-            ShInner::Ms(ref ms) => Some(bitcoin::Address::p2sh(&ms.encode(to_pk_ctx), network)),
         }
     }
 

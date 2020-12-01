@@ -27,9 +27,9 @@ use std::fmt::{self, Debug, Display};
 use std::str::{self, FromStr};
 use std::{collections::HashMap, sync::Arc};
 
-use bitcoin::secp256k1;
 use bitcoin::util::bip32;
-use bitcoin::{self, Script};
+use elements::secp256k1;
+use elements::Script;
 
 use self::checksum::verify_checksum;
 use expression;
@@ -98,8 +98,8 @@ pub trait DescriptorTrait<Pk: MiniscriptKey>:
     fn address<ToPkCtx: Copy>(
         &self,
         to_pk_ctx: ToPkCtx,
-        network: bitcoin::Network,
-    ) -> Option<bitcoin::Address>
+        params: &'static elements::AddressParams,
+    ) -> Option<elements::Address>
     where
         Pk: ToPublicKey<ToPkCtx>;
 
@@ -170,7 +170,7 @@ pub trait DescriptorTrait<Pk: MiniscriptKey>:
     /// `TxIn` output.
     fn satisfy<ToPkCtx, S>(
         &self,
-        txin: &mut bitcoin::TxIn,
+        txin: &mut elements::TxIn,
         satisfier: S,
         to_pk_ctx: ToPkCtx,
     ) -> Result<(), Error>
@@ -181,7 +181,7 @@ pub trait DescriptorTrait<Pk: MiniscriptKey>:
     {
         // easy default implementation
         let (witness, script_sig) = self.get_satisfaction(satisfier, to_pk_ctx)?;
-        txin.witness = witness;
+        txin.witness.script_witness = witness;
         txin.script_sig = script_sig;
         Ok(())
     }
@@ -398,17 +398,17 @@ where
     fn address<ToPkCtx: Copy>(
         &self,
         to_pk_ctx: ToPkCtx,
-        network: bitcoin::Network,
-    ) -> Option<bitcoin::Address>
+        params: &'static elements::AddressParams,
+    ) -> Option<elements::Address>
     where
         Pk: ToPublicKey<ToPkCtx>,
     {
         match *self {
-            Descriptor::Bare(ref bare) => bare.address(to_pk_ctx, network),
-            Descriptor::Pkh(ref pkh) => pkh.address(to_pk_ctx, network),
-            Descriptor::Wpkh(ref wpkh) => wpkh.address(to_pk_ctx, network),
-            Descriptor::Wsh(ref wsh) => wsh.address(to_pk_ctx, network),
-            Descriptor::Sh(ref sh) => sh.address(to_pk_ctx, network),
+            Descriptor::Bare(ref bare) => bare.address(to_pk_ctx, params),
+            Descriptor::Pkh(ref pkh) => pkh.address(to_pk_ctx, params),
+            Descriptor::Wpkh(ref wpkh) => wpkh.address(to_pk_ctx, params),
+            Descriptor::Wsh(ref wsh) => wsh.address(to_pk_ctx, params),
+            Descriptor::Sh(ref sh) => sh.address(to_pk_ctx, params),
         }
     }
 
@@ -680,16 +680,22 @@ mod tests {
     use super::checksum::desc_checksum;
     use super::DescriptorPublicKeyCtx;
     use super::DescriptorTrait;
-    use bitcoin::blockdata::opcodes::all::{OP_CLTV, OP_CSV};
-    use bitcoin::blockdata::script::Instruction;
-    use bitcoin::blockdata::{opcodes, script};
     use bitcoin::hashes::hex::FromHex;
     use bitcoin::hashes::{hash160, sha256};
     use bitcoin::util::bip32;
-    use bitcoin::{self, secp256k1, PublicKey};
+    use bitcoin::PublicKey;
     use descriptor::{
         DescriptorPublicKey, DescriptorSecretKey, DescriptorSinglePub, DescriptorXKey,
     };
+
+    use elements::opcodes::{
+        self,
+        all::{OP_CLTV, OP_CSV},
+    };
+    use elements::script;
+    use elements::script::Instruction;
+    use elements::secp256k1;
+    use elements::Script;
     use hex_script;
     use miniscript::satisfy::BitcoinSig;
     use std::cmp;
@@ -734,6 +740,21 @@ mod tests {
             ),
             output
         );
+    }
+
+    // helper function to create elements txin from scriptsig and witness
+    fn elements_txin(script_sig: Script, witness: Vec<Vec<u8>>) -> elements::TxIn {
+        let mut txin_witness = elements::TxInWitness::default();
+        txin_witness.script_witness = witness;
+        elements::TxIn {
+            previous_output: elements::OutPoint::default(),
+            script_sig: script_sig,
+            sequence: 100,
+            is_pegin: false,
+            has_issuance: false,
+            asset_issuance: elements::AssetIssuance::default(),
+            witness: txin_witness,
+        }
     }
 
     #[test]
@@ -796,12 +817,15 @@ mod tests {
                 "512102000000000000000000000000000000000000000000000000000000000000000251ae"
             )
         );
-        assert_eq!(bare.address(NullCtx, bitcoin::Network::Bitcoin,), None);
+        assert_eq!(
+            bare.address(NullCtx, &elements::AddressParams::ELEMENTS),
+            None
+        );
 
         let pk = StdDescriptor::from_str(TEST_PK).unwrap();
         assert_eq!(
             pk.script_pubkey(NullCtx),
-            bitcoin::Script::from(vec![
+            Script::from(vec![
                 0x21, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xac,
@@ -828,10 +852,10 @@ mod tests {
                 .into_script()
         );
         assert_eq!(
-            pkh.address(NullCtx, bitcoin::Network::Bitcoin,)
+            pkh.address(NullCtx, &elements::AddressParams::ELEMENTS)
                 .unwrap()
                 .to_string(),
-            "1D7nRvrRgzCg9kYBwhPH3j3Gs6SmsRg3Wq"
+            "2dmYXpSu8YP6aLcJYhHfB1C19mdzSx2GPB9"
         );
 
         let wpkh = StdDescriptor::from_str(
@@ -851,10 +875,10 @@ mod tests {
                 .into_script()
         );
         assert_eq!(
-            wpkh.address(NullCtx, bitcoin::Network::Bitcoin,)
+            wpkh.address(NullCtx, &elements::AddressParams::ELEMENTS)
                 .unwrap()
                 .to_string(),
-            "bc1qsn57m9drscflq5nl76z6ny52hck5w4x5wqd9yt"
+            "ert1qsn57m9drscflq5nl76z6ny52hck5w4x57m69k3"
         );
 
         let shwpkh = StdDescriptor::from_str(
@@ -876,10 +900,10 @@ mod tests {
         );
         assert_eq!(
             shwpkh
-                .address(NullCtx, bitcoin::Network::Bitcoin,)
+                .address(NullCtx, &elements::AddressParams::ELEMENTS)
                 .unwrap()
                 .to_string(),
-            "3PjMEzoveVbvajcnDDuxcJhsuqPHgydQXq"
+            "XZPaAbg6M83Fq5NqvbEGZ5kwy9RKSTke2s"
         );
 
         let sh = StdDescriptor::from_str(
@@ -900,10 +924,10 @@ mod tests {
                 .into_script()
         );
         assert_eq!(
-            sh.address(NullCtx, bitcoin::Network::Bitcoin,)
+            sh.address(NullCtx, &elements::AddressParams::ELEMENTS)
                 .unwrap()
                 .to_string(),
-            "3HDbdvM9CQ6ASnQFUkWw6Z4t3qNwMesJE9"
+            "XSspZXDJu2XVh8AKC7qF3L7x79Qy67JhQb"
         );
 
         let wsh = StdDescriptor::from_str(
@@ -928,10 +952,10 @@ mod tests {
                 .into_script()
         );
         assert_eq!(
-            wsh.address(NullCtx, bitcoin::Network::Bitcoin,)
+            wsh.address(NullCtx, &elements::AddressParams::ELEMENTS)
                 .unwrap()
                 .to_string(),
-            "bc1qlymeahyfsv2jm3upw3urqp6m65ufde9seedl7umh0lth6yjt5zzsk33tv6"
+            "ert1qlymeahyfsv2jm3upw3urqp6m65ufde9seedl7umh0lth6yjt5zzsan9u2t"
         );
 
         let shwsh = StdDescriptor::from_str(
@@ -953,10 +977,10 @@ mod tests {
         );
         assert_eq!(
             shwsh
-                .address(NullCtx, bitcoin::Network::Bitcoin,)
+                .address(NullCtx, &elements::AddressParams::ELEMENTS)
                 .unwrap()
                 .to_string(),
-            "38cTksiyPT2b1uGRVbVqHdDhW9vKs84N6Z"
+            "XJGggUb965TvGF2VCxp9EQGmZTxMeDjwQQ"
         );
     }
 
@@ -997,11 +1021,14 @@ mod tests {
         let satisfier = SimpleSat { sig, pk };
         let ms = ms_str!("c:pk_k({})", pk);
 
-        let mut txin = bitcoin::TxIn {
-            previous_output: bitcoin::OutPoint::default(),
-            script_sig: bitcoin::Script::new(),
+        let mut txin = elements::TxIn {
+            previous_output: elements::OutPoint::default(),
+            script_sig: Script::new(),
             sequence: 100,
-            witness: vec![],
+            is_pegin: false,
+            has_issuance: false,
+            asset_issuance: elements::AssetIssuance::default(),
+            witness: elements::TxInWitness::default(),
         };
         let bare = Descriptor::new_bare(ms.clone()).unwrap();
 
@@ -1009,45 +1036,31 @@ mod tests {
             .expect("satisfaction");
         assert_eq!(
             txin,
-            bitcoin::TxIn {
-                previous_output: bitcoin::OutPoint::default(),
-                script_sig: script::Builder::new().push_slice(&sigser[..]).into_script(),
-                sequence: 100,
-                witness: vec![],
-            }
+            elements_txin(
+                script::Builder::new().push_slice(&sigser[..]).into_script(),
+                vec![]
+            ),
         );
-        assert_eq!(bare.unsigned_script_sig(NullCtx), bitcoin::Script::new());
+        assert_eq!(bare.unsigned_script_sig(NullCtx), Script::new());
 
         let pkh = Descriptor::new_pkh(pk);
         pkh.satisfy(&mut txin, &satisfier, NullCtx)
             .expect("satisfaction");
-        assert_eq!(
-            txin,
-            bitcoin::TxIn {
-                previous_output: bitcoin::OutPoint::default(),
-                script_sig: script::Builder::new()
-                    .push_slice(&sigser[..])
-                    .push_key(&pk)
-                    .into_script(),
-                sequence: 100,
-                witness: vec![],
-            }
-        );
-        assert_eq!(pkh.unsigned_script_sig(NullCtx), bitcoin::Script::new());
+        let expected_ssig = script::Builder::new()
+            .push_slice(&sigser[..])
+            .push_key(&pk)
+            .into_script();
+        assert_eq!(txin, elements_txin(expected_ssig, vec![]));
+        assert_eq!(pkh.unsigned_script_sig(NullCtx), Script::new());
 
         let wpkh = Descriptor::new_wpkh(pk).unwrap();
         wpkh.satisfy(&mut txin, &satisfier, NullCtx)
             .expect("satisfaction");
         assert_eq!(
             txin,
-            bitcoin::TxIn {
-                previous_output: bitcoin::OutPoint::default(),
-                script_sig: bitcoin::Script::new(),
-                sequence: 100,
-                witness: vec![sigser.clone(), pk.to_bytes(),],
-            }
+            elements_txin(Script::new(), vec![sigser.clone(), pk.to_bytes(),])
         );
-        assert_eq!(wpkh.unsigned_script_sig(NullCtx), bitcoin::Script::new());
+        assert_eq!(wpkh.unsigned_script_sig(NullCtx), Script::new());
 
         let shwpkh = Descriptor::new_sh_wpkh(pk).unwrap();
         shwpkh
@@ -1059,41 +1072,25 @@ mod tests {
                 &hash160::Hash::from_hex("d1b2a1faf62e73460af885c687dee3b7189cd8ab").unwrap()[..],
             )
             .into_script();
+        let expected_ssig = script::Builder::new()
+            .push_slice(&redeem_script[..])
+            .into_script();
         assert_eq!(
             txin,
-            bitcoin::TxIn {
-                previous_output: bitcoin::OutPoint::default(),
-                script_sig: script::Builder::new()
-                    .push_slice(&redeem_script[..])
-                    .into_script(),
-                sequence: 100,
-                witness: vec![sigser.clone(), pk.to_bytes(),],
-            }
+            elements_txin(expected_ssig.clone(), vec![sigser.clone(), pk.to_bytes()])
         );
-        assert_eq!(
-            shwpkh.unsigned_script_sig(NullCtx),
-            script::Builder::new()
-                .push_slice(&redeem_script[..])
-                .into_script()
-        );
+        assert_eq!(shwpkh.unsigned_script_sig(NullCtx), expected_ssig);
 
         let ms = ms_str!("c:pk_k({})", pk);
         let sh = Descriptor::new_sh(ms.clone()).unwrap();
         sh.satisfy(&mut txin, &satisfier, NullCtx)
             .expect("satisfaction");
-        assert_eq!(
-            txin,
-            bitcoin::TxIn {
-                previous_output: bitcoin::OutPoint::default(),
-                script_sig: script::Builder::new()
-                    .push_slice(&sigser[..])
-                    .push_slice(&ms.encode(NullCtx)[..])
-                    .into_script(),
-                sequence: 100,
-                witness: vec![],
-            }
-        );
-        assert_eq!(sh.unsigned_script_sig(NullCtx), bitcoin::Script::new());
+        let expected_ssig = script::Builder::new()
+            .push_slice(&sigser[..])
+            .push_slice(&ms.encode(NullCtx)[..])
+            .into_script();
+        assert_eq!(txin, elements_txin(expected_ssig, vec![]));
+        assert_eq!(sh.unsigned_script_sig(NullCtx), Script::new());
 
         let ms = ms_str!("c:pk_k({})", pk);
 
@@ -1102,36 +1099,28 @@ mod tests {
             .expect("satisfaction");
         assert_eq!(
             txin,
-            bitcoin::TxIn {
-                previous_output: bitcoin::OutPoint::default(),
-                script_sig: bitcoin::Script::new(),
-                sequence: 100,
-                witness: vec![sigser.clone(), ms.encode(NullCtx).into_bytes(),],
-            }
+            elements_txin(
+                Script::new(),
+                vec![sigser.clone(), ms.encode(NullCtx).into_bytes()]
+            )
         );
-        assert_eq!(wsh.unsigned_script_sig(NullCtx), bitcoin::Script::new());
+        assert_eq!(wsh.unsigned_script_sig(NullCtx), Script::new());
 
         let shwsh = Descriptor::new_sh_wsh(ms.clone()).unwrap();
         shwsh
             .satisfy(&mut txin, &satisfier, NullCtx)
             .expect("satisfaction");
+        let expected_ssig = script::Builder::new()
+            .push_slice(&ms.encode(NullCtx).to_v0_p2wsh()[..])
+            .into_script();
         assert_eq!(
             txin,
-            bitcoin::TxIn {
-                previous_output: bitcoin::OutPoint::default(),
-                script_sig: script::Builder::new()
-                    .push_slice(&ms.encode(NullCtx).to_v0_p2wsh()[..])
-                    .into_script(),
-                sequence: 100,
-                witness: vec![sigser.clone(), ms.encode(NullCtx).into_bytes(),],
-            }
+            elements_txin(
+                expected_ssig.clone(),
+                vec![sigser.clone(), ms.encode(NullCtx).into_bytes(),]
+            )
         );
-        assert_eq!(
-            shwsh.unsigned_script_sig(NullCtx),
-            script::Builder::new()
-                .push_slice(&ms.encode(NullCtx).to_v0_p2wsh()[..])
-                .into_script()
-        );
+        assert_eq!(shwsh.unsigned_script_sig(NullCtx), expected_ssig);
     }
 
     #[test]
@@ -1196,12 +1185,7 @@ mod tests {
         ))
         .unwrap();
 
-        let mut txin = bitcoin::TxIn {
-            previous_output: bitcoin::OutPoint::default(),
-            script_sig: bitcoin::Script::new(),
-            sequence: 0,
-            witness: vec![],
-        };
+        let mut txin = elements_txin(Script::new(), vec![]);
         let satisfier = {
             let mut satisfier = HashMap::with_capacity(2);
 
@@ -1215,8 +1199,8 @@ mod tests {
         descriptor.satisfy(&mut txin, &satisfier, NullCtx).unwrap();
 
         // assert
-        let witness0 = &txin.witness[0];
-        let witness1 = &txin.witness[1];
+        let witness0 = &txin.witness.script_witness[0];
+        let witness1 = &txin.witness.script_witness[1];
 
         let sig0 = secp256k1::Signature::from_der(&witness0[..witness0.len() - 1]).unwrap();
         let sig1 = secp256k1::Signature::from_der(&witness1[..witness1.len() - 1]).unwrap();
@@ -1397,12 +1381,12 @@ mod tests {
 
             // Same address
             let addr_one = desc_one
-                .address(desc_ctx, bitcoin::Network::Bitcoin)
+                .address(desc_ctx, &elements::AddressParams::ELEMENTS)
                 .unwrap();
             let addr_two = desc_two
-                .address(desc_ctx, bitcoin::Network::Bitcoin)
+                .address(desc_ctx, &elements::AddressParams::ELEMENTS)
                 .unwrap();
-            let addr_expected = bitcoin::Address::from_str(raw_addr_expected).unwrap();
+            let addr_expected = elements::Address::from_str(raw_addr_expected).unwrap();
             assert_eq!(addr_one, addr_expected);
             assert_eq!(addr_two, addr_expected);
         }
@@ -1411,21 +1395,21 @@ mod tests {
         _test_sortedmulti(
             "sh(sortedmulti(1,03fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a1460297556,0250863ad64a87ae8a2fe83c1af1a8403cb53f53e486d8511dad8a04887e5b2352))#uetvewm2",
             "sh(sortedmulti(1,0250863ad64a87ae8a2fe83c1af1a8403cb53f53e486d8511dad8a04887e5b2352,03fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a1460297556))#7l8smyg9",
-            "3JZJNxvDKe6Y55ZaF5223XHwfF2eoMNnoV",
+            "XUDXJZnP2GXsKRKdxSLKzJM1iZ4gbbyrGh",
         );
 
         // P2WSH and single-xpub descriptor
         _test_sortedmulti(
             "wsh(sortedmulti(1,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH))#7etm7zk7",
             "wsh(sortedmulti(1,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB))#ppmeel9k",
-            "bc1qpq2cfgz5lktxzr5zqv7nrzz46hsvq3492ump9pz8rzcl8wqtwqcspx5y6a",
+            "ert1qpq2cfgz5lktxzr5zqv7nrzz46hsvq3492ump9pz8rzcl8wqtwqcs2yqnuv",
         );
 
         // P2WSH-P2SH and ranged descriptor
         _test_sortedmulti(
             "sh(wsh(sortedmulti(1,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB/1/0/*,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH/0/0/*)))#u60cee0u",
             "sh(wsh(sortedmulti(1,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH/0/0/*,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB/1/0/*)))#75dkf44w",
-            "325zcVBN5o2eqqqtGwPjmtDd8dJRyYP82s",
+            "XBkDY63XnRTz6BbwzJi3ifGhBwLTomEzkq",
         );
     }
 

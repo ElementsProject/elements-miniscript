@@ -18,7 +18,7 @@
 
 use std::{fmt, str::FromStr};
 
-use bitcoin::{self, Script};
+use elements::{self, Script};
 
 use expression::{self, FromTree};
 use miniscript::context::{ScriptContext, ScriptContextError};
@@ -157,16 +157,22 @@ where
     fn address<ToPkCtx: Copy>(
         &self,
         to_pk_ctx: ToPkCtx,
-        network: bitcoin::Network,
-    ) -> Option<bitcoin::Address>
+        params: &'static elements::AddressParams,
+    ) -> Option<elements::Address>
     where
         Pk: ToPublicKey<ToPkCtx>,
     {
         match self.inner {
-            WshInner::SortedMulti(ref smv) => {
-                Some(bitcoin::Address::p2wsh(&smv.encode(to_pk_ctx), network))
-            }
-            WshInner::Ms(ref ms) => Some(bitcoin::Address::p2wsh(&ms.encode(to_pk_ctx), network)),
+            WshInner::SortedMulti(ref smv) => Some(elements::Address::p2wsh(
+                &smv.encode(to_pk_ctx),
+                None,
+                params,
+            )),
+            WshInner::Ms(ref ms) => Some(elements::Address::p2wsh(
+                &ms.encode(to_pk_ctx),
+                None,
+                params,
+            )),
         }
     }
 
@@ -362,24 +368,27 @@ where
     fn address<ToPkCtx: Copy>(
         &self,
         to_pk_ctx: ToPkCtx,
-        network: bitcoin::Network,
-    ) -> Option<bitcoin::Address>
+        params: &'static elements::AddressParams,
+    ) -> Option<elements::Address>
     where
         Pk: ToPublicKey<ToPkCtx>,
     {
-        Some(
-            bitcoin::Address::p2wpkh(&self.pk.to_public_key(to_pk_ctx), network)
-                .expect("Wpkh descriptors have compressed keys"),
-        )
+        Some(elements::Address::p2wpkh(
+            &self.pk.to_public_key(to_pk_ctx),
+            None,
+            params,
+        ))
     }
 
     fn script_pubkey<ToPkCtx: Copy>(&self, to_pk_ctx: ToPkCtx) -> Script
     where
         Pk: ToPublicKey<ToPkCtx>,
     {
-        let addr =
-            bitcoin::Address::p2wpkh(&self.pk.to_public_key(to_pk_ctx), bitcoin::Network::Bitcoin)
-                .expect("wpkh descriptors have compressed keys");
+        let addr = elements::Address::p2wpkh(
+            &self.pk.to_public_key(to_pk_ctx),
+            None,
+            &elements::AddressParams::ELEMENTS,
+        );
         addr.script_pubkey()
     }
 
@@ -430,8 +439,11 @@ where
         // the previous txo's scriptPubKey.
         // The item 5:
         //     - For P2WPKH witness program, the scriptCode is `0x1976a914{20-byte-pubkey-hash}88ac`.
-        let addr =
-            bitcoin::Address::p2pkh(&self.pk.to_public_key(to_pk_ctx), bitcoin::Network::Bitcoin);
+        let addr = elements::Address::p2pkh(
+            &self.pk.to_public_key(to_pk_ctx),
+            None,
+            &elements::AddressParams::ELEMENTS,
+        );
         addr.script_pubkey()
     }
 }

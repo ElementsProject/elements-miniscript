@@ -17,8 +17,8 @@
 use std::str::FromStr;
 use std::{fmt, str};
 
-use bitcoin::hashes::hex::FromHex;
-use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d};
+use elements::hashes::hex::FromHex;
+use elements::hashes::{hash160, ripemd160, sha256, sha256d};
 
 use super::concrete::PolicyError;
 use errstr;
@@ -554,7 +554,7 @@ mod tests {
     fn semantic_analysis() {
         let policy = StringPolicy::from_str("pkh()").unwrap();
         assert_eq!(policy, Policy::KeyHash("".to_owned()));
-        assert_eq!(policy.relative_timelocks(), vec![]);
+        assert_eq!(policy.relative_timelocks().len(), 0);
         assert_eq!(policy.clone().at_age(0), policy.clone());
         assert_eq!(policy.clone().at_age(10000), policy.clone());
         assert_eq!(policy.n_keys(), 1);

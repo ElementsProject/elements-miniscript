@@ -18,7 +18,7 @@
 
 use std::{fmt, marker::PhantomData, str::FromStr};
 
-use bitcoin::blockdata::script;
+use elements::script;
 
 use expression;
 use miniscript::{self, context::ScriptContext, decode::Terminal};

@@ -20,7 +20,7 @@
 
 use std::{fmt, str::FromStr};
 
-use bitcoin::{self, blockdata::script, Script};
+use elements::{self, script, Script};
 
 use expression::{self, FromTree};
 use miniscript::context::ScriptContext;
@@ -114,8 +114,8 @@ where
     fn address<ToPkCtx: Copy>(
         &self,
         _to_pk_ctx: ToPkCtx,
-        _network: bitcoin::Network,
-    ) -> Option<bitcoin::Address>
+        _network: &elements::AddressParams,
+    ) -> Option<elements::Address>
     where
         Pk: ToPublicKey<ToPkCtx>,
     {
@@ -279,14 +279,15 @@ where
     fn address<ToPkCtx: Copy>(
         &self,
         to_pk_ctx: ToPkCtx,
-        network: bitcoin::Network,
-    ) -> Option<bitcoin::Address>
+        params: &'static elements::AddressParams,
+    ) -> Option<elements::Address>
     where
         Pk: ToPublicKey<ToPkCtx>,
     {
-        Some(bitcoin::Address::p2pkh(
+        Some(elements::Address::p2pkh(
             &self.pk.to_public_key(to_pk_ctx),
-            network,
+            None,
+            params,
         ))
     }
 
@@ -294,8 +295,11 @@ where
     where
         Pk: ToPublicKey<ToPkCtx>,
     {
-        let addr =
-            bitcoin::Address::p2pkh(&self.pk.to_public_key(to_pk_ctx), bitcoin::Network::Bitcoin);
+        let addr = elements::Address::p2pkh(
+            &self.pk.to_public_key(to_pk_ctx),
+            None,
+            &elements::AddressParams::ELEMENTS,
+        );
         addr.script_pubkey()
     }
 

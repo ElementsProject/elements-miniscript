@@ -54,6 +54,7 @@
 //!
 //! ```rust
 //! extern crate bitcoin;
+//! extern crate elements;
 //! extern crate miniscript;
 //!
 //! use std::str::FromStr;
@@ -76,8 +77,8 @@
 //!
 //!     // Derive the P2SH address
 //!     assert_eq!(
-//!         desc.address(NullCtx, bitcoin::Network::Bitcoin).unwrap().to_string(),
-//!         "3CJxbQBfWAe1ZkKiGQNEYrioV73ZwvBWns"
+//!         desc.address(NullCtx, &elements::AddressParams::ELEMENTS).unwrap().to_string(),
+//!         "XMyBX13qCo5Lp65mymgYVdmsYR5bcznWUa"
 //!     );
 //!
 //!     // Check whether the descriptor is safe
@@ -95,16 +96,17 @@
 #![allow(bare_trait_objects)]
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
 // Coding conventions
-#![deny(unsafe_code)]
-#![deny(non_upper_case_globals)]
-#![deny(non_camel_case_types)]
-#![deny(non_snake_case)]
-#![deny(unused_mut)]
-#![deny(dead_code)]
-#![deny(unused_imports)]
-#![deny(missing_docs)]
+// #![deny(unsafe_code)]
+// #![deny(non_upper_case_globals)]
+// #![deny(non_camel_case_types)]
+// #![deny(non_snake_case)]
+// #![deny(unused_mut)]
+// #![deny(dead_code)]
+// #![deny(unused_imports)]
+// #![deny(missing_docs)]
 
 pub extern crate bitcoin;
+pub extern crate elements;
 #[cfg(feature = "serde")]
 pub extern crate serde;
 #[cfg(all(test, feature = "unstable"))]
@@ -115,21 +117,21 @@ mod macros;
 
 pub mod descriptor;
 pub mod expression;
-pub mod interpreter;
+// pub mod interpreter;
 pub mod miniscript;
 pub mod policy;
-pub mod psbt;
+// pub mod psbt;
 
 mod util;
 
 use std::str::FromStr;
 use std::{error, fmt, hash, str};
 
-use bitcoin::blockdata::{opcodes, script};
-use bitcoin::hashes::{hash160, sha256, Hash};
+use elements::hashes::{hash160, sha256, Hash};
+use elements::{opcodes, script};
 
 pub use descriptor::{Descriptor, DescriptorPublicKey, DescriptorPublicKeyCtx, DescriptorTrait};
-pub use interpreter::Interpreter;
+// pub use interpreter::Interpreter;
 pub use miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0};
 pub use miniscript::decode::Terminal;
 pub use miniscript::satisfy::{BitcoinSig, Satisfier};
@@ -411,8 +413,8 @@ impl From<miniscript::analyzable::AnalysisError> for Error {
 }
 
 #[doc(hidden)]
-impl From<bitcoin::secp256k1::Error> for Error {
-    fn from(e: bitcoin::secp256k1::Error) -> Error {
+impl From<elements::secp256k1::Error> for Error {
+    fn from(e: elements::secp256k1::Error) -> Error {
         Error::Secp(e)
     }
 }
@@ -545,7 +547,7 @@ fn push_opcode_size(script_size: usize) -> usize {
 
 /// Helper function used by tests
 #[cfg(test)]
-fn hex_script(s: &str) -> bitcoin::Script {
-    let v: Vec<u8> = bitcoin::hashes::hex::FromHex::from_hex(s).unwrap();
-    bitcoin::Script::from(v)
+fn hex_script(s: &str) -> elements::Script {
+    let v: Vec<u8> = elements::hashes::hex::FromHex::from_hex(s).unwrap();
+    elements::Script::from(v)
 }

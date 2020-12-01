@@ -14,9 +14,8 @@
 
 //! Interpreter stack
 
-use bitcoin;
-use bitcoin::blockdata::{opcodes, script};
-use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
+use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
+use elements::{opcodes, script};
 
 use {BitcoinSig, NullCtx, ToPublicKey};
 
@@ -47,7 +46,11 @@ impl<'txin> From<&'txin [u8]> for Element<'txin> {
     fn from(v: &'txin [u8]) -> Element<'txin> {
         if *v == [1] {
             Element::Satisfied
+<<<<<<< HEAD
         } else if v.is_empty() {
+=======
+        } else if v.len() == 0 {
+>>>>>>> 9849f32... ported to elements: tests passing
             Element::Dissatisfied
         } else {
             Element::Push(v)
@@ -60,7 +63,7 @@ impl<'txin> Element<'txin> {
     ///
     /// Supports `OP_1` but no other numbers since these are not used by Miniscript
     pub fn from_instruction(
-        ins: Result<script::Instruction<'txin>, bitcoin::blockdata::script::Error>,
+        ins: Result<script::Instruction<'txin>, elements::script::Error>,
     ) -> Result<Self, Error> {
         match ins {
             //Also covers the dissatisfied case as PushBytes0

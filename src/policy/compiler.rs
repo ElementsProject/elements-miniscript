@@ -1159,8 +1159,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin::blockdata::{opcodes, script};
-    use bitcoin::{self, hashes, secp256k1, SigHashType};
+    use bitcoin::SigHashType;
+    use elements::{hashes, secp256k1};
+    use elements::{opcodes, script};
     use std::collections::HashMap;
     use std::str::FromStr;
     use std::string::String;

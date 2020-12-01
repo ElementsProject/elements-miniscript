@@ -39,7 +39,7 @@ use self::stack::Stack;
 pub struct Interpreter<'txin> {
     inner: inner::Inner,
     stack: Stack<'txin>,
-    script_code: bitcoin::Script,
+    script_code: elements::Script,
     age: u32,
     height: u32,
 }
@@ -52,8 +52,8 @@ impl<'txin> Interpreter<'txin> {
     /// function; otherwise, it should be a closure containing a sighash and
     /// secp context, which can actually verify a given signature.
     pub fn from_txdata(
-        spk: &bitcoin::Script,
-        script_sig: &'txin bitcoin::Script,
+        spk: &elements::Script,
+        script_sig: &'txin elements::Script,
         witness: &'txin [Vec<u8>],
         age: u32,
         height: u32,
@@ -777,7 +777,7 @@ mod tests {
     use super::*;
     use bitcoin;
     use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
-    use bitcoin::secp256k1::{self, Secp256k1, VerifyOnly};
+    use elements::secp256k1::{self, Secp256k1, VerifyOnly};
     use miniscript::context::NoChecks;
     use BitcoinSig;
     use Miniscript;

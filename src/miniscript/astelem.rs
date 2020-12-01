@@ -21,9 +21,9 @@
 
 use std::{fmt, str};
 
-use bitcoin::blockdata::{opcodes, script};
-use bitcoin::hashes::hex::FromHex;
-use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
+use elements::hashes::hex::FromHex;
+use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
+use elements::{opcodes, script};
 
 use errstr;
 use expression;

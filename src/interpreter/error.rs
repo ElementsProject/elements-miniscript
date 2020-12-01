@@ -12,8 +12,8 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
-use bitcoin::hashes::hash160;
-use bitcoin::{self, secp256k1};
+use elements::hashes::hash160;
+use elements::secp256k1;
 use std::{error, fmt};
 
 /// Detailed Error type for Interpreter

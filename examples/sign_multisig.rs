@@ -15,9 +15,10 @@
 //! Example: Signing a 2-of-3 multisignature
 
 extern crate bitcoin;
+extern crate elements;
 extern crate miniscript;
 
-use bitcoin::secp256k1; // secp256k1 re-exported from rust-bitcoin
+use elements::secp256k1; // secp256k1 re-exported from rust-bitcoin
 use miniscript::{DescriptorTrait, NullCtx};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -27,18 +28,24 @@ fn main() {
     type BitcoinDescriptor = miniscript::Descriptor<bitcoin::PublicKey>;
 
     // Transaction which spends some output
-    let mut tx = bitcoin::Transaction {
+    let mut tx = elements::Transaction {
         version: 2,
         lock_time: 0,
-        input: vec![bitcoin::TxIn {
-            previous_output: Default::default(),
-            script_sig: bitcoin::Script::new(),
+        input: vec![elements::TxIn {
+            previous_output: elements::OutPoint::default(),
+            script_sig: elements::Script::new(),
             sequence: 0xffffffff,
-            witness: vec![],
+            is_pegin: false,
+            has_issuance: false,
+            asset_issuance: elements::AssetIssuance::default(),
+            witness: elements::TxInWitness::default(),
         }],
-        output: vec![bitcoin::TxOut {
-            script_pubkey: bitcoin::Script::new(),
-            value: 100_000_000,
+        output: vec![elements::TxOut {
+            script_pubkey: elements::Script::new(),
+            value: elements::confidential::Value::Explicit(100_000_000),
+            witness: elements::TxOutWitness::default(),
+            asset: elements::confidential::Asset::default(),
+            nonce: elements::confidential::Nonce::default(),
         }],
     };
 
@@ -132,7 +139,7 @@ fn main() {
         .satisfy(&mut tx.input[0], &sigs, NullCtx)
         .is_ok());
     assert_ne!(tx.input[0], original_txin);
-    assert_eq!(tx.input[0].witness.len(), 4); // 0, sig, sig, witness script
+    assert_eq!(tx.input[0].witness.script_witness.len(), 4); // 0, sig, sig, witness script
 
     // ...and even if we give it a third signature, only two are used
     sigs.insert(public_keys[0], bitcoin_sig);
@@ -140,5 +147,5 @@ fn main() {
         .satisfy(&mut tx.input[0], &sigs, NullCtx)
         .is_ok());
     assert_ne!(tx.input[0], original_txin);
-    assert_eq!(tx.input[0].witness.len(), 4); // 0, sig, sig, witness script
+    assert_eq!(tx.input[0].witness.script_witness.len(), 4); // 0, sig, sig, witness script
 }
