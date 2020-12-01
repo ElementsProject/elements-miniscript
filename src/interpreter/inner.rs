@@ -289,10 +289,10 @@ mod tests {
     #![allow(unused_imports)] // fuck
 
     use super::*;
-    use bitcoin::blockdata::script;
     use bitcoin::hashes::hex::FromHex;
     use bitcoin::hashes::{hash160, sha256, Hash};
     use bitcoin::{self, OutPoint, Script, Transaction, TxIn, TxOut};
+    use elements::script;
     use std::str::FromStr;
 
     struct KeyTestData {

@@ -169,7 +169,7 @@ impl<'txin> Interpreter<'txin> {
         unsigned_tx: &bitcoin::Transaction,
         input_idx: usize,
         amount: u64,
-        sighash_type: bitcoin::SigHashType,
+        sighash_type: elements::SigHashType,
     ) -> secp256k1::Message {
         let hash = if self.is_legacy() {
             unsigned_tx.signature_hash(input_idx, &self.script_code, sighash_type.as_u32())

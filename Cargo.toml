@@ -17,7 +17,7 @@ rand = ["bitcoin/rand"]
 
 [dependencies]
 bitcoin = "0.25"
-elements = {git = "https://github.com/ElementsProject/rust-elements", branch = "2020-09-add-script-opcodes-to-elements"}
+elements = {git = "https://github.com/sanket1729/rust-elements", branch = "segwit_sighash"}
 
 [dependencies.serde]
 version = "1.0"

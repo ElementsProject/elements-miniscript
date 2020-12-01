@@ -1011,7 +1011,7 @@ mod tests {
                 _to_pk_ctx: NullCtx,
             ) -> Option<BitcoinSig> {
                 if *pk == self.pk {
-                    Some((self.sig, bitcoin::SigHashType::All))
+                    Some((self.sig, elements::SigHashType::All))
                 } else {
                     None
                 }
@@ -1189,8 +1189,8 @@ mod tests {
         let satisfier = {
             let mut satisfier = HashMap::with_capacity(2);
 
-            satisfier.insert(a, (sig_a.clone(), ::bitcoin::SigHashType::All));
-            satisfier.insert(b, (sig_b.clone(), ::bitcoin::SigHashType::All));
+            satisfier.insert(a, (sig_a.clone(), ::elements::SigHashType::All));
+            satisfier.insert(b, (sig_b.clone(), ::elements::SigHashType::All));
 
             satisfier
         };

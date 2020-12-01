@@ -1159,7 +1159,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin::SigHashType;
+    use elements::SigHashType;
     use elements::{hashes, secp256k1};
     use elements::{opcodes, script};
     use std::collections::HashMap;
