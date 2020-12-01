@@ -17,8 +17,8 @@
 //! Translates a script into a reversed sequence of tokens
 //!
 
-use bitcoin::blockdata::{opcodes, script};
 use bitcoin::PublicKey;
+use elements::{opcodes, script};
 
 use std::fmt;
 

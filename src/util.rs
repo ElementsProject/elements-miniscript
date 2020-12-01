@@ -1,8 +1,7 @@
-use bitcoin;
-use bitcoin::blockdata::script;
-use bitcoin::Script;
+use elements::script;
+use elements::Script;
 pub(crate) fn varint_len(n: usize) -> usize {
-    bitcoin::VarInt(n as u64).len()
+    elements::VarInt(n as u64).len()
 }
 
 // Helper function to calculate witness size

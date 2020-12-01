@@ -15,9 +15,9 @@
 //! Example: Create an HTLC with miniscript using the policy compiler
 
 extern crate bitcoin;
+extern crate elements;
 extern crate miniscript;
 
-use bitcoin::Network;
 use miniscript::policy::{Concrete, Liftable};
 use miniscript::{Descriptor, DescriptorTrait};
 use std::str::FromStr;
@@ -64,7 +64,12 @@ fn main() {
     );
 
     assert_eq!(
-        format!("{}", htlc_descriptor.address(Network::Bitcoin).unwrap()),
+        format!(
+            "{}",
+            htlc_descriptor
+                .address(&elements::AddressParams::ELEMENTS)
+                .unwrap()
+        ),
         "bc1qmpfcw7he9z5d9ftfe8qw699azmm2sr8fen903fs4plv007yx0t3qxfmqv5"
     );
 }
