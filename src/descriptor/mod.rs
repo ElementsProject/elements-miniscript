@@ -697,7 +697,7 @@ mod tests {
     use elements::secp256k1;
     use elements::Script;
     use hex_script;
-    use miniscript::satisfy::BitcoinSig;
+    use miniscript::satisfy::ElementsSig;
     use std::cmp;
     use std::collections::HashMap;
     use std::str::FromStr;
@@ -1009,7 +1009,7 @@ mod tests {
                 &self,
                 pk: &bitcoin::PublicKey,
                 _to_pk_ctx: NullCtx,
-            ) -> Option<BitcoinSig> {
+            ) -> Option<ElementsSig> {
                 if *pk == self.pk {
                     Some((self.sig, elements::SigHashType::All))
                 } else {

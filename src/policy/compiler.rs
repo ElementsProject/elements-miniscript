@@ -1169,7 +1169,7 @@ mod tests {
     use miniscript::{satisfy, Legacy, Segwitv0};
     use policy::Liftable;
     use script_num_size;
-    use BitcoinSig;
+    use ElementsSig;
     use NullCtx;
 
     type SPolicy = Concrete<String>;
@@ -1369,10 +1369,10 @@ mod tests {
         let mut sigvec = sig.serialize_der().to_vec();
         sigvec.push(1); // sighash all
 
-        let no_sat = HashMap::<bitcoin::PublicKey, BitcoinSig>::new();
-        let mut left_sat = HashMap::<bitcoin::PublicKey, BitcoinSig>::new();
+        let no_sat = HashMap::<bitcoin::PublicKey, ElementsSig>::new();
+        let mut left_sat = HashMap::<bitcoin::PublicKey, ElementsSig>::new();
         let mut right_sat =
-            HashMap::<hashes::hash160::Hash, (bitcoin::PublicKey, BitcoinSig)>::new();
+            HashMap::<hashes::hash160::Hash, (bitcoin::PublicKey, ElementsSig)>::new();
 
         for i in 0..5 {
             left_sat.insert(keys[i], bitcoinsig);

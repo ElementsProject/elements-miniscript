@@ -37,12 +37,12 @@ use ScriptContext;
 use Terminal;
 
 /// Type alias for a signature/hashtype pair
-pub type BitcoinSig = (secp256k1::Signature, elements::SigHashType);
+pub type ElementsSig = (secp256k1::Signature, elements::SigHashType);
 
-/// Helper function to create BitcoinSig from Rawsig
+/// Helper function to create ElementsSig from Rawsig
 /// Useful for downstream when implementing Satisfier.
 /// Returns underlying secp if the Signature is not of correct format
-pub fn bitcoinsig_from_rawsig(rawsig: &[u8]) -> Result<BitcoinSig, Error> {
+pub fn bitcoinsig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, Error> {
     let (flag, sig) = rawsig.split_last().unwrap();
     let flag = elements::SigHashType::from_u32(*flag as u32);
     let sig = secp256k1::Signature::from_der(sig)?;
@@ -60,7 +60,7 @@ pub trait Satisfier<ToPkCtx: Copy, Pk: MiniscriptKey + ToPublicKey<ToPkCtx>> {
     /// would be [NullCtx] and [DescriptorPublicKeyCtx](crate::DescriptorPublicKeyCtx) if MiniscriptKey is [DescriptorPublicKey](crate::DescriptorPublicKey)
     ///
     /// In general, this is defined by generic for the trait [ToPublicKey]
-    fn lookup_sig(&self, _: &Pk, _to_pk_ctx: ToPkCtx) -> Option<BitcoinSig> {
+    fn lookup_sig(&self, _: &Pk, _to_pk_ctx: ToPkCtx) -> Option<ElementsSig> {
         None
     }
 
@@ -83,7 +83,7 @@ pub trait Satisfier<ToPkCtx: Copy, Pk: MiniscriptKey + ToPublicKey<ToPkCtx>> {
         &self,
         _: &Pk::Hash,
         _to_pk_ctx: ToPkCtx,
-    ) -> Option<(bitcoin::PublicKey, BitcoinSig)> {
+    ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
         None
     }
 
@@ -162,19 +162,19 @@ impl<ToPkCtx: Copy, Pk: MiniscriptKey + ToPublicKey<ToPkCtx>> Satisfier<ToPkCtx,
 }
 
 impl<ToPkCtx: Copy, Pk: MiniscriptKey + ToPublicKey<ToPkCtx>> Satisfier<ToPkCtx, Pk>
-    for HashMap<Pk, BitcoinSig>
+    for HashMap<Pk, ElementsSig>
 {
-    fn lookup_sig(&self, key: &Pk, _to_pk_ctx: ToPkCtx) -> Option<BitcoinSig> {
+    fn lookup_sig(&self, key: &Pk, _to_pk_ctx: ToPkCtx) -> Option<ElementsSig> {
         self.get(key).map(|x| *x)
     }
 }
 
 impl<ToPkCtx: Copy, Pk: MiniscriptKey + ToPublicKey<ToPkCtx>> Satisfier<ToPkCtx, Pk>
-    for HashMap<Pk::Hash, (Pk, BitcoinSig)>
+    for HashMap<Pk::Hash, (Pk, ElementsSig)>
 where
     Pk: MiniscriptKey + ToPublicKey<ToPkCtx>,
 {
-    fn lookup_sig(&self, key: &Pk, _to_pk_ctx: ToPkCtx) -> Option<BitcoinSig> {
+    fn lookup_sig(&self, key: &Pk, _to_pk_ctx: ToPkCtx) -> Option<ElementsSig> {
         self.get(&key.to_pubkeyhash()).map(|x| x.1)
     }
 
@@ -186,7 +186,7 @@ where
         &self,
         pk_hash: &Pk::Hash,
         to_pk_ctx: ToPkCtx,
-    ) -> Option<(bitcoin::PublicKey, BitcoinSig)> {
+    ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
         self.get(pk_hash)
             .map(|&(ref pk, sig)| (pk.to_public_key(to_pk_ctx), sig))
     }
@@ -195,7 +195,7 @@ where
 impl<'a, ToPkCtx: Copy, Pk: MiniscriptKey + ToPublicKey<ToPkCtx>, S: Satisfier<ToPkCtx, Pk>>
     Satisfier<ToPkCtx, Pk> for &'a S
 {
-    fn lookup_sig(&self, p: &Pk, to_pk_ctx: ToPkCtx) -> Option<BitcoinSig> {
+    fn lookup_sig(&self, p: &Pk, to_pk_ctx: ToPkCtx) -> Option<ElementsSig> {
         (**self).lookup_sig(p, to_pk_ctx)
     }
 
@@ -207,7 +207,7 @@ impl<'a, ToPkCtx: Copy, Pk: MiniscriptKey + ToPublicKey<ToPkCtx>, S: Satisfier<T
         &self,
         pkh: &Pk::Hash,
         to_pk_ctx: ToPkCtx,
-    ) -> Option<(bitcoin::PublicKey, BitcoinSig)> {
+    ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
         (**self).lookup_pkh_sig(pkh, to_pk_ctx)
     }
 
@@ -239,7 +239,7 @@ impl<'a, ToPkCtx: Copy, Pk: MiniscriptKey + ToPublicKey<ToPkCtx>, S: Satisfier<T
 impl<'a, ToPkCtx: Copy, Pk: MiniscriptKey + ToPublicKey<ToPkCtx>, S: Satisfier<ToPkCtx, Pk>>
     Satisfier<ToPkCtx, Pk> for &'a mut S
 {
-    fn lookup_sig(&self, p: &Pk, to_pk_ctx: ToPkCtx) -> Option<BitcoinSig> {
+    fn lookup_sig(&self, p: &Pk, to_pk_ctx: ToPkCtx) -> Option<ElementsSig> {
         (**self).lookup_sig(p, to_pk_ctx)
     }
 
@@ -251,7 +251,7 @@ impl<'a, ToPkCtx: Copy, Pk: MiniscriptKey + ToPublicKey<ToPkCtx>, S: Satisfier<T
         &self,
         pkh: &Pk::Hash,
         to_pk_ctx: ToPkCtx,
-    ) -> Option<(bitcoin::PublicKey, BitcoinSig)> {
+    ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
         (**self).lookup_pkh_sig(pkh, to_pk_ctx)
     }
 
@@ -288,7 +288,7 @@ macro_rules! impl_tuple_satisfier {
             Pk: MiniscriptKey + ToPublicKey<ToPkCtx>,
             $($ty: Satisfier<ToPkCtx, Pk>,)*
         {
-            fn lookup_sig(&self, key: &Pk, to_pk_ctx: ToPkCtx) -> Option<BitcoinSig> {
+            fn lookup_sig(&self, key: &Pk, to_pk_ctx: ToPkCtx) -> Option<ElementsSig> {
                 let &($(ref $ty,)*) = self;
                 $(
                     if let Some(result) = $ty.lookup_sig(key, to_pk_ctx) {
@@ -302,7 +302,7 @@ macro_rules! impl_tuple_satisfier {
                 &self,
                 key_hash: &Pk::Hash,
                 to_pk_ctx: ToPkCtx,
-            ) -> Option<(bitcoin::PublicKey, BitcoinSig)> {
+            ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
                 let &($(ref $ty,)*) = self;
                 $(
                     if let Some(result) = $ty.lookup_pkh_sig(key_hash, to_pk_ctx) {
