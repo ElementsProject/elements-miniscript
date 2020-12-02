@@ -12,6 +12,8 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
+use bitcoin;
+use elements;
 use elements::hashes::{hash160, sha256, Hash};
 
 use super::{stack, Error, Stack};

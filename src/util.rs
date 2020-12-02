@@ -1,5 +1,5 @@
-use elements::script;
 use elements::Script;
+use elements::{self, script};
 pub(crate) fn varint_len(n: usize) -> usize {
     elements::VarInt(n as u64).len()
 }

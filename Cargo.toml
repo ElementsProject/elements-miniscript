@@ -17,7 +17,11 @@ rand = ["bitcoin/rand"]
 
 [dependencies]
 bitcoin = "0.25"
-elements = {git = "https://github.com/sanket1729/rust-elements", branch = "segwit_sighash"}
+elements = {git = "https://github.com/sanket1729/rust-elements", rev = "9d76ae6c196edc3ead7df746334173af899b6519"}
+
+[dev-dependencies]
+serde_json = "<=1.0.44"
+ryu = "<1.0.5"
 
 [dependencies.serde]
 version = "1.0"

@@ -28,6 +28,7 @@ use std::str::{self, FromStr};
 use std::{collections::HashMap, sync::Arc};
 
 use bitcoin::util::bip32;
+use elements;
 use elements::secp256k1;
 use elements::Script;
 
@@ -680,6 +681,7 @@ mod tests {
     use super::checksum::desc_checksum;
     use super::DescriptorPublicKeyCtx;
     use super::DescriptorTrait;
+    use bitcoin;
     use bitcoin::hashes::hex::FromHex;
     use bitcoin::hashes::{hash160, sha256};
     use bitcoin::util::bip32;
@@ -692,10 +694,9 @@ mod tests {
         self,
         all::{OP_CLTV, OP_CSV},
     };
-    use elements::script;
     use elements::script::Instruction;
-    use elements::secp256k1;
-    use elements::Script;
+    use elements::{self, secp256k1};
+    use elements::{script, Script};
     use hex_script;
     use miniscript::satisfy::ElementsSig;
     use std::cmp;

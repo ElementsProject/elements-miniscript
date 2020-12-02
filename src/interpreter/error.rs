@@ -12,6 +12,7 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
+use bitcoin;
 use elements::hashes::hash160;
 use elements::secp256k1;
 use std::{error, fmt};

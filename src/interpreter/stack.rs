@@ -14,8 +14,9 @@
 
 //! Interpreter stack
 
+use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
-use elements::{opcodes, script};
+use elements::{self, opcodes, script};
 
 use {ElementsSig, NullCtx, ToPublicKey};
 

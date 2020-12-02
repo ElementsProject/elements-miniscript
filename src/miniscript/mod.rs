@@ -27,6 +27,7 @@
 use std::marker::PhantomData;
 use std::{fmt, str};
 
+use bitcoin;
 use elements::script;
 
 pub use self::context::{BareCtx, Legacy, Segwitv0};
@@ -404,6 +405,7 @@ mod tests {
     use DummyKey;
     use DummyKeyHash;
 
+    use bitcoin;
     use elements::hashes::{hash160, sha256, Hash};
     use elements::secp256k1;
     use std::str;
