@@ -18,6 +18,7 @@ extern crate bitcoin;
 extern crate elements;
 extern crate miniscript;
 
+use elements::confidential;
 use elements::encode::Decodable;
 use elements::secp256k1; // secp256k1 re-exported from rust-bitcoin
 use std::str::FromStr;
@@ -78,7 +79,7 @@ fn main() {
         0xe7, 0x87, 0x09, 0x5d, 0x07, 0x00,
     ];
     let transaction =
-        eleme::Transaction::consensus_decode(&mut &tx_bytes[..]).expect("decode transaction");
+        elements::Transaction::consensus_decode(&mut &tx_bytes[..]).expect("decode transaction");
 
     let spk_input_1 = elements::Script::from(vec![
         0xa9, 0x14, 0x92, 0x09, 0xa8, 0xf9, 0x0c, 0x58, 0x4b, 0xb5, 0x97, 0x4d, 0x58, 0x68, 0x72,
@@ -88,7 +89,7 @@ fn main() {
     let mut interpreter = miniscript::Interpreter::from_txdata(
         &spk_input_1,
         &transaction.input[0].script_sig,
-        &transaction.input[0].witness,
+        &transaction.input[0].witness.script_witness,
         0,
         0,
     )
@@ -127,7 +128,7 @@ fn main() {
     let mut interpreter = miniscript::Interpreter::from_txdata(
         &spk_input_1,
         &transaction.input[0].script_sig,
-        &transaction.input[0].witness,
+        &transaction.input[0].witness.script_witness,
         0,
         0,
     )
@@ -135,7 +136,8 @@ fn main() {
 
     // We can set the amount passed to `sighash_verify` to 0 because this is a legacy
     // transaction and so the amount won't actually be checked by the signature
-    let vfyfn = interpreter.sighash_verify(&secp, &transaction, 0, 0);
+    let vfyfn =
+        interpreter.sighash_verify(&secp, &transaction, 0, confidential::Value::Explicit(0));
     // Restrict to sighash_all just to demonstrate how to add additional filters
     // `&_` needed here because of https://github.com/rust-lang/rust/issues/79187
     let vfyfn = move |pk: &_, bitcoinsig: miniscript::BitcoinSig| {
@@ -160,14 +162,14 @@ fn main() {
     let mut interpreter = miniscript::Interpreter::from_txdata(
         &spk_input_1,
         &transaction.input[0].script_sig,
-        &transaction.input[0].witness,
+        &transaction.input[0].witness.script_witness,
         0,
         0,
     )
     .unwrap();
 
     let iter = interpreter.iter(|pk, (sig, sighashtype)| {
-        sighashtype == elemnets::SigHashType::All && secp.verify(&message, &sig, &pk.key).is_ok()
+        sighashtype == elements::SigHashType::All && secp.verify(&message, &sig, &pk.key).is_ok()
     });
     println!("\nExample three");
     for elem in iter {
