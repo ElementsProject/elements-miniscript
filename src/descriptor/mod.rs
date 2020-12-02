@@ -639,7 +639,7 @@ mod tests {
     use elements::script::Instruction;
     use elements::Script;
     use hex_script;
-    use miniscript::satisfy::BitcoinSig;
+    use miniscript::satisfy::ElementsSig;
     use std::cmp;
     use std::collections::HashMap;
     use std::str::FromStr;
@@ -949,7 +949,7 @@ mod tests {
         };
 
         impl Satisfier<bitcoin::PublicKey> for SimpleSat {
-            fn lookup_sig(&self, pk: &bitcoin::PublicKey) -> Option<BitcoinSig> {
+            fn lookup_sig(&self, pk: &bitcoin::PublicKey) -> Option<ElementsSig> {
                 if *pk == self.pk {
                     Some((self.sig, elements::SigHashType::All))
                 } else {

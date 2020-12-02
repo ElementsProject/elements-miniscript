@@ -27,7 +27,7 @@ use miniscript::context::NoChecks;
 use miniscript::ScriptContext;
 use Miniscript;
 use Terminal;
-use {BitcoinSig, Descriptor, ToPublicKey};
+use {Descriptor, ElementsSig, ToPublicKey};
 
 mod error;
 mod inner;
@@ -82,7 +82,7 @@ impl<'txin> Interpreter<'txin> {
     ///
     /// Running the iterator through will consume the internal stack of the
     /// `Iterpreter`, and it should not be used again after this.
-    pub fn iter<'iter, F: FnMut(&bitcoin::PublicKey, BitcoinSig) -> bool>(
+    pub fn iter<'iter, F: FnMut(&bitcoin::PublicKey, ElementsSig) -> bool>(
         &'iter mut self,
         verify_sig: F,
     ) -> Iter<'txin, 'iter, F> {
@@ -190,7 +190,7 @@ impl<'txin> Interpreter<'txin> {
         unsigned_tx: &'a elements::Transaction,
         input_idx: usize,
         amount: confidential::Value,
-    ) -> impl Fn(&bitcoin::PublicKey, BitcoinSig) -> bool + 'a {
+    ) -> impl Fn(&bitcoin::PublicKey, ElementsSig) -> bool + 'a {
         // Precompute all sighash types because the borrowck doesn't like us
         // pulling self into the closure
         let sighashes = [
@@ -317,7 +317,7 @@ struct NodeEvaluationState<'intp> {
 ///
 /// In case the script is actually dissatisfied, this may return several values
 /// before ultimately returning an error.
-pub struct Iter<'intp, 'txin: 'intp, F: FnMut(&bitcoin::PublicKey, BitcoinSig) -> bool> {
+pub struct Iter<'intp, 'txin: 'intp, F: FnMut(&bitcoin::PublicKey, ElementsSig) -> bool> {
     verify_sig: F,
     public_key: Option<&'intp bitcoin::PublicKey>,
     state: Vec<NodeEvaluationState<'intp>>,
@@ -331,7 +331,7 @@ pub struct Iter<'intp, 'txin: 'intp, F: FnMut(&bitcoin::PublicKey, BitcoinSig) -
 impl<'intp, 'txin: 'intp, F> Iterator for Iter<'intp, 'txin, F>
 where
     NoChecks: ScriptContext,
-    F: FnMut(&bitcoin::PublicKey, BitcoinSig) -> bool,
+    F: FnMut(&bitcoin::PublicKey, ElementsSig) -> bool,
 {
     type Item = Result<SatisfiedConstraint<'intp, 'txin>, Error>;
 
@@ -352,7 +352,7 @@ where
 impl<'intp, 'txin: 'intp, F> Iter<'intp, 'txin, F>
 where
     NoChecks: ScriptContext,
-    F: FnMut(&bitcoin::PublicKey, BitcoinSig) -> bool,
+    F: FnMut(&bitcoin::PublicKey, ElementsSig) -> bool,
 {
     /// Helper function to push a NodeEvaluationState on state stack
     fn push_evaluation_state(
@@ -760,7 +760,7 @@ fn verify_sersig<'txin, F>(
     sigser: &[u8],
 ) -> Result<secp256k1::Signature, Error>
 where
-    F: FnOnce(&bitcoin::PublicKey, BitcoinSig) -> bool,
+    F: FnOnce(&bitcoin::PublicKey, ElementsSig) -> bool,
 {
     if let Some((sighash_byte, sig)) = sigser.split_last() {
         let sighashtype = elements::SigHashType::from_u32(*sighash_byte as u32);
@@ -783,7 +783,7 @@ mod tests {
     use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
     use elements::secp256k1::{self, Secp256k1, VerifyOnly};
     use miniscript::context::NoChecks;
-    use BitcoinSig;
+    use ElementsSig;
     use Miniscript;
     use MiniscriptKey;
     use ToPublicKey;
@@ -837,7 +837,7 @@ mod tests {
             ms: &'elem Miniscript<bitcoin::PublicKey, NoChecks>,
         ) -> Iter<'elem, 'txin, F>
         where
-            F: FnMut(&bitcoin::PublicKey, BitcoinSig) -> bool,
+            F: FnMut(&bitcoin::PublicKey, ElementsSig) -> bool,
         {
             Iter {
                 verify_sig: verify_fn,

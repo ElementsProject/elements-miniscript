@@ -118,7 +118,7 @@ fn main() {
     // Attempt to satisfy at age 0, height 0
     let original_txin = tx.input[0].clone();
 
-    let mut sigs = HashMap::<bitcoin::PublicKey, miniscript::BitcoinSig>::new();
+    let mut sigs = HashMap::<bitcoin::PublicKey, miniscript::ElementsSig>::new();
 
     // Doesn't work with no signatures
     assert!(my_descriptor.satisfy(&mut tx.input[0], &sigs).is_err());
