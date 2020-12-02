@@ -16,7 +16,7 @@
 
 extern crate bitcoin;
 extern crate elements;
-extern crate miniscript;
+extern crate elements_miniscript as miniscript;
 
 use elements::confidential;
 use elements::encode::Decodable;

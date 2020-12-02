@@ -1,4 +1,4 @@
-extern crate miniscript;
+extern crate elements_miniscript as miniscript;
 extern crate regex;
 use miniscript::{policy, DummyKey};
 use regex::Regex;
