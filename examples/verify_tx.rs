@@ -94,7 +94,7 @@ fn main() {
     let vfyfn = interpreter.sighash_verify(&secp, &transaction, 0, amount);
     // Restrict to sighash_all just to demonstrate how to add additional filters
     // `&_` needed here because of https://github.com/rust-lang/rust/issues/79187
-    let vfyfn = move |pk: &_, bitcoinsig: miniscript::BitcoinSig| {
+    let vfyfn = move |pk: &_, bitcoinsig: miniscript::ElementsSig| {
         bitcoinsig.1 == elements::SigHashType::All && vfyfn(pk, bitcoinsig)
     };
 
