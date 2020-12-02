@@ -43,7 +43,7 @@ fn main() {
         .unwrap()
         .address(desc_ctx, &elements::AddressParams::ELEMENTS).unwrap();
     let expected = elements::Address::from_str(
-        "bc1qpq2cfgz5lktxzr5zqv7nrzz46hsvq3492ump9pz8rzcl8wqtwqcspx5y6a",
+        "ert1qpq2cfgz5lktxzr5zqv7nrzz46hsvq3492ump9pz8rzcl8wqtwqcs2yqnuv",
     )
     .unwrap();
     assert_eq!(addr_one, expected);
@@ -63,7 +63,7 @@ fn main() {
         .unwrap()
         .derive(bitcoin::util::bip32::ChildNumber::from_normal_idx(5).unwrap())
         .address(desc_ctx, &elements::AddressParams::ELEMENTS).unwrap();
-    let expected = elements::Address::from_str("325zcVBN5o2eqqqtGwPjmtDd8dJRyYP82s").unwrap();
+    let expected = elements::Address::from_str("XBkDY63XnRTz6BbwzJi3ifGhBwLTomEzkq").unwrap();
     assert_eq!(addr_one, expected);
     assert_eq!(addr_two, expected);
 }

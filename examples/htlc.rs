@@ -71,6 +71,6 @@ fn main() {
                 .address(NullCtx, &elements::AddressParams::ELEMENTS)
                 .unwrap()
         ),
-        "bc1qmpfcw7he9z5d9ftfe8qw699azmm2sr8fen903fs4plv007yx0t3qxfmqv5"
+        "ert1qmpfcw7he9z5d9ftfe8qw699azmm2sr8fen903fs4plv007yx0t3qdt0h29"
     );
 }
