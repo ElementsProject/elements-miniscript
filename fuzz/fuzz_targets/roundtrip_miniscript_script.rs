@@ -1,6 +1,6 @@
 extern crate miniscript;
 
-use miniscript::bitcoin::blockdata::script;
+use miniscript::elements::script;
 use miniscript::Miniscript;
 use miniscript::NullCtx;
 use miniscript::Segwitv0;
