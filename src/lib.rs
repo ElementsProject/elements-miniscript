@@ -41,13 +41,18 @@
 //!
 //! Miniscript also admits a more human-readable encoding.
 //!
+//! ## Elements Miniscript
+//!
+//! Elements Miniscript is a fork of miniscript for [elements](https://github.com/ElementsProject/elements) sidechain.
+//!
 //! ## Output Descriptors
 //!
 //! While spending policies in Bitcoin are entirely defined by Script; there
 //! are multiple ways of embedding these Scripts in transaction outputs; for
 //! example, P2SH or Segwit v0. These different embeddings are expressed by
 //! *Output Descriptors*, [which are described here](https://github.com/bitcoin/bitcoin/blob/master/doc/descriptors.md)
-//!
+//! Elements descriptors are extension of bitcoin Output descriptors with support
+//! for blinded descriptors(WIP)
 //! # Examples
 //!
 //! ## Deriving an address from a descriptor

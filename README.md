@@ -5,13 +5,9 @@
 *This crate uses "2015" edition and won't be ported over "2018" edition
 in the near future as this will change the MSRV to 1.31.*
 
-# Miniscript
+# Elements Miniscript
+This library is a fork of [rust-miniscript](https://github.com/rust-bitcoin/rust-miniscript) for elements.
 
-Library for handling [Miniscript](http://bitcoin.sipa.be/miniscript/),
-which is a subset of Bitcoin Script designed to support simple and general
-tooling. Miniscripts represent threshold circuits of spending conditions,
-and can therefore be easily visualized or serialized as human-readable
-strings.
 
 ## High-Level Features
 
@@ -27,12 +23,12 @@ public key types
 * Encoding and decoding Miniscript as Bitcoin Script, given key types that
 are convertible to `bitcoin::PublicKey`
 * Determining satisfiability, and optimal witnesses, for a given descriptor;
-completing an unsigned `bitcoin::TxIn` with appropriate data
+completing an unsigned `elements::TxIn` with appropriate data
 * Determining the specific keys, hash preimages and timelocks used to spend
 coins in a given Bitcoin transaction
 
 More information can be found in [the documentation](https://docs.rs/miniscript)
-or in [the `examples/` directory](https://github.com/apoelstra/rust-miniscript/tree/master/examples)
+or in [the `examples/` directory](https://github.com/sanket1729/elements-miniscript/tree/master/examples)
 
 ## Contributing
 Contributions are generally welcome. If you intend to make larger changes please
