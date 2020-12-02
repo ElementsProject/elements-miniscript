@@ -12,6 +12,8 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
+use bitcoin;
+use elements;
 use elements::hashes::{hash160, sha256, Hash};
 
 use super::{stack, Error, Stack};
@@ -290,7 +292,7 @@ mod tests {
     use elements::hashes::hex::FromHex;
     use elements::hashes::{hash160, sha256, Hash};
     use elements::script;
-    use elements::{self, OutPoint, Script, Transaction, TxIn, TxOut};
+    use elements::{self, Script};
     use std::str::FromStr;
 
     struct KeyTestData {

@@ -1159,6 +1159,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bitcoin;
     use elements::SigHashType;
     use elements::{hashes, secp256k1};
     use elements::{opcodes, script};
