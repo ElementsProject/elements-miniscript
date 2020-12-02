@@ -41,7 +41,7 @@ fn main() {
         .unwrap()
         .address(&elements::AddressParams::ELEMENTS).unwrap();
     let expected = elements::Address::from_str(
-        "bc1qpq2cfgz5lktxzr5zqv7nrzz46hsvq3492ump9pz8rzcl8wqtwqcspx5y6a",
+        "ert1qpq2cfgz5lktxzr5zqv7nrzz46hsvq3492ump9pz8rzcl8wqtwqcs2yqnuv",
     )
     .unwrap();
     assert_eq!(addr_one, expected);
@@ -65,7 +65,7 @@ fn main() {
         .translate_pk2(|xpk| xpk.derive_public_key(&secp_ctx))
         .unwrap()
         .address( &elements::AddressParams::ELEMENTS).unwrap();
-    let expected = elements::Address::from_str("325zcVBN5o2eqqqtGwPjmtDd8dJRyYP82s").unwrap();
+    let expected = elements::Address::from_str("XBkDY63XnRTz6BbwzJi3ifGhBwLTomEzkq").unwrap();
     assert_eq!(addr_one, expected);
     assert_eq!(addr_two, expected);
 }
