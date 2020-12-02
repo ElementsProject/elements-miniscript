@@ -29,8 +29,9 @@ use std::{
     str::{self, FromStr},
 };
 
+use elements;
 use elements::secp256k1;
-use elements::{self, Script};
+use elements::Script;
 
 use self::checksum::verify_checksum;
 use expression;
@@ -552,10 +553,11 @@ serde_string_impl_pk!(Descriptor, "a script descriptor");
 mod tests {
     use super::checksum::desc_checksum;
     use super::DescriptorTrait;
+    use bitcoin;
     use bitcoin::hashes::hex::FromHex;
     use bitcoin::hashes::{hash160, sha256};
     use bitcoin::util::bip32;
-    use bitcoin::{self, secp256k1, PublicKey};
+    use bitcoin::PublicKey;
     use descriptor::key::Wildcard;
     use descriptor::{
         DescriptorPublicKey, DescriptorSecretKey, DescriptorSinglePub, DescriptorXKey,
@@ -565,9 +567,9 @@ mod tests {
         self,
         all::{OP_CLTV, OP_CSV},
     };
-    use elements::script;
     use elements::script::Instruction;
-    use elements::Script;
+    use elements::{self, secp256k1};
+    use elements::{script, Script};
     use hex_script;
     use miniscript::satisfy::ElementsSig;
     use std::cmp;
