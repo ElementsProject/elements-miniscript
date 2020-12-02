@@ -1,4 +1,4 @@
-extern crate miniscript;
+extern crate elements_miniscript as miniscript;
 
 use miniscript::Segwitv0;
 use miniscript::{policy, DummyKey, Miniscript};

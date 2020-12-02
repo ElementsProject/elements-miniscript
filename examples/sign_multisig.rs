@@ -16,7 +16,7 @@
 
 extern crate bitcoin;
 extern crate elements;
-extern crate miniscript;
+extern crate elements_miniscript as miniscript;
 
 use elements::secp256k1; // secp256k1 re-exported from rust-bitcoin
 use miniscript::{DescriptorTrait, NullCtx};

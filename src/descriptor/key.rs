@@ -467,6 +467,7 @@ impl<K: InnerXKey> DescriptorXKey<K> {
     /// ## Examples
     ///
     /// ```
+    /// # extern crate elements_miniscript as miniscript;
     /// # use std::str::FromStr;
     /// # fn body() -> Result<(), Box<dyn std::error::Error>> {
     /// use miniscript::bitcoin::util::bip32;
