@@ -117,7 +117,7 @@ mod macros;
 
 pub mod descriptor;
 pub mod expression;
-// pub mod interpreter;
+pub mod interpreter;
 pub mod miniscript;
 pub mod policy;
 
@@ -130,7 +130,7 @@ use elements::hashes::{hash160, sha256, Hash};
 use elements::{opcodes, script};
 
 pub use descriptor::{Descriptor, DescriptorPublicKey, DescriptorPublicKeyCtx, DescriptorTrait};
-// pub use interpreter::Interpreter;
+pub use interpreter::Interpreter;
 pub use miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0};
 pub use miniscript::decode::Terminal;
 pub use miniscript::satisfy::{BitcoinSig, Satisfier};
