@@ -18,6 +18,7 @@
 
 use std::{fmt, str::FromStr};
 
+use bitcoin::secp256k1;
 use elements::{self, Script};
 
 use expression::{self, FromTree};
@@ -28,7 +29,7 @@ use {Error, Miniscript, MiniscriptKey, Satisfier, Segwitv0, ToPublicKey, Transla
 
 use super::{
     checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait, SortedMultiVec,
+    DescriptorTrait, ElementsTrait, SortedMultiVec,
 };
 /// A Segwitv0 wsh descriptor
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
@@ -138,6 +139,24 @@ where
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         Wsh::<Pk>::from_tree(&top)
+    }
+}
+
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wsh<Pk> {
+    fn blind_addr(
+        &self,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        match self.inner {
+            WshInner::SortedMulti(ref smv) => {
+                Ok(elements::Address::p2wsh(&smv.encode(), blinder, params))
+            }
+            WshInner::Ms(ref ms) => Ok(elements::Address::p2wsh(&ms.encode(), blinder, params)),
+        }
     }
 }
 
@@ -332,6 +351,23 @@ where
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         Self::from_tree(&top)
+    }
+}
+
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wpkh<Pk> {
+    fn blind_addr(
+        &self,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        Ok(elements::Address::p2wpkh(
+            &self.pk.to_public_key(),
+            blinder,
+            params,
+        ))
     }
 }
 

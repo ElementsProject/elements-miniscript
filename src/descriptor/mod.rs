@@ -40,11 +40,13 @@ use miniscript::{Legacy, Miniscript, Segwitv0};
 use {BareCtx, Error, MiniscriptKey, Satisfier, ToPublicKey, TranslatePk, TranslatePk2};
 
 mod bare;
+mod blinded;
 mod segwitv0;
 mod sh;
 mod sortedmulti;
 // Descriptor Exports
 pub use self::bare::{Bare, Pkh};
+pub use self::blinded::Blinded;
 pub use self::segwitv0::{Wpkh, Wsh};
 pub use self::sh::Sh;
 pub use self::sortedmulti::SortedMultiVec;
@@ -63,13 +65,27 @@ pub use self::key::{
 /// public key from the descriptor.
 pub type KeyMap = HashMap<DescriptorPublicKey, DescriptorSecretKey>;
 
+/// Elements specific additional features that
+/// we want on DescriptorTrait from upstream.
+// Maintained as a separate trait to avoid conflicts.
+pub trait ElementsTrait<Pk: MiniscriptKey> {
+    /// Compute a blinded address
+    fn blind_addr(
+        &self,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey;
+}
+
 /// A general trait for Bitcoin descriptor.
 /// Offers function for witness cost estimation, script pubkey creation
 /// satisfaction using the [Satisfier] trait.
 // Unfortunately, the translation function cannot be added to trait
 // because of traits cannot know underlying generic of Self.
 // Thus, we must implement additional trait for translate function
-pub trait DescriptorTrait<Pk: MiniscriptKey> {
+pub trait DescriptorTrait<Pk: MiniscriptKey>: ElementsTrait<Pk> {
     /// Whether the descriptor is safe
     /// Checks whether all the spend paths in the descriptor are possible
     /// on the bitcoin network under the current standardness and consensus rules
@@ -284,6 +300,29 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Descriptor<P> {
             }
         };
         Ok(desc)
+    }
+}
+
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Descriptor<Pk>
+where
+    <Pk as FromStr>::Err: ToString,
+    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
+{
+    fn blind_addr(
+        &self,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        match *self {
+            Descriptor::Bare(ref bare) => bare.blind_addr(blinder, params),
+            Descriptor::Pkh(ref pkh) => pkh.blind_addr(blinder, params),
+            Descriptor::Wpkh(ref wpkh) => wpkh.blind_addr(blinder, params),
+            Descriptor::Wsh(ref wsh) => wsh.blind_addr(blinder, params),
+            Descriptor::Sh(ref sh) => sh.blind_addr(blinder, params),
+        }
     }
 }
 

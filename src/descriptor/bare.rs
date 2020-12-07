@@ -20,6 +20,7 @@
 
 use std::{fmt, str::FromStr};
 
+use bitcoin::secp256k1;
 use elements::{self, script, Script};
 
 use expression::{self, FromTree};
@@ -30,7 +31,7 @@ use {BareCtx, Error, Miniscript, MiniscriptKey, Satisfier, ToPublicKey, Translat
 
 use super::{
     checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait,
+    DescriptorTrait, ElementsTrait,
 };
 
 /// Create a Bare Descriptor. That is descriptor that is
@@ -101,6 +102,18 @@ where
     }
 }
 
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Bare<Pk> {
+    fn blind_addr(
+        &self,
+        _blinder: Option<secp256k1::PublicKey>,
+        _params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        Err(Error::BareDescriptorAddr)
+    }
+}
 impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Bare<Pk>
 where
     <Pk as FromStr>::Err: ToString,
@@ -255,6 +268,22 @@ where
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         Self::from_tree(&top)
+    }
+}
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Pkh<Pk> {
+    fn blind_addr(
+        &self,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        Ok(elements::Address::p2pkh(
+            &self.pk.to_public_key(),
+            blinder,
+            params,
+        ))
     }
 }
 
