@@ -18,6 +18,7 @@
 
 use std::{fmt, str::FromStr};
 
+use bitcoin::secp256k1;
 use elements::{self, Script};
 
 use expression::{self, FromTree};
@@ -31,7 +32,7 @@ use {
 
 use super::{
     checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait, SortedMultiVec,
+    DescriptorTrait, ElementsTrait, SortedMultiVec,
 };
 /// A Segwitv0 wsh descriptor
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
@@ -158,7 +159,31 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wsh<Pk> {
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wsh<Pk> {
+    fn blind_addr(
+        &self,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        match self.inner {
+            WshInner::SortedMulti(ref smv) => {
+                Ok(elements::Address::p2wsh(&smv.encode(), blinder, params))
+            }
+            WshInner::Ms(ref ms) => Ok(elements::Address::p2wsh(&ms.encode(), blinder, params)),
+        }
+    }
+}
+
+impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wsh<Pk>
+where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
+    <Pk as FromStr>::Err: ToString,
+    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
+{
     fn sanity_check(&self) -> Result<(), Error> {
         match self.inner {
             WshInner::SortedMulti(ref smv) => smv.sanity_check()?,
@@ -375,7 +400,30 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wpkh<Pk> {
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wpkh<Pk> {
+    fn blind_addr(
+        &self,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        Ok(elements::Address::p2wpkh(
+            &self.pk.to_public_key(),
+            blinder,
+            params,
+        ))
+    }
+}
+
+impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wpkh<Pk>
+where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
+    <Pk as FromStr>::Err: ToString,
+    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
+{
     fn sanity_check(&self) -> Result<(), Error> {
         if self.pk.is_uncompressed() {
             Err(Error::ContextError(ScriptContextError::CompressedOnly))

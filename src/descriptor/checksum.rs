@@ -99,6 +99,13 @@ pub(super) fn verify_checksum(s: &str) -> Result<&str, Error> {
     }
     Ok(desc_str)
 }
+
+/// Helper function to strip checksum without verifying
+#[allow(dead_code)]
+pub(super) fn strip_checksum(s: &str) -> &str {
+    let mut parts = s.splitn(2, '#');
+    parts.next().unwrap()
+}
 #[cfg(test)]
 mod test {
     use super::*;
