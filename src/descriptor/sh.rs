@@ -20,6 +20,7 @@
 
 use std::{fmt, str::FromStr};
 
+use bitcoin::secp256k1;
 use elements::{self, script, Script};
 
 use expression::{self, FromTree};
@@ -31,7 +32,7 @@ use {Error, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0, ToPublicKey}
 
 use super::{
     checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait, PkTranslate, SortedMultiVec, Wpkh, Wsh,
+    DescriptorTrait, ElementsTrait, PkTranslate, SortedMultiVec, Wpkh, Wsh,
 };
 
 /// A Legacy p2sh Descriptor
@@ -178,6 +179,45 @@ impl<Pk: MiniscriptKey> Sh<Pk> {
         Ok(Self {
             inner: ShInner::Wpkh(Wpkh::new(pk)?),
         })
+    }
+}
+
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Sh<Pk>
+where
+    <Pk as FromStr>::Err: ToString,
+    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
+{
+    fn blind_addr<ToPkCtx: Copy>(
+        &self,
+        to_pk_ctx: ToPkCtx,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Option<elements::Address>
+    where
+        Pk: ToPublicKey<ToPkCtx>,
+    {
+        match self.inner {
+            ShInner::Wsh(ref wsh) => Some(elements::Address::p2sh(
+                &wsh.script_pubkey(to_pk_ctx),
+                blinder,
+                params,
+            )),
+            ShInner::Wpkh(ref wpkh) => Some(elements::Address::p2sh(
+                &wpkh.script_pubkey(to_pk_ctx),
+                blinder,
+                params,
+            )),
+            ShInner::SortedMulti(ref smv) => Some(elements::Address::p2sh(
+                &smv.encode(to_pk_ctx),
+                blinder,
+                params,
+            )),
+            ShInner::Ms(ref ms) => Some(elements::Address::p2sh(
+                &ms.encode(to_pk_ctx),
+                blinder,
+                params,
+            )),
+        }
     }
 }
 

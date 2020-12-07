@@ -23,9 +23,12 @@
 //! these with BIP32 paths, pay-to-contract instructions, etc.
 //!
 
+use std::collections::HashMap;
 use std::fmt::{self, Debug, Display};
-use std::str::{self, FromStr};
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    str::{self, FromStr},
+    sync::Arc,
+};
 
 use bitcoin::util::bip32;
 use elements;
@@ -44,11 +47,13 @@ use Satisfier;
 use ToPublicKey;
 
 mod bare;
+mod blinded;
 mod segwitv0;
 mod sh;
 mod sortedmulti;
 //
 pub use self::bare::{Bare, Pkh};
+pub use self::blinded::Blinded;
 pub use self::segwitv0::{Wpkh, Wsh};
 pub use self::sh::Sh;
 pub use self::sortedmulti::SortedMultiVec;
@@ -68,6 +73,21 @@ pub use self::key::{
 /// public key from the descriptor.
 pub type KeyMap = HashMap<DescriptorPublicKey, DescriptorSecretKey>;
 
+/// Elements specific additional features that
+/// we want on DescriptorTrait from upstream.
+// Maintained as a separate trait to avoid conflicts.
+pub trait ElementsTrait<Pk: MiniscriptKey> {
+    /// Compute a blinded address
+    fn blind_addr<ToPkCtx: Copy>(
+        &self,
+        to_pk_ctx: ToPkCtx,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Option<elements::Address>
+    where
+        Pk: ToPublicKey<ToPkCtx>;
+}
+
 /// A general trait for Bitcoin descriptor.
 /// It should also support FromStr, fmt::Display and should be liftable
 /// to bitcoin Semantic Policy.
@@ -77,7 +97,8 @@ pub type KeyMap = HashMap<DescriptorPublicKey, DescriptorSecretKey>;
 // because of traits cannot know underlying generic of Self.
 // Thus, we must implement additional trait for translate function
 pub trait DescriptorTrait<Pk: MiniscriptKey>:
-    FromStr + Display + Debug + Clone + Eq + PartialEq + PartialOrd + Ord + Liftable<Pk>
+// Ord internally enforces Eq + PartialEq + PartialOrd bounds. 
+    FromStr + Debug + Display + Clone + Ord + Liftable<Pk> + ElementsTrait<Pk>
 {
     /// Whether the descriptor is safe
     /// Checks whether all the spend paths in the descriptor are possible
@@ -364,6 +385,30 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> PkTranslate<P, Q> for Descriptor<P> {
             }
         };
         Ok(desc)
+    }
+}
+
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Descriptor<Pk>
+where
+    <Pk as FromStr>::Err: ToString,
+    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
+{
+    fn blind_addr<ToPkCtx: Copy>(
+        &self,
+        to_pk_ctx: ToPkCtx,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Option<elements::Address>
+    where
+        Pk: ToPublicKey<ToPkCtx>,
+    {
+        match *self {
+            Descriptor::Bare(ref bare) => bare.blind_addr(to_pk_ctx, blinder, params),
+            Descriptor::Pkh(ref pkh) => pkh.blind_addr(to_pk_ctx, blinder, params),
+            Descriptor::Wpkh(ref wpkh) => wpkh.blind_addr(to_pk_ctx, blinder, params),
+            Descriptor::Wsh(ref wsh) => wsh.blind_addr(to_pk_ctx, blinder, params),
+            Descriptor::Sh(ref sh) => sh.blind_addr(to_pk_ctx, blinder, params),
+        }
     }
 }
 

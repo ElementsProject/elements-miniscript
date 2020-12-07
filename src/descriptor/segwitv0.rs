@@ -18,6 +18,7 @@
 
 use std::{fmt, str::FromStr};
 
+use bitcoin::secp256k1;
 use elements::{self, Script};
 
 use expression::{self, FromTree};
@@ -28,7 +29,7 @@ use {Error, Miniscript, MiniscriptKey, Satisfier, Segwitv0, ToPublicKey};
 
 use super::{
     checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait, PkTranslate, SortedMultiVec,
+    DescriptorTrait, ElementsTrait, PkTranslate, SortedMultiVec,
 };
 /// A Segwitv0 wsh descriptor
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
@@ -138,6 +139,31 @@ where
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         Wsh::<Pk>::from_tree(&top)
+    }
+}
+
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wsh<Pk> {
+    fn blind_addr<ToPkCtx: Copy>(
+        &self,
+        to_pk_ctx: ToPkCtx,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Option<elements::Address>
+    where
+        Pk: ToPublicKey<ToPkCtx>,
+    {
+        match self.inner {
+            WshInner::SortedMulti(ref smv) => Some(elements::Address::p2wsh(
+                &smv.encode(to_pk_ctx),
+                blinder,
+                params,
+            )),
+            WshInner::Ms(ref ms) => Some(elements::Address::p2wsh(
+                &ms.encode(to_pk_ctx),
+                blinder,
+                params,
+            )),
+        }
     }
 }
 
@@ -349,6 +375,24 @@ where
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         Self::from_tree(&top)
+    }
+}
+
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wpkh<Pk> {
+    fn blind_addr<ToPkCtx: Copy>(
+        &self,
+        to_pk_ctx: ToPkCtx,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Option<elements::Address>
+    where
+        Pk: ToPublicKey<ToPkCtx>,
+    {
+        Some(elements::Address::p2wpkh(
+            &self.pk.to_public_key(to_pk_ctx),
+            blinder,
+            params,
+        ))
     }
 }
 
