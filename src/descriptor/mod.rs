@@ -775,6 +775,8 @@ mod tests {
         ); //issue 202
 
         StdDescriptor::from_str(TEST_PK).unwrap();
+        // fuzzer
+        StdDescriptor::from_str("slip77").unwrap_err();
 
         let uncompressed_pk =
         "0414fc03b8df87cd7b872996810db8458d61da8448e531569c8517b469a119d267be5645686309c6e6736dbd93940707cc9143d3cf29f1b877ff340e2cb2d259cf";

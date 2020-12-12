@@ -598,6 +598,8 @@ mod tests {
         assert!(MsStr::from_str("pk(slip7(k))").is_err());
         // should err on multi args to pk
         assert!(MsStr::from_str("pk(musig(a,b),musig(c,d))").is_err());
+        assert!(MsStr::from_str("musig").is_err());
+        assert!(MsStr::from_str("slip77").is_err());
     }
     #[test]
     fn basic() {
