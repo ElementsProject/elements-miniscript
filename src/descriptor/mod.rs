@@ -29,6 +29,9 @@ use std::{
     str::{self, FromStr},
 };
 
+// pub mod pegin;
+
+// use bitcoin;
 use elements;
 use elements::secp256k1;
 use elements::Script;
