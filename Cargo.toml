@@ -18,6 +18,7 @@ rand = ["bitcoin/rand"]
 [dependencies]
 bitcoin = "0.25"
 elements = {git = "https://github.com/sanket1729/rust-elements", rev = "9d76ae6c196edc3ead7df746334173af899b6519"}
+miniscript = {git = "https://github.com/sanket1729/rust-miniscript", rev = "f0d38d602d9c4723ab1c47a0a8542da08505da89"}
 
 [dev-dependencies]
 serde_json = "<=1.0.44"

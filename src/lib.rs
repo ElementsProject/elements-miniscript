@@ -117,6 +117,21 @@ pub extern crate serde;
 #[cfg(all(test, feature = "unstable"))]
 extern crate test;
 
+// Miniscript imports
+// It can be confusing to code when we have two miniscript libraries
+// As a rule, only import the library here and pub use all the required
+// items. Should help in faster code development in the long run
+extern crate miniscript as bitcoin_miniscript;
+// pub(crate) use bitcoin_miniscript::Descriptor as BtcDescriptor;
+// pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
+// pub(crate) use bitcoin_miniscript::Descriptor as BtcDescriptor;
+// pub(crate) use bitcoin_miniscript::Satisfier as BtcSatisfier;
+// re-export imports
+pub use bitcoin_miniscript::MiniscriptKey;
+pub use bitcoin_miniscript::ToPublicKey;
+pub use bitcoin_miniscript::{DummyKey, DummyKeyHash, NullCtx};
+// End imports
+
 #[macro_use]
 mod macros;
 
@@ -128,10 +143,9 @@ pub mod policy;
 
 mod util;
 
-use std::str::FromStr;
-use std::{error, fmt, hash, str};
+use std::{error, fmt, str};
 
-use elements::hashes::{hash160, sha256, Hash};
+use elements::hashes::sha256;
 use elements::{opcodes, script};
 
 pub use descriptor::{Descriptor, DescriptorPublicKey, DescriptorPublicKeyCtx, DescriptorTrait};
@@ -140,170 +154,6 @@ pub use miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0};
 pub use miniscript::decode::Terminal;
 pub use miniscript::satisfy::{ElementsSig, Satisfier};
 pub use miniscript::Miniscript;
-
-///Public key trait which can be converted to Hash type
-pub trait MiniscriptKey:
-    Clone + Eq + Ord + str::FromStr + fmt::Debug + fmt::Display + hash::Hash
-{
-    /// Check if the publicKey is uncompressed. The default
-    /// implementation returns false
-    fn is_uncompressed(&self) -> bool {
-        false
-    }
-    /// The associated Hash type with the publicKey
-    type Hash: Clone + Eq + Ord + str::FromStr + fmt::Display + fmt::Debug + hash::Hash;
-
-    /// Converts an object to PublicHash
-    fn to_pubkeyhash(&self) -> Self::Hash;
-
-    /// Computes the size of a public key when serialized in a script,
-    /// including the length bytes
-    fn serialized_len(&self) -> usize {
-        if self.is_uncompressed() {
-            66
-        } else {
-            34
-        }
-    }
-}
-
-impl MiniscriptKey for bitcoin::PublicKey {
-    /// `is_uncompressed` returns true only for
-    /// bitcoin::Publickey type if the underlying key is uncompressed.
-    fn is_uncompressed(&self) -> bool {
-        !self.compressed
-    }
-
-    type Hash = hash160::Hash;
-
-    fn to_pubkeyhash(&self) -> Self::Hash {
-        let mut engine = hash160::Hash::engine();
-        self.write_into(&mut engine);
-        hash160::Hash::from_engine(engine)
-    }
-}
-
-impl MiniscriptKey for String {
-    type Hash = String;
-
-    fn to_pubkeyhash(&self) -> Self::Hash {
-        format!("{}", &self)
-    }
-}
-
-/// Trait describing public key types which can be converted to bitcoin pubkeys
-/// The trait relies on Copy trait because in all practical usecases `ToPkCtx`
-/// should contain references to objects which should be cheap to `Copy`.
-// Why is this a generic instead of associated type?
-// We would like to support implementation of `ToPublicKey` for both
-// secp verification_only and secp_all. But as of rust 1.29(MSRV), the
-// feature for associated traits is unstable.
-pub trait ToPublicKey<ToPkCtx: Copy>: MiniscriptKey {
-    /// Converts an object to a public key
-    /// C represents additional context information that maybe
-    /// required for deriving a bitcoin::PublicKey from MiniscriptKey
-    /// You may require secp context for crypto operations
-    /// or additional information for substituting the wildcard in
-    /// extended pubkeys
-    fn to_public_key(&self, to_pk_ctx: ToPkCtx) -> bitcoin::PublicKey;
-
-    /// Converts a hashed version of the public key to a `hash160` hash.
-    ///
-    /// This method must be consistent with `to_public_key`, in the sense
-    /// that calling `MiniscriptKey::to_pubkeyhash` followed by this function
-    /// should give the same result as calling `to_public_key` and hashing
-    /// the result directly.
-    fn hash_to_hash160(hash: &<Self as MiniscriptKey>::Hash, to_pk_ctx: ToPkCtx) -> hash160::Hash;
-}
-
-/// Dummy Context for impl for ToPublicKey for bitcoin::PublicKey
-#[derive(Debug, Clone, Copy)]
-pub struct NullCtx;
-
-impl ToPublicKey<NullCtx> for bitcoin::PublicKey {
-    fn to_public_key(&self, _ctx: NullCtx) -> bitcoin::PublicKey {
-        *self
-    }
-
-    fn hash_to_hash160(hash: &hash160::Hash, _ctx: NullCtx) -> hash160::Hash {
-        *hash
-    }
-}
-
-/// Dummy key which de/serializes to the empty string; useful sometimes for testing
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
-pub struct DummyKey;
-
-impl str::FromStr for DummyKey {
-    type Err = &'static str;
-    fn from_str(x: &str) -> Result<DummyKey, &'static str> {
-        if x.is_empty() {
-            Ok(DummyKey)
-        } else {
-            Err("non empty dummy key")
-        }
-    }
-}
-
-impl MiniscriptKey for DummyKey {
-    type Hash = DummyKeyHash;
-
-    fn to_pubkeyhash(&self) -> Self::Hash {
-        DummyKeyHash
-    }
-}
-
-impl hash::Hash for DummyKey {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        "DummyKey".hash(state);
-    }
-}
-
-impl fmt::Display for DummyKey {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("")
-    }
-}
-
-impl ToPublicKey<NullCtx> for DummyKey {
-    fn to_public_key(&self, _ctx: NullCtx) -> bitcoin::PublicKey {
-        bitcoin::PublicKey::from_str(
-            "0250863ad64a87ae8a2fe83c1af1a8403cb53f53e486d8511dad8a04887e5b2352",
-        )
-        .unwrap()
-    }
-
-    fn hash_to_hash160(_: &DummyKeyHash, _ctx: NullCtx) -> hash160::Hash {
-        hash160::Hash::from_str("f54a5851e9372b87810a8e60cdd2e7cfd80b6e31").unwrap()
-    }
-}
-
-/// Dummy keyhash which de/serializes to the empty string; useful sometimes for testing
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
-pub struct DummyKeyHash;
-
-impl str::FromStr for DummyKeyHash {
-    type Err = &'static str;
-    fn from_str(x: &str) -> Result<DummyKeyHash, &'static str> {
-        if x.is_empty() {
-            Ok(DummyKeyHash)
-        } else {
-            Err("non empty dummy key")
-        }
-    }
-}
-
-impl fmt::Display for DummyKeyHash {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("")
-    }
-}
-
-impl hash::Hash for DummyKeyHash {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        "DummyKeyHash".hash(state);
-    }
-}
 
 /// Miniscript
 

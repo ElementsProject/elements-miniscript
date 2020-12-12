@@ -30,6 +30,9 @@ use std::{
     sync::Arc,
 };
 
+// pub mod pegin;
+
+// use bitcoin;
 use bitcoin::util::bip32;
 use elements;
 use elements::secp256k1;
