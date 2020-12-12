@@ -29,6 +29,9 @@ use std::{
     str::{self, FromStr},
 };
 
+// pub mod pegin;
+
+// use bitcoin;
 use elements;
 use elements::secp256k1;
 use elements::Script;
@@ -43,11 +46,13 @@ use {
 };
 
 mod bare;
+mod blinded;
 mod segwitv0;
 mod sh;
 mod sortedmulti;
 // Descriptor Exports
 pub use self::bare::{Bare, Pkh};
+pub use self::blinded::Blinded;
 pub use self::segwitv0::{Wpkh, Wsh, WshInner};
 pub use self::sh::{Sh, ShInner};
 pub use self::sortedmulti::SortedMultiVec;

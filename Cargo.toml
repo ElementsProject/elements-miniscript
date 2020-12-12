@@ -18,6 +18,7 @@ rand = ["bitcoin/rand"]
 [dependencies]
 bitcoin = "0.26"
 elements = "0.16"
+miniscript = "5.1.0"
 
 [dev-dependencies]
 serde_json = "<=1.0.44"
