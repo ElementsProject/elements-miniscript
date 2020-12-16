@@ -52,9 +52,11 @@ use ToPublicKey;
 
 mod bare;
 mod segwitv0;
+mod sh;
 //
 pub use self::bare::{Bare, Pkh};
 pub use self::segwitv0::{Wpkh, Wsh};
+pub use self::sh::Sh;
 //
 mod checksum;
 mod key;
