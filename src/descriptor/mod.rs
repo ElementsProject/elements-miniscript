@@ -47,7 +47,6 @@ pub use self::bare::{Bare, Pkh};
 pub use self::segwitv0::{Wpkh, Wsh};
 pub use self::sh::Sh;
 pub use self::sortedmulti::SortedMultiVec;
-
 mod checksum;
 mod key;
 pub use self::key::{
