@@ -30,7 +30,8 @@ use std::{
     sync::Arc,
 };
 
-// pub mod pegin;
+#[allow(unused_imports)]
+pub mod pegin;
 
 // use bitcoin;
 use bitcoin::util::bip32;

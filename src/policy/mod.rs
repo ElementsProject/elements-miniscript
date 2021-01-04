@@ -28,6 +28,8 @@ pub mod compiler;
 pub mod concrete;
 pub mod semantic;
 
+use BtcPolicy;
+
 use descriptor::Descriptor;
 use miniscript::{Miniscript, ScriptContext};
 use Terminal;
@@ -222,6 +224,28 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Concrete<Pk> {
         }
         .normalized();
         Ok(ret)
+    }
+}
+
+// Implement lifting from bitcoin policy to elements one
+impl<Pk: MiniscriptKey> Liftable<Pk> for BtcPolicy<Pk> {
+    fn lift(&self) -> Result<Semantic<Pk>, Error> {
+        match *self {
+            BtcPolicy::Unsatisfiable => Ok(Semantic::Unsatisfiable),
+            BtcPolicy::Trivial => Ok(Semantic::Trivial),
+            BtcPolicy::KeyHash(ref pkh) => Ok(Semantic::KeyHash(pkh.clone())),
+            BtcPolicy::Sha256(ref h) => Ok(Semantic::Sha256(h.clone())),
+            BtcPolicy::Hash256(ref h) => Ok(Semantic::Hash256(h.clone())),
+            BtcPolicy::Ripemd160(ref h) => Ok(Semantic::Ripemd160(h.clone())),
+            BtcPolicy::Hash160(ref h) => Ok(Semantic::Hash160(h.clone())),
+            BtcPolicy::After(n) => Ok(Semantic::After(n)),
+            BtcPolicy::Older(n) => Ok(Semantic::Older(n)),
+            BtcPolicy::Threshold(k, ref subs) => {
+                let new_subs: Result<Vec<Semantic<Pk>>, _> =
+                    subs.iter().map(|sub| Liftable::lift(sub)).collect();
+                Ok(Semantic::Threshold(k, new_subs?))
+            }
+        }
     }
 }
 
