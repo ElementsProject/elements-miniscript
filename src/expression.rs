@@ -15,7 +15,7 @@
 //! # Function-like Expression Language
 //!
 
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 use errstr;
 use Error;
@@ -37,6 +37,15 @@ pub trait FromTree: Sized {
     fn from_tree(top: &Tree) -> Result<Self, Error>;
 }
 
+impl<'a> fmt::Display for Tree<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "({}", self.name)?;
+        for arg in &self.args {
+            write!(f, ",{}", arg)?;
+        }
+        write!(f, ")")
+    }
+}
 impl<'a> Tree<'a> {
     fn from_slice(sl: &'a str) -> Result<(Tree<'a>, &'a str), Error> {
         Self::from_slice_helper(sl, 0u32)

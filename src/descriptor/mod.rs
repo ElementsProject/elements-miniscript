@@ -29,7 +29,8 @@ use std::{
     str::{self, FromStr},
 };
 
-// pub mod pegin;
+#[allow(unused_imports)]
+pub mod pegin;
 
 // use bitcoin;
 use elements;
