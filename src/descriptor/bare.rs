@@ -34,7 +34,7 @@ use {
 
 use super::{
     checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait, ElementsTrait,
+    DescriptorTrait, ElementsTrait, ELMTS_STR,
 };
 
 /// Create a Bare Descriptor. That is descriptor that is
@@ -66,13 +66,13 @@ impl<Pk: MiniscriptKey> Bare<Pk> {
 
 impl<Pk: MiniscriptKey> fmt::Debug for Bare<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.ms)
+        write!(f, "{}{:?}", ELMTS_STR, self.ms)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Bare<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let desc = format!("{}", self.ms);
+        let desc = format!("{}{}", ELMTS_STR, self.ms);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
     }
@@ -92,9 +92,20 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        let sub = Miniscript::<Pk, BareCtx>::from_tree(&top)?;
-        BareCtx::top_level_checks(&sub)?;
-        Bare::new(sub)
+        // extra allocations to use the existing code as is.
+        if top.name.starts_with("el") {
+            let new_tree = expression::Tree {
+                name: top.name.split_at(2).1,
+                args: top.args.clone(),
+            };
+            let sub = Miniscript::<Pk, BareCtx>::from_tree(&new_tree)?;
+            BareCtx::top_level_checks(&sub)?;
+            Bare::new(sub)
+        } else {
+            Err(Error::Unexpected(String::from(
+                "Not an elements Descriptor",
+            )))
+        }
     }
 }
 
@@ -109,7 +120,7 @@ where
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
-        let top = expression::Tree::from_str(desc_str)?;
+        let top = expression::Tree::from_str(&desc_str[2..])?;
         Self::from_tree(&top)
     }
 }
@@ -248,13 +259,13 @@ impl<Pk: MiniscriptKey> Pkh<Pk> {
 
 impl<Pk: MiniscriptKey> fmt::Debug for Pkh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "pkh({:?})", self.pk)
+        write!(f, "{}pkh({:?})", ELMTS_STR, self.pk)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Pkh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let desc = format!("pkh({})", self.pk);
+        let desc = format!("{}pkh({})", ELMTS_STR, self.pk);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
     }
@@ -274,7 +285,7 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        if top.name == "pkh" && top.args.len() == 1 {
+        if top.name == "elpkh" && top.args.len() == 1 {
             Ok(Pkh::new(expression::terminal(&top.args[0], |pk| {
                 Pk::from_str(pk)
             })?))

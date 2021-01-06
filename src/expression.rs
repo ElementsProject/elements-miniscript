@@ -22,7 +22,7 @@ use Error;
 
 use MAX_RECURSION_DEPTH;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A token of the form `x(...)` or `x`
 pub struct Tree<'a> {
     /// The name `x`

@@ -32,7 +32,7 @@ use {
 
 use super::{
     checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait, ElementsTrait, SortedMultiVec,
+    DescriptorTrait, ElementsTrait, SortedMultiVec, ELMTS_STR,
 };
 /// A Segwitv0 wsh descriptor
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
@@ -70,11 +70,40 @@ impl<Pk: MiniscriptKey> Wsh<Pk> {
         })
     }
 
-    /// Get the descriptor without the checksum
-    pub fn to_string_no_checksum(&self) -> String {
+    /// Get the descriptor without the checksum, without the el prefix
+    pub(crate) fn to_string_no_checksum(&self) -> String {
         match self.inner {
             WshInner::SortedMulti(ref smv) => format!("wsh({})", smv),
             WshInner::Ms(ref ms) => format!("wsh({})", ms),
+        }
+    }
+
+    // Constructor for creating inner wsh for the sh fragment
+    pub(super) fn from_inner_tree(top: &expression::Tree) -> Result<Self, Error>
+    where
+        Pk: FromStr,
+        Pk::Hash: FromStr,
+        <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
+        <Pk as FromStr>::Err: ToString,
+    {
+        if top.name == "wsh" && top.args.len() == 1 {
+            let top = &top.args[0];
+            if top.name == "sortedmulti" {
+                return Ok(Wsh {
+                    inner: WshInner::SortedMulti(SortedMultiVec::from_tree(&top)?),
+                });
+            }
+            let sub = Miniscript::from_tree(&top)?;
+            Segwitv0::top_level_checks(&sub)?;
+            Ok(Wsh {
+                inner: WshInner::Ms(sub),
+            })
+        } else {
+            Err(Error::Unexpected(format!(
+                "{}({} args) while parsing wsh descriptor",
+                top.name,
+                top.args.len(),
+            )))
         }
     }
 }
@@ -105,7 +134,7 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        if top.name == "wsh" && top.args.len() == 1 {
+        if top.name == "elwsh" && top.args.len() == 1 {
             let top = &top.args[0];
             if top.name == "sortedmulti" {
                 return Ok(Wsh {
@@ -129,15 +158,15 @@ where
 impl<Pk: MiniscriptKey> fmt::Debug for Wsh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.inner {
-            WshInner::SortedMulti(ref smv) => write!(f, "wsh({:?})", smv),
-            WshInner::Ms(ref ms) => write!(f, "wsh({:?})", ms),
+            WshInner::SortedMulti(ref smv) => write!(f, "{}wsh({:?})", ELMTS_STR, smv),
+            WshInner::Ms(ref ms) => write!(f, "{}wsh({:?})", ELMTS_STR, ms),
         }
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Wsh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let desc = self.to_string_no_checksum();
+        let desc = format!("{}{}", ELMTS_STR, self.to_string_no_checksum());
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
     }
@@ -336,21 +365,42 @@ impl<Pk: MiniscriptKey> Wpkh<Pk> {
         &self.pk
     }
 
-    /// Get the descriptor without the checksum
-    pub fn to_string_no_checksum(&self) -> String {
+    /// Get the descriptor without the checksum without the el prefix
+    pub(crate) fn to_string_no_checksum(&self) -> String {
         format!("wpkh({})", self.pk)
+    }
+
+    // Parse a bitcoin style wpkh tree. Useful when parsing nested trees
+    pub(super) fn from_inner_tree(top: &expression::Tree) -> Result<Self, Error>
+    where
+        Pk: FromStr,
+        Pk::Hash: FromStr,
+        <Pk as FromStr>::Err: ToString,
+        <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
+    {
+        if top.name == "wpkh" && top.args.len() == 1 {
+            Ok(Wpkh::new(expression::terminal(&top.args[0], |pk| {
+                Pk::from_str(pk)
+            })?)?)
+        } else {
+            Err(Error::Unexpected(format!(
+                "{}({} args) while parsing wpkh descriptor",
+                top.name,
+                top.args.len(),
+            )))
+        }
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Wpkh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "wpkh({:?})", self.pk)
+        write!(f, "{}wpkh({:?})", ELMTS_STR, self.pk)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Wpkh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let desc = self.to_string_no_checksum();
+        let desc = format!("{}{}", ELMTS_STR, self.to_string_no_checksum());
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
     }
@@ -370,7 +420,7 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        if top.name == "wpkh" && top.args.len() == 1 {
+        if top.name == "elwpkh" && top.args.len() == 1 {
             Ok(Wpkh::new(expression::terminal(&top.args[0], |pk| {
                 Pk::from_str(pk)
             })?)?)
