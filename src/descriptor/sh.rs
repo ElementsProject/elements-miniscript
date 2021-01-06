@@ -44,7 +44,7 @@ pub struct Sh<Pk: MiniscriptKey> {
 
 /// Sh Inner
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
-enum ShInner<Pk: MiniscriptKey> {
+pub enum ShInner<Pk: MiniscriptKey> {
     /// Nested Wsh
     Wsh(Wsh<Pk>),
     /// Nested Wpkh
@@ -179,6 +179,11 @@ impl<Pk: MiniscriptKey> Sh<Pk> {
         Ok(Self {
             inner: ShInner::Wpkh(Wpkh::new(pk)?),
         })
+    }
+
+    /// Get the inner key
+    pub fn as_inner(&self) -> &ShInner<Pk> {
+        &self.inner
     }
 }
 
