@@ -69,6 +69,8 @@ pub use self::key::{
 /// public key from the descriptor.
 pub type KeyMap = HashMap<DescriptorPublicKey, DescriptorSecretKey>;
 
+/// Elements Descriptor String Prefix
+pub const ELMTS_STR: &str = "el";
 /// Elements specific additional features that
 /// we want on DescriptorTrait from upstream.
 // Maintained as a separate trait to avoid conflicts.
@@ -170,6 +172,136 @@ pub trait DescriptorTrait<Pk: MiniscriptKey>: ElementsTrait<Pk> {
         Pk: ToPublicKey;
 }
 
+/// Descriptor Type of the descriptor
+pub enum DescriptorType {
+    /// Bare descriptor(Contains the native P2pk)
+    Bare,
+    /// Pure Sh Descriptor. Does not contain nested Wsh/Wpkh
+    Sh,
+    /// Pkh Descriptor
+    Pkh,
+    /// Wpkh Descriptor
+    Wpkh,
+    /// Wsh
+    Wsh,
+    /// Sh Wrapped Wsh
+    ShWsh,
+    /// Sh wrapped Wpkh
+    ShWpkh,
+    /// Sh Sorted Multi
+    ShSortedMulti,
+    /// Wsh Sorted Multi
+    WshSortedMulti,
+    /// Sh Wsh Sorted Multi
+    ShWshSortedMulti,
+    /// Legacy Pegin
+    LegacyPegin,
+    /// Dynafed Pegin
+    Pegin,
+}
+
+impl FromStr for DescriptorType {
+    type Err = Error;
+
+    /// Does not check if the Descriptor is well formed or not.
+    /// Such errors would be caught later while parsing the descriptor
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() >= 12 && &s[0..12] == "legacy_pegin" {
+            Ok(DescriptorType::LegacyPegin)
+        } else if s.len() >= 5 && &s[0..5] == "pegin" {
+            Ok(DescriptorType::Pegin)
+        } else if s.len() >= 3 && &s[0..3] == "pkh" {
+            Ok(DescriptorType::Pkh)
+        } else if s.len() >= 4 && &s[0..4] == "wpkh" {
+            Ok(DescriptorType::Wpkh)
+        } else if s.len() >= 6 && &s[0..6] == "sh(wsh" {
+            Ok(DescriptorType::ShWsh)
+        } else if s.len() >= 7 && &s[0..7] == "sh(wpkh" {
+            Ok(DescriptorType::ShWpkh)
+        } else if s.len() >= 14 && &s[0..14] == "sh(sortedmulti" {
+            Ok(DescriptorType::ShSortedMulti)
+        } else if s.len() >= 18 && &s[0..18] == "sh(wsh(sortedmulti" {
+            Ok(DescriptorType::ShWshSortedMulti)
+        } else if s.len() >= 2 && &s[0..2] == "sh" {
+            Ok(DescriptorType::Sh)
+        } else if s.len() >= 15 && &s[0..15] == "wsh(sortedmulti" {
+            Ok(DescriptorType::WshSortedMulti)
+        } else if s.len() >= 3 && &s[0..3] == "wsh" {
+            Ok(DescriptorType::Wsh)
+        } else {
+            Ok(DescriptorType::Bare)
+        }
+    }
+}
+/// Method for determining Type of descriptor when parsing from String
+pub enum DescriptorInfo {
+    /// Bitcoin Descriptor
+    Btc {
+        /// Whether descriptor has secret keys
+        has_secret: bool,
+        /// The type of descriptor
+        ty: DescriptorType,
+    },
+    /// Elements Descriptor
+    Elements {
+        /// Whether descriptor has secret keys
+        has_secret: bool,
+        /// The type of descriptor
+        ty: DescriptorType,
+    },
+    /// Pegin descriptor
+    /// Only provides information about the bitcoin side of descriptor
+    /// Use [DescriptorTrait::user_desc] method to obtain the user descriptor
+    /// and call DescriptorType method on it on to find information about
+    /// the user claim descriptor.
+    Pegin {
+        /// Whether the user descriptor has secret
+        has_secret: bool,
+        /// The type of descriptor
+        ty: DescriptorType,
+    },
+}
+
+impl DescriptorInfo {
+    /// Compute the [DescriptorInfo] for the given descriptor string
+    /// This method should when the user is unsure whether they are parsing
+    /// Bitcoin Descriptor, Elements Descriptor or Pegin Descriptors.
+    /// This also returns information whether the descriptor contains any secrets
+    /// of the type [DescriptorSecretKey]. If the descriptor contains secret, users
+    /// should use the method [DescriptorPublicKey::parse_descriptor] to obtain the
+    /// Descriptor and a secret key to public key mapping
+    pub fn from_desc_str(s: &str) -> Result<Self, Error> {
+        let is_secret_key = |s: &String, has_secret: &mut bool| -> String {
+            *has_secret = match DescriptorSecretKey::from_str(s) {
+                Ok(_sk) => true,
+                Err(_) => false,
+            };
+            String::from("")
+        };
+
+        // Parse as a string descriptor
+        let mut has_secret_pk = false;
+        let mut has_secret_pkh = false;
+        let descriptor = Descriptor::<String>::from_str(s)?;
+        let _d = descriptor.translate_pk_infallible(
+            |pk| is_secret_key(pk, &mut has_secret_pk),
+            |pkh| is_secret_key(pkh, &mut has_secret_pkh),
+        );
+        let has_secret = has_secret_pk || has_secret_pkh;
+        let ty = DescriptorType::from_str(s)?;
+        let is_pegin = match ty {
+            DescriptorType::Pegin | DescriptorType::LegacyPegin => true,
+            _ => false,
+        };
+        // Todo: add elements later
+        if is_pegin {
+            Ok(DescriptorInfo::Pegin { has_secret, ty })
+        } else {
+            Ok(DescriptorInfo::Btc { has_secret, ty })
+        }
+    }
+}
+
 /// Script descriptor
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Descriptor<Pk: MiniscriptKey> {
@@ -267,6 +399,25 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
     /// Errors when miniscript exceeds resource limits under p2sh context
     pub fn new_wsh_sortedmulti(k: usize, pks: Vec<Pk>) -> Result<Self, Error> {
         Ok(Descriptor::Wsh(Wsh::new_sortedmulti(k, pks)?))
+    }
+
+    /// Get the Descriptor Type of the descriptor
+    pub fn desc_type(&self) -> DescriptorType {
+        match *self {
+            Descriptor::Bare(_) => DescriptorType::Bare,
+            Descriptor::Pkh(_) => DescriptorType::Pkh,
+            Descriptor::Wpkh(_) => DescriptorType::Wpkh,
+            Descriptor::Sh(ref sh) => match sh.as_inner() {
+                sh::ShInner::Wsh(_) => DescriptorType::ShWsh,
+                sh::ShInner::Wpkh(_) => DescriptorType::ShWpkh,
+                sh::ShInner::SortedMulti(_) => DescriptorType::ShSortedMulti,
+                sh::ShInner::Ms(_) => DescriptorType::Sh,
+            },
+            Descriptor::Wsh(ref wsh) => match wsh.as_inner() {
+                segwitv0::WshInner::SortedMulti(_) => DescriptorType::WshSortedMulti,
+                segwitv0::WshInner::Ms(_) => DescriptorType::Wsh,
+            },
+        }
     }
 }
 
@@ -542,10 +693,10 @@ where
     /// Parse an expression tree into a descriptor
     fn from_tree(top: &expression::Tree) -> Result<Descriptor<Pk>, Error> {
         Ok(match (top.name, top.args.len() as u32) {
-            ("pkh", 1) => Descriptor::Pkh(Pkh::from_tree(top)?),
-            ("wpkh", 1) => Descriptor::Wpkh(Wpkh::from_tree(top)?),
-            ("sh", 1) => Descriptor::Sh(Sh::from_tree(top)?),
-            ("wsh", 1) => Descriptor::Wsh(Wsh::from_tree(top)?),
+            ("elpkh", 1) => Descriptor::Pkh(Pkh::from_tree(top)?),
+            ("elwpkh", 1) => Descriptor::Wpkh(Wpkh::from_tree(top)?),
+            ("elsh", 1) => Descriptor::Sh(Sh::from_tree(top)?),
+            ("elwsh", 1) => Descriptor::Wsh(Wsh::from_tree(top)?),
             _ => Descriptor::Bare(Bare::from_tree(top)?),
         })
     }
@@ -560,7 +711,12 @@ where
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Descriptor<Pk>, Error> {
-        let desc_str = verify_checksum(s)?;
+        if !s.starts_with(ELMTS_STR) {
+            return Err(Error::BadDescriptor(String::from(
+                "Not an Elements Descriptor",
+            )));
+        }
+        let desc_str = verify_checksum(&s)?;
         let top = expression::Tree::from_str(desc_str)?;
         expression::FromTree::from_tree(&top)
     }
@@ -625,7 +781,7 @@ mod tests {
 
     type StdDescriptor = Descriptor<PublicKey>;
     const TEST_PK: &'static str =
-        "pk(020000000000000000000000000000000000000000000000000000000000000002)";
+        "elpk(020000000000000000000000000000000000000000000000000000000000000002)";
 
     impl cmp::PartialEq for DescriptorSecretKey {
         fn eq(&self, other: &Self) -> bool {
@@ -676,10 +832,10 @@ mod tests {
 
     #[test]
     fn desc_rtt_tests() {
-        roundtrip_descriptor("c:pk_k()");
-        roundtrip_descriptor("wsh(pk())");
-        roundtrip_descriptor("wsh(c:pk_k())");
-        roundtrip_descriptor("c:pk_h()");
+        roundtrip_descriptor("elc:pk_k()");
+        roundtrip_descriptor("elwsh(pk())");
+        roundtrip_descriptor("elwsh(c:pk_k())");
+        roundtrip_descriptor("elc:pk_h()");
     }
     #[test]
     fn parse_descriptor() {
@@ -690,13 +846,13 @@ mod tests {
         StdDescriptor::from_str("nl:0").unwrap_err(); //issue 63
         let compressed_pk = DummyKey.to_string();
         assert_eq!(
-            StdDescriptor::from_str("sh(sortedmulti)")
+            StdDescriptor::from_str("elsh(sortedmulti)")
                 .unwrap_err()
                 .to_string(),
             "unexpected «no arguments given for sortedmulti»"
         ); //issue 202
         assert_eq!(
-            StdDescriptor::from_str(&format!("sh(sortedmulti(2,{}))", compressed_pk))
+            StdDescriptor::from_str(&format!("elsh(sortedmulti(2,{}))", compressed_pk))
                 .unwrap_err()
                 .to_string(),
             "unexpected «higher threshold than there were keys in sortedmulti»"
@@ -710,15 +866,15 @@ mod tests {
         "0414fc03b8df87cd7b872996810db8458d61da8448e531569c8517b469a119d267be5645686309c6e6736dbd93940707cc9143d3cf29f1b877ff340e2cb2d259cf";
 
         // Context tests
-        StdDescriptor::from_str(&format!("pk({})", uncompressed_pk)).unwrap();
-        StdDescriptor::from_str(&format!("pkh({})", uncompressed_pk)).unwrap();
-        StdDescriptor::from_str(&format!("sh(pk({}))", uncompressed_pk)).unwrap();
-        StdDescriptor::from_str(&format!("wpkh({})", uncompressed_pk)).unwrap_err();
-        StdDescriptor::from_str(&format!("sh(wpkh({}))", uncompressed_pk)).unwrap_err();
-        StdDescriptor::from_str(&format!("wsh(pk{})", uncompressed_pk)).unwrap_err();
-        StdDescriptor::from_str(&format!("sh(wsh(pk{}))", uncompressed_pk)).unwrap_err();
+        StdDescriptor::from_str(&format!("elpk({})", uncompressed_pk)).unwrap();
+        StdDescriptor::from_str(&format!("elpkh({})", uncompressed_pk)).unwrap();
+        StdDescriptor::from_str(&format!("elsh(pk({}))", uncompressed_pk)).unwrap();
+        StdDescriptor::from_str(&format!("elwpkh({})", uncompressed_pk)).unwrap_err();
+        StdDescriptor::from_str(&format!("elsh(wpkh({}))", uncompressed_pk)).unwrap_err();
+        StdDescriptor::from_str(&format!("elwsh(pk{})", uncompressed_pk)).unwrap_err();
+        StdDescriptor::from_str(&format!("elsh(wsh(pk{}))", uncompressed_pk)).unwrap_err();
         StdDescriptor::from_str(&format!(
-            "or_i(pk({}),pk({}))",
+            "elor_i(pk({}),pk({}))",
             uncompressed_pk, uncompressed_pk
         ))
         .unwrap_err();
@@ -727,7 +883,7 @@ mod tests {
     #[test]
     pub fn script_pubkey() {
         let bare = StdDescriptor::from_str(&format!(
-            "multi(1,020000000000000000000000000000000000000000000000000000000000000002)"
+            "elmulti(1,020000000000000000000000000000000000000000000000000000000000000002)"
         ))
         .unwrap();
         assert_eq!(
@@ -754,7 +910,7 @@ mod tests {
         );
 
         let pkh = StdDescriptor::from_str(
-            "pkh(\
+            "elpkh(\
              020000000000000000000000000000000000000000000000000000000000000002\
              )",
         )
@@ -780,7 +936,7 @@ mod tests {
         );
 
         let wpkh = StdDescriptor::from_str(
-            "wpkh(\
+            "elwpkh(\
              020000000000000000000000000000000000000000000000000000000000000002\
              )",
         )
@@ -803,7 +959,7 @@ mod tests {
         );
 
         let shwpkh = StdDescriptor::from_str(
-            "sh(wpkh(\
+            "elsh(wpkh(\
              020000000000000000000000000000000000000000000000000000000000000002\
              ))",
         )
@@ -828,7 +984,7 @@ mod tests {
         );
 
         let sh = StdDescriptor::from_str(
-            "sh(c:pk_k(\
+            "elsh(c:pk_k(\
              020000000000000000000000000000000000000000000000000000000000000002\
              ))",
         )
@@ -852,7 +1008,7 @@ mod tests {
         );
 
         let wsh = StdDescriptor::from_str(
-            "wsh(c:pk_k(\
+            "elwsh(c:pk_k(\
              020000000000000000000000000000000000000000000000000000000000000002\
              ))",
         )
@@ -880,7 +1036,7 @@ mod tests {
         );
 
         let shwsh = StdDescriptor::from_str(
-            "sh(wsh(c:pk_k(\
+            "elsh(wsh(c:pk_k(\
              020000000000000000000000000000000000000000000000000000000000000002\
              )))",
         )
@@ -1038,7 +1194,7 @@ mod tests {
 
     #[test]
     fn after_is_cltv() {
-        let descriptor = Descriptor::<bitcoin::PublicKey>::from_str("wsh(after(1000))").unwrap();
+        let descriptor = Descriptor::<bitcoin::PublicKey>::from_str("elwsh(after(1000))").unwrap();
         let script = descriptor.explicit_script();
 
         let actual_instructions: Vec<_> = script.instructions().collect();
@@ -1049,7 +1205,7 @@ mod tests {
 
     #[test]
     fn older_is_csv() {
-        let descriptor = Descriptor::<bitcoin::PublicKey>::from_str("wsh(older(1000))").unwrap();
+        let descriptor = Descriptor::<bitcoin::PublicKey>::from_str("elwsh(older(1000))").unwrap();
         let script = descriptor.explicit_script();
 
         let actual_instructions: Vec<_> = script.instructions().collect();
@@ -1060,7 +1216,7 @@ mod tests {
 
     #[test]
     fn roundtrip_tests() {
-        let descriptor = Descriptor::<bitcoin::PublicKey>::from_str("multi");
+        let descriptor = Descriptor::<bitcoin::PublicKey>::from_str("elmulti");
         assert_eq!(
             descriptor.unwrap_err().to_string(),
             "unexpected «no arguments given»"
@@ -1069,7 +1225,7 @@ mod tests {
 
     #[test]
     fn empty_thresh() {
-        let descriptor = Descriptor::<bitcoin::PublicKey>::from_str("thresh");
+        let descriptor = Descriptor::<bitcoin::PublicKey>::from_str("elthresh");
         assert_eq!(
             descriptor.unwrap_err().to_string(),
             "unexpected «no arguments given»"
@@ -1092,7 +1248,7 @@ mod tests {
         let sig_b = secp256k1::Signature::from_str("3044022075b7b65a7e6cd386132c5883c9db15f9a849a0f32bc680e9986398879a57c276022056d94d12255a4424f51c700ac75122cb354895c9f2f88f0cbb47ba05c9c589ba").unwrap();
 
         let descriptor = Descriptor::<bitcoin::PublicKey>::from_str(&format!(
-            "wsh(and_v(v:pk({A}),pk({B})))",
+            "elwsh(and_v(v:pk({A}),pk({B})))",
             A = a,
             B = b
         ))
@@ -1130,7 +1286,7 @@ mod tests {
     fn test_scriptcode() {
         // P2WPKH (from bip143 test vectors)
         let descriptor = Descriptor::<PublicKey>::from_str(
-            "wpkh(025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee6357)",
+            "elwpkh(025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee6357)",
         )
         .unwrap();
         assert_eq!(
@@ -1140,7 +1296,7 @@ mod tests {
 
         // P2SH-P2WPKH (from bip143 test vectors)
         let descriptor = Descriptor::<PublicKey>::from_str(
-            "sh(wpkh(03ad1d8e89212f0b92c74d23bb710c00662ad1470198ac48c43f7d6f93a2a26873))",
+            "elsh(wpkh(03ad1d8e89212f0b92c74d23bb710c00662ad1470198ac48c43f7d6f93a2a26873))",
         )
         .unwrap();
         assert_eq!(
@@ -1150,7 +1306,7 @@ mod tests {
 
         // P2WSH (from bitcoind's `createmultisig`)
         let descriptor = Descriptor::<PublicKey>::from_str(
-            "wsh(multi(2,03789ed0bb717d88f7d321a368d905e7430207ebbd82bd342cf11ae157a7ace5fd,03dbc6764b8884a92e871274b87583e6d5c2a58819473e17e107ef3f6aa5a61626))",
+            "elwsh(multi(2,03789ed0bb717d88f7d321a368d905e7430207ebbd82bd342cf11ae157a7ace5fd,03dbc6764b8884a92e871274b87583e6d5c2a58819473e17e107ef3f6aa5a61626))",
         )
         .unwrap();
         assert_eq!(
@@ -1161,7 +1317,7 @@ mod tests {
         );
 
         // P2SH-P2WSH (from bitcoind's `createmultisig`)
-        let descriptor = Descriptor::<PublicKey>::from_str("sh(wsh(multi(2,03789ed0bb717d88f7d321a368d905e7430207ebbd82bd342cf11ae157a7ace5fd,03dbc6764b8884a92e871274b87583e6d5c2a58819473e17e107ef3f6aa5a61626)))").unwrap();
+        let descriptor = Descriptor::<PublicKey>::from_str("elsh(wsh(multi(2,03789ed0bb717d88f7d321a368d905e7430207ebbd82bd342cf11ae157a7ace5fd,03dbc6764b8884a92e871274b87583e6d5c2a58819473e17e107ef3f6aa5a61626)))").unwrap();
         assert_eq!(
             *descriptor
                 .script_code()
@@ -1309,30 +1465,30 @@ mod tests {
 
         // P2SH and pubkeys
         _test_sortedmulti(
-            "sh(sortedmulti(1,03fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a1460297556,0250863ad64a87ae8a2fe83c1af1a8403cb53f53e486d8511dad8a04887e5b2352))#uetvewm2",
-            "sh(sortedmulti(1,0250863ad64a87ae8a2fe83c1af1a8403cb53f53e486d8511dad8a04887e5b2352,03fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a1460297556))#7l8smyg9",
+            "elsh(sortedmulti(1,03fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a1460297556,0250863ad64a87ae8a2fe83c1af1a8403cb53f53e486d8511dad8a04887e5b2352))#tse3qz98",
+            "elsh(sortedmulti(1,0250863ad64a87ae8a2fe83c1af1a8403cb53f53e486d8511dad8a04887e5b2352,03fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a1460297556))#ptnf05qc",
             "XUDXJZnP2GXsKRKdxSLKzJM1iZ4gbbyrGh",
         );
 
         // P2WSH and single-xpub descriptor
         _test_sortedmulti(
-            "wsh(sortedmulti(1,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH))#7etm7zk7",
-            "wsh(sortedmulti(1,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB))#ppmeel9k",
+            "elwsh(sortedmulti(1,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH))#a8h2v83d",
+            "elwsh(sortedmulti(1,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB))#qfcn7ujk",
             "ert1qpq2cfgz5lktxzr5zqv7nrzz46hsvq3492ump9pz8rzcl8wqtwqcs2yqnuv",
         );
 
         // P2WSH-P2SH and ranged descriptor
         _test_sortedmulti(
-            "sh(wsh(sortedmulti(1,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB/1/0/*,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH/0/0/*)))#u60cee0u",
-            "sh(wsh(sortedmulti(1,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH/0/0/*,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB/1/0/*)))#75dkf44w",
+            "elsh(wsh(sortedmulti(1,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB/1/0/*,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH/0/0/*)))#l7qy253t",
+            "elsh(wsh(sortedmulti(1,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH/0/0/*,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB/1/0/*)))#0gpee5cl",
             "XBkDY63XnRTz6BbwzJi3ifGhBwLTomEzkq",
         );
     }
 
     #[test]
     fn test_parse_descriptor() {
-        let (descriptor, key_map) = Descriptor::parse_descriptor("wpkh(tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/44'/0'/0'/0/*)").unwrap();
-        assert_eq!(descriptor.to_string(), "wpkh([2cbe2a6d/44'/0'/0']tpubDCvNhURocXGZsLNqWcqD3syHTqPXrMSTwi8feKVwAcpi29oYKsDD3Vex7x2TDneKMVN23RbLprfxB69v94iYqdaYHsVz3kPR37NQXeqouVz/0/*)#nhdxg96s");
+        let (descriptor, key_map) = Descriptor::parse_descriptor("elwpkh(tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/44'/0'/0'/0/*)").unwrap();
+        assert_eq!(descriptor.to_string(), "elwpkh([2cbe2a6d/44'/0'/0']tpubDCvNhURocXGZsLNqWcqD3syHTqPXrMSTwi8feKVwAcpi29oYKsDD3Vex7x2TDneKMVN23RbLprfxB69v94iYqdaYHsVz3kPR37NQXeqouVz/0/*)#pznhhta9");
         assert_eq!(key_map.len(), 1);
 
         // https://github.com/bitcoin/bitcoin/blob/7ae86b3c6845873ca96650fc69beb4ae5285c801/src/test/descriptor_tests.cpp#L355-L360
@@ -1348,21 +1504,21 @@ mod tests {
             };
         }
         check_invalid_checksum!(
-            "sh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#",
-            "sh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#",
-            "sh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#ggrsrxfyq",
-            "sh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#tjg09x5tq",
-            "sh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#ggrsrxf",
-            "sh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#tjg09x5",
-            "sh(multi(3,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#ggrsrxfy",
-            "sh(multi(3,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#tjg09x5t",
-            "sh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#tjq09x4t",
-            "sh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))##ggssrxfy",
-            "sh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))##tjq09x4t"
+            "elsh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#",
+            "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#",
+            "elsh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#ggrsrxf",
+            "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#tjg09x5tq",
+            "elsh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#ggrsrxf",
+            "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#tjg09x5",
+            "elsh(multi(3,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#ggrsrxfy",
+            "elsh(multi(3,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#tjg09x5t",
+            "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#tjq09x4t",
+            "elsh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))##ggssrxfy",
+            "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))##tjq09x4t"
         );
 
-        Descriptor::parse_descriptor("sh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#ggrsrxfy").expect("Valid descriptor with checksum");
-        Descriptor::parse_descriptor("sh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#tjg09x5t").expect("Valid descriptor with checksum");
+        Descriptor::parse_descriptor("elsh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#9s2ngs7u").expect("Valid descriptor with checksum");
+        Descriptor::parse_descriptor("elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#uklept69").expect("Valid descriptor with checksum");
     }
 
     #[test]
@@ -1389,11 +1545,11 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
 
     #[test]
     fn parse_with_secrets() {
-        let descriptor_str = "wpkh(xprv9s21ZrQH143K4CTb63EaMxja1YiTnSEWKMbn23uoEnAzxjdUJRQkazCAtzxGm4LSoTSVTptoV9RbchnKPW9HxKtZumdyxyikZFDLhogJ5Uj/44'/0'/0'/0/*)#v20xlvm9";
+        let descriptor_str = "elwpkh(xprv9s21ZrQH143K4CTb63EaMxja1YiTnSEWKMbn23uoEnAzxjdUJRQkazCAtzxGm4LSoTSVTptoV9RbchnKPW9HxKtZumdyxyikZFDLhogJ5Uj/44'/0'/0'/0/*)#xldrpn5u";
         let (descriptor, keymap) =
             Descriptor::<DescriptorPublicKey>::parse_descriptor(descriptor_str).unwrap();
 
-        let expected = "wpkh([a12b02f4/44'/0'/0']xpub6BzhLAQUDcBUfHRQHZxDF2AbcJqp4Kaeq6bzJpXrjrWuK26ymTFwkEFbxPra2bJ7yeZKbDjfDeFwxe93JMqpo5SsPJH6dZdvV9kMzJkAZ69/0/*)#u37l7u8u";
+        let expected = "elwpkh([a12b02f4/44'/0'/0']xpub6BzhLAQUDcBUfHRQHZxDF2AbcJqp4Kaeq6bzJpXrjrWuK26ymTFwkEFbxPra2bJ7yeZKbDjfDeFwxe93JMqpo5SsPJH6dZdvV9kMzJkAZ69/0/*)#20ufqv7z";
         assert_eq!(expected, descriptor.to_string());
         assert_eq!(keymap.len(), 1);
 

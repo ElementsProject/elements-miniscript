@@ -32,7 +32,7 @@ use {Error, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0, ToPublicKey,
 
 use super::{
     checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait, ElementsTrait, SortedMultiVec, Wpkh, Wsh,
+    DescriptorTrait, ElementsTrait, SortedMultiVec, Wpkh, Wsh, ELMTS_STR,
 };
 
 /// A Legacy p2sh Descriptor
@@ -69,10 +69,10 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Sh<Pk> {
 impl<Pk: MiniscriptKey> fmt::Debug for Sh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.inner {
-            ShInner::Wsh(ref wsh_inner) => write!(f, "sh({:?})", wsh_inner),
-            ShInner::Wpkh(ref pk) => write!(f, "sh({:?})", pk),
-            ShInner::SortedMulti(ref smv) => write!(f, "sh({:?})", smv),
-            ShInner::Ms(ref ms) => write!(f, "sh({:?})", ms),
+            ShInner::Wsh(ref wsh_inner) => write!(f, "{}sh({:?})", ELMTS_STR, wsh_inner),
+            ShInner::Wpkh(ref pk) => write!(f, "{}sh({:?})", ELMTS_STR, pk),
+            ShInner::SortedMulti(ref smv) => write!(f, "{}sh({:?})", ELMTS_STR, smv),
+            ShInner::Ms(ref ms) => write!(f, "{}sh({:?})", ELMTS_STR, ms),
         }
     }
 }
@@ -83,12 +83,14 @@ impl<Pk: MiniscriptKey> fmt::Display for Sh<Pk> {
             // extra nesting because the impl of "{}" returns the checksum
             // which we don't want
             ShInner::Wsh(ref wsh) => match wsh.as_inner() {
-                super::segwitv0::WshInner::SortedMulti(ref smv) => format!("sh(wsh({}))", smv),
-                super::segwitv0::WshInner::Ms(ref ms) => format!("sh(wsh({}))", ms),
+                super::segwitv0::WshInner::SortedMulti(ref smv) => {
+                    format!("{}sh(wsh({}))", ELMTS_STR, smv)
+                }
+                super::segwitv0::WshInner::Ms(ref ms) => format!("{}sh(wsh({}))", ELMTS_STR, ms),
             },
-            ShInner::Wpkh(ref pk) => format!("sh({})", pk),
-            ShInner::SortedMulti(ref smv) => format!("sh({})", smv),
-            ShInner::Ms(ref ms) => format!("sh({})", ms),
+            ShInner::Wpkh(ref pk) => format!("{}sh({})", ELMTS_STR, pk),
+            ShInner::SortedMulti(ref smv) => format!("{}sh({})", ELMTS_STR, smv),
+            ShInner::Ms(ref ms) => format!("{}sh({})", ELMTS_STR, ms),
         };
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
@@ -101,11 +103,11 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        if top.name == "sh" && top.args.len() == 1 {
+        if top.name == "elsh" && top.args.len() == 1 {
             let top = &top.args[0];
             let inner = match top.name {
-                "wsh" => ShInner::Wsh(Wsh::from_tree(&top)?),
-                "wpkh" => ShInner::Wpkh(Wpkh::from_tree(&top)?),
+                "wsh" => ShInner::Wsh(Wsh::from_inner_tree(&top)?),
+                "wpkh" => ShInner::Wpkh(Wpkh::from_inner_tree(&top)?),
                 "sortedmulti" => ShInner::SortedMulti(SortedMultiVec::from_tree(&top)?),
                 _ => {
                     let sub = Miniscript::from_tree(&top)?;
