@@ -117,10 +117,17 @@ extern crate test;
 // As a rule, only import the library here and pub use all the required
 // items. Should help in faster code development in the long run
 extern crate miniscript as bitcoin_miniscript;
-// pub(crate) use bitcoin_miniscript::Descriptor as BtcDescriptor;
-// pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
-// pub(crate) use bitcoin_miniscript::Descriptor as BtcDescriptor;
-// pub(crate) use bitcoin_miniscript::Satisfier as BtcSatisfier;
+pub(crate) use bitcoin_miniscript::expression::FromTree as BtcFromTree;
+pub(crate) use bitcoin_miniscript::expression::Tree as BtcTree;
+pub(crate) use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
+pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
+pub(crate) use bitcoin_miniscript::Descriptor as BtcDescriptor;
+pub(crate) use bitcoin_miniscript::DescriptorTrait as BtcDescriptorTrait;
+pub(crate) use bitcoin_miniscript::Error as BtcError;
+pub(crate) use bitcoin_miniscript::Miniscript as BtcMiniscript;
+pub(crate) use bitcoin_miniscript::Satisfier as BtcSatisfier;
+pub(crate) use bitcoin_miniscript::Segwitv0 as BtcSegwitv0;
+pub(crate) use bitcoin_miniscript::Terminal as BtcTerminal;
 // re-export imports
 pub use bitcoin_miniscript::{DummyKey, DummyKeyHash};
 pub use bitcoin_miniscript::{
@@ -141,8 +148,11 @@ mod util;
 
 use std::{error, fmt, str};
 
+// Find a better home
+#[allow(deprecated)]
+use bitcoin::util::contracthash;
 use elements::hashes::sha256;
-use elements::{opcodes, script};
+use elements::{opcodes, script, secp256k1, secp256k1::Secp256k1};
 
 pub use descriptor::{Descriptor, DescriptorPublicKey, DescriptorTrait};
 pub use interpreter::Interpreter;
@@ -151,6 +161,22 @@ pub use miniscript::decode::Terminal;
 pub use miniscript::satisfy::{ElementsSig, Satisfier};
 pub use miniscript::Miniscript;
 
+/// Tweak a MiniscriptKey to obtain the tweaked key
+// Ideally, we want this in a trait, but doing so we cannot
+// use it in the implementation of DescriptorTrait from
+// rust-miniscript because it would require stricter bounds.
+pub fn tweak_key<Pk, C: secp256k1::Verification>(
+    pk: &Pk,
+    secp: &Secp256k1<C>,
+    contract: &[u8],
+) -> bitcoin::PublicKey
+where
+    Pk: MiniscriptKey + ToPublicKey,
+{
+    let pk = pk.to_public_key();
+    #[allow(deprecated)]
+    contracthash::tweak_key(secp, pk, contract)
+}
 /// Miniscript
 
 #[derive(Debug)]
@@ -232,6 +258,8 @@ pub enum Error {
     ImpossibleSatisfaction,
     /// Bare descriptors don't have any addresses
     BareDescriptorAddr,
+    /// Upstream Miniscript Errors
+    BtcError(bitcoin_miniscript::Error),
 }
 
 #[doc(hidden)]
@@ -242,6 +270,13 @@ where
 {
     fn from(e: miniscript::types::Error<Pk, Ctx>) -> Error {
         Error::TypeCheck(e.to_string())
+    }
+}
+
+#[doc(hidden)]
+impl From<bitcoin_miniscript::Error> for Error {
+    fn from(e: bitcoin_miniscript::Error) -> Error {
+        Error::BtcError(e)
     }
 }
 
@@ -270,6 +305,13 @@ impl From<miniscript::analyzable::AnalysisError> for Error {
 impl From<elements::secp256k1::Error> for Error {
     fn from(e: elements::secp256k1::Error) -> Error {
         Error::Secp(e)
+    }
+}
+
+#[doc(hidden)]
+impl From<bitcoin::util::key::Error> for Error {
+    fn from(e: bitcoin::util::key::Error) -> Error {
+        Error::BadPubkey(e)
     }
 }
 
@@ -353,6 +395,7 @@ impl fmt::Display for Error {
             Error::AnalysisError(ref e) => e.fmt(f),
             Error::ImpossibleSatisfaction => write!(f, "Impossible to satisfy Miniscript"),
             Error::BareDescriptorAddr => write!(f, "Bare descriptors don't have address"),
+            Error::BtcError(ref e) => write!(f, " Bitcoin Miniscript Error {}", e),
         }
     }
 }
