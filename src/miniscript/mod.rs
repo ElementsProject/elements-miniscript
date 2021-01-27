@@ -562,6 +562,22 @@ mod tests {
     }
 
     #[test]
+    fn recursive_key_parsing() {
+        type MsStr = Miniscript<String, Segwitv0>;
+        assert!(MsStr::from_str("pk(slip77(k))").is_ok());
+        assert!(MsStr::from_str("pk(musig(a))").is_ok());
+        assert!(MsStr::from_str("pk(musig(a,b))").is_ok());
+        assert!(MsStr::from_str("pk(musig(a,musig(b,c,d)))").is_ok());
+        assert!(MsStr::from_str("pk(musig(a,musig(b,c,musig(d,e,f,musig(g,h,i)))))").is_ok());
+        assert!(MsStr::from_str("pk(musig(musig(a,b),musig(c,d)))").is_ok());
+        // should err on slip7
+        assert!(MsStr::from_str("pk(slip7(k))").is_err());
+        // should err on multi args to pk
+        assert!(MsStr::from_str("pk(musig(a,b),musig(c,d))").is_err());
+        assert!(MsStr::from_str("musig").is_err());
+        assert!(MsStr::from_str("slip77").is_err());
+    }
+    #[test]
     fn basic() {
         let pk = bitcoin::PublicKey::from_str(
             "\

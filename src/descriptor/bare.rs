@@ -20,6 +20,7 @@
 
 use std::{fmt, str::FromStr};
 
+use bitcoin::secp256k1;
 use elements::{self, script, Script};
 
 use expression::{self, FromTree};
@@ -30,7 +31,7 @@ use {BareCtx, Error, Miniscript, MiniscriptKey, Satisfier, ToPublicKey, Translat
 
 use super::{
     checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait,
+    DescriptorTrait, ElementsTrait, ELMTS_STR,
 };
 
 /// Create a Bare Descriptor. That is descriptor that is
@@ -57,13 +58,13 @@ impl<Pk: MiniscriptKey> Bare<Pk> {
 
 impl<Pk: MiniscriptKey> fmt::Debug for Bare<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.ms)
+        write!(f, "{}{:?}", ELMTS_STR, self.ms)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Bare<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let desc = format!("{}", self.ms);
+        let desc = format!("{}{}", ELMTS_STR, self.ms);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
     }
@@ -81,9 +82,20 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        let sub = Miniscript::<Pk, BareCtx>::from_tree(&top)?;
-        BareCtx::top_level_checks(&sub)?;
-        Bare::new(sub)
+        // extra allocations to use the existing code as is.
+        if top.name.starts_with("el") {
+            let new_tree = expression::Tree {
+                name: top.name.split_at(2).1,
+                args: top.args.clone(),
+            };
+            let sub = Miniscript::<Pk, BareCtx>::from_tree(&new_tree)?;
+            BareCtx::top_level_checks(&sub)?;
+            Bare::new(sub)
+        } else {
+            Err(Error::Unexpected(String::from(
+                "Not an elements Descriptor",
+            )))
+        }
     }
 }
 
@@ -96,11 +108,23 @@ where
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
-        let top = expression::Tree::from_str(desc_str)?;
+        let top = expression::Tree::from_str(&desc_str[2..])?;
         Self::from_tree(&top)
     }
 }
 
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Bare<Pk> {
+    fn blind_addr(
+        &self,
+        _blinder: Option<secp256k1::PublicKey>,
+        _params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        Err(Error::BareDescriptorAddr)
+    }
+}
 impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Bare<Pk>
 where
     <Pk as FromStr>::Err: ToString,
@@ -206,13 +230,13 @@ impl<Pk: MiniscriptKey> Pkh<Pk> {
 
 impl<Pk: MiniscriptKey> fmt::Debug for Pkh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "pkh({:?})", self.pk)
+        write!(f, "{}pkh({:?})", ELMTS_STR, self.pk)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Pkh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let desc = format!("pkh({})", self.pk);
+        let desc = format!("{}pkh({})", ELMTS_STR, self.pk);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
     }
@@ -230,7 +254,7 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        if top.name == "pkh" && top.args.len() == 1 {
+        if top.name == "elpkh" && top.args.len() == 1 {
             Ok(Pkh::new(expression::terminal(&top.args[0], |pk| {
                 Pk::from_str(pk)
             })?))
@@ -255,6 +279,22 @@ where
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         Self::from_tree(&top)
+    }
+}
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Pkh<Pk> {
+    fn blind_addr(
+        &self,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        Ok(elements::Address::p2pkh(
+            &self.pk.to_public_key(),
+            blinder,
+            params,
+        ))
     }
 }
 

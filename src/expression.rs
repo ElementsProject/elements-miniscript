@@ -15,14 +15,14 @@
 //! # Function-like Expression Language
 //!
 
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 use errstr;
 use Error;
 
 use MAX_RECURSION_DEPTH;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A token of the form `x(...)` or `x`
 pub struct Tree<'a> {
     /// The name `x`
@@ -37,6 +37,15 @@ pub trait FromTree: Sized {
     fn from_tree(top: &Tree) -> Result<Self, Error>;
 }
 
+impl<'a> fmt::Display for Tree<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "({}", self.name)?;
+        for arg in &self.args {
+            write!(f, ",{}", arg)?;
+        }
+        write!(f, ")")
+    }
+}
 impl<'a> Tree<'a> {
     fn from_slice(sl: &'a str) -> Result<(Tree<'a>, &'a str), Error> {
         Self::from_slice_helper(sl, 0u32)
@@ -54,19 +63,44 @@ impl<'a> Tree<'a> {
         }
 
         let mut found = Found::Nothing;
+        // Decide whether we are parsing a key or not.
+        // When parsing a key ignore all the '(' and ')'.
+        // We keep count of lparan whenever we are inside a key context
+        // We exit the context whenever we find the corresponding ')'
+        // in which we entered the context. This allows to special case
+        // parse the '(' ')' inside key expressions.(slip77 and musig).
+        let mut key_ctx = false;
+        let mut key_lparan_count = 0;
         for (n, ch) in sl.char_indices() {
             match ch {
                 '(' => {
-                    found = Found::Lparen(n);
-                    break;
+                    // already inside a key context
+                    if key_ctx {
+                        key_lparan_count += 1;
+                    } else if &sl[..n] == "slip77" || &sl[..n] == "musig" {
+                        key_lparan_count = 1;
+                        key_ctx = true;
+                    } else {
+                        found = Found::Lparen(n);
+                        break;
+                    }
                 }
                 ',' => {
-                    found = Found::Comma(n);
-                    break;
+                    if !key_ctx {
+                        found = Found::Comma(n);
+                        break;
+                    }
                 }
                 ')' => {
-                    found = Found::Rparen(n);
-                    break;
+                    if key_ctx {
+                        key_lparan_count -= 1;
+                        if key_lparan_count == 0 {
+                            key_ctx = false;
+                        }
+                    } else {
+                        found = Found::Rparen(n);
+                        break;
+                    }
                 }
                 _ => {}
             }

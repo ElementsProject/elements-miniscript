@@ -66,10 +66,11 @@
 //! use miniscript::{DescriptorTrait};
 //!
 //! fn main() {
+//!     // Elements descriptors are prefixed by string el
 //!     let desc = miniscript::Descriptor::<
 //!         bitcoin::PublicKey,
 //!     >::from_str("\
-//!         sh(wsh(or_d(\
+//!         elsh(wsh(or_d(\
 //!             c:pk_k(020e0338c96a8870479f2396c373cc7696ba124e8635d41b0ea581112b67817261),\
 //!             c:pk_k(0250863ad64a87ae8a2fe83c1af1a8403cb53f53e486d8511dad8a04887e5b2352)\
 //!         )))\
@@ -96,14 +97,14 @@
 #![allow(bare_trait_objects)]
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
 // Coding conventions
-// #![deny(unsafe_code)]
-// #![deny(non_upper_case_globals)]
-// #![deny(non_camel_case_types)]
-// #![deny(non_snake_case)]
-// #![deny(unused_mut)]
-// #![deny(dead_code)]
-// #![deny(unused_imports)]
-// #![deny(missing_docs)]
+#![deny(unsafe_code)]
+#![deny(non_upper_case_globals)]
+#![deny(non_camel_case_types)]
+#![deny(non_snake_case)]
+#![deny(unused_mut)]
+#![deny(dead_code)]
+#![deny(unused_imports)]
+#![deny(missing_docs)]
 
 pub extern crate bitcoin;
 pub extern crate elements;
@@ -111,6 +112,29 @@ pub extern crate elements;
 pub extern crate serde;
 #[cfg(all(test, feature = "unstable"))]
 extern crate test;
+
+// Miniscript imports
+// It can be confusing to code when we have two miniscript libraries
+// As a rule, only import the library here and pub use all the required
+// items. Should help in faster code development in the long run
+extern crate miniscript as bitcoin_miniscript;
+pub(crate) use bitcoin_miniscript::expression::FromTree as BtcFromTree;
+pub(crate) use bitcoin_miniscript::expression::Tree as BtcTree;
+pub(crate) use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
+pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
+pub(crate) use bitcoin_miniscript::Descriptor as BtcDescriptor;
+pub(crate) use bitcoin_miniscript::DescriptorTrait as BtcDescriptorTrait;
+pub(crate) use bitcoin_miniscript::Error as BtcError;
+pub(crate) use bitcoin_miniscript::Miniscript as BtcMiniscript;
+pub(crate) use bitcoin_miniscript::Satisfier as BtcSatisfier;
+pub(crate) use bitcoin_miniscript::Segwitv0 as BtcSegwitv0;
+pub(crate) use bitcoin_miniscript::Terminal as BtcTerminal;
+// re-export imports
+pub use bitcoin_miniscript::{DummyKey, DummyKeyHash};
+pub use bitcoin_miniscript::{
+    MiniscriptKey, ToPublicKey, TranslatePk, TranslatePk1, TranslatePk2, TranslatePk3,
+};
+// End imports
 
 #[macro_use]
 mod macros;
@@ -123,11 +147,13 @@ pub mod policy;
 
 mod util;
 
-use std::str::FromStr;
-use std::{error, fmt, hash, str};
+use std::{error, fmt, str};
 
-use elements::hashes::{hash160, sha256, Hash};
-use elements::{opcodes, script};
+// Find a better home
+#[allow(deprecated)]
+use bitcoin::util::contracthash;
+use elements::hashes::sha256;
+use elements::{opcodes, script, secp256k1, secp256k1::Secp256k1};
 
 pub use descriptor::{Descriptor, DescriptorPublicKey, DescriptorTrait};
 pub use interpreter::Interpreter;
@@ -136,280 +162,22 @@ pub use miniscript::decode::Terminal;
 pub use miniscript::satisfy::{ElementsSig, Satisfier};
 pub use miniscript::Miniscript;
 
-///Public key trait which can be converted to Hash type
-pub trait MiniscriptKey:
-    Clone + Eq + Ord + str::FromStr + fmt::Debug + fmt::Display + hash::Hash
+/// Tweak a MiniscriptKey to obtain the tweaked key
+// Ideally, we want this in a trait, but doing so we cannot
+// use it in the implementation of DescriptorTrait from
+// rust-miniscript because it would require stricter bounds.
+pub fn tweak_key<Pk, C: secp256k1::Verification>(
+    pk: &Pk,
+    secp: &Secp256k1<C>,
+    contract: &[u8],
+) -> bitcoin::PublicKey
+where
+    Pk: MiniscriptKey + ToPublicKey,
 {
-    /// Check if the publicKey is uncompressed. The default
-    /// implementation returns false
-    fn is_uncompressed(&self) -> bool {
-        false
-    }
-    /// The associated Hash type with the publicKey
-    type Hash: Clone + Eq + Ord + str::FromStr + fmt::Display + fmt::Debug + hash::Hash;
-
-    /// Converts an object to PublicHash
-    fn to_pubkeyhash(&self) -> Self::Hash;
-
-    /// Computes the size of a public key when serialized in a script,
-    /// including the length bytes
-    fn serialized_len(&self) -> usize {
-        if self.is_uncompressed() {
-            66
-        } else {
-            34
-        }
-    }
+    let pk = pk.to_public_key();
+    #[allow(deprecated)]
+    contracthash::tweak_key(secp, pk, contract)
 }
-
-impl MiniscriptKey for bitcoin::PublicKey {
-    /// `is_uncompressed` returns true only for
-    /// bitcoin::Publickey type if the underlying key is uncompressed.
-    fn is_uncompressed(&self) -> bool {
-        !self.compressed
-    }
-
-    type Hash = hash160::Hash;
-
-    fn to_pubkeyhash(&self) -> Self::Hash {
-        let mut engine = hash160::Hash::engine();
-        self.write_into(&mut engine);
-        hash160::Hash::from_engine(engine)
-    }
-}
-
-impl MiniscriptKey for String {
-    type Hash = String;
-
-    fn to_pubkeyhash(&self) -> Self::Hash {
-        format!("{}", &self)
-    }
-}
-
-/// Trait describing public key types which can be converted to bitcoin pubkeys
-pub trait ToPublicKey: MiniscriptKey {
-    /// Converts an object to a public key
-    fn to_public_key(&self) -> bitcoin::PublicKey;
-
-    /// Converts a hashed version of the public key to a `hash160` hash.
-    ///
-    /// This method must be consistent with `to_public_key`, in the sense
-    /// that calling `MiniscriptKey::to_pubkeyhash` followed by this function
-    /// should give the same result as calling `to_public_key` and hashing
-    /// the result directly.
-    fn hash_to_hash160(hash: &<Self as MiniscriptKey>::Hash) -> hash160::Hash;
-}
-
-impl ToPublicKey for bitcoin::PublicKey {
-    fn to_public_key(&self) -> bitcoin::PublicKey {
-        *self
-    }
-
-    fn hash_to_hash160(hash: &hash160::Hash) -> hash160::Hash {
-        *hash
-    }
-}
-
-/// Dummy key which de/serializes to the empty string; useful sometimes for testing
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
-pub struct DummyKey;
-
-impl str::FromStr for DummyKey {
-    type Err = &'static str;
-    fn from_str(x: &str) -> Result<DummyKey, &'static str> {
-        if x.is_empty() {
-            Ok(DummyKey)
-        } else {
-            Err("non empty dummy key")
-        }
-    }
-}
-
-impl MiniscriptKey for DummyKey {
-    type Hash = DummyKeyHash;
-
-    fn to_pubkeyhash(&self) -> Self::Hash {
-        DummyKeyHash
-    }
-}
-
-impl hash::Hash for DummyKey {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        "DummyKey".hash(state);
-    }
-}
-
-impl fmt::Display for DummyKey {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("")
-    }
-}
-
-impl ToPublicKey for DummyKey {
-    fn to_public_key(&self) -> bitcoin::PublicKey {
-        bitcoin::PublicKey::from_str(
-            "0250863ad64a87ae8a2fe83c1af1a8403cb53f53e486d8511dad8a04887e5b2352",
-        )
-        .unwrap()
-    }
-
-    fn hash_to_hash160(_: &DummyKeyHash) -> hash160::Hash {
-        hash160::Hash::from_str("f54a5851e9372b87810a8e60cdd2e7cfd80b6e31").unwrap()
-    }
-}
-
-/// Dummy keyhash which de/serializes to the empty string; useful sometimes for testing
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
-pub struct DummyKeyHash;
-
-impl str::FromStr for DummyKeyHash {
-    type Err = &'static str;
-    fn from_str(x: &str) -> Result<DummyKeyHash, &'static str> {
-        if x.is_empty() {
-            Ok(DummyKeyHash)
-        } else {
-            Err("non empty dummy key")
-        }
-    }
-}
-
-impl fmt::Display for DummyKeyHash {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("")
-    }
-}
-
-impl hash::Hash for DummyKeyHash {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        "DummyKeyHash".hash(state);
-    }
-}
-
-/// Convert a descriptor using abstract keys to one using specific keys
-/// This will panic if translatefpk returns an uncompressed key when
-/// converting to a Segwit descriptor. To prevent this panic, ensure
-/// translatefpk returns an error in this case instead.
-pub trait TranslatePk<P: MiniscriptKey, Q: MiniscriptKey> {
-    /// The associated output type. This must be Self<Q>
-    type Output;
-
-    /// Translate a struct from one Generic to another where the
-    /// translation for Pk is provided by translatefpk, and translation for
-    /// PkH is provided by translatefpkh
-    fn translate_pk<Fpk, Fpkh, E>(
-        &self,
-        translatefpk: Fpk,
-        translatefpkh: Fpkh,
-    ) -> Result<Self::Output, E>
-    where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>;
-
-    /// Calls `translate_pk` with conversion functions that cannot fail
-    fn translate_pk_infallible<Fpk, Fpkh>(
-        &self,
-        mut translatefpk: Fpk,
-        mut translatefpkh: Fpkh,
-    ) -> Self::Output
-    where
-        Fpk: FnMut(&P) -> Q,
-        Fpkh: FnMut(&P::Hash) -> Q::Hash,
-    {
-        self.translate_pk::<_, _, ()>(|pk| Ok(translatefpk(pk)), |pkh| Ok(translatefpkh(pkh)))
-            .expect("infallible translation function")
-    }
-}
-
-/// Variant of `TranslatePk` where P and Q both have the same hash
-/// type, and the hashes can be converted by just cloning them
-pub trait TranslatePk1<P: MiniscriptKey, Q: MiniscriptKey<Hash = P::Hash>>:
-    TranslatePk<P, Q>
-{
-    /// Translate a struct from one generic to another where the
-    /// translation for Pk is provided by translatefpk
-    fn translate_pk1<Fpk, E>(
-        &self,
-        translatefpk: Fpk,
-    ) -> Result<<Self as TranslatePk<P, Q>>::Output, E>
-    where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-    {
-        self.translate_pk(translatefpk, |h| Ok(h.clone()))
-    }
-
-    /// Translate a struct from one generic to another where the
-    /// translation for Pk is provided by translatefpk
-    fn translate_pk1_infallible<Fpk: FnMut(&P) -> Q>(
-        &self,
-        translatefpk: Fpk,
-    ) -> <Self as TranslatePk<P, Q>>::Output {
-        self.translate_pk_infallible(translatefpk, P::Hash::clone)
-    }
-}
-impl<P: MiniscriptKey, Q: MiniscriptKey<Hash = P::Hash>, T: TranslatePk<P, Q>> TranslatePk1<P, Q>
-    for T
-{
-}
-
-/// Variant of `TranslatePk` where P's hash is P, so the hashes
-/// can be converted by reusing the key-conversion function
-pub trait TranslatePk2<P: MiniscriptKey<Hash = P>, Q: MiniscriptKey>: TranslatePk<P, Q> {
-    /// Translate a struct from one generic to another where the
-    /// translation for Pk is provided by translatefpk
-    fn translate_pk2<Fpk: Fn(&P) -> Result<Q, E>, E>(
-        &self,
-        translatefpk: Fpk,
-    ) -> Result<<Self as TranslatePk<P, Q>>::Output, E> {
-        self.translate_pk(&translatefpk, |h| {
-            translatefpk(h).map(|q| q.to_pubkeyhash())
-        })
-    }
-
-    /// Translate a struct from one generic to another where the
-    /// translation for Pk is provided by translatefpk
-    fn translate_pk2_infallible<Fpk: Fn(&P) -> Q>(
-        &self,
-        translatefpk: Fpk,
-    ) -> <Self as TranslatePk<P, Q>>::Output {
-        self.translate_pk_infallible(&translatefpk, |h| translatefpk(h).to_pubkeyhash())
-    }
-}
-impl<P: MiniscriptKey<Hash = P>, Q: MiniscriptKey, T: TranslatePk<P, Q>> TranslatePk2<P, Q> for T {}
-
-/// Variant of `TranslatePk` where Q's hash is `hash160` so we can
-/// derive hashes by calling `hash_to_hash160`
-pub trait TranslatePk3<P: MiniscriptKey + ToPublicKey, Q: MiniscriptKey<Hash = hash160::Hash>>:
-    TranslatePk<P, Q>
-{
-    /// Translate a struct from one generic to another where the
-    /// translation for Pk is provided by translatefpk
-    fn translate_pk3<Fpk, E>(
-        &self,
-        translatefpk: Fpk,
-    ) -> Result<<Self as TranslatePk<P, Q>>::Output, E>
-    where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-    {
-        self.translate_pk(translatefpk, |h| Ok(P::hash_to_hash160(h)))
-    }
-
-    /// Translate a struct from one generic to another where the
-    /// translation for Pk is provided by translatefpk
-    fn translate_pk3_infallible<Fpk: FnMut(&P) -> Q>(
-        &self,
-        translatefpk: Fpk,
-    ) -> <Self as TranslatePk<P, Q>>::Output {
-        self.translate_pk_infallible(translatefpk, P::hash_to_hash160)
-    }
-}
-impl<
-        P: MiniscriptKey + ToPublicKey,
-        Q: MiniscriptKey<Hash = hash160::Hash>,
-        T: TranslatePk<P, Q>,
-    > TranslatePk3<P, Q> for T
-{
-}
-
 /// Miniscript
 
 #[derive(Debug)]
@@ -491,6 +259,8 @@ pub enum Error {
     ImpossibleSatisfaction,
     /// Bare descriptors don't have any addresses
     BareDescriptorAddr,
+    /// Upstream Miniscript Errors
+    BtcError(bitcoin_miniscript::Error),
 }
 
 #[doc(hidden)]
@@ -501,6 +271,13 @@ where
 {
     fn from(e: miniscript::types::Error<Pk, Ctx>) -> Error {
         Error::TypeCheck(e.to_string())
+    }
+}
+
+#[doc(hidden)]
+impl From<bitcoin_miniscript::Error> for Error {
+    fn from(e: bitcoin_miniscript::Error) -> Error {
+        Error::BtcError(e)
     }
 }
 
@@ -529,6 +306,13 @@ impl From<miniscript::analyzable::AnalysisError> for Error {
 impl From<elements::secp256k1::Error> for Error {
     fn from(e: elements::secp256k1::Error) -> Error {
         Error::Secp(e)
+    }
+}
+
+#[doc(hidden)]
+impl From<bitcoin::util::key::Error> for Error {
+    fn from(e: bitcoin::util::key::Error) -> Error {
+        Error::BadPubkey(e)
     }
 }
 
@@ -612,6 +396,7 @@ impl fmt::Display for Error {
             Error::AnalysisError(ref e) => e.fmt(f),
             Error::ImpossibleSatisfaction => write!(f, "Impossible to satisfy Miniscript"),
             Error::BareDescriptorAddr => write!(f, "Bare descriptors don't have address"),
+            Error::BtcError(ref e) => write!(f, " Bitcoin Miniscript Error {}", e),
         }
     }
 }

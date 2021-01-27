@@ -18,6 +18,7 @@
 
 use std::{fmt, str::FromStr};
 
+use bitcoin::secp256k1;
 use elements::{self, Script};
 
 use expression::{self, FromTree};
@@ -28,7 +29,7 @@ use {Error, Miniscript, MiniscriptKey, Satisfier, Segwitv0, ToPublicKey, Transla
 
 use super::{
     checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait, SortedMultiVec,
+    DescriptorTrait, ElementsTrait, SortedMultiVec, ELMTS_STR,
 };
 /// A Segwitv0 wsh descriptor
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
@@ -60,6 +61,33 @@ impl<Pk: MiniscriptKey> Wsh<Pk> {
     pub fn as_inner(&self) -> &WshInner<Pk> {
         &self.inner
     }
+
+    // Constructor for creating inner wsh for the sh fragment
+    pub(super) fn from_inner_tree(top: &expression::Tree) -> Result<Self, Error>
+    where
+        <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
+        <Pk as FromStr>::Err: ToString,
+    {
+        if top.name == "wsh" && top.args.len() == 1 {
+            let top = &top.args[0];
+            if top.name == "sortedmulti" {
+                return Ok(Wsh {
+                    inner: WshInner::SortedMulti(SortedMultiVec::from_tree(&top)?),
+                });
+            }
+            let sub = Miniscript::from_tree(&top)?;
+            Segwitv0::top_level_checks(&sub)?;
+            Ok(Wsh {
+                inner: WshInner::Ms(sub),
+            })
+        } else {
+            Err(Error::Unexpected(format!(
+                "{}({} args) while parsing wsh descriptor",
+                top.name,
+                top.args.len(),
+            )))
+        }
+    }
 }
 
 /// Wsh Inner
@@ -86,7 +114,7 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        if top.name == "wsh" && top.args.len() == 1 {
+        if top.name == "elwsh" && top.args.len() == 1 {
             let top = &top.args[0];
             if top.name == "sortedmulti" {
                 return Ok(Wsh {
@@ -110,8 +138,8 @@ where
 impl<Pk: MiniscriptKey> fmt::Debug for Wsh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.inner {
-            WshInner::SortedMulti(ref smv) => write!(f, "wsh({:?})", smv),
-            WshInner::Ms(ref ms) => write!(f, "wsh({:?})", ms),
+            WshInner::SortedMulti(ref smv) => write!(f, "{}wsh({:?})", ELMTS_STR, smv),
+            WshInner::Ms(ref ms) => write!(f, "{}wsh({:?})", ELMTS_STR, ms),
         }
     }
 }
@@ -119,8 +147,8 @@ impl<Pk: MiniscriptKey> fmt::Debug for Wsh<Pk> {
 impl<Pk: MiniscriptKey> fmt::Display for Wsh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let desc = match self.inner {
-            WshInner::SortedMulti(ref smv) => format!("wsh({})", smv),
-            WshInner::Ms(ref ms) => format!("wsh({})", ms),
+            WshInner::SortedMulti(ref smv) => format!("{}wsh({})", ELMTS_STR, smv),
+            WshInner::Ms(ref ms) => format!("{}wsh({})", ELMTS_STR, ms),
         };
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
@@ -138,6 +166,24 @@ where
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         Wsh::<Pk>::from_tree(&top)
+    }
+}
+
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wsh<Pk> {
+    fn blind_addr(
+        &self,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        match self.inner {
+            WshInner::SortedMulti(ref smv) => {
+                Ok(elements::Address::p2wsh(&smv.encode(), blinder, params))
+            }
+            WshInner::Ms(ref ms) => Ok(elements::Address::p2wsh(&ms.encode(), blinder, params)),
+        }
     }
 }
 
@@ -279,17 +325,36 @@ impl<Pk: MiniscriptKey> Wpkh<Pk> {
     pub fn as_inner(&self) -> &Pk {
         &self.pk
     }
+
+    // Parse a bitcoin style wpkh tree. Useful when parsing nested trees
+    pub(super) fn from_inner_tree(top: &expression::Tree) -> Result<Self, Error>
+    where
+        <Pk as FromStr>::Err: ToString,
+        <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
+    {
+        if top.name == "wpkh" && top.args.len() == 1 {
+            Ok(Wpkh::new(expression::terminal(&top.args[0], |pk| {
+                Pk::from_str(pk)
+            })?)?)
+        } else {
+            Err(Error::Unexpected(format!(
+                "{}({} args) while parsing wpkh descriptor",
+                top.name,
+                top.args.len(),
+            )))
+        }
+    }
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Wpkh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "wpkh({:?})", self.pk)
+        write!(f, "{}wpkh({:?})", ELMTS_STR, self.pk)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Wpkh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let desc = format!("wpkh({})", self.pk);
+        let desc = format!("{}wpkh({})", ELMTS_STR, self.pk);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
     }
@@ -307,7 +372,7 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        if top.name == "wpkh" && top.args.len() == 1 {
+        if top.name == "elwpkh" && top.args.len() == 1 {
             Ok(Wpkh::new(expression::terminal(&top.args[0], |pk| {
                 Pk::from_str(pk)
             })?)?)
@@ -332,6 +397,23 @@ where
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         Self::from_tree(&top)
+    }
+}
+
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wpkh<Pk> {
+    fn blind_addr(
+        &self,
+        blinder: Option<secp256k1::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        Ok(elements::Address::p2wpkh(
+            &self.pk.to_public_key(),
+            blinder,
+            params,
+        ))
     }
 }
 

@@ -126,12 +126,12 @@ impl<'txin> Interpreter<'txin> {
             inner::Inner::PublicKey(ref pk, inner::PubkeyType::Pkh) => format!("pkh({})", pk),
             inner::Inner::PublicKey(ref pk, inner::PubkeyType::Wpkh) => format!("wpkh({})", pk),
             inner::Inner::PublicKey(ref pk, inner::PubkeyType::ShWpkh) => {
-                format!("sh(wpkh({}))", pk)
+                format!("elsh(wpkh({}))", pk)
             }
             inner::Inner::Script(ref ms, inner::ScriptType::Bare) => format!("{}", ms),
-            inner::Inner::Script(ref ms, inner::ScriptType::Sh) => format!("sh({})", ms),
-            inner::Inner::Script(ref ms, inner::ScriptType::Wsh) => format!("wsh({})", ms),
-            inner::Inner::Script(ref ms, inner::ScriptType::ShWsh) => format!("sh(wsh({}))", ms),
+            inner::Inner::Script(ref ms, inner::ScriptType::Sh) => format!("elsh({})", ms),
+            inner::Inner::Script(ref ms, inner::ScriptType::Wsh) => format!("elwsh({})", ms),
+            inner::Inner::Script(ref ms, inner::ScriptType::ShWsh) => format!("elsh(wsh({}))", ms),
         }
     }
 
