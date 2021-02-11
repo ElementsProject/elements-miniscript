@@ -42,25 +42,27 @@
 //! which we verify using CHECKSIGFROMSTACK
 use std::{fmt, str::FromStr};
 
+use bitcoin;
 use elements::hashes::{sha256d, Hash};
 use elements::opcodes::all;
 use elements::secp256k1;
 use elements::sighash::SigHashCache;
-use elements::{confidential, script};
 use elements::{
+    self,
     encode::{serialize, Encodable},
     SigHash,
 };
+use elements::{confidential, script};
 use elements::{OutPoint, Script, SigHashType, Transaction, TxOut};
 
-use crate::{
+use {
     expression::{self, FromTree},
     miniscript::{
         decode,
         lex::{lex, Token, TokenIter},
     },
     util::varint_len,
-    Miniscript, ScriptContext, Segwitv0, TranslatePk,
+    ForEach, ForEachKey, Miniscript, ScriptContext, Segwitv0, TranslatePk,
 };
 
 use super::{
@@ -106,17 +108,17 @@ pub fn init_stack(
 ) -> Vec<Vec<u8>> {
     let mut sighash_cache = SigHashCache::new(tx);
     vec![
-        sig,                                                   // item 0
-        serialize(&hash_ty.as_u32()),                          // item 10
-        serialize(&tx.lock_time),                              // item 9
-        Vec::from(sighash_cache.hash_outputs().into_inner()),  // item 8
-        serialize(&tx.input[idx as usize].sequence),           // item 7
-        serialize(&value),                                     // item 6
-        serialize(&script_code),                               // item 5
-        serialize(&tx.input[idx as usize].previous_output),    // item 4
-        Vec::from(sighash_cache.hash_sequence().into_inner()), // item 3
-        Vec::from(sighash_cache.hash_prevouts().into_inner()), // item 2
-        serialize(&tx.version),                                // item 1
+        sig,                                                // item 0
+        serialize(&hash_ty.as_u32()),                       // item 10
+        serialize(&tx.lock_time),                           // item 9
+        serialize(&sighash_cache.hash_outputs()),           // item 8
+        serialize(&tx.input[idx as usize].sequence),        // item 7
+        serialize(&value),                                  // item 6
+        serialize(&script_code),                            // item 5
+        serialize(&tx.input[idx as usize].previous_output), // item 4
+        serialize(&sighash_cache.hash_sequence()),          // item 3
+        serialize(&sighash_cache.hash_prevouts()),          // item 2
+        serialize(&tx.version),                             // item 1
     ]
 }
 
@@ -185,38 +187,40 @@ impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
     where
         Pk: ToPublicKey,
     {
-        let n_version = s.lookup_nversion().ok_or(Error::CouldNotSatisfy)?;
-        let hash_prevouts = s.lookup_hashprevouts().ok_or(Error::CouldNotSatisfy)?;
-        let hash_sequence = s.lookup_hashsequence().ok_or(Error::CouldNotSatisfy)?;
-        let hash_issuances = s.lookup_hashissuances().ok_or(Error::CouldNotSatisfy)?;
-        let outpoint = s.lookup_outpoint().ok_or(Error::CouldNotSatisfy)?;
-        let script_code = s.lookup_scriptcode().ok_or(Error::CouldNotSatisfy)?;
-        let value = s.lookup_value().ok_or(Error::CouldNotSatisfy)?;
-        let n_sequence = s.lookup_nsequence().ok_or(Error::CouldNotSatisfy)?;
-        let hash_outputs = s.lookup_hashoutputs().ok_or(Error::CouldNotSatisfy)?;
-        let n_locktime = s.lookup_nlocktime().ok_or(Error::CouldNotSatisfy)?;
-        let sighash_ty = s.lookup_sighashu32().ok_or(Error::CouldNotSatisfy)?;
+        let mut wit = {
+            let n_version = s.lookup_nversion().ok_or(Error::CouldNotSatisfy)?;
+            let hash_prevouts = s.lookup_hashprevouts().ok_or(Error::CouldNotSatisfy)?;
+            let hash_sequence = s.lookup_hashsequence().ok_or(Error::CouldNotSatisfy)?;
+            let hash_issuances = s.lookup_hashissuances().ok_or(Error::CouldNotSatisfy)?;
+            let outpoint = s.lookup_outpoint().ok_or(Error::CouldNotSatisfy)?;
+            let script_code = s.lookup_scriptcode().ok_or(Error::CouldNotSatisfy)?;
+            let value = s.lookup_value().ok_or(Error::CouldNotSatisfy)?;
+            let n_sequence = s.lookup_nsequence().ok_or(Error::CouldNotSatisfy)?;
+            let hash_outputs = s.lookup_hashoutputs().ok_or(Error::CouldNotSatisfy)?;
+            let n_locktime = s.lookup_nlocktime().ok_or(Error::CouldNotSatisfy)?;
+            let sighash_ty = s.lookup_sighashu32().ok_or(Error::CouldNotSatisfy)?;
 
-        let (sig, hash_ty) = s.lookup_sig(&self.pk).ok_or(Error::CouldNotSatisfy)?;
-        // Hashtype must be the same
-        if sighash_ty != hash_ty.as_u32() {
-            return Err(Error::CouldNotSatisfy);
-        }
+            let (sig, hash_ty) = s.lookup_sig(&self.pk).ok_or(Error::CouldNotSatisfy)?;
+            // Hashtype must be the same
+            if sighash_ty != hash_ty.as_u32() {
+                return Err(Error::CouldNotSatisfy);
+            }
 
-        let mut wit = vec![
-            Vec::from(sig.serialize_der().as_ref()), // The covenant sig
-            serialize(&n_version),                   // item 1
-            serialize(&hash_prevouts),               // item 2
-            serialize(&hash_sequence),               // item 3
-            serialize(&hash_issuances),              // ELEMENTS EXTRA: item 3b
-            serialize(&outpoint),                    // item 4
-            serialize(script_code),                  // item 5
-            serialize(&value),                       // item 6
-            serialize(&n_sequence),                  // item 7
-            serialize(&hash_outputs),                // item 8
-            serialize(&n_locktime),                  // item 9
-            serialize(&sighash_ty),                  // item 10
-        ];
+            vec![
+                Vec::from(sig.serialize_der().as_ref()), // The covenant sig
+                serialize(&n_version),                   // item 1
+                serialize(&hash_prevouts),               // item 2
+                serialize(&hash_sequence),               // item 3
+                serialize(&hash_issuances),              // ELEMENTS EXTRA: item 3b
+                serialize(&outpoint),                    // item 4
+                serialize(script_code),                  // item 5
+                serialize(&value),                       // item 6
+                serialize(&n_sequence),                  // item 7
+                serialize(&hash_outputs),                // item 8
+                serialize(&n_locktime),                  // item 9
+                serialize(&sighash_ty),                  // item 10
+            ]
+        };
 
         let ms_wit = self.ms.satisfy(s)?;
         wit.extend(ms_wit);
@@ -407,6 +411,8 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
 
 impl<Pk: MiniscriptKey> FromTree for CovenantDescriptor<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -442,6 +448,8 @@ impl<Pk: MiniscriptKey> fmt::Display for CovenantDescriptor<Pk> {
 
 impl<Pk: MiniscriptKey> FromStr for CovenantDescriptor<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -456,6 +464,8 @@ where
 
 impl<Pk: MiniscriptKey> ElementsTrait<Pk> for CovenantDescriptor<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -477,6 +487,8 @@ where
 
 impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for CovenantDescriptor<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -492,7 +504,7 @@ where
 
     fn address(&self, params: &'static elements::AddressParams) -> Result<elements::Address, Error>
     where
-        Pk: miniscript::ToPublicKey,
+        Pk: ToPublicKey,
     {
         Ok(elements::Address::p2wsh(
             &self.explicit_script(),
@@ -503,21 +515,21 @@ where
 
     fn script_pubkey(&self) -> Script
     where
-        Pk: miniscript::ToPublicKey,
+        Pk: ToPublicKey,
     {
         self.explicit_script().to_v0_p2wsh()
     }
 
     fn unsigned_script_sig(&self) -> Script
     where
-        Pk: miniscript::ToPublicKey,
+        Pk: ToPublicKey,
     {
         Script::new()
     }
 
     fn explicit_script(&self) -> Script
     where
-        Pk: miniscript::ToPublicKey,
+        Pk: ToPublicKey,
     {
         self.encode()
     }
@@ -547,10 +559,20 @@ where
 
     fn script_code(&self) -> Script
     where
-        Pk: miniscript::ToPublicKey,
+        Pk: ToPublicKey,
     {
         // Change this if we use codesep
         self.explicit_script()
+    }
+}
+
+impl<Pk: MiniscriptKey> ForEachKey<Pk> for CovenantDescriptor<Pk> {
+    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a,
+    {
+        pred(ForEach::Key(&self.pk)) && self.ms.for_any_key(pred)
     }
 }
 
@@ -580,10 +602,10 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for CovenantDescripto
 #[allow(unused_imports)]
 mod tests {
 
-    use crate::{descriptor::DescriptorType, Descriptor, ElementsSig};
+    use {descriptor::DescriptorType, Descriptor, ElementsSig};
 
     use super::*;
-    use elements::confidential;
+    use elements::{self, confidential};
     use elements::{AssetId, AssetIssuance, OutPoint, TxIn, TxInWitness, Txid};
     use std::str::FromStr;
 
@@ -634,7 +656,7 @@ mod tests {
             desc.address(&elements::AddressParams::ELEMENTS)
                 .unwrap()
                 .to_string(),
-            "ert1q9cxa9w967qys6dr77qpvccvazmnnm0df7qr7s6gl9ajzs4nsas0sjma6fz"
+            "ert1qjk0kxztzvsmuygsxvyzcgaexk8rt04ttgu4sgsxhcal20agdr4vq4z5a7w"
         );
 
         println!(
@@ -676,7 +698,8 @@ mod tests {
             confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
 
         // same second output
-        spend_tx.output.push(spend_tx.output[0].clone());
+        let second_out = spend_tx.output[0].clone();
+        spend_tx.output.push(second_out);
 
         // Add a fee output
         spend_tx.output.push(TxOut::default());
@@ -724,10 +747,14 @@ mod tests {
 
         // A pair of satisfiers is also a satisfier
         let (wit, _) = desc.get_satisfaction((cov_sat, pk_sat)).unwrap();
-        spend_tx.input[0].witness.script_witness = wit;
-        use elements::encode::serialize_hex;
-        println!("{}", serialize_hex(&spend_tx));
-        println!("{}", serialize_hex(&desc.explicit_script()));
+        // Commented Demo test code:
+        // 1) Send 0.002 btc to above address
+        // 2) Create a tx by filling up txid
+        // 3) Send the tx
+        // spend_tx.input[0].witness.script_witness = wit;
+        // use elements::encode::serialize_hex;
+        // println!("{}", serialize_hex(&spend_tx));
+        // println!("{}", serialize_hex(&desc.explicit_script()));
     }
 
     fn txin_from_txid_vout(txid: &str, vout: u32) -> TxIn {
