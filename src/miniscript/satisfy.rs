@@ -25,6 +25,7 @@ use std::{cmp, i64, mem};
 use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d};
 use elements::{self, secp256k1};
+use elements::{confidential, OutPoint, Script};
 use {MiniscriptKey, ToPublicKey};
 
 use miniscript::limits::{
@@ -99,6 +100,62 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
     /// Assert whether a absolute locktime is satisfied
     fn check_after(&self, _: u32) -> bool {
         false
+    }
+
+    /// Introspection Data for Covenant support
+    /// #1 Version
+    fn lookup_nversion(&self) -> Option<u32> {
+        None
+    }
+
+    /// Item 2: hashprevouts
+    fn lookup_hashprevouts(&self) -> Option<sha256d::Hash> {
+        None
+    }
+
+    /// Item 3: hashsequence
+    fn lookup_hashsequence(&self) -> Option<sha256d::Hash> {
+        None
+    }
+
+    /// ELEMENTS EXTRA: Item 3b: hashsequence
+    fn lookup_hashissuances(&self) -> Option<sha256d::Hash> {
+        None
+    }
+
+    /// Item 4: outpoint
+    fn lookup_outpoint(&self) -> Option<OutPoint> {
+        None
+    }
+
+    /// Item 5: scriptcode
+    fn lookup_scriptcode(&self) -> Option<&Script> {
+        None
+    }
+
+    /// Item 6: value
+    fn lookup_value(&self) -> Option<confidential::Value> {
+        None
+    }
+
+    /// Item 7: sequence
+    fn lookup_nsequence(&self) -> Option<u32> {
+        None
+    }
+
+    /// Item 8: hashoutputs
+    fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
+        None
+    }
+
+    /// Item 9: nlocktime
+    fn lookup_nlocktime(&self) -> Option<u32> {
+        None
+    }
+
+    /// Item 10: sighash type as u32
+    fn lookup_sighashu32(&self) -> Option<u32> {
+        None
     }
 }
 
@@ -205,6 +262,50 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
     fn check_after(&self, t: u32) -> bool {
         (**self).check_after(t)
     }
+
+    fn lookup_nversion(&self) -> Option<u32> {
+        (**self).lookup_nversion()
+    }
+
+    fn lookup_hashprevouts(&self) -> Option<sha256d::Hash> {
+        (**self).lookup_hashprevouts()
+    }
+
+    fn lookup_hashsequence(&self) -> Option<sha256d::Hash> {
+        (**self).lookup_hashsequence()
+    }
+
+    fn lookup_hashissuances(&self) -> Option<sha256d::Hash> {
+        (**self).lookup_hashissuances()
+    }
+
+    fn lookup_outpoint(&self) -> Option<OutPoint> {
+        (**self).lookup_outpoint()
+    }
+
+    fn lookup_scriptcode(&self) -> Option<&Script> {
+        (**self).lookup_scriptcode()
+    }
+
+    fn lookup_value(&self) -> Option<confidential::Value> {
+        (**self).lookup_value()
+    }
+
+    fn lookup_nsequence(&self) -> Option<u32> {
+        (**self).lookup_nsequence()
+    }
+
+    fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
+        (**self).lookup_hashoutputs()
+    }
+
+    fn lookup_nlocktime(&self) -> Option<u32> {
+        (**self).lookup_nlocktime()
+    }
+
+    fn lookup_sighashu32(&self) -> Option<u32> {
+        (**self).lookup_sighashu32()
+    }
 }
 
 impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'a mut S {
@@ -242,6 +343,50 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
 
     fn check_after(&self, t: u32) -> bool {
         (**self).check_after(t)
+    }
+
+    fn lookup_nversion(&self) -> Option<u32> {
+        (**self).lookup_nversion()
+    }
+
+    fn lookup_hashprevouts(&self) -> Option<sha256d::Hash> {
+        (**self).lookup_hashprevouts()
+    }
+
+    fn lookup_hashsequence(&self) -> Option<sha256d::Hash> {
+        (**self).lookup_hashsequence()
+    }
+
+    fn lookup_hashissuances(&self) -> Option<sha256d::Hash> {
+        (**self).lookup_hashissuances()
+    }
+
+    fn lookup_outpoint(&self) -> Option<OutPoint> {
+        (**self).lookup_outpoint()
+    }
+
+    fn lookup_scriptcode(&self) -> Option<&Script> {
+        (**self).lookup_scriptcode()
+    }
+
+    fn lookup_value(&self) -> Option<confidential::Value> {
+        (**self).lookup_value()
+    }
+
+    fn lookup_nsequence(&self) -> Option<u32> {
+        (**self).lookup_nsequence()
+    }
+
+    fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
+        (**self).lookup_hashoutputs()
+    }
+
+    fn lookup_nlocktime(&self) -> Option<u32> {
+        (**self).lookup_nlocktime()
+    }
+
+    fn lookup_sighashu32(&self) -> Option<u32> {
+        (**self).lookup_sighashu32()
     }
 }
 
@@ -347,6 +492,116 @@ macro_rules! impl_tuple_satisfier {
                     }
                 )*
                 false
+            }
+
+            fn lookup_nversion(&self) -> Option<u32> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_nversion() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_hashprevouts(&self) -> Option<sha256d::Hash> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_hashprevouts() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_hashsequence(&self) -> Option<sha256d::Hash> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_hashsequence() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_hashissuances(&self) -> Option<sha256d::Hash> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_hashissuances() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_outpoint(&self) -> Option<OutPoint> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_outpoint() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_scriptcode(&self) -> Option<&Script> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_scriptcode() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_value(&self) -> Option<confidential::Value> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_value() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_nsequence(&self) -> Option<u32> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_nsequence() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_hashoutputs() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_nlocktime(&self) -> Option<u32> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_nlocktime() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_sighashu32(&self) -> Option<u32> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_sighashu32() {
+                        return Some(result);
+                    }
+                )*
+                None
             }
         }
     }
