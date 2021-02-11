@@ -33,6 +33,7 @@ pub enum Token {
     Add,
     Equal,
     CheckSig,
+    CheckSigFromStack,
     CheckMultiSig,
     CheckSequenceVerify,
     CheckLockTimeVerify,
@@ -138,6 +139,9 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token>, Error> {
             }
             script::Instruction::Op(opcodes::all::OP_CHECKSIG) => {
                 ret.push(Token::CheckSig);
+            }
+            script::Instruction::Op(opcodes::all::OP_CHECKSIGFROMSTACK) => {
+                ret.push(Token::CheckSigFromStack);
             }
             script::Instruction::Op(opcodes::all::OP_CHECKSIGVERIFY) => {
                 ret.push(Token::CheckSig);
