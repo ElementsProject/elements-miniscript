@@ -236,7 +236,7 @@ impl FromStr for DescriptorType {
             Ok(DescriptorType::WshSortedMulti)
         } else if s.len() >= 3 && &s[0..3] == "wsh" {
             Ok(DescriptorType::Wsh)
-        } else if s.len() >= 6 && &s[0..6] == "wshcov" {
+        } else if s.len() >= 6 && &s[0..6] == "covwsh" {
             Ok(DescriptorType::Cov)
         } else {
             Ok(DescriptorType::Bare)
@@ -752,7 +752,7 @@ where
             ("elpkh", 1) => Descriptor::Pkh(Pkh::from_tree(top)?),
             ("elwpkh", 1) => Descriptor::Wpkh(Wpkh::from_tree(top)?),
             ("elsh", 1) => Descriptor::Sh(Sh::from_tree(top)?),
-            ("elwshcov", 2) => Descriptor::Cov(CovenantDescriptor::from_tree(top)?),
+            ("elcovwsh", 2) => Descriptor::Cov(CovenantDescriptor::from_tree(top)?),
             ("elwsh", 1) => Descriptor::Wsh(Wsh::from_tree(top)?),
             _ => Descriptor::Bare(Bare::from_tree(top)?),
         })
