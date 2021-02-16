@@ -111,6 +111,11 @@ impl CovOperations for script::Builder {
         // because this is a top level check
         builder = builder.push_verify();
         // pick signature. stk_size = 12
+        // Why can we pick have a fixed pick of 11.
+        // The covenant check enforces that the the next 12 elements
+        // of the stack must be elements from the sighash.
+        // We don't additionally need to check the depth because
+        // cleanstack is a consensus rule in segwit.
         builder = builder.push_int(11).push_opcode(all::OP_PICK);
         // convert sighash type into 1 byte
         // OP_OVER copies the second to top element onto
@@ -215,8 +220,11 @@ impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
 
 /// A satisfier for Covenant descriptors
 /// that can do transaction introspection
+/// 'tx denotes the lifetime of the transaction
+/// being satisfied and 'ptx denotes the lifetime
+/// of the previous transaction inputs
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CovSatisfier<'tx> {
+pub struct CovSatisfier<'tx, 'ptx> {
     // Common fields in Segwit and Taphash
     /// The transaction being spent
     tx: &'tx Transaction,
@@ -228,7 +236,7 @@ pub struct CovSatisfier<'tx> {
 
     // Segwitv0
     /// The script code required for segwit sighash
-    script_code: Option<&'tx Script>,
+    script_code: Option<&'ptx Script>,
     /// The value of the output being spent
     value: Option<confidential::Value>,
 
@@ -236,10 +244,10 @@ pub struct CovSatisfier<'tx> {
     /// The utxos used in transaction
     /// This construction should suffice for Taproot
     /// related covenant spends too.
-    spent_utxos: Option<&'tx [TxOut]>,
+    spent_utxos: Option<&'ptx [TxOut]>,
 }
 
-impl<'tx> CovSatisfier<'tx> {
+impl<'tx, 'ptx> CovSatisfier<'tx, 'ptx> {
     /// Create a new CovSatisfier for taproot spends
     /// **Panics**
     /// 1) if number of spent_utxos is not equal to
@@ -247,7 +255,7 @@ impl<'tx> CovSatisfier<'tx> {
     /// 2) if idx is out of bounds
     pub fn new_taproot(
         tx: &'tx Transaction,
-        spent_utxos: &'tx [TxOut],
+        spent_utxos: &'ptx [TxOut],
         idx: u32,
         hash_type: SigHashType,
     ) -> Self {
@@ -269,7 +277,7 @@ impl<'tx> CovSatisfier<'tx> {
         tx: &'tx Transaction,
         idx: u32,
         value: confidential::Value,
-        script_code: &'tx Script,
+        script_code: &'ptx Script,
         hash_type: SigHashType,
     ) -> Self {
         assert!((idx as usize) < tx.input.len());
@@ -301,7 +309,7 @@ impl<'tx> CovSatisfier<'tx> {
     }
 }
 
-impl<'tx, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for CovSatisfier<'tx> {
+impl<'tx, 'ptx, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for CovSatisfier<'tx, 'ptx> {
     fn lookup_nversion(&self) -> Option<u32> {
         Some(self.tx.version)
     }
@@ -411,7 +419,7 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        if top.name == "elwshcov" && top.args.len() == 2 {
+        if top.name == "elcovwsh" && top.args.len() == 2 {
             let pk = expression::terminal(&top.args[0], |pk| Pk::from_str(pk))?;
             let top = &top.args[1];
             let sub = Miniscript::from_tree(&top)?;
@@ -419,7 +427,7 @@ where
             Ok(CovenantDescriptor { pk: pk, ms: sub })
         } else {
             Err(Error::Unexpected(format!(
-                "{}({} args) while parsing elwshcov descriptor",
+                "{}({} args) while parsing elcovwsh descriptor",
                 top.name,
                 top.args.len(),
             )))
@@ -428,13 +436,13 @@ where
 }
 impl<Pk: MiniscriptKey> fmt::Debug for CovenantDescriptor<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}wshcov({},{})", ELMTS_STR, self.pk, self.ms)
+        write!(f, "{}covwsh({},{})", ELMTS_STR, self.pk, self.ms)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for CovenantDescriptor<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let desc = format!("{}wshcov({},{})", ELMTS_STR, self.pk, self.ms);
+        let desc = format!("{}covwsh({},{})", ELMTS_STR, self.pk, self.ms);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
     }
@@ -594,10 +602,10 @@ mod tests {
 
     #[test]
     fn parse_cov() {
-        Descriptor::<String>::from_str("elwshcov(A,pk(B))").unwrap();
-        Descriptor::<String>::from_str("elwshcov(A,or_i(pk(B),pk(C)))").expect("Failed");
-        Descriptor::<String>::from_str("elwshcov(A,multi(2,B,C,D))").unwrap();
-        Descriptor::<String>::from_str("elwshcov(A,and_v(v:pk(B),pk(C)))").unwrap();
+        Descriptor::<String>::from_str("elcovwsh(A,pk(B))").unwrap();
+        Descriptor::<String>::from_str("elcovwsh(A,or_i(pk(B),pk(C)))").expect("Failed");
+        Descriptor::<String>::from_str("elcovwsh(A,multi(2,B,C,D))").unwrap();
+        Descriptor::<String>::from_str("elcovwsh(A,and_v(v:pk(B),pk(C)))").unwrap();
     }
 
     fn script_rtt(desc_str: &str) {
@@ -613,17 +621,17 @@ mod tests {
     fn script_encode_test() {
         let (pks, _sks) = setup_keys(5);
 
-        script_rtt(&format!("elwshcov({},pk({}))", pks[0], pks[1]));
+        script_rtt(&format!("elcovwsh({},pk({}))", pks[0], pks[1]));
         script_rtt(&format!(
-            "elwshcov({},or_i(pk({}),pk({})))",
+            "elcovwsh({},or_i(pk({}),pk({})))",
             pks[0], pks[1], pks[2]
         ));
         script_rtt(&format!(
-            "elwshcov({},multi(2,{},{},{}))",
+            "elcovwsh({},multi(2,{},{},{}))",
             pks[0], pks[1], pks[2], pks[3]
         ));
         script_rtt(&format!(
-            "elwshcov({},and_v(v:pk({}),pk({})))",
+            "elcovwsh({},and_v(v:pk({}),pk({})))",
             pks[0], pks[1], pks[2]
         ));
     }
@@ -654,7 +662,7 @@ mod tests {
     fn fund_output() {
         let (pks, _sks) = setup_keys(5);
         let desc =
-            Descriptor::<bitcoin::PublicKey>::from_str(&format!("elwshcov({},1)", pks[0])).unwrap();
+            Descriptor::<bitcoin::PublicKey>::from_str(&format!("elcovwsh({},1)", pks[0])).unwrap();
 
         assert_eq!(desc.desc_type(), DescriptorType::Cov);
         assert_eq!(
@@ -676,7 +684,7 @@ mod tests {
     fn spend_tx() {
         let (pks, sks) = setup_keys(5);
         let desc =
-            Descriptor::<bitcoin::PublicKey>::from_str(&format!("elwshcov({},1)", pks[0])).unwrap();
+            Descriptor::<bitcoin::PublicKey>::from_str(&format!("elcovwsh({},1)", pks[0])).unwrap();
 
         assert_eq!(desc.desc_type(), DescriptorType::Cov);
         assert_eq!(
