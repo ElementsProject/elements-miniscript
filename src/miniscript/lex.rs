@@ -39,6 +39,11 @@ pub enum Token {
     CheckLockTimeVerify,
     FromAltStack,
     ToAltStack,
+    Left,
+    Cat,
+    CodeSep,
+    Over,
+    Pick,
     Drop,
     Dup,
     If,
@@ -165,6 +170,21 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token>, Error> {
             }
             script::Instruction::Op(opcodes::all::OP_TOALTSTACK) => {
                 ret.push(Token::ToAltStack);
+            }
+            script::Instruction::Op(opcodes::all::OP_LEFT) => {
+                ret.push(Token::Left);
+            }
+            script::Instruction::Op(opcodes::all::OP_CAT) => {
+                ret.push(Token::Cat);
+            }
+            script::Instruction::Op(opcodes::all::OP_CODESEPARATOR) => {
+                ret.push(Token::CodeSep);
+            }
+            script::Instruction::Op(opcodes::all::OP_OVER) => {
+                ret.push(Token::Over);
+            }
+            script::Instruction::Op(opcodes::all::OP_PICK) => {
+                ret.push(Token::Pick);
             }
             script::Instruction::Op(opcodes::all::OP_DROP) => {
                 ret.push(Token::Drop);

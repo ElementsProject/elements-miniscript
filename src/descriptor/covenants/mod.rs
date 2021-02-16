@@ -59,7 +59,7 @@ use {
     expression::{self, FromTree},
     miniscript::{
         decode,
-        lex::{lex, Token, TokenIter},
+        lex::{lex, Token as Tk, TokenIter},
     },
     util::varint_len,
     ForEach, ForEachKey, Miniscript, ScriptContext, Segwitv0, TranslatePk,
@@ -369,8 +369,20 @@ impl<'tx, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for CovSatisfier<'tx> {
 
 impl CovenantDescriptor<bitcoin::PublicKey> {
     /// Check if the given script is a covenant descriptor
-    fn check_cov_script(_iter: &mut TokenIter) -> Result<bitcoin::PublicKey, Error> {
-        Ok(bitcoin::PublicKey::from_slice(&[0x02]).unwrap())
+    /// Consumes the iterator so that only remaining miniscript
+    /// needs to be parsed from the iterator
+    #[allow(unreachable_patterns)]
+    fn check_cov_script(tokens: &mut TokenIter) -> Result<bitcoin::PublicKey, Error> {
+        match_token!(tokens,
+            Tk::CheckSigFromStack, Tk::FromAltStack, Tk::Sha256, Tk::Cat,
+            Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat,
+            Tk::Cat, Tk::Cat, Tk::Verify, Tk::CheckSig, Tk::CodeSep, Tk::ToAltStack,
+            Tk::Dup, Tk::Pubkey(pk), Tk::Cat, Tk::Left, Tk::Num(1),
+            Tk::Over, Tk::Pick, Tk::Num(11), Tk::Verify => {
+                return Ok(pk);
+            },
+            _ => unreachable!("Error"),
+        );
     }
 
     /// Parse a descriptor from script. While parsing
@@ -383,7 +395,7 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
         let tokens = lex(script)?;
         let mut iter = TokenIter::new(tokens);
 
-        if let Some(Token::CheckSigFromStack) = iter.peek() {
+        if let Some(Tk::CheckSigFromStack) = iter.peek() {
             let pk = CovenantDescriptor::<bitcoin::PublicKey>::check_cov_script(&mut iter)?;
             let ms = decode::parse(&mut iter)?;
             Ok(Self { pk: pk, ms: ms })
@@ -604,6 +616,34 @@ mod tests {
         Descriptor::<String>::from_str("elwshcov(A,or_i(pk(B),pk(C)))").expect("Failed");
         Descriptor::<String>::from_str("elwshcov(A,multi(2,B,C,D))").unwrap();
         Descriptor::<String>::from_str("elwshcov(A,and_v(v:pk(B),pk(C)))").unwrap();
+    }
+
+    fn script_rtt(desc_str: &str) {
+        let desc = Descriptor::<bitcoin::PublicKey>::from_str(desc_str).unwrap();
+        assert_eq!(desc.desc_type(), DescriptorType::Cov);
+        let script = desc.explicit_script();
+
+        let cov_desc = CovenantDescriptor::<bitcoin::PublicKey>::parse(&script).unwrap();
+
+        assert_eq!(cov_desc.to_string(), desc.to_string());
+    }
+    #[test]
+    fn script_encode_test() {
+        let (pks, _sks) = setup_keys(5);
+
+        script_rtt(&format!("elwshcov({},pk({}))", pks[0], pks[1]));
+        script_rtt(&format!(
+            "elwshcov({},or_i(pk({}),pk({})))",
+            pks[0], pks[1], pks[2]
+        ));
+        script_rtt(&format!(
+            "elwshcov({},multi(2,{},{},{}))",
+            pks[0], pks[1], pks[2], pks[3]
+        ));
+        script_rtt(&format!(
+            "elwshcov({},and_v(v:pk({}),pk({})))",
+            pks[0], pks[1], pks[2]
+        ));
     }
 
     // Some deterministic keys for ease of testing
