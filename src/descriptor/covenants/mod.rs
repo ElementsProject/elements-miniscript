@@ -85,41 +85,15 @@ pub trait CovOperations: Sized {
     /// CAT all of them and check sig from stack
     fn verify_cov(self, key: &bitcoin::PublicKey) -> Self;
 
+    /// Get the script code for the covenant script
+    /// assuming the above construction of covenants
+    /// which uses OP_CODESEP
+    fn post_codesep_script(self) -> Self;
+
     /// Put version on top of stack
     fn pick_version(self) -> Self {
         self.pick(9)
     }
-}
-
-/// Create an initial stack with Sighash components
-/// The 10 items are from BIP 143 with an item 0
-/// containing the signature over the sha256d of
-/// concatanation of the following 10 items.
-/// Note the sig here does not contain the sighash
-/// type flag
-#[allow(dead_code)]
-pub fn init_stack(
-    tx: &Transaction,
-    idx: u32,
-    value: u64,
-    script_code: Script,
-    hash_ty: SigHashType,
-    sig: Vec<u8>,
-) -> Vec<Vec<u8>> {
-    let mut sighash_cache = SigHashCache::new(tx);
-    vec![
-        sig,                                                // item 0
-        serialize(&hash_ty.as_u32()),                       // item 10
-        serialize(&tx.lock_time),                           // item 9
-        serialize(&sighash_cache.hash_outputs()),           // item 8
-        serialize(&tx.input[idx as usize].sequence),        // item 7
-        serialize(&value),                                  // item 6
-        serialize(&script_code),                            // item 5
-        serialize(&tx.input[idx as usize].previous_output), // item 4
-        serialize(&sighash_cache.hash_sequence()),          // item 3
-        serialize(&sighash_cache.hash_prevouts()),          // item 2
-        serialize(&tx.version),                             // item 1
-    ]
 }
 
 impl CovOperations for script::Builder {
@@ -139,6 +113,8 @@ impl CovOperations for script::Builder {
         // pick signature. stk_size = 12
         builder = builder.push_int(11).push_opcode(all::OP_PICK);
         // convert sighash type into 1 byte
+        // OP_OVER copies the second to top element onto
+        // the top of the stack
         builder = builder.push_opcode(all::OP_OVER);
         builder = builder.push_int(1).push_opcode(all::OP_LEFT);
         // create a bitcoinsig = cat the sig and hashtype
@@ -149,6 +125,15 @@ impl CovOperations for script::Builder {
             .push_key(key)
             .push_opcode(all::OP_DUP)
             .push_opcode(all::OP_TOALTSTACK);
+
+        // Code separtor. Everything before this(and including this codesep)
+        // won't be used in script code calculation
+        builder = builder.push_opcode(all::OP_CODESEPARATOR);
+        builder.post_codesep_script()
+    }
+
+    fn post_codesep_script(self) -> Self {
+        let mut builder = self;
         builder = builder.push_opcode(all::OP_CHECKSIGVERIFY);
         for _ in 0..10 {
             builder = builder.push_opcode(all::OP_CAT);
@@ -385,7 +370,6 @@ impl<'tx, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for CovSatisfier<'tx> {
 impl CovenantDescriptor<bitcoin::PublicKey> {
     /// Check if the given script is a covenant descriptor
     fn check_cov_script(_iter: &mut TokenIter) -> Result<bitcoin::PublicKey, Error> {
-        //let iter2 = iter.clone().take(10);
         Ok(bitcoin::PublicKey::from_slice(&[0x02]).unwrap())
     }
 
@@ -561,8 +545,7 @@ where
     where
         Pk: ToPublicKey,
     {
-        // Change this if we use codesep
-        self.explicit_script()
+        script::Builder::new().post_codesep_script().into_script()
     }
 }
 
@@ -656,7 +639,7 @@ mod tests {
             desc.address(&elements::AddressParams::ELEMENTS)
                 .unwrap()
                 .to_string(),
-            "ert1qjk0kxztzvsmuygsxvyzcgaexk8rt04ttgu4sgsxhcal20agdr4vq4z5a7w"
+            "ert1ql8l6f3cytl5a849pcy7ycpqz9q9xqsd4mnq8wcms7mjlyr3mezpqz0vt3q"
         );
 
         println!(
@@ -678,14 +661,14 @@ mod tests {
             desc.address(&elements::AddressParams::ELEMENTS)
                 .unwrap()
                 .to_string(),
-            "ert1qjk0kxztzvsmuygsxvyzcgaexk8rt04ttgu4sgsxhcal20agdr4vq4z5a7w"
+            "ert1ql8l6f3cytl5a849pcy7ycpqz9q9xqsd4mnq8wcms7mjlyr3mezpqz0vt3q"
         );
         // Now create a transaction spending this.
         let mut spend_tx = Transaction {
             version: 2,
             lock_time: 0,
             input: vec![txin_from_txid_vout(
-                "23d86b629f607ff35cb2c88f5a90aee80f6fbe6473ccb515ce491e117f46eb6e",
+                "141f79c7c254ee3a9a9bc76b4f60564385b784bdfc1882b25154617801fe2237",
                 1,
             )],
             output: vec![],
@@ -708,7 +691,7 @@ mod tests {
         spend_tx.output[2].value = confidential::Value::Explicit(2_000);
 
         // Try to satisfy the covenant part
-        let script_code = desc.explicit_script();
+        let script_code = desc.script_code();
         let cov_sat = CovSatisfier::new_segwitv0(
             &spend_tx,
             0,
