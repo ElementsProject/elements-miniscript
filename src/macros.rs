@@ -94,3 +94,18 @@ macro_rules! serde_string_impl_pk {
         }
     };
 }
+
+macro_rules! match_token {
+    // Base case
+    ($tokens:expr => $sub:expr,) => { $sub };
+    // Recursive case
+    ($tokens:expr, $($first:pat $(,$rest:pat)* => $sub:expr,)*) => {
+        match $tokens.next() {
+            $(
+                Some($first) => match_token!($tokens $(,$rest)* => $sub,),
+            )*
+            Some(other) => return Err(Error::Unexpected(other.to_string())),
+            None => return Err(Error::UnexpectedStart),
+        }
+    };
+}
