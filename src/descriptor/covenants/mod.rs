@@ -109,7 +109,7 @@ impl CovOperations for script::Builder {
         // The miniscript is of type B, which should have pushed 1
         // onto the stack if it satisfied correctly.(which it should)
         // because this is a top level check
-        builder = builder.push_opcode(all::OP_VERIFY);
+        builder = builder.push_verify();
         // pick signature. stk_size = 12
         builder = builder.push_int(11).push_opcode(all::OP_PICK);
         // convert sighash type into 1 byte
