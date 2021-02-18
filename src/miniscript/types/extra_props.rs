@@ -318,6 +318,25 @@ impl Property for ExtData {
         }
     }
 
+    fn from_item_eq() -> Self {
+        unreachable!()
+    }
+
+    fn from_ver_eq() -> Self {
+        ExtData {
+            pk_cost: 4 + 1 + 1 + 4, // 4 opcodes, 1 push, (5) 4 byte push
+            has_free_verify: false,
+            ops_count_static: 4,
+            ops_count_sat: Some(4),
+            ops_count_nsat: Some(4),
+            stack_elem_count_sat: Some(0),
+            stack_elem_count_dissat: Some(0),
+            max_sat_size: Some((0, 0)),
+            max_dissat_size: Some((0, 0)),
+            timelock_info: TimeLockInfo::default(),
+        }
+    }
+
     fn cast_alt(self) -> Result<Self, ErrorKind> {
         Ok(ExtData {
             pk_cost: self.pk_cost + 2,
@@ -873,6 +892,7 @@ impl Property for ExtData {
             Terminal::Hash256(..) => Ok(Self::from_hash256()),
             Terminal::Ripemd160(..) => Ok(Self::from_ripemd160()),
             Terminal::Hash160(..) => Ok(Self::from_hash160()),
+            Terminal::Version(..) => Ok(Self::from_ver_eq()),
             Terminal::Alt(ref sub) => wrap_err(Self::cast_alt(sub.ext.clone())),
             Terminal::Swap(ref sub) => wrap_err(Self::cast_swap(sub.ext.clone())),
             Terminal::Check(ref sub) => wrap_err(Self::cast_check(sub.ext.clone())),

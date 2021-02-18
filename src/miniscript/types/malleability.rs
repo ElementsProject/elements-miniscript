@@ -138,6 +138,14 @@ impl Property for Malleability {
         }
     }
 
+    fn from_item_eq() -> Self {
+        Malleability {
+            dissat: Dissat::Unknown,
+            safe: false,
+            non_malleable: true,
+        }
+    }
+
     fn cast_alt(self) -> Result<Self, ErrorKind> {
         Ok(self)
     }

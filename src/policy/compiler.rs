@@ -206,6 +206,17 @@ impl Property for CompilerExtData {
         }
     }
 
+    fn from_item_eq() -> Self {
+        // both sat and dissat costs are zero
+        // because witness is already calculated in
+        // stack
+        CompilerExtData {
+            branch_prob: None,
+            sat_cost: 0.0,
+            dissat_cost: Some(0.0),
+        }
+    }
+
     fn cast_alt(self) -> Result<Self, types::ErrorKind> {
         Ok(CompilerExtData {
             branch_prob: None,
