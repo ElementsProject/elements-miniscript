@@ -34,6 +34,8 @@ use descriptor::Descriptor;
 use miniscript::{Miniscript, ScriptContext};
 use Terminal;
 
+use descriptor::CovError;
+
 pub use self::concrete::Policy as Concrete;
 /// Semantic policies are "abstract" policies elsewhere; but we
 /// avoid this word because it is a reserved keyword in Rust
@@ -183,7 +185,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.lift(),
             Descriptor::Wsh(ref wsh) => wsh.lift(),
             Descriptor::Sh(ref sh) => sh.lift(),
-            Descriptor::Cov(ref _cov) => unreachable!("Can't lift"),
+            Descriptor::Cov(ref _cov) => Err(Error::CovError(CovError::CovenantLift)),
         }
     }
 }

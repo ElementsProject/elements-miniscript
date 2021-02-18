@@ -261,6 +261,8 @@ pub enum Error {
     BareDescriptorAddr,
     /// Upstream Miniscript Errors
     BtcError(bitcoin_miniscript::Error),
+    /// Covenant Error
+    CovError(descriptor::CovError),
 }
 
 #[doc(hidden)]
@@ -397,6 +399,7 @@ impl fmt::Display for Error {
             Error::ImpossibleSatisfaction => write!(f, "Impossible to satisfy Miniscript"),
             Error::BareDescriptorAddr => write!(f, "Bare descriptors don't have address"),
             Error::BtcError(ref e) => write!(f, " Bitcoin Miniscript Error {}", e),
+            Error::CovError(ref e) => write!(f, "Covenant Error: {}", e),
         }
     }
 }
