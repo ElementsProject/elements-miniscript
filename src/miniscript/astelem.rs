@@ -23,6 +23,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::{fmt, str};
 
+use elements::encode::{serialize, Encodable};
 use elements::hashes::hex::FromHex;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use elements::{opcodes, script};
@@ -632,6 +633,29 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> PushAstElem<Pk, Ctx> for script::Bui
         Pk: ToPublicKey,
     {
         ast.node.encode(self)
+    }
+}
+
+/// Additional operations required on Script
+/// for supporting Miniscript fragments that
+/// have access to a global context
+pub trait StackCtxOperations: Sized {
+    /// pick an element indexed from the bottom of
+    /// the stack. This cannot check whether the idx is within
+    /// stack limits.
+    /// Copies the element at index idx to the top of the stack
+    /// Checks item equality against the specified target
+    fn check_item_eq<T: Encodable>(self, idx: u32, target: T) -> Self;
+}
+
+impl StackCtxOperations for script::Builder {
+    fn check_item_eq<T: Encodable>(self, idx: u32, target: T) -> Self {
+        self.push_int((idx + 1) as i64) // +1 for depth increase
+            .push_opcode(opcodes::all::OP_DEPTH)
+            .push_opcode(opcodes::all::OP_SUB)
+            .push_opcode(opcodes::all::OP_PICK)
+            .push_slice(&serialize(&target))
+            .push_opcode(opcodes::all::OP_EQUAL)
     }
 }
 

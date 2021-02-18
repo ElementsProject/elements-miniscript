@@ -76,12 +76,6 @@ use {MiniscriptKey, ToPublicKey};
 use {DescriptorTrait, Error, Satisfier};
 
 pub trait CovOperations: Sized {
-    /// pick an element indexed from the bottom of
-    /// the stack. This cannot check whether the idx is within
-    /// stack limits.
-    /// Copies the element at index idx to the top of the stack
-    fn pick(self, idx: u32) -> Self;
-
     /// Assuming the 10 sighash components + 1 sig on the top of
     /// stack for segwit sighash as created by [init_stack]
     /// CAT all of them and check sig from stack
@@ -91,21 +85,9 @@ pub trait CovOperations: Sized {
     /// assuming the above construction of covenants
     /// which uses OP_CODESEP
     fn post_codesep_script(self) -> Self;
-
-    /// Put version on top of stack
-    fn pick_version(self) -> Self {
-        self.pick(9)
-    }
 }
 
 impl CovOperations for script::Builder {
-    fn pick(self, idx: u32) -> Self {
-        self.push_int((idx + 1) as i64) // +1 for depth increase
-            .push_opcode(all::OP_DEPTH)
-            .push_opcode(all::OP_SUB)
-            .push_opcode(all::OP_PICK)
-    }
-
     fn verify_cov(self, key: &bitcoin::PublicKey) -> Self {
         let mut builder = self;
         // The miniscript is of type B, which should have pushed 1
