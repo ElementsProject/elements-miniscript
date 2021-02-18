@@ -191,6 +191,15 @@ impl Property for Correctness {
         }
     }
 
+    fn from_item_eq() -> Self {
+        Correctness {
+            base: Base::B,
+            input: Input::Zero,
+            dissatisfiable: true,
+            unit: true,
+        }
+    }
+
     fn cast_alt(self) -> Result<Self, ErrorKind> {
         Ok(Correctness {
             base: match self.base {

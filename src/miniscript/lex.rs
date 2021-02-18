@@ -25,12 +25,13 @@ use std::fmt;
 use super::Error;
 
 /// Atom of a tokenized version of a script
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub enum Token {
     BoolAnd,
     BoolOr,
     Add,
+    Sub,
     Equal,
     CheckSig,
     CheckSigFromStack,
@@ -44,6 +45,7 @@ pub enum Token {
     CodeSep,
     Over,
     Pick,
+    Depth,
     Drop,
     Dup,
     If,
@@ -63,11 +65,12 @@ pub enum Token {
     Hash20([u8; 20]),
     Hash32([u8; 32]),
     Pubkey(PublicKey),
+    Push(Vec<u8>),
 }
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        match self {
             Token::Num(n) => write!(f, "#{}", n),
             Token::Hash20(hash) => {
                 for ch in &hash[..] {
@@ -189,11 +192,17 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token>, Error> {
             script::Instruction::Op(opcodes::all::OP_DROP) => {
                 ret.push(Token::Drop);
             }
+            script::Instruction::Op(opcodes::all::OP_DEPTH) => {
+                ret.push(Token::Depth);
+            }
             script::Instruction::Op(opcodes::all::OP_DUP) => {
                 ret.push(Token::Dup);
             }
             script::Instruction::Op(opcodes::all::OP_ADD) => {
                 ret.push(Token::Add);
+            }
+            script::Instruction::Op(opcodes::all::OP_SUB) => {
+                ret.push(Token::Sub);
             }
             script::Instruction::Op(opcodes::all::OP_IF) => {
                 ret.push(Token::If);
@@ -223,7 +232,9 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token>, Error> {
                 match ret.last() {
                     Some(op @ &Token::Equal)
                     | Some(op @ &Token::CheckSig)
-                    | Some(op @ &Token::CheckMultiSig) => return Err(Error::NonMinimalVerify(*op)),
+                    | Some(op @ &Token::CheckMultiSig) => {
+                        return Err(Error::NonMinimalVerify(op.clone()))
+                    }
                     _ => {}
                 }
                 ret.push(Token::Verify);
@@ -241,33 +252,43 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token>, Error> {
                 ret.push(Token::Hash256);
             }
             script::Instruction::PushBytes(bytes) => {
-                match bytes.len() {
-                    20 => {
-                        let mut x = [0; 20];
-                        x.copy_from_slice(bytes);
-                        ret.push(Token::Hash20(x))
-                    }
-                    32 => {
-                        let mut x = [0; 32];
-                        x.copy_from_slice(bytes);
-                        ret.push(Token::Hash32(x))
-                    }
-                    33 | 65 => {
-                        ret.push(Token::Pubkey(
-                            PublicKey::from_slice(bytes).map_err(Error::BadPubkey)?,
-                        ));
-                    }
-                    _ => {
-                        match script::read_scriptint(bytes) {
-                            Ok(v) if v >= 0 => {
-                                // check minimality of the number
-                                if &script::Builder::new().push_int(v).into_script()[1..] != bytes {
-                                    return Err(Error::InvalidPush(bytes.to_owned()));
+                // Special handling of tokens for Covenants
+                // To determine whether some Token is actually
+                // 4 bytes push or a script int of 4 bytes,
+                // we need additional script context
+                if ret.last() == Some(&Token::Pick) {
+                    ret.push(Token::Push(bytes.to_vec()))
+                } else {
+                    match bytes.len() {
+                        20 => {
+                            let mut x = [0; 20];
+                            x.copy_from_slice(bytes);
+                            ret.push(Token::Hash20(x))
+                        }
+                        32 => {
+                            let mut x = [0; 32];
+                            x.copy_from_slice(bytes);
+                            ret.push(Token::Hash32(x))
+                        }
+                        33 | 65 => {
+                            ret.push(Token::Pubkey(
+                                PublicKey::from_slice(bytes).map_err(Error::BadPubkey)?,
+                            ));
+                        }
+                        _ => {
+                            match script::read_scriptint(bytes) {
+                                Ok(v) if v >= 0 => {
+                                    // check minimality of the number
+                                    if &script::Builder::new().push_int(v).into_script()[1..]
+                                        != bytes
+                                    {
+                                        return Err(Error::InvalidPush(bytes.to_owned()));
+                                    }
+                                    ret.push(Token::Num(v as u32));
                                 }
-                                ret.push(Token::Num(v as u32));
+                                Ok(_) => return Err(Error::InvalidPush(bytes.to_owned())),
+                                Err(e) => return Err(Error::Script(e)),
                             }
-                            Ok(_) => return Err(Error::InvalidPush(bytes.to_owned())),
-                            Err(e) => return Err(Error::Script(e)),
                         }
                     }
                 }
