@@ -21,6 +21,22 @@ pub(crate) fn witness_to_scriptsig(witness: &[Vec<u8>]) -> Script {
     b.into_script()
 }
 
+macro_rules! define_slice_to_le {
+    ($name: ident, $type: ty) => {
+        #[inline]
+        pub(crate) fn $name(slice: &[u8]) -> $type {
+            assert_eq!(slice.len(), ::std::mem::size_of::<$type>());
+            let mut res = 0;
+            for i in 0..::std::mem::size_of::<$type>() {
+                res |= (slice[i] as $type) << i * 8;
+            }
+            res
+        }
+    };
+}
+
+define_slice_to_le!(slice_to_u32_le, u32);
+
 /// Get the count of non-push opcodes
 // Export to upstream
 #[cfg(test)]

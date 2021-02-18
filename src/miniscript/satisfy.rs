@@ -726,6 +726,22 @@ impl Witness {
             None => Witness::Unavailable,
         }
     }
+
+    /// Turn a hash preimage into (part of) a satisfaction
+    fn ver_eq_satisfy<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, n: u32) -> Self {
+        match sat.lookup_nversion() {
+            Some(k) => {
+                if k == n {
+                    Witness::empty()
+                } else {
+                    Witness::Impossible
+                }
+            }
+            // Note the unavailable instead of impossible because we don't know
+            // the version
+            None => Witness::Unavailable,
+        }
+    }
 }
 
 impl Witness {
@@ -1067,6 +1083,10 @@ impl Satisfaction {
                 stack: Witness::Impossible,
                 has_sig: false,
             },
+            Terminal::Version(n) => Satisfaction {
+                stack: Witness::ver_eq_satisfy(stfr, n),
+                has_sig: false,
+            },
             Terminal::Alt(ref sub)
             | Terminal::Swap(ref sub)
             | Terminal::Check(ref sub)
@@ -1253,6 +1273,21 @@ impl Satisfaction {
                 stack: Witness::hash_dissatisfaction(),
                 has_sig: false,
             },
+            Terminal::Version(n) => {
+                let stk = if let Some(k) = stfr.lookup_nversion() {
+                    if k == n {
+                        Witness::Impossible
+                    } else {
+                        Witness::empty()
+                    }
+                } else {
+                    Witness::empty()
+                };
+                Satisfaction {
+                    stack: stk,
+                    has_sig: false,
+                }
+            }
             Terminal::Alt(ref sub)
             | Terminal::Swap(ref sub)
             | Terminal::Check(ref sub)

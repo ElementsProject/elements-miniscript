@@ -340,7 +340,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::InvalidOpcode(op) => write!(f, "invalid opcode {}", op),
-            Error::NonMinimalVerify(tok) => write!(f, "{} VERIFY", tok),
+            Error::NonMinimalVerify(ref tok) => write!(f, "{} VERIFY", tok),
             Error::InvalidPush(ref push) => write!(f, "invalid push {:?}", push), // TODO hexify this
             Error::Script(ref e) => fmt::Display::fmt(e, f),
             Error::CmsTooManyKeys(n) => write!(f, "checkmultisig with {} keys", n),

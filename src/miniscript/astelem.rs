@@ -96,7 +96,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             | Terminal::Ripemd160(..)
             | Terminal::Hash160(..)
             | Terminal::True
-            | Terminal::False => true,
+            | Terminal::False
+            | Terminal::Version(..) => true,
             Terminal::Alt(ref sub)
             | Terminal::Swap(ref sub)
             | Terminal::Check(ref sub)
@@ -142,6 +143,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             Terminal::Hash160(x) => Terminal::Hash160(x),
             Terminal::True => Terminal::True,
             Terminal::False => Terminal::False,
+            Terminal::Version(n) => Terminal::Version(n),
             Terminal::Alt(ref sub) => Terminal::Alt(Arc::new(
                 sub.real_translate_pk(translatefpk, translatefpkh)?,
             )),
@@ -284,6 +286,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Debug for Terminal<Pk, Ctx> {
                 Terminal::Hash160(h) => write!(f, "hash160({})", h),
                 Terminal::True => f.write_str("1"),
                 Terminal::False => f.write_str("0"),
+                Terminal::Version(k) => write!(f, "ver_eq({})", k),
                 Terminal::AndV(ref l, ref r) => write!(f, "and_v({:?},{:?})", l, r),
                 Terminal::AndB(ref l, ref r) => write!(f, "and_b({:?},{:?})", l, r),
                 Terminal::AndOr(ref a, ref b, ref c) => {
@@ -334,6 +337,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Terminal<Pk, Ctx> {
             Terminal::Hash160(h) => write!(f, "hash160({})", h),
             Terminal::True => f.write_str("1"),
             Terminal::False => f.write_str("0"),
+            Terminal::Version(n) => write!(f, "ver_eq({})", n),
             Terminal::AndV(ref l, ref r) if r.node != Terminal::True => {
                 write!(f, "and_v({},{})", l, r)
             }
@@ -504,6 +508,10 @@ where
             }),
             ("1", 0) => Ok(Terminal::True),
             ("0", 0) => Ok(Terminal::False),
+            ("ver_eq", 1) => {
+                let n = expression::terminal(&top.args[0], expression::parse_num)?;
+                Ok(Terminal::Version(n))
+            }
             ("and_v", 2) => {
                 let expr = expression::binary(top, Terminal::AndV)?;
                 if let Terminal::AndV(_, ref right) = expr {
@@ -708,6 +716,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::True => builder.push_opcode(opcodes::OP_TRUE),
             Terminal::False => builder.push_opcode(opcodes::OP_FALSE),
+            Terminal::Version(n) => builder.check_item_eq(11, n),
             Terminal::Alt(ref sub) => builder
                 .push_opcode(opcodes::all::OP_TOALTSTACK)
                 .push_astelem(sub)
@@ -804,6 +813,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             Terminal::Hash160(..) => 21 + 6,
             Terminal::True => 1,
             Terminal::False => 1,
+            Terminal::Version(_n) => 4 + 1 + 1 + 4, // opcodes + push opcodes + target size
             Terminal::Alt(ref sub) => sub.node.script_size() + 2,
             Terminal::Swap(ref sub) => sub.node.script_size() + 1,
             Terminal::Check(ref sub) => sub.node.script_size() + 1,

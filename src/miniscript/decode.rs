@@ -87,6 +87,9 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext> {
     Ripemd160(ripemd160::Hash),
     /// `SIZE 32 EQUALVERIFY HASH160 <hash> EQUAL`
     Hash160(hash160::Hash),
+    // Elements
+    /// `DEPTH <12> SUB PICK <num> EQUAL`
+    Version(u32),
     // Wrappers
     /// `TOALTSTACK [E] FROMALTSTACK`
     Alt(Arc<Miniscript<Pk, Ctx>>),
@@ -317,6 +320,10 @@ pub fn parse<Ctx: ScriptContext>(
                             Tk::Size => term.reduce0(Terminal::Hash160(
                                 hash160::Hash::from_inner(hash)
                             ))?,
+                        ),
+                        Tk::Push4(ver), Tk::Pick, Tk::Sub, Tk::Depth => match_token!(
+                            tokens,
+                            Tk::Num(12) => term.reduce0(Terminal::Version(ver))?,
                         ),
                         // thresholds
                         Tk::Num(k) => {
