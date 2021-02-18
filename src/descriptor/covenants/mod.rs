@@ -40,7 +40,7 @@
 //! After all the miniscript fragments are evaluated, we concat
 //! all the items using OP_CAT to obtain a Sighash on which we
 //! which we verify using CHECKSIGFROMSTACK
-use std::{fmt, str::FromStr};
+use std::{error, fmt, str::FromStr};
 
 use bitcoin;
 use elements::hashes::{sha256d, Hash};
@@ -54,12 +54,14 @@ use elements::{
 };
 use elements::{confidential, script};
 use elements::{OutPoint, Script, SigHashType, Transaction, TxOut};
+use miniscript::limits::MAX_STANDARD_P2WSH_SCRIPT_SIZE;
 
 use {
     expression::{self, FromTree},
     miniscript::{
         decode,
         lex::{lex, Token as Tk, TokenIter},
+        limits::MAX_OPS_PER_SCRIPT,
     },
     util::varint_len,
     Miniscript, ScriptContext, Segwitv0, TranslatePk,
@@ -151,6 +153,60 @@ impl CovOperations for script::Builder {
     }
 }
 
+/// Satisfaction related Errors
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CovError {
+    /// Missing script code (segwit sighash)
+    MissingScriptCode,
+    /// Missing value (segwit sighash)
+    MissingValue,
+    /// Missing a sighash Item in satisfier,
+    MissingSighashItem(u8),
+    /// Missing Sighash Signature
+    /// This must be a secp signature serialized
+    /// in DER format *with* the sighash byte
+    MissingCovSignature,
+    /// Bad(Malformed) Covenant Descriptor
+    BadCovDescriptor,
+    /// Cannot lift a Covenant Descriptor
+    /// This is because the different components of the covenants
+    /// might interact across branches and thus is
+    /// not composable and could not be analyzed individually.
+    CovenantLift,
+    /// The Covenant Sighash type and the satisfier sighash
+    /// type must be the same
+    CovenantSighashTypeMismatch,
+}
+
+impl fmt::Display for CovError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            CovError::MissingScriptCode => write!(f, "Missing Script code"),
+            CovError::MissingValue => write!(f, "Missing value"),
+            CovError::BadCovDescriptor => write!(f, "Bad or Malformed covenant descriptor"),
+            CovError::CovenantLift => write!(f, "Cannot lift a covenant descriptor"),
+            CovError::MissingSighashItem(i) => {
+                write!(f, "Missing sighash item # : {} in satisfier", i)
+            }
+            CovError::MissingCovSignature => write!(f, "Missing signature over the covenant pk"),
+            CovError::CovenantSighashTypeMismatch => write!(
+                f,
+                "The sighash type provided in the witness must the same \
+                as the one used in signature"
+            ),
+        }
+    }
+}
+
+impl error::Error for CovError {}
+
+#[doc(hidden)]
+impl From<CovError> for Error {
+    fn from(e: CovError) -> Error {
+        Error::CovError(e)
+    }
+}
+
 /// The covenant descriptor
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CovenantDescriptor<Pk: MiniscriptKey> {
@@ -178,22 +234,26 @@ impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
         Pk: ToPublicKey,
     {
         let mut wit = {
-            let n_version = s.lookup_nversion().ok_or(Error::CouldNotSatisfy)?;
-            let hash_prevouts = s.lookup_hashprevouts().ok_or(Error::CouldNotSatisfy)?;
-            let hash_sequence = s.lookup_hashsequence().ok_or(Error::CouldNotSatisfy)?;
-            let hash_issuances = s.lookup_hashissuances().ok_or(Error::CouldNotSatisfy)?;
-            let outpoint = s.lookup_outpoint().ok_or(Error::CouldNotSatisfy)?;
-            let script_code = s.lookup_scriptcode().ok_or(Error::CouldNotSatisfy)?;
-            let value = s.lookup_value().ok_or(Error::CouldNotSatisfy)?;
-            let n_sequence = s.lookup_nsequence().ok_or(Error::CouldNotSatisfy)?;
-            let hash_outputs = s.lookup_hashoutputs().ok_or(Error::CouldNotSatisfy)?;
-            let n_locktime = s.lookup_nlocktime().ok_or(Error::CouldNotSatisfy)?;
-            let sighash_ty = s.lookup_sighashu32().ok_or(Error::CouldNotSatisfy)?;
+            use descriptor::CovError::MissingSighashItem;
+            let n_version = s.lookup_nversion().ok_or(MissingSighashItem(1))?;
+            let hash_prevouts = s.lookup_hashprevouts().ok_or(MissingSighashItem(1))?;
+            let hash_sequence = s.lookup_hashsequence().ok_or(MissingSighashItem(3))?;
+            // note the 3 again, for elements
+            let hash_issuances = s.lookup_hashissuances().ok_or(MissingSighashItem(3))?;
+            let outpoint = s.lookup_outpoint().ok_or(MissingSighashItem(4))?;
+            let script_code = s.lookup_scriptcode().ok_or(MissingSighashItem(5))?;
+            let value = s.lookup_value().ok_or(MissingSighashItem(6))?;
+            let n_sequence = s.lookup_nsequence().ok_or(MissingSighashItem(7))?;
+            let hash_outputs = s.lookup_hashoutputs().ok_or(MissingSighashItem(8))?;
+            let n_locktime = s.lookup_nlocktime().ok_or(MissingSighashItem(9))?;
+            let sighash_ty = s.lookup_sighashu32().ok_or(MissingSighashItem(10))?;
 
-            let (sig, hash_ty) = s.lookup_sig(&self.pk).ok_or(Error::CouldNotSatisfy)?;
+            let (sig, hash_ty) = s
+                .lookup_sig(&self.pk)
+                .ok_or(CovError::MissingCovSignature)?;
             // Hashtype must be the same
             if sighash_ty != hash_ty.as_u32() {
-                return Err(Error::CouldNotSatisfy);
+                return Err(CovError::CovenantSighashTypeMismatch)?;
             }
 
             vec![
@@ -296,15 +356,11 @@ impl<'tx, 'ptx> CovSatisfier<'tx, 'ptx> {
     /// Note that this does not do any caching, so it
     /// will be slightly inefficient as compared to
     /// using sighash
-    pub fn segwit_sighash(&self) -> Result<SigHash, Error> {
+    pub fn segwit_sighash(&self) -> Result<SigHash, CovError> {
         let mut cache = SigHashCache::new(self.tx);
         // TODO: error types
-        let script_code = self
-            .script_code
-            .ok_or(Error::Unexpected(String::from("Missing")))?;
-        let value = self
-            .value
-            .ok_or(Error::Unexpected(String::from("Missing")))?;
+        let script_code = self.script_code.ok_or(CovError::MissingScriptCode)?;
+        let value = self.value.ok_or(CovError::MissingValue)?;
         Ok(cache.segwitv0_sighash(self.idx as usize, script_code, value, self.hash_type))
     }
 }
@@ -389,7 +445,7 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
             Tk::Over, Tk::Pick, Tk::Num(11), Tk::Verify => {
                 return Ok(pk);
             },
-            _ => unreachable!("Error"),
+            _ => return Err(Error::CovError(CovError::BadCovDescriptor)),
         );
     }
 
@@ -403,13 +459,9 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
         let tokens = lex(script)?;
         let mut iter = TokenIter::new(tokens);
 
-        if let Some(Tk::CheckSigFromStack) = iter.peek() {
-            let pk = CovenantDescriptor::<bitcoin::PublicKey>::check_cov_script(&mut iter)?;
-            let ms = decode::parse(&mut iter)?;
-            Ok(Self { pk: pk, ms: ms })
-        } else {
-            unreachable!("Not a Covenant descriptor")
-        }
+        let pk = CovenantDescriptor::<bitcoin::PublicKey>::check_cov_script(&mut iter)?;
+        let ms = decode::parse(&mut iter)?;
+        Ok(Self { pk: pk, ms: ms })
     }
 }
 
@@ -490,11 +542,24 @@ where
 {
     fn sanity_check(&self) -> Result<(), Error> {
         self.ms.sanity_check()?;
-        // 1) Check the 201 opcode count here
-        // 2) Check that the sighash does not exceed 520 bytes
-        // 3) Check that the script size does not exceed 3600 bytes
-        // It's hard to break 3) without 2), but with OP_CODESEP
-        // it is possible
+        // // 1) Check the 201 opcode count here
+        let ms_op_count = self.ms.ext.ops_count_sat;
+        // statically computed
+        // see cov_test_limits test for the test assert
+        let cov_script_ops = 24;
+        let total_ops = ms_op_count.ok_or(Error::ImpossibleSatisfaction)? + cov_script_ops
+            - if self.ms.ext.has_free_verify { 1 } else { 0 };
+        if total_ops > MAX_OPS_PER_SCRIPT {
+            return Err(Error::ImpossibleSatisfaction);
+        }
+        // 2) TODO: Sighash never exceeds 520 bytes, but we check the
+        // witness script before the codesep is still under 520
+        // bytes if the covenant relies on introspection of script
+        let ss = 58 - if self.ms.ext.has_free_verify { 1 } else { 0 };
+        // // 3) Check that the script size does not exceed 3600 bytes
+        if self.ms.script_size() + ss > MAX_STANDARD_P2WSH_SCRIPT_SIZE {
+            return Err(Error::ScriptSizeTooLarge);
+        }
         Ok(())
     }
 
@@ -542,9 +607,10 @@ where
     }
 
     fn max_satisfaction_weight(&self) -> Result<usize, Error> {
-        let script_size = self.ms.script_size() + 100;
-        let max_sat_elems = self.ms.max_satisfaction_witness_elements()? + 11;
-        let max_sat_size = self.ms.max_satisfaction_size()? + 250;
+        let script_size =
+            self.ms.script_size() + 58 - if self.ms.ext.has_free_verify { 1 } else { 0 };
+        let max_sat_elems = self.ms.max_satisfaction_witness_elements()? + 12;
+        let max_sat_size = self.ms.max_satisfaction_size()? + 275;
 
         Ok(4 +  // scriptSig length byte
             varint_len(script_size) +
@@ -587,12 +653,12 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for CovenantDescripto
 #[allow(unused_imports)]
 mod tests {
 
-    use {descriptor::DescriptorType, Descriptor, ElementsSig};
-
     use super::*;
-    use elements::{self, confidential};
+    use elements::confidential;
     use elements::{AssetId, AssetIssuance, OutPoint, TxIn, TxInWitness, Txid};
     use std::str::FromStr;
+    use util::{count_non_push_opcodes, witness_size};
+    use {descriptor::DescriptorType, Descriptor, ElementsSig};
 
     const BTC_ASSET: [u8; 32] = [
         0x23, 0x0f, 0x4f, 0x5d, 0x4b, 0x7c, 0x6f, 0xa8, 0x45, 0x80, 0x6e, 0xe4, 0xf6, 0x77, 0x13,
@@ -656,6 +722,27 @@ mod tests {
             pks.push(pk);
         }
         (pks, sks)
+    }
+
+    #[test]
+    fn test_sanity_check_limits() {
+        let (pks, _sks) = setup_keys(1);
+        // Count of the opcodes without the
+        let cov_script = script::Builder::new().verify_cov(&pks[0]).into_script();
+        assert_eq!(count_non_push_opcodes(&cov_script), Ok(24));
+        assert_eq!(cov_script.len(), 58);
+
+        let sighash_size = 4
+        + 32
+        + 32
+        + 32
+        + (32 + 4)
+        + (58) // script code size
+        + 4
+        + 32
+        + 4
+        + 4;
+        assert_eq!(sighash_size, 238);
     }
 
     #[test]
@@ -764,6 +851,8 @@ mod tests {
         // 1) Send 0.002 btc to above address
         // 2) Create a tx by filling up txid
         // 3) Send the tx
+        assert_eq!(witness_size(&wit), 334);
+        assert_eq!(wit.len(), 13);
         // spend_tx.input[0].witness.script_witness = wit;
         // use elements::encode::serialize_hex;
         // println!("{}", serialize_hex(&spend_tx));

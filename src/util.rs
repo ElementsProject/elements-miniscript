@@ -20,3 +20,16 @@ pub(crate) fn witness_to_scriptsig(witness: &[Vec<u8>]) -> Script {
     }
     b.into_script()
 }
+
+/// Get the count of non-push opcodes
+// Export to upstream
+#[cfg(test)]
+pub(crate) fn count_non_push_opcodes(script: &Script) -> Result<usize, elements::script::Error> {
+    let mut count = 0;
+    for ins in script.instructions().into_iter() {
+        if let script::Instruction::Op(..) = ins? {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
