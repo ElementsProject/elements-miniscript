@@ -54,7 +54,7 @@ use elements::{
 };
 use elements::{confidential, script};
 use elements::{OutPoint, Script, SigHashType, Transaction, TxOut};
-use miniscript::limits::MAX_STANDARD_P2WSH_SCRIPT_SIZE;
+use miniscript::limits::{MAX_SCRIPT_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE};
 
 use {
     expression::{self, FromTree},
@@ -62,6 +62,7 @@ use {
         decode,
         lex::{lex, Token as Tk, TokenIter},
         limits::MAX_OPS_PER_SCRIPT,
+        types,
     },
     util::varint_len,
     ForEach, ForEachKey, Miniscript, ScriptContext, Segwitv0, TranslatePk,
@@ -194,13 +195,52 @@ impl From<CovError> for Error {
 pub struct CovenantDescriptor<Pk: MiniscriptKey> {
     /// the pk constraining the Covenant
     /// The key over which we want CHECKSIGFROMSTACK
-    pub pk: Pk,
+    pk: Pk,
     /// the underlying Miniscript
     /// Must be under segwit context
-    pub ms: Miniscript<Pk, Segwitv0>,
+    ms: Miniscript<Pk, Segwitv0>,
 }
 
 impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
+    /// Get the pk from covenant
+    pub fn pk(&self) -> &Pk {
+        &self.pk
+    }
+
+    /// Get a reference to Miniscript inside covenant
+    pub fn to_ms(&self) -> &Miniscript<Pk, Segwitv0> {
+        &self.ms
+    }
+
+    /// Consume self and return inner miniscript
+    pub fn into_ms(self) -> Miniscript<Pk, Segwitv0> {
+        self.ms
+    }
+
+    /// Create a new Self from components
+    pub fn new(pk: Pk, ms: Miniscript<Pk, Segwitv0>) -> Result<Self, Error> {
+        // // 1) Check the 201 opcode count here
+        let ms_op_count = ms.ext.ops_count_sat;
+        // statically computed
+        // see cov_test_limits test for the test assert
+        let cov_script_ops = 24;
+        let total_ops = ms_op_count.ok_or(Error::ImpossibleSatisfaction)? + cov_script_ops
+            - if ms.ext.has_free_verify { 1 } else { 0 };
+        if total_ops > MAX_OPS_PER_SCRIPT {
+            return Err(Error::ImpossibleSatisfaction);
+        }
+        // 2) TODO: Sighash never exceeds 520 bytes, but we check the
+        // witness script before the codesep is still under 520
+        // bytes if the covenant relies on introspection of script
+        let ss = 58 - if ms.ext.has_free_verify { 1 } else { 0 };
+        // 3) Check that the script size does not exceed 10_000 bytes
+        // global consensus rule
+        if ms.script_size() + ss > MAX_SCRIPT_SIZE {
+            Err(Error::ScriptSizeTooLarge)
+        } else {
+            Ok(Self { pk, ms })
+        }
+    }
     /// Encode
     pub fn encode(&self) -> Script
     where
@@ -437,13 +477,31 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
     /// applicable under Wsh context to avoid implementation
     /// complexity.
     // All code for covenants can thus be separated in a module
-    pub fn parse(script: &script::Script) -> Result<Self, Error> {
+    // This parsing is parse_insane
+    pub fn parse_insane(script: &script::Script) -> Result<Self, Error> {
         let tokens = lex(script)?;
         let mut iter = TokenIter::new(tokens);
 
         let pk = CovenantDescriptor::<bitcoin::PublicKey>::check_cov_script(&mut iter)?;
         let ms = decode::parse(&mut iter)?;
-        Ok(Self { pk: pk, ms: ms })
+        Segwitv0::check_global_validity(&ms)?;
+        if ms.ty.corr.base != types::Base::B {
+            return Err(Error::NonTopLevel(format!("{:?}", ms)));
+        };
+        if let Some(leading) = iter.next() {
+            Err(Error::Trailing(leading.to_string()))
+        } else {
+            Self::new(pk, ms)
+        }
+    }
+
+    /// Parse a descriptor with additional local sanity checks.
+    /// See [Miniscript::sanity_check] for all the checks. Use
+    /// [parse_insane] to allow parsing insane scripts
+    pub fn parse(script: &script::Script) -> Result<Self, Error> {
+        let cov = Self::parse_insane(script)?;
+        cov.ms.sanity_check()?;
+        Ok(cov)
     }
 }
 
@@ -532,25 +590,13 @@ where
 {
     fn sanity_check(&self) -> Result<(), Error> {
         self.ms.sanity_check()?;
-        // // 1) Check the 201 opcode count here
-        let ms_op_count = self.ms.ext.ops_count_sat;
-        // statically computed
-        // see cov_test_limits test for the test assert
-        let cov_script_ops = 24;
-        let total_ops = ms_op_count.ok_or(Error::ImpossibleSatisfaction)? + cov_script_ops
-            - if self.ms.ext.has_free_verify { 1 } else { 0 };
-        if total_ops > MAX_OPS_PER_SCRIPT {
-            return Err(Error::ImpossibleSatisfaction);
-        }
-        // 2) TODO: Sighash never exceeds 520 bytes, but we check the
-        // witness script before the codesep is still under 520
-        // bytes if the covenant relies on introspection of script
+        // Additional local check for p2wsh script size
         let ss = 58 - if self.ms.ext.has_free_verify { 1 } else { 0 };
-        // // 3) Check that the script size does not exceed 3600 bytes
         if self.ms.script_size() + ss > MAX_STANDARD_P2WSH_SCRIPT_SIZE {
-            return Err(Error::ScriptSizeTooLarge);
+            Err(Error::ScriptSizeTooLarge)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 
     fn address(&self, params: &'static elements::AddressParams) -> Result<elements::Address, Error>
@@ -679,7 +725,7 @@ mod tests {
         assert_eq!(desc.desc_type(), DescriptorType::Cov);
         let script = desc.explicit_script();
 
-        let cov_desc = CovenantDescriptor::<bitcoin::PublicKey>::parse(&script).unwrap();
+        let cov_desc = CovenantDescriptor::<bitcoin::PublicKey>::parse_insane(&script).unwrap();
 
         assert_eq!(cov_desc.to_string(), desc.to_string());
     }
