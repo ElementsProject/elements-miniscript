@@ -45,6 +45,7 @@ use {BareCtx, Error, MiniscriptKey, Satisfier, ToPublicKey, TranslatePk, Transla
 
 mod bare;
 mod blinded;
+mod covenants;
 mod segwitv0;
 mod sh;
 mod sortedmulti;
@@ -56,6 +57,7 @@ pub use self::sh::Sh;
 pub use self::sortedmulti::SortedMultiVec;
 mod checksum;
 mod key;
+pub use self::covenants::{CovError, CovSatisfier, CovenantDescriptor};
 pub use self::key::{
     DescriptorKeyParseError, DescriptorPublicKey, DescriptorSecretKey, DescriptorSinglePriv,
     DescriptorSinglePub, DescriptorXKey, Wildcard,
@@ -173,6 +175,7 @@ pub trait DescriptorTrait<Pk: MiniscriptKey>: ElementsTrait<Pk> {
 }
 
 /// Descriptor Type of the descriptor
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DescriptorType {
     /// Bare descriptor(Contains the native P2pk)
     Bare,
@@ -198,6 +201,8 @@ pub enum DescriptorType {
     LegacyPegin,
     /// Dynafed Pegin
     Pegin,
+    /// Covenant: Only supported in p2wsh context
+    Cov,
 }
 
 impl FromStr for DescriptorType {
@@ -228,6 +233,8 @@ impl FromStr for DescriptorType {
             Ok(DescriptorType::WshSortedMulti)
         } else if s.len() >= 3 && &s[0..3] == "wsh" {
             Ok(DescriptorType::Wsh)
+        } else if s.len() >= 6 && &s[0..6] == "covwsh" {
+            Ok(DescriptorType::Cov)
         } else {
             Ok(DescriptorType::Bare)
         }
@@ -315,6 +322,8 @@ pub enum Descriptor<Pk: MiniscriptKey> {
     Sh(Sh<Pk>),
     /// Pay-to-Witness-ScriptHash with Segwitv0 context
     Wsh(Wsh<Pk>),
+    /// Covenant descriptor
+    Cov(CovenantDescriptor<Pk>),
 }
 
 impl<Pk: MiniscriptKey> Descriptor<Pk> {
@@ -417,6 +426,7 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
                 segwitv0::WshInner::SortedMulti(_) => DescriptorType::WshSortedMulti,
                 segwitv0::WshInner::Ms(_) => DescriptorType::Wsh,
             },
+            Descriptor::Cov(ref _cov) => DescriptorType::Cov,
         }
     }
 }
@@ -453,6 +463,9 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Descriptor<P> {
             Descriptor::Wsh(ref wsh) => {
                 Descriptor::Wsh(wsh.translate_pk(&mut translatefpk, &mut translatefpkh)?)
             }
+            Descriptor::Cov(ref cov) => {
+                Descriptor::Cov(cov.translate_pk(&mut translatefpk, &mut translatefpkh)?)
+            }
         };
         Ok(desc)
     }
@@ -477,6 +490,7 @@ where
             Descriptor::Wpkh(ref wpkh) => wpkh.blind_addr(blinder, params),
             Descriptor::Wsh(ref wsh) => wsh.blind_addr(blinder, params),
             Descriptor::Sh(ref sh) => sh.blind_addr(blinder, params),
+            Descriptor::Cov(ref cov) => cov.blind_addr(blinder, params),
         }
     }
 }
@@ -501,6 +515,7 @@ where
             Descriptor::Wpkh(ref wpkh) => wpkh.sanity_check(),
             Descriptor::Wsh(ref wsh) => wsh.sanity_check(),
             Descriptor::Sh(ref sh) => sh.sanity_check(),
+            Descriptor::Cov(ref cov) => cov.sanity_check(),
         }
     }
     /// Computes the Bitcoin address of the descriptor, if one exists
@@ -514,6 +529,7 @@ where
             Descriptor::Wpkh(ref wpkh) => wpkh.address(params),
             Descriptor::Wsh(ref wsh) => wsh.address(params),
             Descriptor::Sh(ref sh) => sh.address(params),
+            Descriptor::Cov(ref cov) => cov.address(params),
         }
     }
 
@@ -528,6 +544,7 @@ where
             Descriptor::Wpkh(ref wpkh) => wpkh.script_pubkey(),
             Descriptor::Wsh(ref wsh) => wsh.script_pubkey(),
             Descriptor::Sh(ref sh) => sh.script_pubkey(),
+            Descriptor::Cov(ref cov) => cov.script_pubkey(),
         }
     }
 
@@ -549,6 +566,7 @@ where
             Descriptor::Wpkh(ref wpkh) => wpkh.unsigned_script_sig(),
             Descriptor::Wsh(ref wsh) => wsh.unsigned_script_sig(),
             Descriptor::Sh(ref sh) => sh.unsigned_script_sig(),
+            Descriptor::Cov(ref cov) => cov.unsigned_script_sig(),
         }
     }
 
@@ -566,6 +584,7 @@ where
             Descriptor::Wpkh(ref wpkh) => wpkh.explicit_script(),
             Descriptor::Wsh(ref wsh) => wsh.explicit_script(),
             Descriptor::Sh(ref sh) => sh.explicit_script(),
+            Descriptor::Cov(ref cov) => cov.explicit_script(),
         }
     }
 
@@ -583,6 +602,7 @@ where
             Descriptor::Wpkh(ref wpkh) => wpkh.get_satisfaction(satisfier),
             Descriptor::Wsh(ref wsh) => wsh.get_satisfaction(satisfier),
             Descriptor::Sh(ref sh) => sh.get_satisfaction(satisfier),
+            Descriptor::Cov(ref cov) => cov.get_satisfaction(satisfier),
         }
     }
 
@@ -597,6 +617,7 @@ where
             Descriptor::Wpkh(ref wpkh) => wpkh.max_satisfaction_weight(),
             Descriptor::Wsh(ref wsh) => wsh.max_satisfaction_weight(),
             Descriptor::Sh(ref sh) => sh.max_satisfaction_weight(),
+            Descriptor::Cov(ref cov) => cov.max_satisfaction_weight(),
         }
     }
 
@@ -614,6 +635,7 @@ where
             Descriptor::Wpkh(ref wpkh) => wpkh.script_code(),
             Descriptor::Wsh(ref wsh) => wsh.script_code(),
             Descriptor::Sh(ref sh) => sh.script_code(),
+            Descriptor::Cov(ref cov) => cov.script_code(),
         }
     }
 }
@@ -696,6 +718,7 @@ where
             ("elpkh", 1) => Descriptor::Pkh(Pkh::from_tree(top)?),
             ("elwpkh", 1) => Descriptor::Wpkh(Wpkh::from_tree(top)?),
             ("elsh", 1) => Descriptor::Sh(Sh::from_tree(top)?),
+            ("elcovwsh", 2) => Descriptor::Cov(CovenantDescriptor::from_tree(top)?),
             ("elwsh", 1) => Descriptor::Wsh(Wsh::from_tree(top)?),
             _ => Descriptor::Bare(Bare::from_tree(top)?),
         })
@@ -730,6 +753,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => write!(f, "{:?}", wpkh),
             Descriptor::Sh(ref sub) => write!(f, "{:?}", sub),
             Descriptor::Wsh(ref sub) => write!(f, "{:?}", sub),
+            Descriptor::Cov(ref cov) => write!(f, "{:?}", cov),
         }
     }
 }
@@ -742,6 +766,7 @@ impl<Pk: MiniscriptKey> fmt::Display for Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => write!(f, "{}", wpkh),
             Descriptor::Sh(ref sub) => write!(f, "{}", sub),
             Descriptor::Wsh(ref sub) => write!(f, "{}", sub),
+            Descriptor::Cov(ref cov) => write!(f, "{}", cov),
         }
     }
 }
