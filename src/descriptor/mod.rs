@@ -57,7 +57,7 @@ pub use self::sh::Sh;
 pub use self::sortedmulti::SortedMultiVec;
 mod checksum;
 mod key;
-pub use self::covenants::{CovError, CovSatisfier, CovenantDescriptor};
+pub use self::covenants::{CovError, CovOperations, CovSatisfier, CovenantDescriptor};
 pub use self::key::{
     DescriptorKeyParseError, DescriptorPublicKey, DescriptorSecretKey, DescriptorSinglePriv,
     DescriptorSinglePub, DescriptorXKey, Wildcard,

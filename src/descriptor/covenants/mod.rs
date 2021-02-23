@@ -76,6 +76,8 @@ use {MiniscriptKey, ToPublicKey};
 
 use {DescriptorTrait, Error, Satisfier};
 
+/// Additional operations requied on script builder
+/// for Covenant operations support
 pub trait CovOperations: Sized {
     /// Assuming the 10 sighash components + 1 sig on the top of
     /// stack for segwit sighash as created by [init_stack]
@@ -122,8 +124,11 @@ impl CovOperations for script::Builder {
         builder.post_codesep_script()
     }
 
+    /// The second parameter decides whether the script code should
+    /// a hashlock verifying the entire script
     fn post_codesep_script(self) -> Self {
         let mut builder = self;
+        // let script_slice = builder.clone().into_script().into_bytes();
         builder = builder.push_opcode(all::OP_CHECKSIGVERIFY);
         for _ in 0..10 {
             builder = builder.push_opcode(all::OP_CAT);
@@ -479,6 +484,17 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
     // All code for covenants can thus be separated in a module
     // This parsing is parse_insane
     pub fn parse_insane(script: &script::Script) -> Result<Self, Error> {
+        let (pk, ms) = Self::parse_cov_components(script)?;
+        Self::new(pk, ms)
+    }
+
+    // Utility function to parse the components of cov
+    // descriptor. This allows us to parse Miniscript with
+    // it's context so that it can be used with NoChecks
+    // context while using the interpreter
+    pub(crate) fn parse_cov_components<Ctx: ScriptContext>(
+        script: &script::Script,
+    ) -> Result<(bitcoin::PublicKey, Miniscript<bitcoin::PublicKey, Ctx>), Error> {
         let tokens = lex(script)?;
         let mut iter = TokenIter::new(tokens);
 
@@ -491,7 +507,7 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
         if let Some(leading) = iter.next() {
             Err(Error::Trailing(leading.to_string()))
         } else {
-            Self::new(pk, ms)
+            Ok((pk, ms))
         }
     }
 

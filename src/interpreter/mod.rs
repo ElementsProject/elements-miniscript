@@ -132,6 +132,10 @@ impl<'txin> Interpreter<'txin> {
             inner::Inner::Script(ref ms, inner::ScriptType::Sh) => format!("elsh({})", ms),
             inner::Inner::Script(ref ms, inner::ScriptType::Wsh) => format!("elwsh({})", ms),
             inner::Inner::Script(ref ms, inner::ScriptType::ShWsh) => format!("elsh(wsh({}))", ms),
+            inner::Inner::CovScript(ref pk, ref ms) => {
+                // always wsh for now
+                format!("elcovwsh({},{})", pk, ms)
+            }
         }
     }
 
@@ -146,6 +150,7 @@ impl<'txin> Interpreter<'txin> {
             inner::Inner::Script(_, inner::ScriptType::Sh) => true,
             inner::Inner::Script(_, inner::ScriptType::Wsh) => false,
             inner::Inner::Script(_, inner::ScriptType::ShWsh) => false, // lol "sorta"
+            inner::Inner::CovScript(..) => false,
         }
     }
 

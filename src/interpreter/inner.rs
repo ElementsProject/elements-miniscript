@@ -13,10 +13,11 @@
 //
 
 use bitcoin;
-use elements;
 use elements::hashes::{hash160, sha256, Hash};
+use elements::{self, script};
 
 use super::{stack, Error, Stack};
+use descriptor::{CovOperations, CovenantDescriptor};
 use miniscript::context::NoChecks;
 use {Miniscript, MiniscriptKey};
 
@@ -60,6 +61,19 @@ fn script_from_stackelem<'a>(
     }
 }
 
+// Try to parse covenant components from witness script
+// stack element
+fn cov_components_from_stackelem<'a>(
+    elem: &stack::Element<'a>,
+) -> Option<(bitcoin::PublicKey, Miniscript<bitcoin::PublicKey, NoChecks>)> {
+    match *elem {
+        stack::Element::Push(sl) => {
+            CovenantDescriptor::parse_cov_components(&elements::Script::from(sl.to_owned())).ok()
+        }
+        _ => None,
+    }
+}
+
 /// Helper type to indicate the origin of the bare pubkey that the interpereter uses
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum PubkeyType {
@@ -86,6 +100,14 @@ pub enum Inner {
     PublicKey(bitcoin::PublicKey, PubkeyType),
     /// The script being evaluated is an actual script
     Script(Miniscript<bitcoin::PublicKey, NoChecks>, ScriptType),
+    /// The Covenant Miniscript
+    /// Only Witnessv0 scripts are supported for now
+    CovScript(
+        bitcoin::PublicKey,
+        Miniscript<bitcoin::PublicKey, NoChecks>,
+        // Add scriptType when we support additional things here
+        // ScriptType,
+    ),
 }
 
 // The `Script` returned by this method is always generated/cloned ... when
@@ -173,6 +195,11 @@ pub fn from_txdata<'txin>(
         } else {
             match wit_stack.pop() {
                 Some(elem) => {
+                    if let Some((pk, ms)) = cov_components_from_stackelem(&elem) {
+                        let script_code =
+                            script::Builder::new().post_codesep_script().into_script();
+                        return Ok((Inner::CovScript(pk, ms), wit_stack, script_code));
+                    }
                     let miniscript = script_from_stackelem(&elem)?;
                     let script = miniscript.encode();
                     let scripthash = sha256::Hash::hash(&script[..]);
