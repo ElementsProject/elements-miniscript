@@ -14,6 +14,8 @@
 
 //! Interpreter stack
 
+use std::ops::Index;
+
 use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use elements::{self, opcodes, script};
@@ -69,12 +71,28 @@ impl<'txin> Element<'txin> {
             _ => Err(Error::ExpectedPush),
         }
     }
+
+    /// Panics when the element is not a push
+    pub(crate) fn as_push(&self) -> &[u8] {
+        match self {
+            Element::Push(x) => x,
+            _ => unreachable!("Called as_push on 1/0 stack elem"),
+        }
+    }
+
+    /// Errs when the element is not a push
+    pub(crate) fn check_push(&self) -> Result<(), Error> {
+        match self {
+            Element::Push(_x) => Ok(()),
+            _ => Err(Error::ExpectedPush),
+        }
+    }
 }
 
 /// Stack Data structure representing the stack input to Miniscript. This Stack
 /// is created from the combination of ScriptSig and Witness stack.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub struct Stack<'txin>(Vec<Element<'txin>>);
+pub struct Stack<'txin>(pub(super) Vec<Element<'txin>>);
 
 impl<'txin> From<Vec<Element<'txin>>> for Stack<'txin> {
     fn from(v: Vec<Element<'txin>>) -> Self {
@@ -85,6 +103,14 @@ impl<'txin> From<Vec<Element<'txin>>> for Stack<'txin> {
 impl<'txin> Default for Stack<'txin> {
     fn default() -> Self {
         Stack(vec![])
+    }
+}
+
+impl<'txin> Index<usize> for Stack<'txin> {
+    type Output = Element<'txin>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
     }
 }
 
