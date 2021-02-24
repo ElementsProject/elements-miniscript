@@ -303,6 +303,17 @@ impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
         wit.extend(ms_wit);
         Ok(wit)
     }
+
+    /// Script code for signing with covenant publickey.
+    /// Use this script_code for sighash method when signing
+    /// with the covenant pk. Use the [DescriptorTrait] script_code
+    /// method for getting sighash for regular miniscripts.
+    pub fn cov_script_code(&self) -> Script
+    where
+        Pk: ToPublicKey,
+    {
+        script::Builder::new().post_codesep_script().into_script()
+    }
 }
 
 /// A satisfier for Covenant descriptors
@@ -663,11 +674,15 @@ where
             max_sat_size)
     }
 
+    /// This returns the entire explicit script as the script code.
+    /// You will need this script code when singing with pks that
+    /// inside Miniscript. Use the [cov_script_code] method to
+    /// get the script code for signing with covenant pk
     fn script_code(&self) -> Script
     where
         Pk: ToPublicKey,
     {
-        script::Builder::new().post_codesep_script().into_script()
+        self.explicit_script()
     }
 }
 
@@ -700,8 +715,10 @@ mod tests {
     use super::*;
     use elements::confidential;
     use elements::{AssetId, AssetIssuance, OutPoint, TxIn, TxInWitness, Txid};
+    use interpreter::SatisfiedConstraint;
     use std::str::FromStr;
     use util::{count_non_push_opcodes, witness_size};
+    use Interpreter;
     use {descriptor::DescriptorType, Descriptor, ElementsSig};
 
     const BTC_ASSET: [u8; 32] = [
@@ -789,6 +806,139 @@ mod tests {
         assert_eq!(sighash_size, 238);
     }
 
+    fn _satisfy_and_interpret(
+        desc: Descriptor<bitcoin::PublicKey>,
+        cov_sk: secp256k1::SecretKey,
+    ) -> Result<(), Error> {
+        assert_eq!(desc.desc_type(), DescriptorType::Cov);
+        let desc = desc.as_cov();
+        // Now create a transaction spending this.
+        let mut spend_tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![txin_from_txid_vout(
+                "141f79c7c254ee3a9a9bc76b4f60564385b784bdfc1882b25154617801fe2237",
+                1,
+            )],
+            output: vec![],
+        };
+
+        spend_tx.output.push(TxOut::default());
+        spend_tx.output[0].script_pubkey = desc.script_pubkey(); // send back to self
+        spend_tx.output[0].value = confidential::Value::Explicit(99_000);
+        spend_tx.output[0].asset =
+            confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+
+        // same second output
+        let second_out = spend_tx.output[0].clone();
+        spend_tx.output.push(second_out);
+
+        // Add a fee output
+        spend_tx.output.push(TxOut::default());
+        spend_tx.output[2].asset =
+            confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+        spend_tx.output[2].value = confidential::Value::Explicit(2_000);
+
+        // Try to satisfy the covenant part
+        let script_code = desc.cov_script_code();
+        let cov_sat = CovSatisfier::new_segwitv0(
+            &spend_tx,
+            0,
+            confidential::Value::Explicit(200_000),
+            &script_code,
+            SigHashType::All,
+        );
+
+        // Create a signature to sign the input
+
+        let sighash_u256 = cov_sat.segwit_sighash().unwrap();
+        let secp = secp256k1::Secp256k1::signing_only();
+        let sig = secp.sign(
+            &secp256k1::Message::from_slice(&sighash_u256[..]).unwrap(),
+            &cov_sk,
+        );
+        let el_sig = (sig, SigHashType::All);
+
+        // For satisfying the Pk part of the covenant
+        struct SimpleSat {
+            sig: ElementsSig,
+            pk: bitcoin::PublicKey,
+        };
+
+        impl Satisfier<bitcoin::PublicKey> for SimpleSat {
+            fn lookup_sig(&self, pk: &bitcoin::PublicKey) -> Option<ElementsSig> {
+                if *pk == self.pk {
+                    Some(self.sig)
+                } else {
+                    None
+                }
+            }
+        }
+
+        let pk_sat = SimpleSat {
+            sig: el_sig,
+            pk: desc.pk,
+        };
+
+        // A pair of satisfiers is also a satisfier
+        let (wit, ss) = desc.get_satisfaction((cov_sat, pk_sat))?;
+        let mut interpreter =
+            Interpreter::from_txdata(&desc.script_pubkey(), &ss, &wit, 0, 0).unwrap();
+
+        assert!(wit[0].len() <= 73);
+        assert!(wit[1].len() == 4); // version
+
+        // Check that everything is executed correctly with correct sigs inside
+        // miniscript
+        let constraints = interpreter
+            .iter(|_, _| true)
+            .collect::<Result<Vec<_>, _>>()
+            .expect("If satisfy succeeds, interpret must succeed");
+
+        // The last constraint satisfied must be the covenant pk
+        assert_eq!(
+            constraints.last().unwrap(),
+            &SatisfiedConstraint::PublicKey {
+                key: &desc.pk,
+                sig: sig,
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn satisfy_and_interpret() {
+        let (pks, sks) = setup_keys(5);
+        _satisfy_and_interpret(
+            Descriptor::from_str(&format!("elcovwsh({},1)", pks[0])).unwrap(),
+            sks[0],
+        )
+        .unwrap();
+
+        // Version tests
+        // Satisfy with 2, err with 3
+        _satisfy_and_interpret(
+            Descriptor::from_str(&format!("elcovwsh({},ver_eq(2))", pks[0])).unwrap(),
+            sks[0],
+        )
+        .unwrap();
+        _satisfy_and_interpret(
+            Descriptor::from_str(&format!("elcovwsh({},ver_eq(3))", pks[0])).unwrap(),
+            sks[0],
+        )
+        .unwrap_err();
+    }
+
+    // Fund output and spend tx are tests handy with code for
+    // running with regtest mode and testing that the scripts
+    // are accepted by elementsd
+    // Instructions for running:
+    // 1. Modify the descriptor script in fund_output and
+    //    get the address to which we should spend the funds
+    // 2. Look up the spending transaction and update the
+    //    spend tx test with outpoint for spending.
+    // 3. Uncomment the printlns at the end of spend_tx to get
+    //    a raw tx that we can then check if it is accepted.
     #[test]
     fn fund_output() {
         let (pks, _sks) = setup_keys(5);
@@ -810,7 +960,6 @@ mod tests {
                 .to_string()
         );
     }
-
     #[test]
     fn spend_tx() {
         let (pks, sks) = setup_keys(5);
@@ -852,7 +1001,8 @@ mod tests {
         spend_tx.output[2].value = confidential::Value::Explicit(2_000);
 
         // Try to satisfy the covenant part
-        let script_code = desc.script_code();
+        let desc = desc.as_cov();
+        let script_code = desc.cov_script_code();
         let cov_sat = CovSatisfier::new_segwitv0(
             &spend_tx,
             0,
@@ -890,7 +1040,12 @@ mod tests {
         let pk_sat = SimpleSat { sig, pk: pks[0] };
 
         // A pair of satisfiers is also a satisfier
-        let (wit, _) = desc.get_satisfaction((cov_sat, pk_sat)).unwrap();
+        let (wit, ss) = desc.get_satisfaction((cov_sat, pk_sat)).unwrap();
+        let mut interpreter =
+            Interpreter::from_txdata(&desc.script_pubkey(), &ss, &wit, 0, 0).unwrap();
+        // Check that everything is executed correctly with dummysigs
+        let constraints: Result<Vec<_>, _> = interpreter.iter(|_, _| true).collect();
+        constraints.expect("Covenant incorrect satisfaction");
         // Commented Demo test code:
         // 1) Send 0.002 btc to above address
         // 2) Create a tx by filling up txid
