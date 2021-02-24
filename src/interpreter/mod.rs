@@ -307,6 +307,13 @@ pub enum SatisfiedConstraint<'intp, 'txin> {
         /// The value of Absolute timelock
         time: &'intp u32,
     },
+
+    /// Elements
+    /// Check Version eq
+    VerEq {
+        /// The version of transaction
+        n: &'intp u32,
+    },
 }
 
 ///This is used by the interpreter to know which evaluation state a AstemElem is.
@@ -462,6 +469,14 @@ where
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
                     let res = self.stack.evaluate_ripemd160(hash);
+                    if res.is_some() {
+                        return res;
+                    }
+                }
+                Terminal::Version(ref ver) => {
+                    debug_assert_eq!(node_state.n_evaluated, 0);
+                    debug_assert_eq!(node_state.n_satisfied, 0);
+                    let res = self.stack.evaluate_ver(ver);
                     if res.is_some() {
                         return res;
                     }
@@ -755,7 +770,7 @@ where
             }
             // safe to unwrap 12 times
             for i in 0..12 {
-                if let Err(e) = self.stack[i].check_push() {
+                if let Err(e) = self.stack[i].try_push() {
                     return Some(Err(e));
                 }
             }

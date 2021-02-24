@@ -23,7 +23,7 @@ use elements::{self, opcodes, script};
 use {ElementsSig, ToPublicKey};
 
 use super::{verify_sersig, Error, HashLockType, SatisfiedConstraint};
-
+use util;
 /// Definition of Stack Element of the Stack used for interpretation of Miniscript.
 /// All stack elements with vec![] go to Dissatisfied and vec![1] are marked to Satisfied.
 /// Others are directly pushed as witness
@@ -81,9 +81,9 @@ impl<'txin> Element<'txin> {
     }
 
     /// Errs when the element is not a push
-    pub(crate) fn check_push(&self) -> Result<(), Error> {
+    pub(crate) fn try_push(&self) -> Result<&[u8], Error> {
         match self {
-            Element::Push(_x) => Ok(()),
+            Element::Push(x) => Ok(x),
             _ => Err(Error::ExpectedPush),
         }
     }
@@ -378,6 +378,35 @@ impl<'txin> Stack<'txin> {
             }
         } else {
             Some(Err(Error::UnexpectedStackEnd))
+        }
+    }
+
+    /// Evaluate a ver fragment. Get the version from the global stack
+    /// context and check equality
+    pub fn evaluate_ver<'intp>(
+        &mut self,
+        n: &'intp u32,
+    ) -> Option<Result<SatisfiedConstraint<'intp, 'txin>, Error>> {
+        // Version is at index 1
+        let ver = self[1];
+        if let Err(e) = ver.try_push() {
+            return Some(Err(e));
+        }
+        let elem = ver.as_push();
+        if elem.len() == 4 {
+            let wit_ver = util::slice_to_u32_le(elem);
+            if wit_ver == *n {
+                self.push(Element::Satisfied);
+                Some(Ok(SatisfiedConstraint::VerEq { n: n }))
+            } else {
+                None
+            }
+        } else {
+            Some(Err(Error::CovWitnessSizeErr {
+                pos: 1,
+                expected: 4,
+                actual: elem.len(),
+            }))
         }
     }
 
