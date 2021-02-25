@@ -195,6 +195,16 @@ impl From<CovError> for Error {
     }
 }
 
+// A simple utility function to serialize an array
+// of elements and compute double sha2 on it
+fn hash256_arr<T: Encodable>(sl: &[T]) -> sha256d::Hash {
+    let mut enc = sha256d::Hash::engine();
+    for elem in sl {
+        elem.consensus_encode(&mut enc).unwrap();
+    }
+    sha256d::Hash::from_engine(enc)
+}
+
 /// The covenant descriptor
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CovenantDescriptor<Pk: MiniscriptKey> {
@@ -271,7 +281,8 @@ impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
             let script_code = s.lookup_scriptcode().ok_or(MissingSighashItem(5))?;
             let value = s.lookup_value().ok_or(MissingSighashItem(6))?;
             let n_sequence = s.lookup_nsequence().ok_or(MissingSighashItem(7))?;
-            let hash_outputs = s.lookup_hashoutputs().ok_or(MissingSighashItem(8))?;
+            let outputs = s.lookup_outputs().ok_or(MissingSighashItem(8))?;
+            let hash_outputs = hash256_arr(outputs);
             let n_locktime = s.lookup_nlocktime().ok_or(MissingSighashItem(9))?;
             let sighash_ty = s.lookup_sighashu32().ok_or(MissingSighashItem(10))?;
 
@@ -452,12 +463,8 @@ impl<'tx, 'ptx, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for CovSatisfier<
         Some(self.tx.input[self.idx as usize].sequence)
     }
 
-    fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
-        let mut enc = sha256d::Hash::engine();
-        for txout in &self.tx.output {
-            txout.consensus_encode(&mut enc).unwrap();
-        }
-        Some(sha256d::Hash::from_engine(enc))
+    fn lookup_outputs(&self) -> Option<&[elements::TxOut]> {
+        Some(&self.tx.output)
     }
 
     fn lookup_nlocktime(&self) -> Option<u32> {

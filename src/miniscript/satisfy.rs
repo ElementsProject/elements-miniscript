@@ -144,7 +144,7 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
     }
 
     /// Item 8: hashoutputs
-    fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
+    fn lookup_outputs(&self) -> Option<&[elements::TxOut]> {
         None
     }
 
@@ -295,8 +295,8 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_nsequence()
     }
 
-    fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
-        (**self).lookup_hashoutputs()
+    fn lookup_outputs(&self) -> Option<&[elements::TxOut]> {
+        (**self).lookup_outputs()
     }
 
     fn lookup_nlocktime(&self) -> Option<u32> {
@@ -377,8 +377,8 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_nsequence()
     }
 
-    fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
-        (**self).lookup_hashoutputs()
+    fn lookup_outputs(&self) -> Option<&[elements::TxOut]> {
+        (**self).lookup_outputs()
     }
 
     fn lookup_nlocktime(&self) -> Option<u32> {
@@ -574,10 +574,10 @@ macro_rules! impl_tuple_satisfier {
                 None
             }
 
-            fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
+            fn lookup_outputs(&self) -> Option<&[elements::TxOut]> {
                 let &($(ref $ty,)*) = self;
                 $(
-                    if let Some(result) = $ty.lookup_hashoutputs() {
+                    if let Some(result) = $ty.lookup_outputs() {
                         return Some(result);
                     }
                 )*
