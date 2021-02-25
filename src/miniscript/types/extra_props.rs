@@ -1,7 +1,9 @@
 //! Other miscellaneous type properties which are not related to
 //! correctness or malleability.
 
-use miniscript::limits::{HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_TYPE_FLAG};
+use miniscript::limits::{
+    HEIGHT_TIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE, SEQUENCE_LOCKTIME_TYPE_FLAG,
+};
 
 use super::{Error, ErrorKind, Property, ScriptContext};
 use script_num_size;
@@ -322,10 +324,14 @@ impl Property for ExtData {
         unreachable!()
     }
 
+    fn from_item_pref(_pref: &[u8]) -> Self {
+        unreachable!()
+    }
+
     fn from_ver_eq() -> Self {
         ExtData {
             pk_cost: 4 + 1 + 1 + 4, // 4 opcodes, 1 push, (5) 4 byte push
-            has_free_verify: false,
+            has_free_verify: true,
             ops_count_static: 4,
             ops_count_sat: Some(4),
             ops_count_nsat: Some(4),
@@ -333,6 +339,23 @@ impl Property for ExtData {
             stack_elem_count_dissat: Some(0),
             max_sat_size: Some((0, 0)),
             max_dissat_size: Some((0, 0)),
+            timelock_info: TimeLockInfo::default(),
+        }
+    }
+
+    fn from_output_pref(pref: &[u8]) -> Self {
+        // Assume txouts fill out all the 520 bytes
+        let max_wit_sz = MAX_SCRIPT_ELEMENT_SIZE - pref.len();
+        ExtData {
+            pk_cost: 7 + pref.len() + 1 + 6, // See script_size() in astelem.rs
+            has_free_verify: true,
+            ops_count_static: 12,
+            ops_count_sat: Some(12),
+            ops_count_nsat: Some(12),
+            stack_elem_count_sat: Some(6),
+            stack_elem_count_dissat: Some(6),
+            max_sat_size: Some((max_wit_sz, max_wit_sz)),
+            max_dissat_size: Some((0, 0)), // all empty should dissatisfy
             timelock_info: TimeLockInfo::default(),
         }
     }
@@ -893,6 +916,7 @@ impl Property for ExtData {
             Terminal::Ripemd160(..) => Ok(Self::from_ripemd160()),
             Terminal::Hash160(..) => Ok(Self::from_hash160()),
             Terminal::Version(..) => Ok(Self::from_ver_eq()),
+            Terminal::OutputsPref(ref pref) => Ok(Self::from_output_pref(pref)),
             Terminal::Alt(ref sub) => wrap_err(Self::cast_alt(sub.ext.clone())),
             Terminal::Swap(ref sub) => wrap_err(Self::cast_swap(sub.ext.clone())),
             Terminal::Check(ref sub) => wrap_err(Self::cast_check(sub.ext.clone())),
