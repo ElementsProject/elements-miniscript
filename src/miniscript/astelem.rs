@@ -23,7 +23,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::{fmt, str};
 
-use elements::encode::{serialize, Encodable};
+use elements::encode::serialize;
 use elements::hashes::hex::FromHex;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use elements::{opcodes, script};
@@ -33,6 +33,8 @@ use expression;
 use miniscript::types::{self, Property};
 use miniscript::ScriptContext;
 use script_num_size;
+
+use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 use {Error, Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslatePk};
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
@@ -100,6 +102,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             Terminal::True => Terminal::True,
             Terminal::False => Terminal::False,
             Terminal::Version(n) => Terminal::Version(n),
+            Terminal::OutputsPref(ref pref) => Terminal::OutputsPref(pref.clone()),
             Terminal::Alt(ref sub) => Terminal::Alt(Arc::new(
                 sub.real_translate_pk(translatefpk, translatefpkh)?,
             )),
@@ -597,16 +600,49 @@ pub trait StackCtxOperations: Sized {
     /// stack limits.
     /// Copies the element at index idx to the top of the stack
     /// Checks item equality against the specified target
-    fn check_item_eq<T: Encodable>(self, idx: u32, target: T) -> Self;
+    fn check_item_eq(self, idx: u32, target: &[u8]) -> Self;
+
+    /// Since, there is a policy restriction that initial pushes must be
+    /// only 80 bytes, we need user to provide suffix in separate items
+    /// There can be atmost 7 cats, because the script element must be less
+    /// than 520 bytes total in order to compute an hash256 on it.
+    /// Even if the witness does not require 7 pushes, the user should push
+    /// 7 elements with possibly empty values.
+    ///
+    /// Copies the script item at position and compare the hash256
+    /// with it
+    fn check_item_pref(self, idx: u32, pref: &[u8]) -> Self;
 }
 
 impl StackCtxOperations for script::Builder {
-    fn check_item_eq<T: Encodable>(self, idx: u32, target: T) -> Self {
+    fn check_item_eq(self, idx: u32, target: &[u8]) -> Self {
         self.push_int((idx + 1) as i64) // +1 for depth increase
             .push_opcode(opcodes::all::OP_DEPTH)
             .push_opcode(opcodes::all::OP_SUB)
             .push_opcode(opcodes::all::OP_PICK)
-            .push_slice(&serialize(&target))
+            .push_slice(target)
+            .push_opcode(opcodes::all::OP_EQUAL)
+    }
+
+    fn check_item_pref(self, idx: u32, pref: &[u8]) -> Self {
+        let mut builder = self;
+        // Initial Witness
+        let max_elems = MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
+        for _ in 0..(max_elems - 1) {
+            builder = builder.push_opcode(opcodes::all::OP_CAT);
+        }
+        builder = builder
+            .push_slice(pref)
+            .push_opcode(opcodes::all::OP_SWAP)
+            .push_opcode(opcodes::all::OP_CAT);
+        // Now the stack top is serialization of all the outputs
+        builder = builder.push_opcode(opcodes::all::OP_HASH256);
+
+        builder
+            .push_int((idx + 1) as i64) // +1 for depth increase
+            .push_opcode(opcodes::all::OP_DEPTH)
+            .push_opcode(opcodes::all::OP_SUB)
+            .push_opcode(opcodes::all::OP_PICK)
             .push_opcode(opcodes::all::OP_EQUAL)
     }
 }
@@ -660,7 +696,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::True => builder.push_opcode(opcodes::OP_TRUE),
             Terminal::False => builder.push_opcode(opcodes::OP_FALSE),
-            Terminal::Version(n) => builder.check_item_eq(11, n),
+            Terminal::Version(n) => builder.check_item_eq(11, &serialize(&n)),
+            Terminal::OutputsPref(ref pref) => builder.check_item_pref(3, pref),
             Terminal::Alt(ref sub) => builder
                 .push_opcode(opcodes::all::OP_TOALTSTACK)
                 .push_astelem(sub)
@@ -758,6 +795,12 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             Terminal::True => 1,
             Terminal::False => 1,
             Terminal::Version(_n) => 4 + 1 + 1 + 4, // opcodes + push opcodes + target size
+            Terminal::OutputsPref(ref pref) => {
+                // CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
+                // HASH256 DEPTH <10> SUB PICK EQUAL
+                7 + pref.len() + 1 /* line1 opcodes + pref.push */
+                + 6 /* line 2 */
+            }
             Terminal::Alt(ref sub) => sub.node.script_size() + 2,
             Terminal::Swap(ref sub) => sub.node.script_size() + 1,
             Terminal::Check(ref sub) => sub.node.script_size() + 1,

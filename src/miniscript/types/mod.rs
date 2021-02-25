@@ -319,6 +319,16 @@ pub trait Property: Sized {
         Self::from_item_eq()
     }
 
+    /// Type property for a general global sighash item lookup
+    /// with prefix that must be concatted with user input
+    /// to obtain a specified hash value
+    fn from_item_pref(_pref: &[u8]) -> Self;
+
+    /// Type property for hashoutput_pref
+    fn from_output_pref(pref: &[u8]) -> Self {
+        Self::from_item_pref(pref)
+    }
+
     /// Cast using the `Alt` wrapper
     fn cast_alt(self) -> Result<Self, ErrorKind>;
 
@@ -457,6 +467,7 @@ pub trait Property: Sized {
             Terminal::Ripemd160(..) => Ok(Self::from_ripemd160()),
             Terminal::Hash160(..) => Ok(Self::from_hash160()),
             Terminal::Version(..) => Ok(Self::from_ver_eq()),
+            Terminal::OutputsPref(ref pref) => Ok(Self::from_output_pref(pref)),
             Terminal::Alt(ref sub) => wrap_err(Self::cast_alt(get_child(&sub.node, 0)?)),
             Terminal::Swap(ref sub) => wrap_err(Self::cast_swap(get_child(&sub.node, 0)?)),
             Terminal::Check(ref sub) => wrap_err(Self::cast_check(get_child(&sub.node, 0)?)),
@@ -641,6 +652,13 @@ impl Property for Type {
         Type {
             corr: Property::from_item_eq(),
             mall: Property::from_item_eq(),
+        }
+    }
+
+    fn from_item_pref(pref: &[u8]) -> Self {
+        Type {
+            corr: Property::from_item_pref(pref),
+            mall: Property::from_item_pref(pref),
         }
     }
 
@@ -842,6 +860,7 @@ impl Property for Type {
             Terminal::Ripemd160(..) => Ok(Self::from_ripemd160()),
             Terminal::Hash160(..) => Ok(Self::from_hash160()),
             Terminal::Version(..) => Ok(Self::from_item_eq()),
+            Terminal::OutputsPref(ref pref) => Ok(Self::from_item_pref(pref)),
             Terminal::Alt(ref sub) => wrap_err(Self::cast_alt(sub.ty.clone())),
             Terminal::Swap(ref sub) => wrap_err(Self::cast_swap(sub.ty.clone())),
             Terminal::Check(ref sub) => wrap_err(Self::cast_check(sub.ty.clone())),

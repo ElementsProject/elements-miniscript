@@ -53,6 +53,8 @@ pub enum ScriptContextError {
     MaxScriptSigSizeExceeded,
     /// Impossible to satisfy the miniscript under the current context
     ImpossibleSatisfaction,
+    /// Covenant Prefix/ Suffix maximum allowed stack element exceeds 520 bytes
+    CovElementSizeExceeded,
 }
 
 impl fmt::Display for ScriptContextError {
@@ -95,6 +97,12 @@ impl fmt::Display for ScriptContextError {
                 write!(
                     f,
                     "Impossible to satisfy Miniscript under the current context"
+                )
+            }
+            ScriptContextError::CovElementSizeExceeded => {
+                write!(
+                    f,
+                    "Prefix/Suffix len in sighash covenents exceeds 520 bytes"
                 )
             }
         }
@@ -348,6 +356,12 @@ impl ScriptContext for Segwitv0 {
             Terminal::PkK(ref pk) => {
                 if pk.is_uncompressed() {
                     return Err(ScriptContextError::CompressedOnly);
+                }
+                Ok(())
+            }
+            Terminal::OutputsPref(ref pref) => {
+                if pref.len() > MAX_SCRIPT_ELEMENT_SIZE {
+                    return Err(ScriptContextError::CovElementSizeExceeded);
                 }
                 Ok(())
             }
