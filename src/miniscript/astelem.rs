@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::{fmt, str};
 
 use elements::encode::serialize;
-use elements::hashes::hex::FromHex;
+use elements::hashes::hex::{FromHex, ToHex};
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use elements::{opcodes, script};
 
@@ -236,6 +236,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Debug for Terminal<Pk, Ctx> {
                 Terminal::True => f.write_str("1"),
                 Terminal::False => f.write_str("0"),
                 Terminal::Version(k) => write!(f, "ver_eq({})", k),
+                Terminal::OutputsPref(ref pref) => write!(f, "outputs_pref({})", pref.to_hex()),
                 Terminal::AndV(ref l, ref r) => write!(f, "and_v({:?},{:?})", l, r),
                 Terminal::AndB(ref l, ref r) => write!(f, "and_b({:?},{:?})", l, r),
                 Terminal::AndOr(ref a, ref b, ref c) => {
@@ -287,6 +288,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Terminal<Pk, Ctx> {
             Terminal::True => f.write_str("1"),
             Terminal::False => f.write_str("0"),
             Terminal::Version(n) => write!(f, "ver_eq({})", n),
+            Terminal::OutputsPref(ref pref) => write!(f, "outputs_pref({})", pref.to_hex()),
             Terminal::AndV(ref l, ref r) if r.node != Terminal::True => {
                 write!(f, "and_v({},{})", l, r)
             }
@@ -459,6 +461,9 @@ where
                 let n = expression::terminal(&top.args[0], expression::parse_num)?;
                 Ok(Terminal::Version(n))
             }
+            ("outputs_pref", 1) => expression::terminal(&top.args[0], |x| {
+                Vec::<u8>::from_hex(x).map(Terminal::OutputsPref)
+            }),
             ("and_v", 2) => {
                 let expr = expression::binary(top, Terminal::AndV)?;
                 if let Terminal::AndV(_, ref right) = expr {

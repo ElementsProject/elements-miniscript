@@ -87,6 +87,15 @@ impl<'txin> Element<'txin> {
             _ => Err(Error::ExpectedPush),
         }
     }
+
+    /// Convert element into slice
+    pub(crate) fn into_slice(self) -> &'txin [u8] {
+        match self {
+            Element::Satisfied => &[1],
+            Element::Dissatisfied => &[],
+            Element::Push(ref v) => v,
+        }
+    }
 }
 
 /// Stack Data structure representing the stack input to Miniscript. This Stack
@@ -406,6 +415,50 @@ impl<'txin> Stack<'txin> {
                 pos: 1,
                 expected: 4,
                 actual: elem.len(),
+            }))
+        }
+    }
+
+    /// Evaluate a output_pref fragment. Get the hashoutputs from the global
+    /// stack context and check it's preimage starts with prefix.
+    /// The user provides the suffix as witness in 6 different elements
+    pub fn evaluate_outputs_pref<'intp>(
+        &mut self,
+        pref: &'intp [u8],
+    ) -> Option<Result<SatisfiedConstraint<'intp, 'txin>, Error>> {
+        // Version is at index 1
+        let hash_outputs = self[9];
+        if let Err(e) = hash_outputs.try_push() {
+            return Some(Err(e));
+        }
+        let hash_outputs = hash_outputs.as_push();
+        if hash_outputs.len() == 32 {
+            // We want to cat the last 6 elements(5 cats) in suffix
+            if self.len() < 6 {
+                return Some(Err(Error::UnexpectedStackEnd));
+            }
+            let mut outputs_builder = Vec::new();
+            outputs_builder.extend(pref);
+            let len = self.len();
+            // Add the 6 suffix elements
+            for i in 0..6 {
+                outputs_builder.extend(self[len - 6 + i].into_slice());
+            }
+            // Pop the 6 suffix elements
+            for _ in 0..6 {
+                self.pop().unwrap();
+            }
+            if sha256d::Hash::hash(&outputs_builder).as_inner() == hash_outputs {
+                self.push(Element::Satisfied);
+                Some(Ok(SatisfiedConstraint::OutputsPref { pref: pref }))
+            } else {
+                None
+            }
+        } else {
+            Some(Err(Error::CovWitnessSizeErr {
+                pos: 9,
+                expected: 32,
+                actual: hash_outputs.len(),
             }))
         }
     }
