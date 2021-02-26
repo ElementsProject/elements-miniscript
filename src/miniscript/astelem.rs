@@ -701,8 +701,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::True => builder.push_opcode(opcodes::OP_TRUE),
             Terminal::False => builder.push_opcode(opcodes::OP_FALSE),
-            Terminal::Version(n) => builder.check_item_eq(11, &serialize(&n)),
-            Terminal::OutputsPref(ref pref) => builder.check_item_pref(3, pref),
+            Terminal::Version(n) => builder.check_item_eq(1, &serialize(&n)),
+            Terminal::OutputsPref(ref pref) => builder.check_item_pref(9, pref),
             Terminal::Alt(ref sub) => builder
                 .push_opcode(opcodes::all::OP_TOALTSTACK)
                 .push_astelem(sub)
