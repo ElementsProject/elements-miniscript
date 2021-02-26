@@ -720,7 +720,9 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for CovenantDescripto
 mod tests {
 
     use super::*;
-    use elements::confidential;
+    use elements::hashes::hex::ToHex;
+    use elements::{confidential, opcodes::all::OP_PUSHNUM_1};
+    use elements::{opcodes, script};
     use elements::{AssetId, AssetIssuance, OutPoint, TxIn, TxInWitness, Txid};
     use interpreter::SatisfiedConstraint;
     use std::str::FromStr;
@@ -734,12 +736,20 @@ mod tests {
         0xe1, 0xb2,
     ];
 
+    fn string_rtt(desc_str: &str) {
+        let desc = Descriptor::<String>::from_str(desc_str).unwrap();
+        assert_eq!(desc.to_string_no_chksum(), desc_str);
+        let cov_desc = desc.as_cov();
+        assert_eq!(cov_desc.to_string(), desc.to_string());
+    }
     #[test]
     fn parse_cov() {
-        Descriptor::<String>::from_str("elcovwsh(A,pk(B))").unwrap();
-        Descriptor::<String>::from_str("elcovwsh(A,or_i(pk(B),pk(C)))").expect("Failed");
-        Descriptor::<String>::from_str("elcovwsh(A,multi(2,B,C,D))").unwrap();
-        Descriptor::<String>::from_str("elcovwsh(A,and_v(v:pk(B),pk(C)))").unwrap();
+        string_rtt("elcovwsh(A,pk(B))");
+        string_rtt("elcovwsh(A,or_i(pk(B),pk(C)))");
+        string_rtt("elcovwsh(A,multi(2,B,C,D))");
+        string_rtt("elcovwsh(A,and_v(v:pk(B),pk(C)))");
+        string_rtt("elcovwsh(A,thresh(2,ver_eq(1),s:pk(C),s:pk(B)))");
+        string_rtt("elcovwsh(A,outputs_pref(01020304))");
     }
 
     fn script_rtt(desc_str: &str) {
@@ -767,6 +777,14 @@ mod tests {
         script_rtt(&format!(
             "elcovwsh({},and_v(v:pk({}),pk({})))",
             pks[0], pks[1], pks[2]
+        ));
+        script_rtt(&format!(
+            "elcovwsh({},and_v(v:ver_eq(2),pk({})))",
+            pks[0], pks[1]
+        ));
+        script_rtt(&format!(
+            "elcovwsh({},and_v(v:outputs_pref(f2f233),pk({})))",
+            pks[0], pks[1]
         ));
     }
 
@@ -831,7 +849,10 @@ mod tests {
         };
 
         spend_tx.output.push(TxOut::default());
-        spend_tx.output[0].script_pubkey = desc.script_pubkey(); // send back to self
+        spend_tx.output[0].script_pubkey = script::Builder::new()
+            .push_opcode(opcodes::all::OP_PUSHNUM_1)
+            .into_script()
+            .to_v0_p2wsh();
         spend_tx.output[0].value = confidential::Value::Explicit(99_000);
         spend_tx.output[0].asset =
             confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
@@ -934,6 +955,39 @@ mod tests {
             sks[0],
         )
         .unwrap_err();
+
+        // Outputs Pref test
+        // 1. Correct case
+        let mut out = TxOut::default();
+        out.script_pubkey = script::Builder::new()
+            .push_opcode(opcodes::all::OP_PUSHNUM_1)
+            .into_script()
+            .to_v0_p2wsh();
+        out.value = confidential::Value::Explicit(99_000);
+        out.asset = confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+        let desc = Descriptor::<bitcoin::PublicKey>::from_str(&format!(
+            "elcovwsh({},outputs_pref({}))",
+            pks[0],
+            serialize(&out).to_hex(),
+        ))
+        .unwrap();
+        _satisfy_and_interpret(desc, sks[0]).unwrap();
+
+        // 2. Chaning the amount should fail the test
+        let mut out = TxOut::default();
+        out.script_pubkey = script::Builder::new()
+            .push_opcode(opcodes::all::OP_PUSHNUM_1)
+            .into_script()
+            .to_v0_p2wsh();
+        out.value = confidential::Value::Explicit(99_001); // Changed to +1
+        out.asset = confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+        let desc = Descriptor::<bitcoin::PublicKey>::from_str(&format!(
+            "elcovwsh({},outputs_pref({}))",
+            pks[0],
+            serialize(&out).to_hex(),
+        ))
+        .unwrap();
+        _satisfy_and_interpret(desc, sks[0]).unwrap_err();
     }
 
     // Fund output and spend tx are tests handy with code for
