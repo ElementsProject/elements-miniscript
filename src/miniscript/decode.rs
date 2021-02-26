@@ -282,6 +282,31 @@ pub fn parse<Ctx: ScriptContext>(
                                     ))?
                                 },
                             ),
+                            Tk::Push4(ver), Tk::Pick, Tk::Sub, Tk::Depth => match_token!(
+                                tokens,
+                                Tk::Num(2) => {
+                                    non_term.push(NonTerm::Verify);
+                                    term.reduce0(Terminal::Version(ver))?
+                                },
+                            ),
+                            Tk::Pick, Tk::Sub, Tk::Depth => match_token!(
+                                tokens,
+                                Tk::Num(10) => match_token!(
+                                    tokens,
+                                    Tk::Hash256, Tk::Cat, Tk::Swap, Tk::Push(bytes), Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat =>
+                                        {
+                                            non_term.push(NonTerm::Verify);
+                                            term.reduce0(Terminal::OutputsPref(bytes))?
+                                        },
+                                ),
+                            ),
+                            Tk::Num(k) => {
+                                non_term.push(NonTerm::Verify);
+                                non_term.push(NonTerm::ThreshW {
+                                    k: k as usize,
+                                    n: 0
+                                });
+                            },
                         ),
                         x => {
                             tokens.un_next(x);
@@ -337,13 +362,13 @@ pub fn parse<Ctx: ScriptContext>(
                         ),
                         Tk::Push4(ver), Tk::Pick, Tk::Sub, Tk::Depth => match_token!(
                             tokens,
-                            Tk::Num(12) => term.reduce0(Terminal::Version(ver))?,
+                            Tk::Num(2) => term.reduce0(Terminal::Version(ver))?,
                         ),
                         Tk::Pick, Tk::Sub, Tk::Depth => match_token!(
                             tokens,
-                            Tk::Num(3) => match_token!(
+                            Tk::Num(10) => match_token!(
                                 tokens,
-                                Tk::Hash256, Tk::Cat, Tk::Swap, Tk::PushPrefCat(bytes), Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat =>
+                                Tk::Hash256, Tk::Cat, Tk::Swap, Tk::Push(bytes), Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat =>
                                     term.reduce0(Terminal::OutputsPref(bytes))?,
                             ),
                         ),

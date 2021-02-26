@@ -66,7 +66,7 @@ pub enum Token {
     Hash32([u8; 32]),
     Pubkey(PublicKey),
     Push4(u32),
-    PushPrefCat(Vec<u8>), // <pref> <swap> <cat> /* prefix is catted */
+    Push(Vec<u8>), // <pref> <swap> <cat> /* prefix is catted */
 }
 
 impl fmt::Display for Token {
@@ -253,12 +253,15 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token>, Error> {
                 ret.push(Token::Hash256);
             }
             script::Instruction::PushBytes(bytes) => {
-                // Check for PushPrefCat
+                // Check for Push
                 let ret_len = ret.len();
-                if ret.last() == Some(&Token::Swap) && ret.get(ret_len - 2) == Some(&Token::Cat) {
-                    ret.pop().unwrap();
-                    ret.pop().unwrap();
-                    ret.push(Token::PushPrefCat(bytes.to_owned()));
+                // See that last five elements are CAT
+                // Checking only two here
+                if ret_len >= 5
+                    && ret.last() == Some(&Token::Cat)
+                    && ret.get(ret_len - 2) == Some(&Token::Cat)
+                {
+                    ret.push(Token::Push(bytes.to_owned()));
                 }
                 // Special handling of tokens for Covenants
                 // To determine whether some Token is actually
