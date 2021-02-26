@@ -299,14 +299,14 @@ impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
                 serialize(&n_version),                   // item 1
                 serialize(&hash_prevouts),               // item 2
                 serialize(&hash_sequence),               // item 3
-                serialize(&hash_issuances),              // ELEMENTS EXTRA: item 3b
-                serialize(&outpoint),                    // item 4
-                serialize(script_code),                  // item 5
-                serialize(&value),                       // item 6
-                serialize(&n_sequence),                  // item 7
-                serialize(&hash_outputs),                // item 8
-                serialize(&n_locktime),                  // item 9
-                serialize(&sighash_ty),                  // item 10
+                serialize(&hash_issuances),              // ELEMENTS EXTRA: item 3b(4)
+                serialize(&outpoint),                    // item 4(5)
+                serialize(script_code),                  // item 5(6)
+                serialize(&value),                       // item 6(7)
+                serialize(&n_sequence),                  // item 7(8)
+                serialize(&hash_outputs),                // item 8(9)
+                serialize(&n_locktime),                  // item 9(10)
+                serialize(&sighash_ty),                  // item 10(11)
             ]
         };
 

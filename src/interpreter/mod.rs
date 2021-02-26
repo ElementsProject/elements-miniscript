@@ -314,6 +314,13 @@ pub enum SatisfiedConstraint<'intp, 'txin> {
         /// The version of transaction
         n: &'intp u32,
     },
+
+    /// Serialized outputs of this transaction start
+    /// this prefix
+    OutputsPref {
+        /// The version of transaction
+        pref: &'intp [u8],
+    },
 }
 
 ///This is used by the interpreter to know which evaluation state a AstemElem is.
@@ -477,6 +484,14 @@ where
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
                     let res = self.stack.evaluate_ver(ver);
+                    if res.is_some() {
+                        return res;
+                    }
+                }
+                Terminal::OutputsPref(ref pref) => {
+                    debug_assert_eq!(node_state.n_evaluated, 0);
+                    debug_assert_eq!(node_state.n_satisfied, 0);
+                    let res = self.stack.evaluate_outputs_pref(pref);
                     if res.is_some() {
                         return res;
                     }
@@ -765,8 +780,11 @@ where
             // First verify the top of Miniscript.
             // At this point, the stack must contain 13 elements
             // pop the satisfied top and verify the covenant code.
-            if self.stack.pop() == Some(stack::Element::Satisfied) && self.stack.len() != 12 {
+            if self.stack.pop() != Some(stack::Element::Satisfied) {
                 return Some(Err(Error::IncorrectCovenantWitness));
+            }
+            if self.stack.len() != 12 {
+                return Some(Err(Error::UnexpectedStackEnd));
             }
             // safe to unwrap 12 times
             for i in 0..12 {
