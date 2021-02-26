@@ -445,6 +445,11 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
             panic!("Called as_cov on a non-covenant descriptor")
         }
     }
+
+    /// Return a string without the checksum
+    pub fn to_string_no_chksum(&self) -> String {
+        format!("{:?}", self)
+    }
 }
 
 impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Descriptor<P> {
