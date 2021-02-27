@@ -26,9 +26,15 @@ fn do_test(data: &[u8]) {
 
         if normalize_aliases.len() == output.len() {
             let len = pre_checksum.len();
-            assert_eq!(normalize_aliases[..len].to_lowercase(), pre_checksum.to_lowercase());
+            assert_eq!(
+                normalize_aliases[..len].to_lowercase(),
+                pre_checksum.to_lowercase()
+            );
         } else {
-            assert_eq!(normalize_aliases.to_lowercase(), pre_checksum.to_lowercase());
+            assert_eq!(
+                normalize_aliases.to_lowercase(),
+                pre_checksum.to_lowercase()
+            );
         }
     }
 }
@@ -62,4 +68,3 @@ mod tests {
         do_test(b"pkh()");
     }
 }
-
