@@ -282,7 +282,7 @@ pub fn parse<Ctx: ScriptContext>(
                                     ))?
                                 },
                             ),
-                            Tk::Push4(ver), Tk::Pick, Tk::Sub, Tk::Depth => match_token!(
+                            Tk::PickPush4(ver), Tk::Sub, Tk::Depth => match_token!(
                                 tokens,
                                 Tk::Num(2) => {
                                     non_term.push(NonTerm::Verify);
@@ -360,7 +360,7 @@ pub fn parse<Ctx: ScriptContext>(
                                 hash160::Hash::from_inner(hash)
                             ))?,
                         ),
-                        Tk::Push4(ver), Tk::Pick, Tk::Sub, Tk::Depth => match_token!(
+                        Tk::PickPush4(ver), Tk::Sub, Tk::Depth => match_token!(
                             tokens,
                             Tk::Num(2) => term.reduce0(Terminal::Version(ver))?,
                         ),
