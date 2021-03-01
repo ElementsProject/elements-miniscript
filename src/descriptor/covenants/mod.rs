@@ -739,7 +739,7 @@ mod tests {
     fn string_rtt(desc_str: &str) {
         let desc = Descriptor::<String>::from_str(desc_str).unwrap();
         assert_eq!(desc.to_string_no_chksum(), desc_str);
-        let cov_desc = desc.as_cov();
+        let cov_desc = desc.as_cov().unwrap();
         assert_eq!(cov_desc.to_string(), desc.to_string());
     }
     #[test]
@@ -836,7 +836,7 @@ mod tests {
         cov_sk: secp256k1::SecretKey,
     ) -> Result<(), Error> {
         assert_eq!(desc.desc_type(), DescriptorType::Cov);
-        let desc = desc.as_cov();
+        let desc = desc.as_cov().unwrap();
         // Now create a transaction spending this.
         let mut spend_tx = Transaction {
             version: 2,
@@ -1062,7 +1062,7 @@ mod tests {
         spend_tx.output[2].value = confidential::Value::Explicit(2_000);
 
         // Try to satisfy the covenant part
-        let desc = desc.as_cov();
+        let desc = desc.as_cov().unwrap();
         let script_code = desc.cov_script_code();
         let cov_sat = CovSatisfier::new_segwitv0(
             &spend_tx,
