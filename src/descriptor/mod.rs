@@ -438,11 +438,11 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
 
     /// Unwrap a descriptor as a covenant descriptor
     /// Panics if the descriptor is not of [DescriptorType::Cov]
-    pub fn as_cov(&self) -> &CovenantDescriptor<Pk> {
+    pub fn as_cov(&self) -> Result<&CovenantDescriptor<Pk>, Error> {
         if let Descriptor::Cov(cov) = self {
-            cov
+            Ok(cov)
         } else {
-            panic!("Called as_cov on a non-covenant descriptor")
+            Err(Error::CovError(CovError::BadCovDescriptor))
         }
     }
 

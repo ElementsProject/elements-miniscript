@@ -23,6 +23,7 @@ use elements::{self, opcodes, script};
 use {ElementsSig, ToPublicKey};
 
 use super::{verify_sersig, Error, HashLockType, SatisfiedConstraint};
+use miniscript::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 use util;
 /// Definition of Stack Element of the Stack used for interpretation of Miniscript.
 /// All stack elements with vec![] go to Dissatisfied and vec![1] are marked to Satisfied.
@@ -431,21 +432,23 @@ impl<'txin> Stack<'txin> {
         if let Err(e) = hash_outputs.try_push() {
             return Some(Err(e));
         }
+        // Maximum number of suffix elements
+        let max_elems = MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE + 1;
         let hash_outputs = hash_outputs.as_push();
         if hash_outputs.len() == 32 {
             // We want to cat the last 6 elements(5 cats) in suffix
-            if self.len() < 6 {
+            if self.len() < max_elems {
                 return Some(Err(Error::UnexpectedStackEnd));
             }
             let mut outputs_builder = Vec::new();
             outputs_builder.extend(pref);
             let len = self.len();
-            // Add the 6 suffix elements
-            for i in 0..6 {
-                outputs_builder.extend(self[len - 6 + i].into_slice());
+            // Add the max_elems suffix elements
+            for i in 0..max_elems {
+                outputs_builder.extend(self[len - max_elems + i].into_slice());
             }
-            // Pop the 6 suffix elements
-            for _ in 0..6 {
+            // Pop the max_elems suffix elements
+            for _ in 0..max_elems {
                 self.pop().unwrap();
             }
             if sha256d::Hash::hash(&outputs_builder).as_inner() == hash_outputs {

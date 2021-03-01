@@ -689,7 +689,8 @@ impl StackCtxOperations for script::Builder {
     fn check_item_pref(self, idx: u32, pref: &[u8]) -> Self {
         let mut builder = self;
         // Initial Witness
-        let max_elems = MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
+        // The nuumber of maximum witness elements in the suffix
+        let max_elems = MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE + 1;
         for _ in 0..(max_elems - 1) {
             builder = builder.push_opcode(opcodes::all::OP_CAT);
         }
@@ -858,9 +859,9 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             Terminal::False => 1,
             Terminal::Version(_n) => 4 + 1 + 1 + 4, // opcodes + push opcodes + target size
             Terminal::OutputsPref(ref pref) => {
-                // CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
+                // CAT CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
                 // HASH256 DEPTH <10> SUB PICK EQUAL
-                7 + pref.len() + 1 /* line1 opcodes + pref.push */
+                8 + pref.len() + 1 /* line1 opcodes + pref.push */
                 + 6 /* line 2 */
             }
             Terminal::Alt(ref sub) => sub.node.script_size() + 2,
