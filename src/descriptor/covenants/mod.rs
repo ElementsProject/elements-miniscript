@@ -54,7 +54,7 @@ use elements::{
 };
 use elements::{confidential, script};
 use elements::{OutPoint, Script, SigHashType, Transaction, TxOut};
-use miniscript::limits::MAX_STANDARD_P2WSH_SCRIPT_SIZE;
+use miniscript::limits::{MAX_SCRIPT_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE};
 
 use {
     expression::{self, FromTree},
@@ -62,6 +62,7 @@ use {
         decode,
         lex::{lex, Token as Tk, TokenIter},
         limits::MAX_OPS_PER_SCRIPT,
+        types,
     },
     util::varint_len,
     Miniscript, ScriptContext, Segwitv0, TranslatePk,
@@ -75,13 +76,9 @@ use {MiniscriptKey, ToPublicKey};
 
 use {DescriptorTrait, Error, Satisfier};
 
+/// Additional operations requied on script builder
+/// for Covenant operations support
 pub trait CovOperations: Sized {
-    /// pick an element indexed from the bottom of
-    /// the stack. This cannot check whether the idx is within
-    /// stack limits.
-    /// Copies the element at index idx to the top of the stack
-    fn pick(self, idx: u32) -> Self;
-
     /// Assuming the 10 sighash components + 1 sig on the top of
     /// stack for segwit sighash as created by [init_stack]
     /// CAT all of them and check sig from stack
@@ -91,21 +88,9 @@ pub trait CovOperations: Sized {
     /// assuming the above construction of covenants
     /// which uses OP_CODESEP
     fn post_codesep_script(self) -> Self;
-
-    /// Put version on top of stack
-    fn pick_version(self) -> Self {
-        self.pick(9)
-    }
 }
 
 impl CovOperations for script::Builder {
-    fn pick(self, idx: u32) -> Self {
-        self.push_int((idx + 1) as i64) // +1 for depth increase
-            .push_opcode(all::OP_DEPTH)
-            .push_opcode(all::OP_SUB)
-            .push_opcode(all::OP_PICK)
-    }
-
     fn verify_cov(self, key: &bitcoin::PublicKey) -> Self {
         let mut builder = self;
         // The miniscript is of type B, which should have pushed 1
@@ -139,8 +124,11 @@ impl CovOperations for script::Builder {
         builder.post_codesep_script()
     }
 
+    /// The second parameter decides whether the script code should
+    /// a hashlock verifying the entire script
     fn post_codesep_script(self) -> Self {
         let mut builder = self;
+        // let script_slice = builder.clone().into_script().into_bytes();
         builder = builder.push_opcode(all::OP_CHECKSIGVERIFY);
         for _ in 0..10 {
             builder = builder.push_opcode(all::OP_CAT);
@@ -207,18 +195,67 @@ impl From<CovError> for Error {
     }
 }
 
+// A simple utility function to serialize an array
+// of elements and compute double sha2 on it
+fn hash256_arr<T: Encodable>(sl: &[T]) -> sha256d::Hash {
+    let mut enc = sha256d::Hash::engine();
+    for elem in sl {
+        elem.consensus_encode(&mut enc).unwrap();
+    }
+    sha256d::Hash::from_engine(enc)
+}
+
 /// The covenant descriptor
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CovenantDescriptor<Pk: MiniscriptKey> {
     /// the pk constraining the Covenant
     /// The key over which we want CHECKSIGFROMSTACK
-    pub pk: Pk,
+    pk: Pk,
     /// the underlying Miniscript
     /// Must be under segwit context
-    pub ms: Miniscript<Pk, Segwitv0>,
+    ms: Miniscript<Pk, Segwitv0>,
 }
 
 impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
+    /// Get the pk from covenant
+    pub fn pk(&self) -> &Pk {
+        &self.pk
+    }
+
+    /// Get a reference to Miniscript inside covenant
+    pub fn to_ms(&self) -> &Miniscript<Pk, Segwitv0> {
+        &self.ms
+    }
+
+    /// Consume self and return inner miniscript
+    pub fn into_ms(self) -> Miniscript<Pk, Segwitv0> {
+        self.ms
+    }
+
+    /// Create a new Self from components
+    pub fn new(pk: Pk, ms: Miniscript<Pk, Segwitv0>) -> Result<Self, Error> {
+        // // 1) Check the 201 opcode count here
+        let ms_op_count = ms.ext.ops_count_sat;
+        // statically computed
+        // see cov_test_limits test for the test assert
+        let cov_script_ops = 24;
+        let total_ops = ms_op_count.ok_or(Error::ImpossibleSatisfaction)? + cov_script_ops
+            - if ms.ext.has_free_verify { 1 } else { 0 };
+        if total_ops > MAX_OPS_PER_SCRIPT {
+            return Err(Error::ImpossibleSatisfaction);
+        }
+        // 2) TODO: Sighash never exceeds 520 bytes, but we check the
+        // witness script before the codesep is still under 520
+        // bytes if the covenant relies on introspection of script
+        let ss = 58 - if ms.ext.has_free_verify { 1 } else { 0 };
+        // 3) Check that the script size does not exceed 10_000 bytes
+        // global consensus rule
+        if ms.script_size() + ss > MAX_SCRIPT_SIZE {
+            Err(Error::ScriptSizeTooLarge)
+        } else {
+            Ok(Self { pk, ms })
+        }
+    }
     /// Encode
     pub fn encode(&self) -> Script
     where
@@ -244,7 +281,8 @@ impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
             let script_code = s.lookup_scriptcode().ok_or(MissingSighashItem(5))?;
             let value = s.lookup_value().ok_or(MissingSighashItem(6))?;
             let n_sequence = s.lookup_nsequence().ok_or(MissingSighashItem(7))?;
-            let hash_outputs = s.lookup_hashoutputs().ok_or(MissingSighashItem(8))?;
+            let outputs = s.lookup_outputs().ok_or(MissingSighashItem(8))?;
+            let hash_outputs = hash256_arr(outputs);
             let n_locktime = s.lookup_nlocktime().ok_or(MissingSighashItem(9))?;
             let sighash_ty = s.lookup_sighashu32().ok_or(MissingSighashItem(10))?;
 
@@ -261,20 +299,31 @@ impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
                 serialize(&n_version),                   // item 1
                 serialize(&hash_prevouts),               // item 2
                 serialize(&hash_sequence),               // item 3
-                serialize(&hash_issuances),              // ELEMENTS EXTRA: item 3b
-                serialize(&outpoint),                    // item 4
-                serialize(script_code),                  // item 5
-                serialize(&value),                       // item 6
-                serialize(&n_sequence),                  // item 7
-                serialize(&hash_outputs),                // item 8
-                serialize(&n_locktime),                  // item 9
-                serialize(&sighash_ty),                  // item 10
+                serialize(&hash_issuances),              // ELEMENTS EXTRA: item 3b(4)
+                serialize(&outpoint),                    // item 4(5)
+                serialize(script_code),                  // item 5(6)
+                serialize(&value),                       // item 6(7)
+                serialize(&n_sequence),                  // item 7(8)
+                serialize(&hash_outputs),                // item 8(9)
+                serialize(&n_locktime),                  // item 9(10)
+                serialize(&sighash_ty),                  // item 10(11)
             ]
         };
 
         let ms_wit = self.ms.satisfy(s)?;
         wit.extend(ms_wit);
         Ok(wit)
+    }
+
+    /// Script code for signing with covenant publickey.
+    /// Use this script_code for sighash method when signing
+    /// with the covenant pk. Use the [DescriptorTrait] script_code
+    /// method for getting sighash for regular miniscripts.
+    pub fn cov_script_code(&self) -> Script
+    where
+        Pk: ToPublicKey,
+    {
+        script::Builder::new().post_codesep_script().into_script()
     }
 }
 
@@ -414,12 +463,8 @@ impl<'tx, 'ptx, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for CovSatisfier<
         Some(self.tx.input[self.idx as usize].sequence)
     }
 
-    fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
-        let mut enc = sha256d::Hash::engine();
-        for txout in &self.tx.output {
-            txout.consensus_encode(&mut enc).unwrap();
-        }
-        Some(sha256d::Hash::from_engine(enc))
+    fn lookup_outputs(&self) -> Option<&[elements::TxOut]> {
+        Some(&self.tx.output)
     }
 
     fn lookup_nlocktime(&self) -> Option<u32> {
@@ -455,13 +500,42 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
     /// applicable under Wsh context to avoid implementation
     /// complexity.
     // All code for covenants can thus be separated in a module
-    pub fn parse(script: &script::Script) -> Result<Self, Error> {
+    // This parsing is parse_insane
+    pub fn parse_insane(script: &script::Script) -> Result<Self, Error> {
+        let (pk, ms) = Self::parse_cov_components(script)?;
+        Self::new(pk, ms)
+    }
+
+    // Utility function to parse the components of cov
+    // descriptor. This allows us to parse Miniscript with
+    // it's context so that it can be used with NoChecks
+    // context while using the interpreter
+    pub(crate) fn parse_cov_components<Ctx: ScriptContext>(
+        script: &script::Script,
+    ) -> Result<(bitcoin::PublicKey, Miniscript<bitcoin::PublicKey, Ctx>), Error> {
         let tokens = lex(script)?;
         let mut iter = TokenIter::new(tokens);
 
         let pk = CovenantDescriptor::<bitcoin::PublicKey>::check_cov_script(&mut iter)?;
         let ms = decode::parse(&mut iter)?;
-        Ok(Self { pk: pk, ms: ms })
+        Segwitv0::check_global_validity(&ms)?;
+        if ms.ty.corr.base != types::Base::B {
+            return Err(Error::NonTopLevel(format!("{:?}", ms)));
+        };
+        if let Some(leading) = iter.next() {
+            Err(Error::Trailing(leading.to_string()))
+        } else {
+            Ok((pk, ms))
+        }
+    }
+
+    /// Parse a descriptor with additional local sanity checks.
+    /// See [Miniscript::sanity_check] for all the checks. Use
+    /// [parse_insane] to allow parsing insane scripts
+    pub fn parse(script: &script::Script) -> Result<Self, Error> {
+        let cov = Self::parse_insane(script)?;
+        cov.ms.sanity_check()?;
+        Ok(cov)
     }
 }
 
@@ -542,25 +616,13 @@ where
 {
     fn sanity_check(&self) -> Result<(), Error> {
         self.ms.sanity_check()?;
-        // // 1) Check the 201 opcode count here
-        let ms_op_count = self.ms.ext.ops_count_sat;
-        // statically computed
-        // see cov_test_limits test for the test assert
-        let cov_script_ops = 24;
-        let total_ops = ms_op_count.ok_or(Error::ImpossibleSatisfaction)? + cov_script_ops
-            - if self.ms.ext.has_free_verify { 1 } else { 0 };
-        if total_ops > MAX_OPS_PER_SCRIPT {
-            return Err(Error::ImpossibleSatisfaction);
-        }
-        // 2) TODO: Sighash never exceeds 520 bytes, but we check the
-        // witness script before the codesep is still under 520
-        // bytes if the covenant relies on introspection of script
+        // Additional local check for p2wsh script size
         let ss = 58 - if self.ms.ext.has_free_verify { 1 } else { 0 };
-        // // 3) Check that the script size does not exceed 3600 bytes
         if self.ms.script_size() + ss > MAX_STANDARD_P2WSH_SCRIPT_SIZE {
-            return Err(Error::ScriptSizeTooLarge);
+            Err(Error::ScriptSizeTooLarge)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 
     fn address(&self, params: &'static elements::AddressParams) -> Result<elements::Address, Error>
@@ -619,11 +681,15 @@ where
             max_sat_size)
     }
 
+    /// This returns the entire explicit script as the script code.
+    /// You will need this script code when singing with pks that
+    /// inside Miniscript. Use the [cov_script_code] method to
+    /// get the script code for signing with covenant pk
     fn script_code(&self) -> Script
     where
         Pk: ToPublicKey,
     {
-        script::Builder::new().post_codesep_script().into_script()
+        self.explicit_script()
     }
 }
 
@@ -654,10 +720,14 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for CovenantDescripto
 mod tests {
 
     use super::*;
-    use elements::confidential;
+    use elements::hashes::hex::ToHex;
+    use elements::{confidential, opcodes::all::OP_PUSHNUM_1};
+    use elements::{opcodes, script};
     use elements::{AssetId, AssetIssuance, OutPoint, TxIn, TxInWitness, Txid};
+    use interpreter::SatisfiedConstraint;
     use std::str::FromStr;
     use util::{count_non_push_opcodes, witness_size};
+    use Interpreter;
     use {descriptor::DescriptorType, Descriptor, ElementsSig};
 
     const BTC_ASSET: [u8; 32] = [
@@ -666,12 +736,20 @@ mod tests {
         0xe1, 0xb2,
     ];
 
+    fn string_rtt(desc_str: &str) {
+        let desc = Descriptor::<String>::from_str(desc_str).unwrap();
+        assert_eq!(desc.to_string_no_chksum(), desc_str);
+        let cov_desc = desc.as_cov();
+        assert_eq!(cov_desc.to_string(), desc.to_string());
+    }
     #[test]
     fn parse_cov() {
-        Descriptor::<String>::from_str("elcovwsh(A,pk(B))").unwrap();
-        Descriptor::<String>::from_str("elcovwsh(A,or_i(pk(B),pk(C)))").expect("Failed");
-        Descriptor::<String>::from_str("elcovwsh(A,multi(2,B,C,D))").unwrap();
-        Descriptor::<String>::from_str("elcovwsh(A,and_v(v:pk(B),pk(C)))").unwrap();
+        string_rtt("elcovwsh(A,pk(B))");
+        string_rtt("elcovwsh(A,or_i(pk(B),pk(C)))");
+        string_rtt("elcovwsh(A,multi(2,B,C,D))");
+        string_rtt("elcovwsh(A,and_v(v:pk(B),pk(C)))");
+        string_rtt("elcovwsh(A,thresh(2,ver_eq(1),s:pk(C),s:pk(B)))");
+        string_rtt("elcovwsh(A,outputs_pref(01020304))");
     }
 
     fn script_rtt(desc_str: &str) {
@@ -679,7 +757,7 @@ mod tests {
         assert_eq!(desc.desc_type(), DescriptorType::Cov);
         let script = desc.explicit_script();
 
-        let cov_desc = CovenantDescriptor::<bitcoin::PublicKey>::parse(&script).unwrap();
+        let cov_desc = CovenantDescriptor::<bitcoin::PublicKey>::parse_insane(&script).unwrap();
 
         assert_eq!(cov_desc.to_string(), desc.to_string());
     }
@@ -699,6 +777,14 @@ mod tests {
         script_rtt(&format!(
             "elcovwsh({},and_v(v:pk({}),pk({})))",
             pks[0], pks[1], pks[2]
+        ));
+        script_rtt(&format!(
+            "elcovwsh({},and_v(v:ver_eq(2),pk({})))",
+            pks[0], pks[1]
+        ));
+        script_rtt(&format!(
+            "elcovwsh({},and_v(v:outputs_pref(f2f233),pk({})))",
+            pks[0], pks[1]
         ));
     }
 
@@ -745,6 +831,175 @@ mod tests {
         assert_eq!(sighash_size, 238);
     }
 
+    fn _satisfy_and_interpret(
+        desc: Descriptor<bitcoin::PublicKey>,
+        cov_sk: secp256k1::SecretKey,
+    ) -> Result<(), Error> {
+        assert_eq!(desc.desc_type(), DescriptorType::Cov);
+        let desc = desc.as_cov();
+        // Now create a transaction spending this.
+        let mut spend_tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![txin_from_txid_vout(
+                "141f79c7c254ee3a9a9bc76b4f60564385b784bdfc1882b25154617801fe2237",
+                1,
+            )],
+            output: vec![],
+        };
+
+        spend_tx.output.push(TxOut::default());
+        spend_tx.output[0].script_pubkey = script::Builder::new()
+            .push_opcode(opcodes::all::OP_PUSHNUM_1)
+            .into_script()
+            .to_v0_p2wsh();
+        spend_tx.output[0].value = confidential::Value::Explicit(99_000);
+        spend_tx.output[0].asset =
+            confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+
+        // same second output
+        let second_out = spend_tx.output[0].clone();
+        spend_tx.output.push(second_out);
+
+        // Add a fee output
+        spend_tx.output.push(TxOut::default());
+        spend_tx.output[2].asset =
+            confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+        spend_tx.output[2].value = confidential::Value::Explicit(2_000);
+
+        // Try to satisfy the covenant part
+        let script_code = desc.cov_script_code();
+        let cov_sat = CovSatisfier::new_segwitv0(
+            &spend_tx,
+            0,
+            confidential::Value::Explicit(200_000),
+            &script_code,
+            SigHashType::All,
+        );
+
+        // Create a signature to sign the input
+
+        let sighash_u256 = cov_sat.segwit_sighash().unwrap();
+        let secp = secp256k1::Secp256k1::signing_only();
+        let sig = secp.sign(
+            &secp256k1::Message::from_slice(&sighash_u256[..]).unwrap(),
+            &cov_sk,
+        );
+        let el_sig = (sig, SigHashType::All);
+
+        // For satisfying the Pk part of the covenant
+        struct SimpleSat {
+            sig: ElementsSig,
+            pk: bitcoin::PublicKey,
+        };
+
+        impl Satisfier<bitcoin::PublicKey> for SimpleSat {
+            fn lookup_sig(&self, pk: &bitcoin::PublicKey) -> Option<ElementsSig> {
+                if *pk == self.pk {
+                    Some(self.sig)
+                } else {
+                    None
+                }
+            }
+        }
+
+        let pk_sat = SimpleSat {
+            sig: el_sig,
+            pk: desc.pk,
+        };
+
+        // A pair of satisfiers is also a satisfier
+        let (wit, ss) = desc.get_satisfaction((cov_sat, pk_sat))?;
+        let mut interpreter =
+            Interpreter::from_txdata(&desc.script_pubkey(), &ss, &wit, 0, 0).unwrap();
+
+        assert!(wit[0].len() <= 73);
+        assert!(wit[1].len() == 4); // version
+
+        // Check that everything is executed correctly with correct sigs inside
+        // miniscript
+        let constraints = interpreter
+            .iter(|_, _| true)
+            .collect::<Result<Vec<_>, _>>()
+            .expect("If satisfy succeeds, interpret must succeed");
+
+        // The last constraint satisfied must be the covenant pk
+        assert_eq!(
+            constraints.last().unwrap(),
+            &SatisfiedConstraint::PublicKey {
+                key: &desc.pk,
+                sig: sig,
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn satisfy_and_interpret() {
+        let (pks, sks) = setup_keys(5);
+        _satisfy_and_interpret(
+            Descriptor::from_str(&format!("elcovwsh({},1)", pks[0])).unwrap(),
+            sks[0],
+        )
+        .unwrap();
+
+        // Version tests
+        // Satisfy with 2, err with 3
+        _satisfy_and_interpret(
+            Descriptor::from_str(&format!("elcovwsh({},ver_eq(2))", pks[0])).unwrap(),
+            sks[0],
+        )
+        .unwrap();
+        _satisfy_and_interpret(
+            Descriptor::from_str(&format!("elcovwsh({},ver_eq(3))", pks[0])).unwrap(),
+            sks[0],
+        )
+        .unwrap_err();
+
+        // Outputs Pref test
+        // 1. Correct case
+        let mut out = TxOut::default();
+        out.script_pubkey = script::Builder::new()
+            .push_opcode(opcodes::all::OP_PUSHNUM_1)
+            .into_script()
+            .to_v0_p2wsh();
+        out.value = confidential::Value::Explicit(99_000);
+        out.asset = confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+        let desc = Descriptor::<bitcoin::PublicKey>::from_str(&format!(
+            "elcovwsh({},outputs_pref({}))",
+            pks[0],
+            serialize(&out).to_hex(),
+        ))
+        .unwrap();
+        _satisfy_and_interpret(desc, sks[0]).unwrap();
+
+        // 2. Chaning the amount should fail the test
+        let mut out = TxOut::default();
+        out.script_pubkey = script::Builder::new()
+            .push_opcode(opcodes::all::OP_PUSHNUM_1)
+            .into_script()
+            .to_v0_p2wsh();
+        out.value = confidential::Value::Explicit(99_001); // Changed to +1
+        out.asset = confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+        let desc = Descriptor::<bitcoin::PublicKey>::from_str(&format!(
+            "elcovwsh({},outputs_pref({}))",
+            pks[0],
+            serialize(&out).to_hex(),
+        ))
+        .unwrap();
+        _satisfy_and_interpret(desc, sks[0]).unwrap_err();
+    }
+
+    // Fund output and spend tx are tests handy with code for
+    // running with regtest mode and testing that the scripts
+    // are accepted by elementsd
+    // Instructions for running:
+    // 1. Modify the descriptor script in fund_output and
+    //    get the address to which we should spend the funds
+    // 2. Look up the spending transaction and update the
+    //    spend tx test with outpoint for spending.
+    // 3. Uncomment the printlns at the end of spend_tx to get
+    //    a raw tx that we can then check if it is accepted.
     #[test]
     fn fund_output() {
         let (pks, _sks) = setup_keys(5);
@@ -766,7 +1021,6 @@ mod tests {
                 .to_string()
         );
     }
-
     #[test]
     fn spend_tx() {
         let (pks, sks) = setup_keys(5);
@@ -808,7 +1062,8 @@ mod tests {
         spend_tx.output[2].value = confidential::Value::Explicit(2_000);
 
         // Try to satisfy the covenant part
-        let script_code = desc.script_code();
+        let desc = desc.as_cov();
+        let script_code = desc.cov_script_code();
         let cov_sat = CovSatisfier::new_segwitv0(
             &spend_tx,
             0,
@@ -846,7 +1101,12 @@ mod tests {
         let pk_sat = SimpleSat { sig, pk: pks[0] };
 
         // A pair of satisfiers is also a satisfier
-        let (wit, _) = desc.get_satisfaction((cov_sat, pk_sat)).unwrap();
+        let (wit, ss) = desc.get_satisfaction((cov_sat, pk_sat)).unwrap();
+        let mut interpreter =
+            Interpreter::from_txdata(&desc.script_pubkey(), &ss, &wit, 0, 0).unwrap();
+        // Check that everything is executed correctly with dummysigs
+        let constraints: Result<Vec<_>, _> = interpreter.iter(|_, _| true).collect();
+        constraints.expect("Covenant incorrect satisfaction");
         // Commented Demo test code:
         // 1) Send 0.002 btc to above address
         // 2) Create a tx by filling up txid

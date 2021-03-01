@@ -85,6 +85,19 @@ pub enum Error {
     /// Verify expects stack top element exactly to be `stack::Element::Satisfied`.
     /// This error is raised even if the stack top is `stack::Element::Push`.
     VerifyFailed,
+    /// Incorrect Covenant Witness
+    IncorrectCovenantWitness,
+    /// Covenant witness size mismatch
+    /// eg: supplied a witness at
+    /// nVersion with 5 bytes instead of 4
+    CovWitnessSizeErr {
+        /// Position of the item in sighash Msg
+        pos: usize,
+        /// Expected size
+        expected: usize,
+        /// Actual size
+        actual: usize,
+    },
 }
 
 #[doc(hidden)]
@@ -155,6 +168,19 @@ impl fmt::Display for Error {
             Error::VerifyFailed => {
                 f.write_str("Expected Satisfied Boolean at stack top for VERIFY")
             }
+            Error::IncorrectCovenantWitness => f.write_str(
+                "Covenant witness incorrect, the initial stack supplied for \
+                covenant global context is incorrect",
+            ),
+            Error::CovWitnessSizeErr {
+                pos,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "At script code item position{}: Expected size{}, got size {}",
+                pos, expected, actual
+            ),
         }
     }
 }

@@ -191,6 +191,24 @@ impl Property for Correctness {
         }
     }
 
+    fn from_item_eq() -> Self {
+        Correctness {
+            base: Base::B,
+            input: Input::Zero,
+            dissatisfiable: true,
+            unit: true,
+        }
+    }
+
+    fn from_item_pref(_pref: &[u8]) -> Self {
+        Correctness {
+            base: Base::B,
+            input: Input::Any,    // 7 outputs
+            dissatisfiable: true, // Any 7 elements that don't cat
+            unit: true,
+        }
+    }
+
     fn cast_alt(self) -> Result<Self, ErrorKind> {
         Ok(Correctness {
             base: match self.base {

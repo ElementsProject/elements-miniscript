@@ -23,7 +23,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::{fmt, str};
 
-use elements::hashes::hex::FromHex;
+use elements::encode::serialize;
+use elements::hashes::hex::{FromHex, ToHex};
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use elements::{opcodes, script};
 
@@ -32,6 +33,8 @@ use expression;
 use miniscript::types::{self, Property};
 use miniscript::ScriptContext;
 use script_num_size;
+
+use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 use {Error, Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslatePk};
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
@@ -98,6 +101,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             Terminal::Hash160(x) => Terminal::Hash160(x),
             Terminal::True => Terminal::True,
             Terminal::False => Terminal::False,
+            Terminal::Version(n) => Terminal::Version(n),
+            Terminal::OutputsPref(ref pref) => Terminal::OutputsPref(pref.clone()),
             Terminal::Alt(ref sub) => Terminal::Alt(Arc::new(
                 sub.real_translate_pk(translatefpk, translatefpkh)?,
             )),
@@ -230,6 +235,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Debug for Terminal<Pk, Ctx> {
                 Terminal::Hash160(h) => write!(f, "hash160({})", h),
                 Terminal::True => f.write_str("1"),
                 Terminal::False => f.write_str("0"),
+                Terminal::Version(k) => write!(f, "ver_eq({})", k),
+                Terminal::OutputsPref(ref pref) => write!(f, "outputs_pref({})", pref.to_hex()),
                 Terminal::AndV(ref l, ref r) => write!(f, "and_v({:?},{:?})", l, r),
                 Terminal::AndB(ref l, ref r) => write!(f, "and_b({:?},{:?})", l, r),
                 Terminal::AndOr(ref a, ref b, ref c) => {
@@ -280,6 +287,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Terminal<Pk, Ctx> {
             Terminal::Hash160(h) => write!(f, "hash160({})", h),
             Terminal::True => f.write_str("1"),
             Terminal::False => f.write_str("0"),
+            Terminal::Version(n) => write!(f, "ver_eq({})", n),
+            Terminal::OutputsPref(ref pref) => write!(f, "outputs_pref({})", pref.to_hex()),
             Terminal::AndV(ref l, ref r) if r.node != Terminal::True => {
                 write!(f, "and_v({},{})", l, r)
             }
@@ -448,6 +457,13 @@ where
             }),
             ("1", 0) => Ok(Terminal::True),
             ("0", 0) => Ok(Terminal::False),
+            ("ver_eq", 1) => {
+                let n = expression::terminal(&top.args[0], expression::parse_num)?;
+                Ok(Terminal::Version(n))
+            }
+            ("outputs_pref", 1) => expression::terminal(&top.args[0], |x| {
+                Vec::<u8>::from_hex(x).map(Terminal::OutputsPref)
+            }),
             ("and_v", 2) => {
                 let expr = expression::binary(top, Terminal::AndV)?;
                 if let Terminal::AndV(_, ref right) = expr {
@@ -580,6 +596,62 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> PushAstElem<Pk, Ctx> for script::Bui
     }
 }
 
+/// Additional operations required on Script
+/// for supporting Miniscript fragments that
+/// have access to a global context
+pub trait StackCtxOperations: Sized {
+    /// pick an element indexed from the bottom of
+    /// the stack. This cannot check whether the idx is within
+    /// stack limits.
+    /// Copies the element at index idx to the top of the stack
+    /// Checks item equality against the specified target
+    fn check_item_eq(self, idx: u32, target: &[u8]) -> Self;
+
+    /// Since, there is a policy restriction that initial pushes must be
+    /// only 80 bytes, we need user to provide suffix in separate items
+    /// There can be atmost 7 cats, because the script element must be less
+    /// than 520 bytes total in order to compute an hash256 on it.
+    /// Even if the witness does not require 7 pushes, the user should push
+    /// 7 elements with possibly empty values.
+    ///
+    /// Copies the script item at position and compare the hash256
+    /// with it
+    fn check_item_pref(self, idx: u32, pref: &[u8]) -> Self;
+}
+
+impl StackCtxOperations for script::Builder {
+    fn check_item_eq(self, idx: u32, target: &[u8]) -> Self {
+        self.push_int((idx + 1) as i64) // +1 for depth increase
+            .push_opcode(opcodes::all::OP_DEPTH)
+            .push_opcode(opcodes::all::OP_SUB)
+            .push_opcode(opcodes::all::OP_PICK)
+            .push_slice(target)
+            .push_opcode(opcodes::all::OP_EQUAL)
+    }
+
+    fn check_item_pref(self, idx: u32, pref: &[u8]) -> Self {
+        let mut builder = self;
+        // Initial Witness
+        let max_elems = MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
+        for _ in 0..(max_elems - 1) {
+            builder = builder.push_opcode(opcodes::all::OP_CAT);
+        }
+        builder = builder
+            .push_slice(pref)
+            .push_opcode(opcodes::all::OP_SWAP)
+            .push_opcode(opcodes::all::OP_CAT);
+        // Now the stack top is serialization of all the outputs
+        builder = builder.push_opcode(opcodes::all::OP_HASH256);
+
+        builder
+            .push_int((idx + 1) as i64) // +1 for depth increase
+            .push_opcode(opcodes::all::OP_DEPTH)
+            .push_opcode(opcodes::all::OP_SUB)
+            .push_opcode(opcodes::all::OP_PICK)
+            .push_opcode(opcodes::all::OP_EQUAL)
+    }
+}
+
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
     /// Encode the element as a fragment of Bitcoin Script. The inverse
     /// function, from Script to an AST element, is implemented in the
@@ -629,6 +701,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::True => builder.push_opcode(opcodes::OP_TRUE),
             Terminal::False => builder.push_opcode(opcodes::OP_FALSE),
+            Terminal::Version(n) => builder.check_item_eq(1, &serialize(&n)),
+            Terminal::OutputsPref(ref pref) => builder.check_item_pref(9, pref),
             Terminal::Alt(ref sub) => builder
                 .push_opcode(opcodes::all::OP_TOALTSTACK)
                 .push_astelem(sub)
@@ -725,6 +799,13 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             Terminal::Hash160(..) => 21 + 6,
             Terminal::True => 1,
             Terminal::False => 1,
+            Terminal::Version(_n) => 4 + 1 + 1 + 4, // opcodes + push opcodes + target size
+            Terminal::OutputsPref(ref pref) => {
+                // CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
+                // HASH256 DEPTH <10> SUB PICK EQUAL
+                7 + pref.len() + 1 /* line1 opcodes + pref.push */
+                + 6 /* line 2 */
+            }
             Terminal::Alt(ref sub) => sub.node.script_size() + 2,
             Terminal::Swap(ref sub) => sub.node.script_size() + 1,
             Terminal::Check(ref sub) => sub.node.script_size() + 1,

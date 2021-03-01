@@ -21,6 +21,50 @@ pub(crate) fn witness_to_scriptsig(witness: &[Vec<u8>]) -> Script {
     b.into_script()
 }
 
+macro_rules! define_slice_to_le {
+    ($name: ident, $type: ty) => {
+        #[inline]
+        pub(crate) fn $name(slice: &[u8]) -> $type {
+            assert_eq!(slice.len(), ::std::mem::size_of::<$type>());
+            let mut res = 0;
+            for i in 0..::std::mem::size_of::<$type>() {
+                res |= (slice[i] as $type) << i * 8;
+            }
+            res
+        }
+    };
+}
+
+define_slice_to_le!(slice_to_u32_le, u32);
+
+/// Helper to encode an integer in script format
+/// Copied from rust-bitcoin
+pub(crate) fn build_scriptint(n: i64) -> Vec<u8> {
+    if n == 0 {
+        return vec![];
+    }
+
+    let neg = n < 0;
+
+    let mut abs = if neg { -n } else { n } as usize;
+    let mut v = vec![];
+    while abs > 0xFF {
+        v.push((abs & 0xFF) as u8);
+        abs >>= 8;
+    }
+    // If the number's value causes the sign bit to be set, we need an extra
+    // byte to get the correct value and correct sign bit
+    if abs & 0x80 != 0 {
+        v.push(abs as u8);
+        v.push(if neg { 0x80u8 } else { 0u8 });
+    }
+    // Otherwise we just set the sign bit ourselves
+    else {
+        abs |= if neg { 0x80 } else { 0 };
+        v.push(abs as u8);
+    }
+    v
+}
 /// Get the count of non-push opcodes
 // Export to upstream
 #[cfg(test)]

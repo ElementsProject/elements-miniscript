@@ -23,13 +23,17 @@ use std::sync::Arc;
 use std::{cmp, i64, mem};
 
 use bitcoin;
-use elements::hashes::{hash160, ripemd160, sha256, sha256d};
 use elements::{self, secp256k1};
 use elements::{confidential, OutPoint, Script};
+use elements::{
+    encode::serialize,
+    hashes::{hash160, ripemd160, sha256, sha256d},
+};
 use {MiniscriptKey, ToPublicKey};
 
 use miniscript::limits::{
-    HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
+    HEIGHT_TIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE,
+    SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
 use util::witness_size;
 use Error;
@@ -144,7 +148,7 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
     }
 
     /// Item 8: hashoutputs
-    fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
+    fn lookup_outputs(&self) -> Option<&[elements::TxOut]> {
         None
     }
 
@@ -295,8 +299,8 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_nsequence()
     }
 
-    fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
-        (**self).lookup_hashoutputs()
+    fn lookup_outputs(&self) -> Option<&[elements::TxOut]> {
+        (**self).lookup_outputs()
     }
 
     fn lookup_nlocktime(&self) -> Option<u32> {
@@ -377,8 +381,8 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_nsequence()
     }
 
-    fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
-        (**self).lookup_hashoutputs()
+    fn lookup_outputs(&self) -> Option<&[elements::TxOut]> {
+        (**self).lookup_outputs()
     }
 
     fn lookup_nlocktime(&self) -> Option<u32> {
@@ -574,10 +578,10 @@ macro_rules! impl_tuple_satisfier {
                 None
             }
 
-            fn lookup_hashoutputs(&self) -> Option<sha256d::Hash> {
+            fn lookup_outputs(&self) -> Option<&[elements::TxOut]> {
                 let &($(ref $ty,)*) = self;
                 $(
-                    if let Some(result) = $ty.lookup_hashoutputs() {
+                    if let Some(result) = $ty.lookup_outputs() {
                         return Some(result);
                     }
                 )*
@@ -721,6 +725,108 @@ impl Witness {
         match sat.lookup_hash256(h) {
             Some(pre) => Witness::Stack(vec![pre.to_vec()]),
             // Note hash preimages are unavailable instead of impossible
+            None => Witness::Unavailable,
+        }
+    }
+
+    /// Turn a version into (part of) a satisfaction
+    fn ver_eq_satisfy<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, n: u32) -> Self {
+        match sat.lookup_nversion() {
+            Some(k) => {
+                if k == n {
+                    Witness::empty()
+                } else {
+                    Witness::Impossible
+                }
+            }
+            // Note the unavailable instead of impossible because we don't know
+            // the version
+            None => Witness::Unavailable,
+        }
+    }
+
+    /// Turn a output prefix into (part of) a satisfaction
+    fn output_pref_satisfy<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pref: &[u8]) -> Self {
+        match sat.lookup_outputs() {
+            Some(outs) => {
+                let mut ser_out = Vec::new();
+                let num_wit_elems = MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
+                let mut witness = Vec::with_capacity(num_wit_elems);
+                for out in outs {
+                    ser_out.extend(serialize(out));
+                }
+                // We need less than 520 bytes of serialized hashoutputs
+                // in order to compute hash256 inside script
+                if ser_out.len() > MAX_SCRIPT_ELEMENT_SIZE {
+                    return Witness::Impossible;
+                }
+                if ser_out.starts_with(pref) {
+                    let mut iter = ser_out.into_iter().skip(pref.len()).peekable();
+
+                    while iter.peek().is_some() {
+                        let chk_size = MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
+                        let chunk: Vec<u8> = iter.by_ref().take(chk_size).collect();
+                        witness.push(chunk);
+                    }
+                    // Append empty elems to make for extra cats
+                    // in the spk
+                    while witness.len() < num_wit_elems {
+                        witness.push(vec![]);
+                    }
+                    Witness::Stack(witness)
+                } else {
+                    Witness::Impossible
+                }
+            }
+            // Note the unavailable instead of impossible because we don't know
+            // the hashoutputs yet
+            None => Witness::Unavailable,
+        }
+    }
+
+    /// Dissatisfy ver fragment
+    fn ver_eq_dissatisfy<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, n: u32) -> Self {
+        if let Some(k) = sat.lookup_nversion() {
+            if k == n {
+                Witness::Impossible
+            } else {
+                Witness::empty()
+            }
+        } else {
+            Witness::empty()
+        }
+    }
+
+    /// Turn a output prefix into (part of) a satisfaction
+    fn output_pref_dissatisfy<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pref: &[u8]) -> Self {
+        match sat.lookup_outputs() {
+            Some(outs) => {
+                let mut ser_out = Vec::new();
+                for out in outs {
+                    ser_out.extend(serialize(out));
+                }
+                let num_wit_elems = MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
+                let mut witness = Vec::with_capacity(num_wit_elems);
+                if pref != ser_out.as_slice() {
+                    while witness.len() < num_wit_elems {
+                        witness.push(vec![]);
+                    }
+                    Witness::Stack(witness)
+                } else if pref.len() != MAX_SCRIPT_ELEMENT_SIZE {
+                    // Case when prefix == ser_out and it is possible
+                    // to add more witness
+                    witness.push(vec![1]);
+                    while witness.len() < num_wit_elems {
+                        witness.push(vec![]);
+                    }
+                    Witness::Stack(witness)
+                } else {
+                    // case when pref == ser_out and len of both is 520
+                    Witness::Impossible
+                }
+            }
+            // Note the unavailable instead of impossible because we don't know
+            // the hashoutputs yet
             None => Witness::Unavailable,
         }
     }
@@ -1065,6 +1171,14 @@ impl Satisfaction {
                 stack: Witness::Impossible,
                 has_sig: false,
             },
+            Terminal::Version(n) => Satisfaction {
+                stack: Witness::ver_eq_satisfy(stfr, n),
+                has_sig: false,
+            },
+            Terminal::OutputsPref(ref pref) => Satisfaction {
+                stack: Witness::output_pref_satisfy(stfr, pref),
+                has_sig: false,
+            },
             Terminal::Alt(ref sub)
             | Terminal::Swap(ref sub)
             | Terminal::Check(ref sub)
@@ -1249,6 +1363,14 @@ impl Satisfaction {
             | Terminal::Ripemd160(_)
             | Terminal::Hash160(_) => Satisfaction {
                 stack: Witness::hash_dissatisfaction(),
+                has_sig: false,
+            },
+            Terminal::Version(n) => Satisfaction {
+                stack: Witness::ver_eq_dissatisfy(stfr, n),
+                has_sig: false,
+            },
+            Terminal::OutputsPref(ref pref) => Satisfaction {
+                stack: Witness::output_pref_dissatisfy(stfr, pref),
                 has_sig: false,
             },
             Terminal::Alt(ref sub)

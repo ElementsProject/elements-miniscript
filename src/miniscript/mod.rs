@@ -653,6 +653,10 @@ mod tests {
             &ms_str!("tv:1"),
             "Script(OP_PUSHNUM_1 OP_VERIFY OP_PUSHNUM_1)",
         );
+        roundtrip(
+            &ms_str!("tv:thresh(1,pk(02d7924d4f7d43ea965a465ae3095ff41131e5946f3c85f79e44adbcf8e27e080e))", ),
+            "Script(OP_PUSHBYTES_33 02d7924d4f7d43ea965a465ae3095ff41131e5946f3c85f79e44adbcf8e27e080e OP_CHECKSIG OP_PUSHNUM_1 OP_EQUALVERIFY OP_PUSHNUM_1)",
+        );
         roundtrip(&ms_str!("0"), "Script(OP_0)");
         roundtrip(
             &ms_str!("andor(0,1,0)"),
@@ -867,6 +871,12 @@ mod tests {
              OP_PUSHNUM_1\
              )"
         );
+
+        // Thresh bug with equal verify roundtrip
+        roundtrip(
+            &ms_str!("tv:thresh(1,pk(02d7924d4f7d43ea965a465ae3095ff41131e5946f3c85f79e44adbcf8e27e080e))", ),
+               "Script(OP_PUSHBYTES_33 02d7924d4f7d43ea965a465ae3095ff41131e5946f3c85f79e44adbcf8e27e080e OP_CHECKSIG OP_PUSHNUM_1 OP_EQUALVERIFY OP_PUSHNUM_1)",
+        );
     }
 
     #[test]
@@ -890,5 +900,13 @@ mod tests {
             "2102ffffffffffffffefefefefefefefefefefef394c0fe5b711179e124008584753ac6900"
         ))
         .is_err());
+    }
+
+    #[test]
+    fn cov_script_rtt() {
+        roundtrip(
+            &ms_str!("ver_eq(4)"),
+            "Script(OP_PUSHNUM_2 OP_DEPTH OP_SUB OP_PICK OP_PUSHBYTES_4 04000000 OP_EQUAL)",
+        );
     }
 }

@@ -20,11 +20,15 @@
 //!
 
 use bitcoin;
-use elements::hashes::{hash160, ripemd160, sha256, sha256d};
-use elements::{self, secp256k1};
+use elements::{self, secp256k1, SigHash};
 use elements::{confidential, sighash};
+use elements::{
+    hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine},
+    SigHashType,
+};
 use miniscript::context::NoChecks;
 use miniscript::ScriptContext;
+use util;
 use Miniscript;
 use Terminal;
 use {Descriptor, ElementsSig, ToPublicKey};
@@ -93,18 +97,27 @@ impl<'txin> Interpreter<'txin> {
             } else {
                 None
             },
-            state: if let inner::Inner::Script(ref script, _) = self.inner {
-                vec![NodeEvaluationState {
-                    node: script,
+            state: match self.inner {
+                inner::Inner::Script(ref ms, _) => vec![NodeEvaluationState {
+                    node: ms,
                     n_evaluated: 0,
                     n_satisfied: 0,
-                }]
-            } else {
-                vec![]
+                }],
+                inner::Inner::CovScript(ref _pk, ref ms) => vec![NodeEvaluationState {
+                    node: ms,
+                    n_evaluated: 0,
+                    n_satisfied: 0,
+                }],
+                inner::Inner::PublicKey(ref _pk, _) => vec![],
             },
             stack: &mut self.stack,
             age: self.age,
             height: self.height,
+            cov: if let inner::Inner::CovScript(ref pk, ref _ms) = self.inner {
+                Some(pk)
+            } else {
+                None
+            },
             has_errored: false,
         }
     }
@@ -132,6 +145,10 @@ impl<'txin> Interpreter<'txin> {
             inner::Inner::Script(ref ms, inner::ScriptType::Sh) => format!("elsh({})", ms),
             inner::Inner::Script(ref ms, inner::ScriptType::Wsh) => format!("elwsh({})", ms),
             inner::Inner::Script(ref ms, inner::ScriptType::ShWsh) => format!("elsh(wsh({}))", ms),
+            inner::Inner::CovScript(ref pk, ref ms) => {
+                // always wsh for now
+                format!("elcovwsh({},{})", pk, ms)
+            }
         }
     }
 
@@ -146,6 +163,7 @@ impl<'txin> Interpreter<'txin> {
             inner::Inner::Script(_, inner::ScriptType::Sh) => true,
             inner::Inner::Script(_, inner::ScriptType::Wsh) => false,
             inner::Inner::Script(_, inner::ScriptType::ShWsh) => false, // lol "sorta"
+            inner::Inner::CovScript(..) => false,
         }
     }
 
@@ -289,6 +307,20 @@ pub enum SatisfiedConstraint<'intp, 'txin> {
         /// The value of Absolute timelock
         time: &'intp u32,
     },
+
+    /// Elements
+    /// Check Version eq
+    VerEq {
+        /// The version of transaction
+        n: &'intp u32,
+    },
+
+    /// Serialized outputs of this transaction start
+    /// this prefix
+    OutputsPref {
+        /// The version of transaction
+        pref: &'intp [u8],
+    },
 }
 
 ///This is used by the interpreter to know which evaluation state a AstemElem is.
@@ -324,6 +356,7 @@ pub struct Iter<'intp, 'txin: 'intp, F: FnMut(&bitcoin::PublicKey, ElementsSig) 
     stack: &'intp mut Stack<'txin>,
     age: u32,
     height: u32,
+    cov: Option<&'intp bitcoin::PublicKey>,
     has_errored: bool,
 }
 
@@ -443,6 +476,22 @@ where
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
                     let res = self.stack.evaluate_ripemd160(hash);
+                    if res.is_some() {
+                        return res;
+                    }
+                }
+                Terminal::Version(ref ver) => {
+                    debug_assert_eq!(node_state.n_evaluated, 0);
+                    debug_assert_eq!(node_state.n_satisfied, 0);
+                    let res = self.stack.evaluate_ver(ver);
+                    if res.is_some() {
+                        return res;
+                    }
+                }
+                Terminal::OutputsPref(ref pref) => {
+                    debug_assert_eq!(node_state.n_evaluated, 0);
+                    debug_assert_eq!(node_state.n_satisfied, 0);
+                    let res = self.stack.evaluate_outputs_pref(pref);
                     if res.is_some() {
                         return res;
                     }
@@ -726,7 +775,63 @@ where
         }
 
         //state empty implies that either the execution has terminated or we have a
-        //Pk based descriptor
+        //Pk based descriptor or a Covenant descriptor
+        if let Some(pk) = self.cov {
+            // First verify the top of Miniscript.
+            // At this point, the stack must contain 13 elements
+            // pop the satisfied top and verify the covenant code.
+            if self.stack.pop() != Some(stack::Element::Satisfied) {
+                return Some(Err(Error::IncorrectCovenantWitness));
+            }
+            if self.stack.len() != 12 {
+                return Some(Err(Error::UnexpectedStackEnd));
+            }
+            // safe to unwrap 12 times
+            for i in 0..12 {
+                if let Err(e) = self.stack[i].try_push() {
+                    return Some(Err(e));
+                }
+            }
+            let mut ser_sig = Vec::new();
+            // 1.29 errors
+            {
+                let sighash_bytes = self.stack[11].as_push();
+                let sighash_u32 = util::slice_to_u32_le(sighash_bytes);
+                let sighash_ty = SigHashType::from_u32(sighash_u32);
+                let sig_vec = self.stack[0].as_push();
+                ser_sig.extend(sig_vec);
+                ser_sig.push(sighash_ty as u8);
+            }
+
+            if let Ok(sig) = verify_sersig(&mut self.verify_sig, &pk, &ser_sig) {
+                //Signature check successful, set cov to None to
+                //terminate the next() function in the subsequent call
+                self.cov = None;
+                // Do the checkSigFromStackCheck
+                let sighash_msg: Vec<u8> = self.stack.0[1..]
+                    .into_iter()
+                    .map(|x| Vec::from(x.as_push()))
+                    .flatten()
+                    .collect();
+                let mut eng = SigHash::engine();
+                eng.input(&sighash_msg);
+                let sighash_u256 = SigHash::from_engine(eng);
+                let msg = bitcoin::secp256k1::Message::from_slice(&sighash_u256[..]).unwrap();
+
+                // TODO: THIS SHOULD BE A SEPARATE PARAMETER TO THE FUNCTION, BUT SINCE
+                // IT MIGHT ELSEWHERE, CONSIDER MAKING IT A SEPARATE METHOD. RIGHT NOW,
+                // THIS IS CREATING A NEW CONTEXT WHICH IS EXPENSIVE
+                let secp = secp256k1::Secp256k1::verification_only();
+                if secp.verify(&msg, &sig, &pk.key).is_err() {
+                    return Some(Err(Error::PkEvaluationError(pk.clone().to_public_key())));
+                }
+                self.stack.0.clear();
+                self.stack.push(stack::Element::Satisfied);
+                return Some(Ok(SatisfiedConstraint::PublicKey { key: pk, sig }));
+            } else {
+                return Some(Err(Error::PkEvaluationError(pk.clone().to_public_key())));
+            }
+        }
         if let Some(pk) = self.public_key {
             if let Some(stack::Element::Push(sig)) = self.stack.pop() {
                 if let Ok(sig) = verify_sersig(&mut self.verify_sig, &pk, &sig) {
@@ -850,6 +955,7 @@ mod tests {
                 }],
                 age: 1002,
                 height: 1002,
+                cov: None,
                 has_errored: false,
             }
         };

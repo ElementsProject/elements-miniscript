@@ -22,6 +22,7 @@ use std::convert::From;
 use std::marker::PhantomData;
 use std::{cmp, error, f64, fmt, mem};
 
+use miniscript::limits::MAX_SCRIPT_ELEMENT_SIZE;
 use miniscript::types::{self, ErrorKind, ExtData, Property, Type};
 use miniscript::ScriptContext;
 use policy::Concrete;
@@ -203,6 +204,28 @@ impl Property for CompilerExtData {
             branch_prob: None,
             sat_cost: 0.0,
             dissat_cost: None,
+        }
+    }
+
+    fn from_item_eq() -> Self {
+        // both sat and dissat costs are zero
+        // because witness is already calculated in
+        // stack
+        CompilerExtData {
+            branch_prob: None,
+            sat_cost: 0.0,
+            dissat_cost: Some(0.0),
+        }
+    }
+
+    fn from_item_pref(pref: &[u8]) -> Self {
+        // both sat and dissat costs are zero
+        // because witness is already calculated in
+        // stack
+        CompilerExtData {
+            branch_prob: None,
+            sat_cost: (MAX_SCRIPT_ELEMENT_SIZE - pref.len()) as f64,
+            dissat_cost: Some(0.0),
         }
     }
 

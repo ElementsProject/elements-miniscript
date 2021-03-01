@@ -57,7 +57,7 @@ pub use self::sh::Sh;
 pub use self::sortedmulti::SortedMultiVec;
 mod checksum;
 mod key;
-pub use self::covenants::{CovError, CovSatisfier, CovenantDescriptor};
+pub use self::covenants::{CovError, CovOperations, CovSatisfier, CovenantDescriptor};
 pub use self::key::{
     DescriptorKeyParseError, DescriptorPublicKey, DescriptorSecretKey, DescriptorSinglePriv,
     DescriptorSinglePub, DescriptorXKey, Wildcard,
@@ -428,6 +428,21 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
             },
             Descriptor::Cov(ref _cov) => DescriptorType::Cov,
         }
+    }
+
+    /// Unwrap a descriptor as a covenant descriptor
+    /// Panics if the descriptor is not of [DescriptorType::Cov]
+    pub fn as_cov(&self) -> &CovenantDescriptor<Pk> {
+        if let Descriptor::Cov(cov) = self {
+            cov
+        } else {
+            panic!("Called as_cov on a non-covenant descriptor")
+        }
+    }
+
+    /// Return a string without the checksum
+    pub fn to_string_no_chksum(&self) -> String {
+        format!("{:?}", self)
     }
 }
 
