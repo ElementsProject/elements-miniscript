@@ -347,13 +347,13 @@ impl Property for ExtData {
         // Assume txouts fill out all the 520 bytes
         let max_wit_sz = MAX_SCRIPT_ELEMENT_SIZE - pref.len();
         ExtData {
-            pk_cost: 7 + pref.len() + 1 + 6, // See script_size() in astelem.rs
+            pk_cost: 8 + pref.len() + 1 + 6, // See script_size() in astelem.rs
             has_free_verify: true,
-            ops_count_static: 12,
-            ops_count_sat: Some(12),
-            ops_count_nsat: Some(12),
-            stack_elem_count_sat: Some(6),
-            stack_elem_count_dissat: Some(6),
+            ops_count_static: 13,
+            ops_count_sat: Some(13),
+            ops_count_nsat: Some(13),
+            stack_elem_count_sat: Some(7),
+            stack_elem_count_dissat: Some(7),
             max_sat_size: Some((max_wit_sz, max_wit_sz)),
             max_dissat_size: Some((0, 0)), // all empty should dissatisfy
             timelock_info: TimeLockInfo::default(),

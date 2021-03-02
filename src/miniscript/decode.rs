@@ -293,7 +293,7 @@ pub fn parse<Ctx: ScriptContext>(
                                 tokens,
                                 Tk::Num(10) => match_token!(
                                     tokens,
-                                    Tk::Hash256, Tk::Cat, Tk::Swap, Tk::Push(bytes), Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat =>
+                                    Tk::Hash256, Tk::Cat, Tk::Swap, Tk::Push(bytes), Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat =>
                                         {
                                             non_term.push(NonTerm::Verify);
                                             term.reduce0(Terminal::OutputsPref(bytes))?
@@ -368,7 +368,7 @@ pub fn parse<Ctx: ScriptContext>(
                             tokens,
                             Tk::Num(10) => match_token!(
                                 tokens,
-                                Tk::Hash256, Tk::Cat, Tk::Swap, Tk::Push(bytes), Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat =>
+                                Tk::Hash256, Tk::Cat, Tk::Swap, Tk::Push(bytes), Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat =>
                                     term.reduce0(Terminal::OutputsPref(bytes))?,
                             ),
                         ),

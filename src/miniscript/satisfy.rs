@@ -750,7 +750,8 @@ impl Witness {
         match sat.lookup_outputs() {
             Some(outs) => {
                 let mut ser_out = Vec::new();
-                let num_wit_elems = MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
+                let num_wit_elems =
+                    MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE + 1;
                 let mut witness = Vec::with_capacity(num_wit_elems);
                 for out in outs {
                     ser_out.extend(serialize(out));
