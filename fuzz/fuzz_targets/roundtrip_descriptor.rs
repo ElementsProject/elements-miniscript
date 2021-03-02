@@ -13,7 +13,12 @@ fn do_test(data: &[u8]) {
         let multi_wrap_pk_re = Regex::new("([a-z]+)c:pk_k\\(").unwrap();
         let multi_wrap_pkh_re = Regex::new("([a-z]+)c:pk_h\\(").unwrap();
 
-        let normalize_aliases = multi_wrap_pk_re.replace_all(&s, "$1:pk(");
+        // Before doing anything check the special case
+        // To make sure that el are not treated as wrappers
+        let normalize_aliases = s
+            .replace("elc:pk_h(", "elpkh(")
+            .replace("elc:pk_k(", "elpk(");
+        let normalize_aliases = multi_wrap_pk_re.replace_all(&normalize_aliases, "$1:pk(");
         let normalize_aliases = multi_wrap_pkh_re.replace_all(&normalize_aliases, "$1:pkh(");
         let normalize_aliases = normalize_aliases
             .replace("c:pk_k(", "pk(")
@@ -65,6 +70,6 @@ mod tests {
     use super::*;
     #[test]
     fn test() {
-        do_test(b"pkh()");
+        do_test(b"elc:pk_h()");
     }
 }
