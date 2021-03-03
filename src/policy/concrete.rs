@@ -33,7 +33,7 @@ use policy::compiler;
 use policy::compiler::CompilerError;
 #[cfg(feature = "compiler")]
 use Miniscript;
-use {Error, MiniscriptKey};
+use {Error, ForEach, ForEachKey, MiniscriptKey};
 /// Concrete policy which corresponds directly to a Miniscript structure,
 /// and whose disjunctions are annotated with satisfaction probabilities
 /// to assist the compiler
@@ -136,6 +136,29 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             (false, _) => Err(CompilerError::TopLevelNonSafe),
             (_, false) => Err(CompilerError::ImpossibleNonMalleableCompilation),
             _ => compiler::best_compilation(self),
+        }
+    }
+}
+
+impl<Pk: MiniscriptKey> ForEachKey<Pk> for Policy<Pk> {
+    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a,
+    {
+        match *self {
+            Policy::Unsatisfiable | Policy::Trivial => true,
+            Policy::Key(ref pk) => pred(ForEach::Key(pk)),
+            Policy::Sha256(..)
+            | Policy::Hash256(..)
+            | Policy::Ripemd160(..)
+            | Policy::Hash160(..)
+            | Policy::After(..)
+            | Policy::Older(..) => true,
+            Policy::Threshold(_, ref subs) | Policy::And(ref subs) => {
+                subs.iter().all(|sub| sub.for_each_key(&mut pred))
+            }
+            Policy::Or(ref subs) => subs.iter().all(|(_, sub)| sub.for_each_key(&mut pred)),
         }
     }
 }
@@ -460,7 +483,8 @@ impl<Pk: MiniscriptKey> fmt::Display for Policy<Pk> {
 
 impl<Pk> str::FromStr for Policy<Pk>
 where
-    Pk: MiniscriptKey,
+    Pk: MiniscriptKey + str::FromStr,
+    Pk::Hash: str::FromStr,
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
@@ -484,7 +508,8 @@ serde_string_impl_pk!(Policy, "a miniscript concrete policy");
 
 impl<Pk> Policy<Pk>
 where
-    Pk: MiniscriptKey,
+    Pk: MiniscriptKey + str::FromStr,
+    Pk::Hash: str::FromStr,
     <Pk as str::FromStr>::Err: ToString,
 {
     /// Helper function for `from_tree` to parse subexpressions with
@@ -594,7 +619,8 @@ where
 
 impl<Pk> FromTree for Policy<Pk>
 where
-    Pk: MiniscriptKey,
+    Pk: MiniscriptKey + str::FromStr,
+    Pk::Hash: str::FromStr,
     <Pk as str::FromStr>::Err: ToString,
 {
     fn from_tree(top: &expression::Tree) -> Result<Policy<Pk>, Error> {

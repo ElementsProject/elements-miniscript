@@ -25,7 +25,10 @@ use expression::{self, FromTree};
 use miniscript::context::{ScriptContext, ScriptContextError};
 use policy::{semantic, Liftable};
 use util::varint_len;
-use {Error, Miniscript, MiniscriptKey, Satisfier, Segwitv0, ToPublicKey, TranslatePk};
+use {
+    Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, Segwitv0, ToPublicKey,
+    TranslatePk,
+};
 
 use super::{
     checksum::{desc_checksum, verify_checksum},
@@ -39,6 +42,16 @@ pub struct Wsh<Pk: MiniscriptKey> {
 }
 
 impl<Pk: MiniscriptKey> Wsh<Pk> {
+    /// Get the Inner
+    pub fn into_inner(self) -> WshInner<Pk> {
+        self.inner
+    }
+
+    /// Get a reference to inner
+    pub fn as_inner(&self) -> &WshInner<Pk> {
+        &self.inner
+    }
+
     /// Create a new wsh descriptor
     pub fn new(ms: Miniscript<Pk, Segwitv0>) -> Result<Self, Error> {
         // do the top-level checks
@@ -57,14 +70,19 @@ impl<Pk: MiniscriptKey> Wsh<Pk> {
         })
     }
 
-    /// Get the inner key
-    pub fn as_inner(&self) -> &WshInner<Pk> {
-        &self.inner
+    /// Get the descriptor without the checksum, without the el prefix
+    pub(crate) fn to_string_no_checksum(&self) -> String {
+        match self.inner {
+            WshInner::SortedMulti(ref smv) => format!("wsh({})", smv),
+            WshInner::Ms(ref ms) => format!("wsh({})", ms),
+        }
     }
 
     // Constructor for creating inner wsh for the sh fragment
     pub(super) fn from_inner_tree(top: &expression::Tree) -> Result<Self, Error>
     where
+        Pk: FromStr,
+        Pk::Hash: FromStr,
         <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
         <Pk as FromStr>::Err: ToString,
     {
@@ -108,8 +126,10 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Wsh<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> FromTree for Wsh<Pk>
+impl<Pk> FromTree for Wsh<Pk>
 where
+    Pk: MiniscriptKey + FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -146,17 +166,16 @@ impl<Pk: MiniscriptKey> fmt::Debug for Wsh<Pk> {
 
 impl<Pk: MiniscriptKey> fmt::Display for Wsh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let desc = match self.inner {
-            WshInner::SortedMulti(ref smv) => format!("{}wsh({})", ELMTS_STR, smv),
-            WshInner::Ms(ref ms) => format!("{}wsh({})", ELMTS_STR, ms),
-        };
+        let desc = format!("{}{}", ELMTS_STR, self.to_string_no_checksum());
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
     }
 }
 
-impl<Pk: MiniscriptKey> FromStr for Wsh<Pk>
+impl<Pk> FromStr for Wsh<Pk>
 where
+    Pk: MiniscriptKey + FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -189,6 +208,8 @@ impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wsh<Pk> {
 
 impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wsh<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -278,6 +299,19 @@ where
     }
 }
 
+impl<Pk: MiniscriptKey> ForEachKey<Pk> for Wsh<Pk> {
+    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a,
+    {
+        match self.inner {
+            WshInner::SortedMulti(ref smv) => smv.for_each_key(pred),
+            WshInner::Ms(ref ms) => ms.for_each_key(pred),
+        }
+    }
+}
+
 impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Wsh<P> {
     type Output = Wsh<Q>;
 
@@ -322,13 +356,25 @@ impl<Pk: MiniscriptKey> Wpkh<Pk> {
     }
 
     /// Get the inner key
+    pub fn into_inner(self) -> Pk {
+        self.pk
+    }
+
+    /// Get the inner key
     pub fn as_inner(&self) -> &Pk {
         &self.pk
+    }
+
+    /// Get the descriptor without the checksum without the el prefix
+    pub(crate) fn to_string_no_checksum(&self) -> String {
+        format!("wpkh({})", self.pk)
     }
 
     // Parse a bitcoin style wpkh tree. Useful when parsing nested trees
     pub(super) fn from_inner_tree(top: &expression::Tree) -> Result<Self, Error>
     where
+        Pk: FromStr,
+        Pk::Hash: FromStr,
         <Pk as FromStr>::Err: ToString,
         <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
     {
@@ -354,7 +400,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Wpkh<Pk> {
 
 impl<Pk: MiniscriptKey> fmt::Display for Wpkh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let desc = format!("{}wpkh({})", ELMTS_STR, self.pk);
+        let desc = format!("{}{}", ELMTS_STR, self.to_string_no_checksum());
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
     }
@@ -366,8 +412,10 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Wpkh<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> FromTree for Wpkh<Pk>
+impl<Pk> FromTree for Wpkh<Pk>
 where
+    Pk: MiniscriptKey + FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -386,8 +434,10 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey> FromStr for Wpkh<Pk>
+impl<Pk> FromStr for Wpkh<Pk>
 where
+    Pk: MiniscriptKey + FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -419,6 +469,8 @@ impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wpkh<Pk> {
 
 impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wpkh<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -501,6 +553,16 @@ where
             &elements::AddressParams::ELEMENTS,
         );
         addr.script_pubkey()
+    }
+}
+
+impl<Pk: MiniscriptKey> ForEachKey<Pk> for Wpkh<Pk> {
+    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a,
+    {
+        pred(ForEach::Key(&self.pk))
     }
 }
 

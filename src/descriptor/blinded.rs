@@ -90,6 +90,8 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Blinded<Pk> {
 
 impl<Pk: MiniscriptKey> FromTree for Blinded<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -115,6 +117,8 @@ where
 
 impl<Pk: MiniscriptKey> FromStr for Blinded<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -129,6 +133,8 @@ where
 
 impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Blinded<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -148,6 +154,8 @@ where
 
 impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Blinded<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {

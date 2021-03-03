@@ -65,7 +65,7 @@ use {
         types,
     },
     util::varint_len,
-    Miniscript, ScriptContext, Segwitv0, TranslatePk,
+    ForEach, ForEachKey, Miniscript, ScriptContext, Segwitv0, TranslatePk,
 };
 
 use super::{
@@ -541,6 +541,8 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
 
 impl<Pk: MiniscriptKey> FromTree for CovenantDescriptor<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -576,6 +578,8 @@ impl<Pk: MiniscriptKey> fmt::Display for CovenantDescriptor<Pk> {
 
 impl<Pk: MiniscriptKey> FromStr for CovenantDescriptor<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -590,6 +594,8 @@ where
 
 impl<Pk: MiniscriptKey> ElementsTrait<Pk> for CovenantDescriptor<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -611,6 +617,8 @@ where
 
 impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for CovenantDescriptor<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -690,6 +698,16 @@ where
         Pk: ToPublicKey,
     {
         self.explicit_script()
+    }
+}
+
+impl<Pk: MiniscriptKey> ForEachKey<Pk> for CovenantDescriptor<Pk> {
+    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a,
+    {
+        pred(ForEach::Key(&self.pk)) && self.ms.for_any_key(pred)
     }
 }
 

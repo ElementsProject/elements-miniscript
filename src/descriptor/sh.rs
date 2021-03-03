@@ -28,7 +28,10 @@ use miniscript::context::ScriptContext;
 use policy::{semantic, Liftable};
 use push_opcode_size;
 use util::{varint_len, witness_to_scriptsig};
-use {Error, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0, ToPublicKey, TranslatePk};
+use {
+    Error, ForEach, ForEachKey, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0,
+    ToPublicKey, TranslatePk,
+};
 
 use super::{
     checksum::{desc_checksum, verify_checksum},
@@ -80,15 +83,8 @@ impl<Pk: MiniscriptKey> fmt::Debug for Sh<Pk> {
 impl<Pk: MiniscriptKey> fmt::Display for Sh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let desc = match self.inner {
-            // extra nesting because the impl of "{}" returns the checksum
-            // which we don't want
-            ShInner::Wsh(ref wsh) => match wsh.as_inner() {
-                super::segwitv0::WshInner::SortedMulti(ref smv) => {
-                    format!("{}sh(wsh({}))", ELMTS_STR, smv)
-                }
-                super::segwitv0::WshInner::Ms(ref ms) => format!("{}sh(wsh({}))", ELMTS_STR, ms),
-            },
-            ShInner::Wpkh(ref pk) => format!("{}sh({})", ELMTS_STR, pk),
+            ShInner::Wsh(ref wsh) => format!("{}sh({})", ELMTS_STR, wsh.to_string_no_checksum()),
+            ShInner::Wpkh(ref pk) => format!("{}sh({})", ELMTS_STR, pk.to_string_no_checksum()),
             ShInner::SortedMulti(ref smv) => format!("{}sh({})", ELMTS_STR, smv),
             ShInner::Ms(ref ms) => format!("{}sh({})", ELMTS_STR, ms),
         };
@@ -97,8 +93,10 @@ impl<Pk: MiniscriptKey> fmt::Display for Sh<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> FromTree for Sh<Pk>
+impl<Pk> FromTree for Sh<Pk>
 where
+    Pk: MiniscriptKey + FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -126,8 +124,10 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey> FromStr for Sh<Pk>
+impl<Pk> FromStr for Sh<Pk>
 where
+    Pk: MiniscriptKey + FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -140,6 +140,16 @@ where
 }
 
 impl<Pk: MiniscriptKey> Sh<Pk> {
+    /// Get the Inner
+    pub fn into_inner(self) -> ShInner<Pk> {
+        self.inner
+    }
+
+    /// Get a reference to inner
+    pub fn as_inner(&self) -> &ShInner<Pk> {
+        &self.inner
+    }
+
     /// Create a new p2sh descriptor with the raw miniscript
     pub fn new(ms: Miniscript<Pk, Legacy>) -> Result<Self, Error> {
         // do the top-level checks
@@ -182,15 +192,12 @@ impl<Pk: MiniscriptKey> Sh<Pk> {
             inner: ShInner::Wpkh(Wpkh::new(pk)?),
         })
     }
-
-    /// Get the inner key
-    pub fn as_inner(&self) -> &ShInner<Pk> {
-        &self.inner
-    }
 }
 
 impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Sh<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -223,6 +230,8 @@ where
 
 impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Sh<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -364,6 +373,21 @@ where
             ShInner::Wpkh(ref wpkh) => wpkh.script_code(),
             // For "legacy" P2SH outputs, it is defined as the txo's redeemScript.
             ShInner::Ms(ref ms) => ms.encode(),
+        }
+    }
+}
+
+impl<Pk: MiniscriptKey> ForEachKey<Pk> for Sh<Pk> {
+    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a,
+    {
+        match self.inner {
+            ShInner::Wsh(ref wsh) => wsh.for_each_key(pred),
+            ShInner::SortedMulti(ref smv) => smv.for_each_key(pred),
+            ShInner::Wpkh(ref wpkh) => wpkh.for_each_key(pred),
+            ShInner::Ms(ref ms) => ms.for_each_key(pred),
         }
     }
 }

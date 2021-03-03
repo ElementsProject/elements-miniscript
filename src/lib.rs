@@ -132,7 +132,8 @@ pub(crate) use bitcoin_miniscript::Terminal as BtcTerminal;
 // re-export imports
 pub use bitcoin_miniscript::{DummyKey, DummyKeyHash};
 pub use bitcoin_miniscript::{
-    MiniscriptKey, ToPublicKey, TranslatePk, TranslatePk1, TranslatePk2, TranslatePk3,
+    ForEach, ForEachKey, MiniscriptKey, ToPublicKey, TranslatePk, TranslatePk1, TranslatePk2,
+    TranslatePk3,
 };
 // End imports
 
@@ -159,7 +160,7 @@ pub use descriptor::{Descriptor, DescriptorPublicKey, DescriptorTrait};
 pub use interpreter::Interpreter;
 pub use miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0};
 pub use miniscript::decode::Terminal;
-pub use miniscript::satisfy::{ElementsSig, Satisfier};
+pub use miniscript::satisfy::{ElementsSig, Preimage32, Satisfier};
 pub use miniscript::Miniscript;
 
 /// Tweak a MiniscriptKey to obtain the tweaked key
@@ -179,7 +180,6 @@ where
     contracthash::tweak_key(secp, pk, contract)
 }
 /// Miniscript
-
 #[derive(Debug)]
 pub enum Error {
     /// Opcode appeared which is not part of the script subset
