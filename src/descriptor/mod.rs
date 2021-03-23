@@ -41,7 +41,10 @@ use self::checksum::verify_checksum;
 use expression;
 use miniscript;
 use miniscript::{Legacy, Miniscript, Segwitv0};
-use {BareCtx, Error, MiniscriptKey, Satisfier, ToPublicKey, TranslatePk, TranslatePk2};
+use {
+    BareCtx, Error, ForEach, ForEachKey, MiniscriptKey, Satisfier, ToPublicKey, TranslatePk,
+    TranslatePk2,
+};
 
 mod bare;
 mod blinded;
@@ -52,15 +55,15 @@ mod sortedmulti;
 // Descriptor Exports
 pub use self::bare::{Bare, Pkh};
 pub use self::blinded::Blinded;
-pub use self::segwitv0::{Wpkh, Wsh};
-pub use self::sh::Sh;
+pub use self::segwitv0::{Wpkh, Wsh, WshInner};
+pub use self::sh::{Sh, ShInner};
 pub use self::sortedmulti::SortedMultiVec;
 mod checksum;
 mod key;
 pub use self::covenants::{CovError, CovOperations, CovSatisfier, CovenantDescriptor};
 pub use self::key::{
     DescriptorKeyParseError, DescriptorPublicKey, DescriptorSecretKey, DescriptorSinglePriv,
-    DescriptorSinglePub, DescriptorXKey, Wildcard,
+    DescriptorSinglePub, DescriptorXKey, InnerXKey, Wildcard,
 };
 
 /// Alias type for a map of public key to secret key
@@ -175,7 +178,7 @@ pub trait DescriptorTrait<Pk: MiniscriptKey>: ElementsTrait<Pk> {
 }
 
 /// Descriptor Type of the descriptor
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum DescriptorType {
     /// Bare descriptor(Contains the native P2pk)
     Bare,
@@ -410,21 +413,24 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
         Ok(Descriptor::Wsh(Wsh::new_sortedmulti(k, pks)?))
     }
 
-    /// Get the Descriptor Type of the descriptor
+    /// Get the [DescriptorType] of [Descriptor]
     pub fn desc_type(&self) -> DescriptorType {
         match *self {
-            Descriptor::Bare(_) => DescriptorType::Bare,
-            Descriptor::Pkh(_) => DescriptorType::Pkh,
-            Descriptor::Wpkh(_) => DescriptorType::Wpkh,
+            Descriptor::Bare(ref _bare) => DescriptorType::Bare,
+            Descriptor::Pkh(ref _pkh) => DescriptorType::Pkh,
+            Descriptor::Wpkh(ref _wpkh) => DescriptorType::Wpkh,
             Descriptor::Sh(ref sh) => match sh.as_inner() {
-                sh::ShInner::Wsh(_) => DescriptorType::ShWsh,
-                sh::ShInner::Wpkh(_) => DescriptorType::ShWpkh,
-                sh::ShInner::SortedMulti(_) => DescriptorType::ShSortedMulti,
-                sh::ShInner::Ms(_) => DescriptorType::Sh,
+                ShInner::Wsh(ref wsh) => match wsh.as_inner() {
+                    WshInner::SortedMulti(ref _smv) => DescriptorType::ShWshSortedMulti,
+                    WshInner::Ms(ref _ms) => DescriptorType::ShWsh,
+                },
+                ShInner::Wpkh(ref _wpkh) => DescriptorType::ShWpkh,
+                ShInner::SortedMulti(ref _smv) => DescriptorType::ShSortedMulti,
+                ShInner::Ms(ref _ms) => DescriptorType::Sh,
             },
             Descriptor::Wsh(ref wsh) => match wsh.as_inner() {
-                segwitv0::WshInner::SortedMulti(_) => DescriptorType::WshSortedMulti,
-                segwitv0::WshInner::Ms(_) => DescriptorType::Wsh,
+                WshInner::SortedMulti(ref _smv) => DescriptorType::WshSortedMulti,
+                WshInner::Ms(ref _ms) => DescriptorType::Wsh,
             },
             Descriptor::Cov(ref _cov) => DescriptorType::Cov,
         }
@@ -488,6 +494,8 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Descriptor<P> {
 
 impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Descriptor<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -512,6 +520,8 @@ where
 
 impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Descriptor<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -655,7 +665,29 @@ where
     }
 }
 
+impl<Pk: MiniscriptKey> ForEachKey<Pk> for Descriptor<Pk> {
+    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a,
+    {
+        match *self {
+            Descriptor::Bare(ref bare) => bare.for_each_key(pred),
+            Descriptor::Pkh(ref pkh) => pkh.for_each_key(pred),
+            Descriptor::Wpkh(ref wpkh) => wpkh.for_each_key(pred),
+            Descriptor::Wsh(ref wsh) => wsh.for_each_key(pred),
+            Descriptor::Sh(ref sh) => sh.for_each_key(pred),
+            Descriptor::Cov(ref cov) => cov.for_any_key(pred),
+        }
+    }
+}
+
 impl Descriptor<DescriptorPublicKey> {
+    /// Whether or not the descriptor has any wildcards
+    pub fn is_deriveable(&self) -> bool {
+        self.for_any_key(|key| key.as_key().is_deriveable())
+    }
+
     /// Derives all wildcard keys in the descriptor using the supplied index
     ///
     /// Panics if given an index ≥ 2^31
@@ -667,9 +699,10 @@ impl Descriptor<DescriptorPublicKey> {
     ///
     /// Internally turns every secret key found into the corresponding public key and then returns a
     /// a descriptor that only contains public keys and a map to lookup the secret key given a public key.
-    pub fn parse_descriptor(s: &str) -> Result<(Descriptor<DescriptorPublicKey>, KeyMap), Error> {
-        let secp = secp256k1::Secp256k1::signing_only();
-
+    pub fn parse_descriptor<C: secp256k1::Signing>(
+        secp: &secp256k1::Secp256k1<C>,
+        s: &str,
+    ) -> Result<(Descriptor<DescriptorPublicKey>, KeyMap), Error> {
         let parse_key = |s: &String,
                          key_map: &mut KeyMap|
          -> Result<DescriptorPublicKey, DescriptorKeyParseError> {
@@ -723,7 +756,8 @@ impl Descriptor<DescriptorPublicKey> {
 
 impl<Pk> expression::FromTree for Descriptor<Pk>
 where
-    Pk: MiniscriptKey,
+    Pk: MiniscriptKey + str::FromStr,
+    Pk::Hash: str::FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -742,7 +776,8 @@ where
 
 impl<Pk> FromStr for Descriptor<Pk>
 where
-    Pk: MiniscriptKey,
+    Pk: MiniscriptKey + str::FromStr,
+    Pk::Hash: str::FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -1527,15 +1562,16 @@ mod tests {
 
     #[test]
     fn test_parse_descriptor() {
-        let (descriptor, key_map) = Descriptor::parse_descriptor("elwpkh(tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/44'/0'/0'/0/*)").unwrap();
+        let secp = &secp256k1::Secp256k1::signing_only();
+        let (descriptor, key_map) = Descriptor::parse_descriptor(secp, "elwpkh(tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/44'/0'/0'/0/*)").unwrap();
         assert_eq!(descriptor.to_string(), "elwpkh([2cbe2a6d/44'/0'/0']tpubDCvNhURocXGZsLNqWcqD3syHTqPXrMSTwi8feKVwAcpi29oYKsDD3Vex7x2TDneKMVN23RbLprfxB69v94iYqdaYHsVz3kPR37NQXeqouVz/0/*)#pznhhta9");
         assert_eq!(key_map.len(), 1);
 
         // https://github.com/bitcoin/bitcoin/blob/7ae86b3c6845873ca96650fc69beb4ae5285c801/src/test/descriptor_tests.cpp#L355-L360
         macro_rules! check_invalid_checksum {
-            ($($desc: expr),*) => {
+            ($secp: ident,$($desc: expr),*) => {
                 $(
-                    match Descriptor::parse_descriptor($desc) {
+                    match Descriptor::parse_descriptor($secp, $desc) {
                         Err(Error::BadDescriptor(_)) => {},
                         Err(e) => panic!("Expected bad checksum for {}, got '{}'", $desc, e),
                         _ => panic!("Invalid checksum treated as valid: {}", $desc),
@@ -1543,7 +1579,7 @@ mod tests {
                 )*
             };
         }
-        check_invalid_checksum!(
+        check_invalid_checksum!(secp,
             "elsh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#",
             "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#",
             "elsh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#ggrsrxf",
@@ -1557,8 +1593,8 @@ mod tests {
             "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))##tjq09x4t"
         );
 
-        Descriptor::parse_descriptor("elsh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#9s2ngs7u").expect("Valid descriptor with checksum");
-        Descriptor::parse_descriptor("elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#uklept69").expect("Valid descriptor with checksum");
+        Descriptor::parse_descriptor(&secp, "elsh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#9s2ngs7u").expect("Valid descriptor with checksum");
+        Descriptor::parse_descriptor(&secp, "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#uklept69").expect("Valid descriptor with checksum");
     }
 
     #[test]
@@ -1585,9 +1621,10 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
 
     #[test]
     fn parse_with_secrets() {
+        let secp = &secp256k1::Secp256k1::signing_only();
         let descriptor_str = "elwpkh(xprv9s21ZrQH143K4CTb63EaMxja1YiTnSEWKMbn23uoEnAzxjdUJRQkazCAtzxGm4LSoTSVTptoV9RbchnKPW9HxKtZumdyxyikZFDLhogJ5Uj/44'/0'/0'/0/*)#xldrpn5u";
         let (descriptor, keymap) =
-            Descriptor::<DescriptorPublicKey>::parse_descriptor(descriptor_str).unwrap();
+            Descriptor::<DescriptorPublicKey>::parse_descriptor(&secp, descriptor_str).unwrap();
 
         let expected = "elwpkh([a12b02f4/44'/0'/0']xpub6BzhLAQUDcBUfHRQHZxDF2AbcJqp4Kaeq6bzJpXrjrWuK26ymTFwkEFbxPra2bJ7yeZKbDjfDeFwxe93JMqpo5SsPJH6dZdvV9kMzJkAZ69/0/*)#20ufqv7z";
         assert_eq!(expected, descriptor.to_string());
@@ -1595,5 +1632,16 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
 
         // try to turn it back into a string with the secrets
         assert_eq!(descriptor_str, descriptor.to_string_with_secret(&keymap));
+    }
+
+    #[test]
+    fn checksum_for_nested_sh() {
+        let descriptor_str = "elsh(wpkh(xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL))";
+        let descriptor: Descriptor<DescriptorPublicKey> = descriptor_str.parse().unwrap();
+        assert_eq!(descriptor.to_string(), "elsh(wpkh(xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL))#2040pn7l");
+
+        let descriptor_str = "elsh(wsh(pk(xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL)))";
+        let descriptor: Descriptor<DescriptorPublicKey> = descriptor_str.parse().unwrap();
+        assert_eq!(descriptor.to_string(), "elsh(wsh(pk(xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL)))#pqs0de7e");
     }
 }

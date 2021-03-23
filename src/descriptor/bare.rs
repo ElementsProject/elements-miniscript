@@ -27,7 +27,10 @@ use expression::{self, FromTree};
 use miniscript::context::ScriptContext;
 use policy::{semantic, Liftable};
 use util::{varint_len, witness_to_scriptsig};
-use {BareCtx, Error, Miniscript, MiniscriptKey, Satisfier, ToPublicKey, TranslatePk};
+use {
+    BareCtx, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, ToPublicKey,
+    TranslatePk,
+};
 
 use super::{
     checksum::{desc_checksum, verify_checksum},
@@ -48,6 +51,11 @@ impl<Pk: MiniscriptKey> Bare<Pk> {
         // do the top-level checks
         BareCtx::top_level_checks(&ms)?;
         Ok(Self { ms: ms })
+    }
+
+    /// get the inner
+    pub fn into_inner(self) -> Miniscript<Pk, BareCtx> {
+        self.ms
     }
 
     /// get the inner
@@ -76,8 +84,10 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Bare<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> FromTree for Bare<Pk>
+impl<Pk> FromTree for Bare<Pk>
 where
+    Pk: MiniscriptKey + FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -99,8 +109,10 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey> FromStr for Bare<Pk>
+impl<Pk> FromStr for Bare<Pk>
 where
+    Pk: MiniscriptKey + FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -127,6 +139,8 @@ impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Bare<Pk> {
 }
 impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Bare<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -187,6 +201,16 @@ where
     }
 }
 
+impl<Pk: MiniscriptKey> ForEachKey<Pk> for Bare<Pk> {
+    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a,
+    {
+        self.ms.for_each_key(pred)
+    }
+}
+
 impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Bare<P> {
     type Output = Bare<Q>;
 
@@ -222,9 +246,14 @@ impl<Pk: MiniscriptKey> Pkh<Pk> {
         Self { pk: pk }
     }
 
-    /// Get the inner key
+    /// Get a reference to the inner key
     pub fn as_inner(&self) -> &Pk {
         &self.pk
+    }
+
+    /// Get the inner key
+    pub fn into_inner(self) -> Pk {
+        self.pk
     }
 }
 
@@ -248,8 +277,10 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Pkh<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> FromTree for Pkh<Pk>
+impl<Pk> FromTree for Pkh<Pk>
 where
+    Pk: MiniscriptKey + FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -268,8 +299,10 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey> FromStr for Pkh<Pk>
+impl<Pk> FromStr for Pkh<Pk>
 where
+    Pk: MiniscriptKey + FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -298,11 +331,7 @@ impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Pkh<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Pkh<Pk>
-where
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Pkh<Pk> {
     fn sanity_check(&self) -> Result<(), Error> {
         Ok(())
     }
@@ -372,6 +401,16 @@ where
         Pk: ToPublicKey,
     {
         self.script_pubkey()
+    }
+}
+
+impl<Pk: MiniscriptKey> ForEachKey<Pk> for Pkh<Pk> {
+    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a,
+    {
+        pred(ForEach::Key(&self.pk))
     }
 }
 

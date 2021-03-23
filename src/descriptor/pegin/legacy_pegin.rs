@@ -291,6 +291,8 @@ impl<Pk: MiniscriptKey> BtcLiftable<LegacyPeginKey> for LegacyPegin<Pk> {
 
 impl<Pk: MiniscriptKey> FromTree for LegacyPegin<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -316,6 +318,8 @@ where
 
 impl<Pk: MiniscriptKey> FromStr for LegacyPegin<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -330,6 +334,8 @@ where
 
 impl<Pk: MiniscriptKey> PeginTrait<Pk> for LegacyPegin<Pk>
 where
+    Pk: FromStr,
+    Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
