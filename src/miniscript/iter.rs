@@ -436,7 +436,7 @@ pub mod test {
     use super::{Miniscript, PkPkh};
     use bitcoin;
     use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
-    use elements::secp256k1;
+    use elements::secp256k1_zkp;
     use miniscript::context::Segwitv0;
 
     pub type TestData = (
@@ -446,9 +446,9 @@ pub mod test {
         bool, // Indicates that the top-level contains public key or hashes
     );
 
-    pub fn gen_secp_pubkeys(n: usize) -> Vec<secp256k1::PublicKey> {
+    pub fn gen_secp_pubkeys(n: usize) -> Vec<secp256k1_zkp::PublicKey> {
         let mut ret = Vec::with_capacity(n);
-        let secp = secp256k1::Secp256k1::new();
+        let secp = secp256k1_zkp::Secp256k1::new();
         let mut sk = [0; 32];
 
         for i in 1..n + 1 {
@@ -456,9 +456,9 @@ pub mod test {
             sk[1] = (i >> 8) as u8;
             sk[2] = (i >> 16) as u8;
 
-            ret.push(secp256k1::PublicKey::from_secret_key(
+            ret.push(secp256k1_zkp::PublicKey::from_secret_key(
                 &secp,
-                &secp256k1::SecretKey::from_slice(&sk[..]).unwrap(),
+                &secp256k1_zkp::SecretKey::from_slice(&sk[..]).unwrap(),
             ));
         }
         ret

@@ -17,7 +17,7 @@ rand = ["bitcoin/rand"]
 
 [dependencies]
 bitcoin = "0.26"
-elements = "0.16"
+elements = "0.17"
 miniscript = "5.1.0"
 
 [dev-dependencies]

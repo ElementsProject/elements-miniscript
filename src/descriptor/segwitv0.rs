@@ -18,7 +18,7 @@
 
 use std::{fmt, str::FromStr};
 
-use bitcoin::secp256k1;
+use elements::secp256k1_zkp;
 use elements::{self, Script};
 
 use expression::{self, FromTree};
@@ -191,7 +191,7 @@ where
 impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wsh<Pk> {
     fn blind_addr(
         &self,
-        blinder: Option<secp256k1::PublicKey>,
+        blinder: Option<secp256k1_zkp::PublicKey>,
         params: &'static elements::AddressParams,
     ) -> Result<elements::Address, Error>
     where
@@ -453,7 +453,7 @@ where
 impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wpkh<Pk> {
     fn blind_addr(
         &self,
-        blinder: Option<secp256k1::PublicKey>,
+        blinder: Option<secp256k1_zkp::PublicKey>,
         params: &'static elements::AddressParams,
     ) -> Result<elements::Address, Error>
     where

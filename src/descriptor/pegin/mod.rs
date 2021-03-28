@@ -24,9 +24,10 @@
 
 use bitcoin::blockdata::opcodes;
 use bitcoin::hashes::Hash;
+use bitcoin::Script as BtcScript;
 use bitcoin::{self, blockdata::script, hashes};
 use bitcoin::{hashes::hash160, Address as BtcAddress};
-use bitcoin::{secp256k1, Script as BtcScript};
+use elements::secp256k1_zkp;
 use expression::{self, FromTree};
 use policy::{semantic, Liftable};
 use std::{
@@ -75,19 +76,19 @@ pub trait PeginTrait<Pk: MiniscriptKey> {
 
     /// Computes the Bitcoin address of the pegin descriptor, if one exists.
     /// Requires the secp context to compute the tweak
-    fn bitcoin_address<C: secp256k1::Verification>(
+    fn bitcoin_address<C: secp256k1_zkp::Verification>(
         &self,
         network: bitcoin::Network,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> Result<bitcoin::Address, Error>
     where
         Pk: ToPublicKey;
 
     /// Computes the bitcoin scriptpubkey of the descriptor.
     /// Requires the secp context to compute the tweak
-    fn bitcoin_script_pubkey<C: secp256k1::Verification>(
+    fn bitcoin_script_pubkey<C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> BtcScript
     where
         Pk: ToPublicKey;
@@ -101,9 +102,9 @@ pub trait PeginTrait<Pk: MiniscriptKey> {
     /// transaction whose txid will not change during signing (since
     /// only the witness data will change).
     /// Requires the secp context to compute the tweak
-    fn bitcoin_unsigned_script_sig<C: secp256k1::Verification>(
+    fn bitcoin_unsigned_script_sig<C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> BtcScript
     where
         Pk: ToPublicKey;
@@ -118,9 +119,9 @@ pub trait PeginTrait<Pk: MiniscriptKey> {
     /// would be [NullCtx] and [descriptor.DescriptorPublicKeyCtx] if MiniscriptKey is [descriptor.DescriptorPublicKey]
     ///
     /// In general, this is defined by generic for the trait [ToPublicKey]
-    fn bitcoin_witness_script<C: secp256k1::Verification>(
+    fn bitcoin_witness_script<C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> BtcScript
     where
         Pk: ToPublicKey;
@@ -134,9 +135,9 @@ pub trait PeginTrait<Pk: MiniscriptKey> {
     /// would be [NullCtx] and [descriptor.DescriptorPublicKeyCtx] if MiniscriptKey is [descriptor.DescriptorPublicKey]
     ///
     /// In general, this is defined by generic for the trait [ToPublicKey]
-    fn get_bitcoin_satisfaction<S, C: secp256k1::Verification>(
+    fn get_bitcoin_satisfaction<S, C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
         satisfier: S,
     ) -> Result<(Vec<Vec<u8>>, BtcScript), Error>
     where
@@ -146,9 +147,9 @@ pub trait PeginTrait<Pk: MiniscriptKey> {
     /// Attempts to produce a satisfying witness and scriptSig to spend an
     /// output controlled by the given descriptor; add the data to a given
     /// `TxIn` output.
-    fn bitcoin_satisfy<S, C: secp256k1::Verification>(
+    fn bitcoin_satisfy<S, C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
         txin: &mut bitcoin::TxIn,
         satisfier: S,
     ) -> Result<(), Error>
@@ -179,7 +180,10 @@ pub trait PeginTrait<Pk: MiniscriptKey> {
     /// would be [NullCtx] and [descriptor.DescriptorPublicKeyCtx] if MiniscriptKey is [descriptor.DescriptorPublicKey]
     ///
     /// In general, this is defined by generic for the trait [ToPublicKey]
-    fn script_code<C: secp256k1::Verification>(&self, secp: &secp256k1::Secp256k1<C>) -> BtcScript
+    fn script_code<C: secp256k1_zkp::Verification>(
+        &self,
+        secp: &secp256k1_zkp::Secp256k1<C>,
+    ) -> BtcScript
     where
         Pk: ToPublicKey;
 

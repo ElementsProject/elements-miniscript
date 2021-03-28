@@ -45,7 +45,7 @@ use std::{error, fmt, str::FromStr};
 use bitcoin;
 use elements::hashes::{sha256d, Hash};
 use elements::opcodes::all;
-use elements::secp256k1;
+use elements::secp256k1_zkp;
 use elements::sighash::SigHashCache;
 use elements::{
     self,
@@ -601,7 +601,7 @@ where
 {
     fn blind_addr(
         &self,
-        blinder: Option<secp256k1::PublicKey>,
+        blinder: Option<secp256k1_zkp::PublicKey>,
         params: &'static elements::AddressParams,
     ) -> Result<elements::Address, Error>
     where
@@ -738,8 +738,8 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for CovenantDescripto
 mod tests {
 
     use super::*;
-    use elements::hashes::hex::ToHex;
     use elements::{confidential, opcodes::all::OP_PUSHNUM_1};
+    use elements::{hashes::hex::ToHex, secp256k1_zkp::ZERO_TWEAK};
     use elements::{opcodes, script};
     use elements::{AssetId, AssetIssuance, OutPoint, TxIn, TxInWitness, Txid};
     use interpreter::SatisfiedConstraint;
@@ -807,8 +807,8 @@ mod tests {
     }
 
     // Some deterministic keys for ease of testing
-    fn setup_keys(n: usize) -> (Vec<bitcoin::PublicKey>, Vec<secp256k1::SecretKey>) {
-        let secp_sign = secp256k1::Secp256k1::signing_only();
+    fn setup_keys(n: usize) -> (Vec<bitcoin::PublicKey>, Vec<secp256k1_zkp::SecretKey>) {
+        let secp_sign = secp256k1_zkp::Secp256k1::signing_only();
 
         let mut sks = vec![];
         let mut pks = vec![];
@@ -817,9 +817,9 @@ mod tests {
             sk[0] = i as u8;
             sk[1] = (i >> 8) as u8;
             sk[2] = (i >> 16) as u8;
-            let sk = secp256k1::SecretKey::from_slice(&sk[..]).expect("secret key");
+            let sk = secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("secret key");
             let pk = bitcoin::PublicKey {
-                key: secp256k1::PublicKey::from_secret_key(&secp_sign, &sk),
+                key: secp256k1_zkp::PublicKey::from_secret_key(&secp_sign, &sk),
                 compressed: true,
             };
             sks.push(sk);
@@ -851,7 +851,7 @@ mod tests {
 
     fn _satisfy_and_interpret(
         desc: Descriptor<bitcoin::PublicKey>,
-        cov_sk: secp256k1::SecretKey,
+        cov_sk: secp256k1_zkp::SecretKey,
     ) -> Result<(), Error> {
         assert_eq!(desc.desc_type(), DescriptorType::Cov);
         let desc = desc.as_cov().unwrap();
@@ -898,9 +898,9 @@ mod tests {
         // Create a signature to sign the input
 
         let sighash_u256 = cov_sat.segwit_sighash().unwrap();
-        let secp = secp256k1::Secp256k1::signing_only();
+        let secp = secp256k1_zkp::Secp256k1::signing_only();
         let sig = secp.sign(
-            &secp256k1::Message::from_slice(&sighash_u256[..]).unwrap(),
+            &secp256k1_zkp::Message::from_slice(&sighash_u256[..]).unwrap(),
             &cov_sk,
         );
         let el_sig = (sig, SigHashType::All);
@@ -1093,9 +1093,9 @@ mod tests {
         // Create a signature to sign the input
 
         let sighash_u256 = cov_sat.segwit_sighash().unwrap();
-        let secp = secp256k1::Secp256k1::signing_only();
+        let secp = secp256k1_zkp::Secp256k1::signing_only();
         let sig = secp.sign(
-            &secp256k1::Message::from_slice(&sighash_u256[..]).unwrap(),
+            &secp256k1_zkp::Message::from_slice(&sighash_u256[..]).unwrap(),
             &sks[0],
         );
         let sig = (sig, SigHashType::All);
@@ -1148,15 +1148,15 @@ mod tests {
             has_issuance: false,
             // perhaps make this an option in elements upstream?
             asset_issuance: AssetIssuance {
-                asset_blinding_nonce: [0; 32],
+                asset_blinding_nonce: ZERO_TWEAK,
                 asset_entropy: [0; 32],
                 amount: confidential::Value::Null,
                 inflation_keys: confidential::Value::Null,
             },
             script_sig: Script::new(),
             witness: TxInWitness {
-                amount_rangeproof: vec![],
-                inflation_keys_rangeproof: vec![],
+                amount_rangeproof: None,
+                inflation_keys_rangeproof: None,
                 script_witness: vec![],
                 pegin_witness: vec![],
             },

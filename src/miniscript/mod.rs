@@ -433,7 +433,7 @@ mod tests {
 
     use bitcoin;
     use elements::hashes::{hash160, sha256, Hash};
-    use elements::secp256k1;
+    use elements::secp256k1_zkp;
     use std::str;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -442,7 +442,7 @@ mod tests {
 
     fn pubkeys(n: usize) -> Vec<bitcoin::PublicKey> {
         let mut ret = Vec::with_capacity(n);
-        let secp = secp256k1::Secp256k1::new();
+        let secp = secp256k1_zkp::Secp256k1::new();
         let mut sk = [0; 32];
         for i in 1..n + 1 {
             sk[0] = i as u8;
@@ -450,9 +450,9 @@ mod tests {
             sk[2] = (i >> 16) as u8;
 
             let pk = bitcoin::PublicKey {
-                key: secp256k1::PublicKey::from_secret_key(
+                key: secp256k1_zkp::PublicKey::from_secret_key(
                     &secp,
-                    &secp256k1::SecretKey::from_slice(&sk[..]).expect("secret key"),
+                    &secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("secret key"),
                 ),
                 compressed: true,
             };
