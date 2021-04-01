@@ -208,6 +208,25 @@ pub enum DescriptorType {
     Cov,
 }
 
+impl fmt::Display for DescriptorType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            DescriptorType::Bare => write!(f, "bare"),
+            DescriptorType::Sh => write!(f, "sh"),
+            DescriptorType::Pkh => write!(f, "pkh"),
+            DescriptorType::Wpkh => write!(f, "wpkh"),
+            DescriptorType::Wsh => write!(f, "wsh"),
+            DescriptorType::ShWsh => write!(f, "shwsh"),
+            DescriptorType::ShWpkh => write!(f, "shwpkh"),
+            DescriptorType::ShSortedMulti => write!(f, "shsortedmulti"),
+            DescriptorType::WshSortedMulti => write!(f, "wshsortedmulti"),
+            DescriptorType::ShWshSortedMulti => write!(f, "shwshsortedmulti"),
+            DescriptorType::LegacyPegin => write!(f, "legacy_pegin"),
+            DescriptorType::Pegin => write!(f, "pegin"),
+            DescriptorType::Cov => write!(f, "elcovwsh"),
+        }
+    }
+}
 impl FromStr for DescriptorType {
     type Err = Error;
 
