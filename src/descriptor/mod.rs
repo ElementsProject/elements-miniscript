@@ -1173,7 +1173,7 @@ mod tests {
         struct SimpleSat {
             sig: secp256k1_zkp::Signature,
             pk: bitcoin::PublicKey,
-        };
+        }
 
         impl Satisfier<bitcoin::PublicKey> for SimpleSat {
             fn lookup_sig(&self, pk: &bitcoin::PublicKey) -> Option<ElementsSig> {

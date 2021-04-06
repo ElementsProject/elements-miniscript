@@ -909,7 +909,7 @@ mod tests {
         struct SimpleSat {
             sig: ElementsSig,
             pk: bitcoin::PublicKey,
-        };
+        }
 
         impl Satisfier<bitcoin::PublicKey> for SimpleSat {
             fn lookup_sig(&self, pk: &bitcoin::PublicKey) -> Option<ElementsSig> {
@@ -1104,7 +1104,7 @@ mod tests {
         struct SimpleSat {
             sig: ElementsSig,
             pk: bitcoin::PublicKey,
-        };
+        }
 
         impl Satisfier<bitcoin::PublicKey> for SimpleSat {
             fn lookup_sig(&self, pk: &bitcoin::PublicKey) -> Option<ElementsSig> {

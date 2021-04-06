@@ -958,7 +958,7 @@ mod tests {
                 cov: None,
                 has_errored: false,
             }
-        };
+        }
 
         let pk = ms_str!("c:pk_k({})", pks[0]);
         let pkh = ms_str!("c:pk_h({})", pks[1].to_pubkeyhash());
