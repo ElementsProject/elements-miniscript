@@ -95,6 +95,8 @@
 //!
 //!
 #![allow(bare_trait_objects)]
+// Required for rustc 1.29
+#![recursion_limit = "128"]
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
 // Coding conventions
 #![deny(unsafe_code)]
