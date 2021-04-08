@@ -159,20 +159,23 @@ mod tests {
         let (pks, _sks) = setup_keys(1);
         // Count of the opcodes without the
         let cov_script = script::Builder::new().verify_cov(&pks[0]).into_script();
-        assert_eq!(count_non_push_opcodes(&cov_script), Ok(24));
-        assert_eq!(cov_script.len(), 58);
+        assert_eq!(
+            count_non_push_opcodes(&cov_script),
+            Ok(cov::COV_SCRIPT_OPCODE_COST)
+        );
+        assert_eq!(cov_script.len(), cov::COV_SCRIPT_SIZE);
 
         let sighash_size = 4
         + 32
         + 32
         + 32
         + (32 + 4)
-        + (58) // script code size
+        + (5) // script code size
         + 4
         + 32
         + 4
         + 4;
-        assert_eq!(sighash_size, 238);
+        assert_eq!(sighash_size, 185);
     }
 
     fn _satisfy_and_interpret(
@@ -355,7 +358,7 @@ mod tests {
             desc.address(&elements::AddressParams::ELEMENTS)
                 .unwrap()
                 .to_string(),
-            "ert1ql8l6f3cytl5a849pcy7ycpqz9q9xqsd4mnq8wcms7mjlyr3mezpqz0vt3q"
+            "ert1qamjdykcfzkcsvc9z32a6qcz3mwr85a3k7z7qf2uaufem2q3lsjxqj4y4fy"
         );
 
         println!(
@@ -376,15 +379,15 @@ mod tests {
             desc.address(&elements::AddressParams::ELEMENTS)
                 .unwrap()
                 .to_string(),
-            "ert1ql8l6f3cytl5a849pcy7ycpqz9q9xqsd4mnq8wcms7mjlyr3mezpqz0vt3q"
+            "ert1qamjdykcfzkcsvc9z32a6qcz3mwr85a3k7z7qf2uaufem2q3lsjxqj4y4fy"
         );
         // Now create a transaction spending this.
         let mut spend_tx = Transaction {
             version: 2,
             lock_time: 0,
             input: vec![txin_from_txid_vout(
-                "141f79c7c254ee3a9a9bc76b4f60564385b784bdfc1882b25154617801fe2237",
-                1,
+                "7c8e615c8da947fefd2d9b6f83f313a9b59d249c93a5f232287633195b461cb7",
+                0,
             )],
             output: vec![],
         };
@@ -455,7 +458,7 @@ mod tests {
         // 1) Send 0.002 btc to above address
         // 2) Create a tx by filling up txid
         // 3) Send the tx
-        assert_eq!(witness_size(&wit), 334);
+        assert_eq!(witness_size(&wit), 384);
         assert_eq!(wit.len(), 13);
         // spend_tx.input[0].witness.script_witness = wit;
         // use elements::encode::serialize_hex;

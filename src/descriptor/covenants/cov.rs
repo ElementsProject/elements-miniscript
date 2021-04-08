@@ -81,7 +81,8 @@ fn hash256_arr<T: Encodable>(sl: &[T]) -> sha256d::Hash {
     }
     sha256d::Hash::from_engine(enc)
 }
-
+pub(crate) const COV_SCRIPT_SIZE: usize = 120;
+pub(crate) const COV_SCRIPT_OPCODE_COST: usize = 74;
 /// The covenant descriptor
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CovenantDescriptor<Pk: MiniscriptKey> {
@@ -115,7 +116,7 @@ impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
         let ms_op_count = ms.ext.ops_count_sat;
         // statically computed
         // see cov_test_limits test for the test assert
-        let cov_script_ops = 24;
+        let cov_script_ops = COV_SCRIPT_OPCODE_COST;
         let total_ops = ms_op_count.ok_or(Error::ImpossibleSatisfaction)? + cov_script_ops
             - if ms.ext.has_free_verify { 1 } else { 0 };
         if total_ops > MAX_OPS_PER_SCRIPT {
@@ -124,7 +125,7 @@ impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
         // 2) TODO: Sighash never exceeds 520 bytes, but we check the
         // witness script before the codesep is still under 520
         // bytes if the covenant relies on introspection of script
-        let ss = 58 - if ms.ext.has_free_verify { 1 } else { 0 };
+        let ss = COV_SCRIPT_SIZE - if ms.ext.has_free_verify { 1 } else { 0 };
         // 3) Check that the script size does not exceed 10_000 bytes
         // global consensus rule
         if ms.script_size() + ss > MAX_SCRIPT_SIZE {
@@ -173,17 +174,17 @@ impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
 
             vec![
                 Vec::from(sig.serialize_der().as_ref()), // The covenant sig
-                serialize(&n_version),                   // item 1
-                serialize(&hash_prevouts),               // item 2
-                serialize(&hash_sequence),               // item 3
-                serialize(&hash_issuances),              // ELEMENTS EXTRA: item 3b(4)
-                serialize(&outpoint),                    // item 4(5)
-                serialize(script_code),                  // item 5(6)
-                serialize(&value),                       // item 6(7)
-                serialize(&n_sequence),                  // item 7(8)
-                serialize(&hash_outputs),                // item 8(9)
-                serialize(&n_locktime),                  // item 9(10)
                 serialize(&sighash_ty),                  // item 10(11)
+                serialize(&n_locktime),                  // item 9(10)
+                serialize(&hash_outputs),                // item 8(9)
+                serialize(&n_sequence),                  // item 7(8)
+                serialize(&value),                       // item 6(7)
+                serialize(script_code),                  // item 5(6)
+                serialize(&outpoint),                    // item 4(5)
+                serialize(&hash_issuances),              // ELEMENTS EXTRA: item 3b(4)
+                serialize(&hash_sequence),               // item 3
+                serialize(&hash_prevouts),               // item 2
+                serialize(&n_version),                   // item 1
             ]
         };
 
@@ -211,11 +212,24 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
     #[allow(unreachable_patterns)]
     fn check_cov_script(tokens: &mut TokenIter) -> Result<bitcoin::PublicKey, Error> {
         match_token!(tokens,
-            Tk::CheckSigFromStack, Tk::FromAltStack, Tk::Sha256, Tk::Cat,
-            Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat,
-            Tk::Cat, Tk::Cat, Tk::Verify, Tk::CheckSig, Tk::CodeSep, Tk::ToAltStack,
-            Tk::Dup, Tk::Pubkey(pk), Tk::Cat, Tk::Left, Tk::Num(1),
-            Tk::Over, Tk::Pick, Tk::Num(11), Tk::Verify => {
+            Tk::CheckSigFromStack, Tk::Verify, Tk::CheckSig, Tk::CodeSep, Tk::Swap,
+            Tk::FromAltStack, Tk::Dup, Tk::Pubkey(pk), Tk::Sha256,
+            Tk::Cat, Tk::Verify, Tk::Equal, Tk::Num(4), Tk::Size,   // item 10
+            Tk::Swap, Tk::Cat, Tk::Verify, Tk::Equal, Tk::Num(4), Tk::Size,  // item 9
+            Tk::Swap, Tk::Cat, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size, // item 8
+            Tk::Swap, Tk::Cat, Tk::Verify, Tk::Equal, Tk::Num(4), Tk::Size,  // item 7
+            Tk::Swap, Tk::Cat, Tk::EndIf,
+                Tk::Verify, Tk::Equal, Tk::Num(33), Tk::Size, Tk::Else,// item 6
+                Tk::Verify, Tk::Equal, Tk::Num(9), Tk::Size, Tk::If,   // item 6
+                Tk::Equal, Tk::Num(1), Tk::Left, Tk::Num(1), Tk::Dup,  // item 6
+            Tk::Swap, Tk::Cat, Tk::Verify, Tk::Equal, Tk::Num(3), Tk::Size,  // item 5
+            Tk::Swap, Tk::Cat, Tk::Verify, Tk::Equal, Tk::Num(36), Tk::Size, // item 4
+            Tk::Swap, Tk::Cat, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size, // item 3b
+            Tk::Swap, Tk::Cat, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size, // item 3
+            Tk::Swap, Tk::Cat, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size, // item 2
+            Tk::Swap, Tk::Verify, Tk::Equal, Tk::Num(4), Tk::Size,  // item 1
+            Tk::ToAltStack, Tk::Cat, Tk::Left, Tk::Num(1),
+            Tk::Pick, Tk::Num(11), Tk::Pick, Tk::Num(11), Tk::Verify => {
                 return Ok(pk);
             },
             _ => return Err(Error::CovError(CovError::BadCovDescriptor)),
@@ -353,7 +367,7 @@ where
     fn sanity_check(&self) -> Result<(), Error> {
         self.ms.sanity_check()?;
         // Additional local check for p2wsh script size
-        let ss = 58 - if self.ms.ext.has_free_verify { 1 } else { 0 };
+        let ss = COV_SCRIPT_SIZE - if self.ms.ext.has_free_verify { 1 } else { 0 };
         if self.ms.script_size() + ss > MAX_STANDARD_P2WSH_SCRIPT_SIZE {
             Err(Error::ScriptSizeTooLarge)
         } else {

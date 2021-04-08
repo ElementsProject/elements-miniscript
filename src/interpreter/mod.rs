@@ -810,6 +810,7 @@ where
                 // Do the checkSigFromStackCheck
                 let sighash_msg: Vec<u8> = self.stack.0[1..]
                     .into_iter()
+                    .rev()
                     .map(|x| Vec::from(x.as_push()))
                     .flatten()
                     .collect();
