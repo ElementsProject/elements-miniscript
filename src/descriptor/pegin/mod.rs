@@ -44,7 +44,6 @@ use {
     BtcDescriptor, BtcDescriptorTrait, BtcError, BtcFromTree, BtcLiftable, BtcMiniscript,
     BtcPolicy, BtcSatisfier, BtcSegwitv0, BtcTerminal, BtcTree,
 };
-
 use {DescriptorTrait, Segwitv0, TranslatePk};
 
 use {tweak_key, util::varint_len};

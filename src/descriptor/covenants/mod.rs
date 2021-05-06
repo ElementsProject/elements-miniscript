@@ -483,12 +483,7 @@ mod tests {
                 inflation_keys: confidential::Value::Null,
             },
             script_sig: Script::new(),
-            witness: TxInWitness {
-                amount_rangeproof: None,
-                inflation_keys_rangeproof: None,
-                script_witness: vec![],
-                pegin_witness: vec![],
-            },
+            witness: TxInWitness::default(),
         }
     }
 }

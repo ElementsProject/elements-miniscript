@@ -1,7 +1,12 @@
 use std::{error, fmt, str::FromStr};
 
-use bitcoin::{self, hashes::hex::FromHex, hashes::Hash, util::bip32, XpubIdentifier};
-use elements::secp256k1_zkp::{self, Secp256k1, Signing};
+use bitcoin::{self, util::bip32, XpubIdentifier};
+
+use elements::{
+    hashes::hex::FromHex,
+    hashes::Hash,
+    secp256k1_zkp::{self, Secp256k1, Signing},
+};
 use MiniscriptKey;
 
 /// The MiniscriptKey corresponding to Descriptors. This can
