@@ -23,8 +23,12 @@ use super::{sanity_check, Pset};
 use super::{Error, InputError, PsetInputSatisfier};
 use bitcoin::{self, PublicKey};
 use descriptor::DescriptorTrait;
-use elements::secp256k1_zkp::{self, Secp256k1};
+use descriptor::{CovSatisfier, CovenantDescriptor};
 use elements::{self, confidential, Script};
+use elements::{
+    secp256k1_zkp::{self, Secp256k1},
+    SigHashType,
+};
 use interpreter;
 use Descriptor;
 use Miniscript;
@@ -67,7 +71,10 @@ fn get_amt(pset: &Pset, index: usize) -> Result<confidential::Value, InputError>
 // We parse the insane version while satisfying because
 // we want to move the script is probably already created
 // and we want to satisfy it in any way possible.
-fn get_descriptor(pset: &Pset, index: usize) -> Result<Descriptor<PublicKey>, InputError> {
+pub(super) fn get_descriptor(
+    pset: &Pset,
+    index: usize,
+) -> Result<Descriptor<PublicKey>, InputError> {
     // Figure out Scriptpubkey
     let script_pubkey = get_scriptpubkey(pset, index)?;
     let inp = &pset.inputs[index];
@@ -117,8 +124,15 @@ fn get_descriptor(pset: &Pset, index: usize) -> Result<Descriptor<PublicKey>, In
                     p2wsh_expected: script_pubkey.clone(),
                 });
             }
-            let ms = Miniscript::<bitcoin::PublicKey, Segwitv0>::parse_insane(witness_script)?;
-            Ok(Descriptor::new_wsh(ms)?)
+            // First try parsing as covenant descriptor. Then try normal wsh descriptor
+            match CovenantDescriptor::parse_insane(witness_script) {
+                Ok(cov) => Ok(Descriptor::Cov(cov)),
+                Err(_) => {
+                    let ms =
+                        Miniscript::<bitcoin::PublicKey, Segwitv0>::parse_insane(witness_script)?;
+                    Ok(Descriptor::new_wsh(ms)?)
+                }
+            }
         } else {
             Err(InputError::MissingWitnessScript)
         }
@@ -287,14 +301,46 @@ pub fn finalize<C: secp256k1_zkp::Verification>(
     }
 
     // Actually construct the witnesses
+    let extracted_tx = pset.extract_tx()?;
     for index in 0..pset.inputs.len() {
-        // Get a descriptor for this input
-        let desc = get_descriptor(&pset, index).map_err(|e| Error::InputError(e, index))?;
+        // If the input is already finalized, skip it
+        if pset.inputs[index].final_script_sig.is_some()
+            || pset.inputs[index].final_script_witness.is_some()
+        {
+            continue;
+        }
 
-        //generate the satisfaction witness and scriptsig
-        let (witness, script_sig) = desc
-            .get_satisfaction(PsetInputSatisfier::new(&pset, index))
-            .map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?;
+        // rust 1.29 burrowchecker
+        let (witness, script_sig) = {
+            // Get a descriptor for this input
+            let desc = get_descriptor(&pset, index).map_err(|e| Error::InputError(e, index))?;
+            let pset_sat = PsetInputSatisfier::new(&pset, index);
+
+            // If the descriptor is covenant one, create a covenant satisfier. Otherwise
+            // use the regular satisfier
+            if let Descriptor::Cov(cov) = &desc {
+                // For covenant descriptors create satisfier
+                let utxo = pset.inputs[index]
+                    .witness_utxo
+                    .as_ref()
+                    .ok_or(super::Error::InputError(InputError::MissingUtxo, index))?;
+                // Codesepartor calculation
+                let script_code = cov.cov_script_code();
+                let cov_sat = CovSatisfier::new_segwitv0(
+                    &extracted_tx,
+                    index as u32,
+                    utxo.value,
+                    &script_code,
+                    pset.inputs[index].sighash_type.unwrap_or(SigHashType::All),
+                );
+                desc.get_satisfaction((pset_sat, cov_sat))
+                    .map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?
+            } else {
+                //generate the satisfaction witness and scriptsig
+                desc.get_satisfaction(pset_sat)
+                    .map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?
+            }
+        };
 
         let input = &mut pset.inputs[index];
         //Fill in the satisfactions

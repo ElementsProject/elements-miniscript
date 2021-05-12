@@ -35,6 +35,8 @@ use {ElementsSig, Preimage32};
 use {MiniscriptKey, ToPublicKey};
 
 mod finalizer;
+use descriptor::CovSatisfier;
+
 pub use self::finalizer::{finalize, interpreter_check};
 
 /// Error type for Pbst Input
@@ -221,12 +223,20 @@ impl From<elements::pset::Error> for Error {
 /// the same pset structure
 /// All operations on this structure will panic if index
 /// is more than number of inputs in pbst
+/// This does not support satisfaction for Covenant transactoins
+/// You are probably looking for [`finalizer::finalize`] method
+/// or [`PsetCovInputSatisfier`]
 pub struct PsetInputSatisfier<'pset> {
     /// pbst
     pub pset: &'pset Pset,
     /// input index
     pub index: usize,
 }
+
+/// Pset Input Satisfier with Covenant support. Users should be
+/// using the high level [`finalizer::finalize`] API.
+/// The [`CovSatisfier`] should be consistent with the extracted transaction.
+pub struct PsetCovInputSatisfier<'pset>(PsetInputSatisfier<'pset>, CovSatisfier<'pset, 'pset>);
 
 impl<'pset> PsetInputSatisfier<'pset> {
     /// create a new PsetInputsatisfier from
