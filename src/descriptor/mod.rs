@@ -432,6 +432,12 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
         Ok(Descriptor::Wsh(Wsh::new_sortedmulti(k, pks)?))
     }
 
+    /// Create a new covenant descriptor
+    pub fn new_cov_wsh(pk: Pk, ms: Miniscript<Pk, Segwitv0>) -> Result<Self, Error> {
+        let cov = CovenantDescriptor::new(pk, ms)?;
+        Ok(Descriptor::Cov(cov))
+    }
+
     /// Get the [DescriptorType] of [Descriptor]
     pub fn desc_type(&self) -> DescriptorType {
         match *self {
@@ -455,8 +461,7 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
         }
     }
 
-    /// Unwrap a descriptor as a covenant descriptor
-    /// Panics if the descriptor is not of [DescriptorType::Cov]
+    /// Tries to convert descriptor as a covenant descriptor
     pub fn as_cov(&self) -> Result<&CovenantDescriptor<Pk>, Error> {
         if let Descriptor::Cov(cov) = self {
             Ok(cov)
