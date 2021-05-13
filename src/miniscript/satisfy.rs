@@ -46,6 +46,14 @@ pub type ElementsSig = (secp256k1_zkp::Signature, elements::SigHashType);
 /// Type alias for 32 byte Preimage.
 pub type Preimage32 = [u8; 32];
 
+/// Convert to raw sig
+pub fn elementssig_to_rawsig(sig: &ElementsSig) -> Vec<u8> {
+    let ser_sig = sig.0.serialize_der();
+    let mut raw_sig = Vec::from(&ser_sig[..]);
+    raw_sig.push(sig.1 as u8);
+    raw_sig
+}
+
 /// Helper function to create ElementsSig from Rawsig
 /// Useful for downstream when implementing Satisfier.
 /// Returns underlying secp if the Signature is not of correct format
