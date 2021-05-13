@@ -57,7 +57,7 @@ pub fn elementssig_to_rawsig(sig: &ElementsSig) -> Vec<u8> {
 /// Helper function to create ElementsSig from Rawsig
 /// Useful for downstream when implementing Satisfier.
 /// Returns underlying secp if the Signature is not of correct format
-pub fn bitcoinsig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, Error> {
+pub fn elementssig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, Error> {
     let (flag, sig) = rawsig.split_last().unwrap();
     let flag = elements::SigHashType::from_u32(*flag as u32);
     let sig = secp256k1_zkp::Signature::from_der(sig)?;

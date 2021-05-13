@@ -317,7 +317,6 @@ fn _finalize_inp(
     extracted_tx: &Transaction,
     index: usize,
 ) -> Result<(), super::Error> {
-
     // rust 1.29 burrowchecker
     let (witness, script_sig) = {
         // Get a descriptor for this input

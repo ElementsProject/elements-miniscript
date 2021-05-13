@@ -29,7 +29,7 @@ use elements::{self, Script, SigHashType};
 
 use interpreter;
 use miniscript::limits::SEQUENCE_LOCKTIME_DISABLE_FLAG;
-use miniscript::satisfy::{bitcoinsig_from_rawsig, After, Older};
+use miniscript::satisfy::{elementssig_from_rawsig, After, Older};
 use Satisfier;
 use {ElementsSig, Preimage32};
 use {MiniscriptKey, ToPublicKey};
@@ -257,7 +257,7 @@ impl<'pset, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsetInputSatisfie
         {
             // We have already previously checked that all signatures have the
             // correct sighash flag.
-            bitcoinsig_from_rawsig(rawsig).ok()
+            elementssig_from_rawsig(rawsig).ok()
         } else {
             None
         }
@@ -271,7 +271,7 @@ impl<'pset, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsetInputSatisfie
             .next()
         {
             // If the mapping is incorrect, return None
-            bitcoinsig_from_rawsig(sig)
+            elementssig_from_rawsig(sig)
                 .ok()
                 .map(|bitcoinsig| (*pk, bitcoinsig))
         } else {
