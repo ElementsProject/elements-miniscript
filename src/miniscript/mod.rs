@@ -930,7 +930,7 @@ mod tests {
     fn cov_script_rtt() {
         roundtrip(
             &ms_str!("ver_eq(4)"),
-            "Script(OP_PUSHNUM_13 OP_DEPTH OP_SUB OP_PICK OP_PUSHBYTES_4 04000000 OP_EQUAL)",
+            "Script(OP_DEPTH OP_PUSHNUM_12 OP_SUB OP_PICK OP_PUSHBYTES_4 04000000 OP_EQUAL)",
         );
     }
 }

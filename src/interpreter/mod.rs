@@ -795,7 +795,7 @@ where
             let mut ser_sig = Vec::new();
             // 1.29 errors
             {
-                let sighash_bytes = self.stack[11].as_push();
+                let sighash_bytes = self.stack[1].as_push();
                 let sighash_u32 = util::slice_to_u32_le(sighash_bytes);
                 let sighash_ty = SigHashType::from_u32(sighash_u32);
                 let sig_vec = self.stack[0].as_push();

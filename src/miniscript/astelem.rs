@@ -678,8 +678,8 @@ pub trait StackCtxOperations: Sized {
 
 impl StackCtxOperations for script::Builder {
     fn check_item_eq(self, idx: u32, target: &[u8]) -> Self {
-        self.push_int((idx + 1) as i64) // +1 for depth increase
-            .push_opcode(opcodes::all::OP_DEPTH)
+        self.push_opcode(opcodes::all::OP_DEPTH)
+            .push_int(idx as i64)
             .push_opcode(opcodes::all::OP_SUB)
             .push_opcode(opcodes::all::OP_PICK)
             .push_slice(target)
@@ -702,8 +702,8 @@ impl StackCtxOperations for script::Builder {
         builder = builder.push_opcode(opcodes::all::OP_HASH256);
 
         builder
-            .push_int((idx + 1) as i64) // +1 for depth increase
             .push_opcode(opcodes::all::OP_DEPTH)
+            .push_int(idx as i64)
             .push_opcode(opcodes::all::OP_SUB)
             .push_opcode(opcodes::all::OP_PICK)
             .push_opcode(opcodes::all::OP_EQUAL)
