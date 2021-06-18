@@ -1,15 +1,12 @@
 use std::{error, fmt, str::FromStr};
 
-use bitcoin::{
-    self,
+use bitcoin::{self, util::bip32, XpubIdentifier};
+
+use elements::{
     hashes::hex::FromHex,
     hashes::Hash,
-    secp256k1,
-    secp256k1::{Secp256k1, Signing},
-    util::bip32,
-    XpubIdentifier,
+    secp256k1_zkp::{self, Secp256k1, Signing},
 };
-
 use MiniscriptKey;
 
 /// The MiniscriptKey corresponding to Descriptors. This can
@@ -436,7 +433,7 @@ impl DescriptorPublicKey {
     /// to avoid hardened derivation steps, start from a `DescriptorSecretKey`
     /// and call `as_public`, or call `TranslatePk2::translate_pk2` with
     /// some function which has access to secret key data.
-    pub fn derive_public_key<C: secp256k1::Verification>(
+    pub fn derive_public_key<C: secp256k1_zkp::Verification>(
         &self,
         secp: &Secp256k1<C>,
     ) -> Result<bitcoin::PublicKey, ConversionError> {
@@ -594,7 +591,7 @@ impl<K: InnerXKey> DescriptorXKey<K> {
     /// use miniscript::bitcoin::util::bip32;
     /// use miniscript::descriptor::DescriptorPublicKey;
     ///
-    /// let ctx = miniscript::bitcoin::secp256k1::Secp256k1::signing_only();
+    /// let ctx = miniscript::elements::secp256k1_zkp::Secp256k1::signing_only();
     ///
     /// let key = DescriptorPublicKey::from_str("[d34db33f/44'/0'/0']xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL/1/*")?;
     /// let xpub = match key {
@@ -673,7 +670,7 @@ impl MiniscriptKey for DescriptorPublicKey {
 mod test {
     use super::{DescriptorKeyParseError, DescriptorPublicKey, DescriptorSecretKey};
 
-    use bitcoin::secp256k1;
+    use elements::secp256k1_zkp;
 
     use std::str::FromStr;
 
@@ -789,7 +786,7 @@ mod test {
 
     #[test]
     fn test_deriv_on_xprv() {
-        let secp = secp256k1::Secp256k1::signing_only();
+        let secp = secp256k1_zkp::Secp256k1::signing_only();
 
         let secret_key = DescriptorSecretKey::from_str("tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/0'/1'/2").unwrap();
         let public_key = secret_key.as_public(&secp).unwrap();

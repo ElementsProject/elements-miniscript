@@ -1184,7 +1184,7 @@ mod tests {
     use super::*;
     use bitcoin;
     use elements::SigHashType;
-    use elements::{hashes, secp256k1};
+    use elements::{hashes, secp256k1_zkp};
     use elements::{opcodes, script};
     use std::collections::HashMap;
     use std::str::FromStr;
@@ -1200,9 +1200,9 @@ mod tests {
     type DummySegwitAstElemExt = policy::compiler::AstElemExt<String, Segwitv0>;
     type SegwitMiniScript = Miniscript<bitcoin::PublicKey, Segwitv0>;
 
-    fn pubkeys_and_a_sig(n: usize) -> (Vec<bitcoin::PublicKey>, secp256k1::Signature) {
+    fn pubkeys_and_a_sig(n: usize) -> (Vec<bitcoin::PublicKey>, secp256k1_zkp::Signature) {
         let mut ret = Vec::with_capacity(n);
-        let secp = secp256k1::Secp256k1::new();
+        let secp = secp256k1_zkp::Secp256k1::new();
         let mut sk = [0; 32];
         for i in 1..n + 1 {
             sk[0] = i as u8;
@@ -1210,17 +1210,17 @@ mod tests {
             sk[2] = (i >> 16) as u8;
 
             let pk = bitcoin::PublicKey {
-                key: secp256k1::PublicKey::from_secret_key(
+                key: secp256k1_zkp::PublicKey::from_secret_key(
                     &secp,
-                    &secp256k1::SecretKey::from_slice(&sk[..]).expect("sk"),
+                    &secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("sk"),
                 ),
                 compressed: true,
             };
             ret.push(pk);
         }
         let sig = secp.sign(
-            &secp256k1::Message::from_slice(&sk[..]).expect("secret key"),
-            &secp256k1::SecretKey::from_slice(&sk[..]).expect("secret key"),
+            &secp256k1_zkp::Message::from_slice(&sk[..]).expect("secret key"),
+            &secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("secret key"),
         );
         (ret, sig)
     }

@@ -14,7 +14,7 @@
 
 use bitcoin;
 use elements::hashes::hash160;
-use elements::secp256k1;
+use elements::{self, secp256k1_zkp};
 use std::{error, fmt};
 
 /// Detailed Error type for Interpreter
@@ -67,7 +67,7 @@ pub enum Error {
     /// Could not satisfy, relative locktime not met
     RelativeLocktimeNotMet(u32),
     /// Forward-secp related errors
-    Secp(secp256k1::Error),
+    Secp(secp256k1_zkp::Error),
     /// Miniscript requires the entire top level script to be satisfied.
     ScriptSatisfactionError,
     /// An uncompressed public key was encountered in a context where it is
@@ -101,9 +101,16 @@ pub enum Error {
 }
 
 #[doc(hidden)]
-impl From<secp256k1::Error> for Error {
-    fn from(e: secp256k1::Error) -> Error {
+impl From<secp256k1_zkp::Error> for Error {
+    fn from(e: secp256k1_zkp::Error) -> Error {
         Error::Secp(e)
+    }
+}
+
+#[doc(hidden)]
+impl From<elements::secp256k1_zkp::UpstreamError> for Error {
+    fn from(e: elements::secp256k1_zkp::UpstreamError) -> Error {
+        Error::Secp(elements::secp256k1_zkp::Error::Upstream(e))
     }
 }
 

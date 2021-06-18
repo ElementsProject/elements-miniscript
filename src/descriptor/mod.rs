@@ -34,7 +34,7 @@ pub mod pegin;
 
 // use bitcoin;
 use elements;
-use elements::secp256k1;
+use elements::secp256k1_zkp;
 use elements::Script;
 
 use self::checksum::verify_checksum;
@@ -83,7 +83,7 @@ pub trait ElementsTrait<Pk: MiniscriptKey> {
     /// Compute a blinded address
     fn blind_addr(
         &self,
-        blinder: Option<secp256k1::PublicKey>,
+        blinder: Option<secp256k1_zkp::PublicKey>,
         params: &'static elements::AddressParams,
     ) -> Result<elements::Address, Error>
     where
@@ -208,6 +208,25 @@ pub enum DescriptorType {
     Cov,
 }
 
+impl fmt::Display for DescriptorType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            DescriptorType::Bare => write!(f, "bare"),
+            DescriptorType::Sh => write!(f, "sh"),
+            DescriptorType::Pkh => write!(f, "pkh"),
+            DescriptorType::Wpkh => write!(f, "wpkh"),
+            DescriptorType::Wsh => write!(f, "wsh"),
+            DescriptorType::ShWsh => write!(f, "shwsh"),
+            DescriptorType::ShWpkh => write!(f, "shwpkh"),
+            DescriptorType::ShSortedMulti => write!(f, "shsortedmulti"),
+            DescriptorType::WshSortedMulti => write!(f, "wshsortedmulti"),
+            DescriptorType::ShWshSortedMulti => write!(f, "shwshsortedmulti"),
+            DescriptorType::LegacyPegin => write!(f, "legacy_pegin"),
+            DescriptorType::Pegin => write!(f, "pegin"),
+            DescriptorType::Cov => write!(f, "elcovwsh"),
+        }
+    }
+}
 impl FromStr for DescriptorType {
     type Err = Error;
 
@@ -413,6 +432,12 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
         Ok(Descriptor::Wsh(Wsh::new_sortedmulti(k, pks)?))
     }
 
+    /// Create a new covenant descriptor
+    pub fn new_cov_wsh(pk: Pk, ms: Miniscript<Pk, Segwitv0>) -> Result<Self, Error> {
+        let cov = CovenantDescriptor::new(pk, ms)?;
+        Ok(Descriptor::Cov(cov))
+    }
+
     /// Get the [DescriptorType] of [Descriptor]
     pub fn desc_type(&self) -> DescriptorType {
         match *self {
@@ -436,8 +461,7 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
         }
     }
 
-    /// Unwrap a descriptor as a covenant descriptor
-    /// Panics if the descriptor is not of [DescriptorType::Cov]
+    /// Tries to convert descriptor as a covenant descriptor
     pub fn as_cov(&self) -> Result<&CovenantDescriptor<Pk>, Error> {
         if let Descriptor::Cov(cov) = self {
             Ok(cov)
@@ -501,7 +525,7 @@ where
 {
     fn blind_addr(
         &self,
-        blinder: Option<secp256k1::PublicKey>,
+        blinder: Option<secp256k1_zkp::PublicKey>,
         params: &'static elements::AddressParams,
     ) -> Result<elements::Address, Error>
     where
@@ -699,8 +723,8 @@ impl Descriptor<DescriptorPublicKey> {
     ///
     /// Internally turns every secret key found into the corresponding public key and then returns a
     /// a descriptor that only contains public keys and a map to lookup the secret key given a public key.
-    pub fn parse_descriptor<C: secp256k1::Signing>(
-        secp: &secp256k1::Secp256k1<C>,
+    pub fn parse_descriptor<C: secp256k1_zkp::Signing>(
+        secp: &secp256k1_zkp::Secp256k1<C>,
         s: &str,
     ) -> Result<(Descriptor<DescriptorPublicKey>, KeyMap), Error> {
         let parse_key = |s: &String,
@@ -842,7 +866,7 @@ mod tests {
         all::{OP_CLTV, OP_CSV},
     };
     use elements::script::Instruction;
-    use elements::{self, secp256k1};
+    use elements::{self, secp256k1_zkp};
     use elements::{script, Script};
     use hex_script;
     use miniscript::satisfy::ElementsSig;
@@ -1138,23 +1162,23 @@ mod tests {
 
     #[test]
     fn satisfy() {
-        let secp = secp256k1::Secp256k1::new();
+        let secp = secp256k1_zkp::Secp256k1::new();
         let sk =
-            secp256k1::SecretKey::from_slice(&b"sally was a secret key, she said"[..]).unwrap();
+            secp256k1_zkp::SecretKey::from_slice(&b"sally was a secret key, she said"[..]).unwrap();
         let pk = bitcoin::PublicKey {
-            key: secp256k1::PublicKey::from_secret_key(&secp, &sk),
+            key: secp256k1_zkp::PublicKey::from_secret_key(&secp, &sk),
             compressed: true,
         };
-        let msg = secp256k1::Message::from_slice(&b"michael was a message, amusingly"[..])
+        let msg = secp256k1_zkp::Message::from_slice(&b"michael was a message, amusingly"[..])
             .expect("32 bytes");
         let sig = secp.sign(&msg, &sk);
         let mut sigser = sig.serialize_der().to_vec();
         sigser.push(0x01); // sighash_all
 
         struct SimpleSat {
-            sig: secp256k1::Signature,
+            sig: secp256k1_zkp::Signature,
             pk: bitcoin::PublicKey,
-        };
+        }
 
         impl Satisfier<bitcoin::PublicKey> for SimpleSat {
             fn lookup_sig(&self, pk: &bitcoin::PublicKey) -> Option<ElementsSig> {
@@ -1314,13 +1338,13 @@ mod tests {
             "02937402303919b3a2ee5edd5009f4236f069bf75667b8e6ecf8e5464e20116a0e",
         )
         .unwrap();
-        let sig_a = secp256k1::Signature::from_str("3045022100a7acc3719e9559a59d60d7b2837f9842df30e7edcd754e63227e6168cec72c5d022066c2feba4671c3d99ea75d9976b4da6c86968dbf3bab47b1061e7a1966b1778c").unwrap();
+        let sig_a = secp256k1_zkp::Signature::from_str("3045022100a7acc3719e9559a59d60d7b2837f9842df30e7edcd754e63227e6168cec72c5d022066c2feba4671c3d99ea75d9976b4da6c86968dbf3bab47b1061e7a1966b1778c").unwrap();
 
         let b = bitcoin::PublicKey::from_str(
             "02eb64639a17f7334bb5a1a3aad857d6fec65faef439db3de72f85c88bc2906ad3",
         )
         .unwrap();
-        let sig_b = secp256k1::Signature::from_str("3044022075b7b65a7e6cd386132c5883c9db15f9a849a0f32bc680e9986398879a57c276022056d94d12255a4424f51c700ac75122cb354895c9f2f88f0cbb47ba05c9c589ba").unwrap();
+        let sig_b = secp256k1_zkp::Signature::from_str("3044022075b7b65a7e6cd386132c5883c9db15f9a849a0f32bc680e9986398879a57c276022056d94d12255a4424f51c700ac75122cb354895c9f2f88f0cbb47ba05c9c589ba").unwrap();
 
         let descriptor = Descriptor::<bitcoin::PublicKey>::from_str(&format!(
             "elwsh(and_v(v:pk({A}),pk({B})))",
@@ -1346,8 +1370,8 @@ mod tests {
         let witness0 = &txin.witness.script_witness[0];
         let witness1 = &txin.witness.script_witness[1];
 
-        let sig0 = secp256k1::Signature::from_der(&witness0[..witness0.len() - 1]).unwrap();
-        let sig1 = secp256k1::Signature::from_der(&witness1[..witness1.len() - 1]).unwrap();
+        let sig0 = secp256k1_zkp::Signature::from_der(&witness0[..witness0.len() - 1]).unwrap();
+        let sig1 = secp256k1_zkp::Signature::from_der(&witness1[..witness1.len() - 1]).unwrap();
 
         // why are we asserting this way?
         // The witness stack is evaluated from top to bottom. Given an `and` instruction, the left arm of the and is going to evaluate first,
@@ -1505,7 +1529,7 @@ mod tests {
     #[test]
     fn test_sortedmulti() {
         fn _test_sortedmulti(raw_desc_one: &str, raw_desc_two: &str, raw_addr_expected: &str) {
-            let secp_ctx = secp256k1::Secp256k1::verification_only();
+            let secp_ctx = secp256k1_zkp::Secp256k1::verification_only();
             let index = 5;
 
             // Parse descriptor
@@ -1562,7 +1586,7 @@ mod tests {
 
     #[test]
     fn test_parse_descriptor() {
-        let secp = &secp256k1::Secp256k1::signing_only();
+        let secp = &secp256k1_zkp::Secp256k1::signing_only();
         let (descriptor, key_map) = Descriptor::parse_descriptor(secp, "elwpkh(tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/44'/0'/0'/0/*)").unwrap();
         assert_eq!(descriptor.to_string(), "elwpkh([2cbe2a6d/44'/0'/0']tpubDCvNhURocXGZsLNqWcqD3syHTqPXrMSTwi8feKVwAcpi29oYKsDD3Vex7x2TDneKMVN23RbLprfxB69v94iYqdaYHsVz3kPR37NQXeqouVz/0/*)#pznhhta9");
         assert_eq!(key_map.len(), 1);
@@ -1621,7 +1645,7 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
 
     #[test]
     fn parse_with_secrets() {
-        let secp = &secp256k1::Secp256k1::signing_only();
+        let secp = &secp256k1_zkp::Secp256k1::signing_only();
         let descriptor_str = "elwpkh(xprv9s21ZrQH143K4CTb63EaMxja1YiTnSEWKMbn23uoEnAzxjdUJRQkazCAtzxGm4LSoTSVTptoV9RbchnKPW9HxKtZumdyxyikZFDLhogJ5Uj/44'/0'/0'/0/*)#xldrpn5u";
         let (descriptor, keymap) =
             Descriptor::<DescriptorPublicKey>::parse_descriptor(&secp, descriptor_str).unwrap();

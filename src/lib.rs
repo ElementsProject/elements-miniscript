@@ -95,6 +95,8 @@
 //!
 //!
 #![allow(bare_trait_objects)]
+// Required for rustc 1.29
+#![recursion_limit = "128"]
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
 // Coding conventions
 #![deny(unsafe_code)]
@@ -145,6 +147,7 @@ pub mod expression;
 pub mod interpreter;
 pub mod miniscript;
 pub mod policy;
+pub mod pset;
 
 mod util;
 
@@ -154,12 +157,13 @@ use std::{error, fmt, str};
 #[allow(deprecated)]
 use bitcoin::util::contracthash;
 use elements::hashes::sha256;
-use elements::{opcodes, script, secp256k1, secp256k1::Secp256k1};
+use elements::{opcodes, script, secp256k1_zkp, secp256k1_zkp::Secp256k1};
 
 pub use descriptor::{Descriptor, DescriptorPublicKey, DescriptorTrait};
 pub use interpreter::Interpreter;
 pub use miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0};
 pub use miniscript::decode::Terminal;
+pub use miniscript::satisfy::{elementssig_from_rawsig, elementssig_to_rawsig};
 pub use miniscript::satisfy::{ElementsSig, Preimage32, Satisfier};
 pub use miniscript::Miniscript;
 
@@ -167,7 +171,7 @@ pub use miniscript::Miniscript;
 // Ideally, we want this in a trait, but doing so we cannot
 // use it in the implementation of DescriptorTrait from
 // rust-miniscript because it would require stricter bounds.
-pub fn tweak_key<Pk, C: secp256k1::Verification>(
+pub fn tweak_key<Pk, C: secp256k1_zkp::Verification>(
     pk: &Pk,
     secp: &Secp256k1<C>,
     contract: &[u8],
@@ -236,7 +240,7 @@ pub enum Error {
     /// General error in creating descriptor
     BadDescriptor(String),
     /// Forward-secp related errors
-    Secp(bitcoin::secp256k1::Error),
+    Secp(elements::secp256k1_zkp::Error),
     #[cfg(feature = "compiler")]
     /// Compiler related errors
     CompilerError(policy::compiler::CompilerError),
@@ -305,9 +309,16 @@ impl From<miniscript::analyzable::AnalysisError> for Error {
 }
 
 #[doc(hidden)]
-impl From<elements::secp256k1::Error> for Error {
-    fn from(e: elements::secp256k1::Error) -> Error {
+impl From<elements::secp256k1_zkp::Error> for Error {
+    fn from(e: elements::secp256k1_zkp::Error) -> Error {
         Error::Secp(e)
+    }
+}
+
+#[doc(hidden)]
+impl From<elements::secp256k1_zkp::UpstreamError> for Error {
+    fn from(e: elements::secp256k1_zkp::UpstreamError) -> Error {
+        Error::Secp(elements::secp256k1_zkp::Error::Upstream(e))
     }
 }
 

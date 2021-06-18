@@ -101,7 +101,7 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext> {
     /// 7 elements with possibly empty values.
     ///
     /// CAT CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
-    /// HASH256  
+    /// HASH256
     /// DEPTH <10> SUB PICK EQUALVERIFY
     OutputsPref(Vec<u8>),
     // Wrappers
@@ -282,16 +282,16 @@ pub fn parse<Ctx: ScriptContext>(
                                     ))?
                                 },
                             ),
-                            Tk::PickPush4(ver), Tk::Sub, Tk::Depth => match_token!(
+                            Tk::PickPush4(ver), Tk::Sub=> match_token!(
                                 tokens,
-                                Tk::Num(2) => {
+                                Tk::Num(12), Tk::Depth => {
                                     non_term.push(NonTerm::Verify);
                                     term.reduce0(Terminal::Version(ver))?
                                 },
                             ),
-                            Tk::Pick, Tk::Sub, Tk::Depth => match_token!(
+                            Tk::Pick, Tk::Sub => match_token!(
                                 tokens,
-                                Tk::Num(10) => match_token!(
+                                Tk::Num(4), Tk::Depth => match_token!(
                                     tokens,
                                     Tk::Hash256, Tk::Cat, Tk::Swap, Tk::Push(bytes), Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat =>
                                         {
@@ -360,13 +360,13 @@ pub fn parse<Ctx: ScriptContext>(
                                 hash160::Hash::from_inner(hash)
                             ))?,
                         ),
-                        Tk::PickPush4(ver), Tk::Sub, Tk::Depth => match_token!(
+                        Tk::PickPush4(ver), Tk::Sub => match_token!(
                             tokens,
-                            Tk::Num(2) => term.reduce0(Terminal::Version(ver))?,
+                            Tk::Num(12), Tk::Depth => term.reduce0(Terminal::Version(ver))?,
                         ),
-                        Tk::Pick, Tk::Sub, Tk::Depth => match_token!(
+                        Tk::Pick, Tk::Sub => match_token!(
                             tokens,
-                            Tk::Num(10) => match_token!(
+                            Tk::Num(4), Tk::Depth => match_token!(
                                 tokens,
                                 Tk::Hash256, Tk::Cat, Tk::Swap, Tk::Push(bytes), Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat =>
                                     term.reduce0(Terminal::OutputsPref(bytes))?,

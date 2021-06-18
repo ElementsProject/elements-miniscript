@@ -397,8 +397,8 @@ impl<'txin> Stack<'txin> {
         &mut self,
         n: &'intp u32,
     ) -> Option<Result<SatisfiedConstraint<'intp, 'txin>, Error>> {
-        // Version is at index 1
-        let ver = self[1];
+        // Version is at index 11
+        let ver = self[11];
         if let Err(e) = ver.try_push() {
             return Some(Err(e));
         }
@@ -428,7 +428,7 @@ impl<'txin> Stack<'txin> {
         pref: &'intp [u8],
     ) -> Option<Result<SatisfiedConstraint<'intp, 'txin>, Error>> {
         // Version is at index 1
-        let hash_outputs = self[9];
+        let hash_outputs = self[3];
         if let Err(e) = hash_outputs.try_push() {
             return Some(Err(e));
         }

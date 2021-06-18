@@ -20,7 +20,7 @@
 //!
 
 use bitcoin;
-use elements::{self, secp256k1, SigHash};
+use elements::{self, secp256k1_zkp, SigHash};
 use elements::{confidential, sighash};
 use elements::{
     hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine},
@@ -189,7 +189,7 @@ impl<'txin> Interpreter<'txin> {
         input_idx: usize,
         amount: confidential::Value,
         sighash_type: elements::SigHashType,
-    ) -> secp256k1::Message {
+    ) -> secp256k1_zkp::Message {
         let mut sighash_cache = sighash::SigHashCache::new(unsigned_tx);
         let hash = if self.is_legacy() {
             sighash_cache.legacy_sighash(input_idx, &self.script_code, sighash_type)
@@ -197,14 +197,14 @@ impl<'txin> Interpreter<'txin> {
             sighash_cache.segwitv0_sighash(input_idx, &self.script_code, amount, sighash_type)
         };
 
-        secp256k1::Message::from_slice(&hash[..])
+        secp256k1_zkp::Message::from_slice(&hash[..])
             .expect("cryptographically unreachable for this to fail")
     }
 
     /// Returns a closure which can be given to the `iter` method to check all signatures
-    pub fn sighash_verify<'a, C: secp256k1::Verification>(
+    pub fn sighash_verify<'a, C: secp256k1_zkp::Verification>(
         &self,
-        secp: &'a secp256k1::Secp256k1<C>,
+        secp: &'a secp256k1_zkp::Secp256k1<C>,
         unsigned_tx: &'a elements::Transaction,
         input_idx: usize,
         amount: confidential::Value,
@@ -279,7 +279,7 @@ pub enum SatisfiedConstraint<'intp, 'txin> {
         /// The bitcoin key
         key: &'intp bitcoin::PublicKey,
         /// corresponding signature
-        sig: secp256k1::Signature,
+        sig: secp256k1_zkp::Signature,
     },
     ///PublicKeyHash, corresponding pubkey and signature
     PublicKeyHash {
@@ -288,7 +288,7 @@ pub enum SatisfiedConstraint<'intp, 'txin> {
         /// Corresponding public key
         key: bitcoin::PublicKey,
         /// Corresponding signature for the hash
-        sig: secp256k1::Signature,
+        sig: secp256k1_zkp::Signature,
     },
     ///Hashlock and preimage for SHA256
     HashLock {
@@ -795,7 +795,7 @@ where
             let mut ser_sig = Vec::new();
             // 1.29 errors
             {
-                let sighash_bytes = self.stack[11].as_push();
+                let sighash_bytes = self.stack[1].as_push();
                 let sighash_u32 = util::slice_to_u32_le(sighash_bytes);
                 let sighash_ty = SigHashType::from_u32(sighash_u32);
                 let sig_vec = self.stack[0].as_push();
@@ -810,18 +810,19 @@ where
                 // Do the checkSigFromStackCheck
                 let sighash_msg: Vec<u8> = self.stack.0[1..]
                     .into_iter()
+                    .rev()
                     .map(|x| Vec::from(x.as_push()))
                     .flatten()
                     .collect();
                 let mut eng = SigHash::engine();
                 eng.input(&sighash_msg);
                 let sighash_u256 = SigHash::from_engine(eng);
-                let msg = bitcoin::secp256k1::Message::from_slice(&sighash_u256[..]).unwrap();
+                let msg = elements::secp256k1_zkp::Message::from_slice(&sighash_u256[..]).unwrap();
 
                 // TODO: THIS SHOULD BE A SEPARATE PARAMETER TO THE FUNCTION, BUT SINCE
                 // IT MIGHT ELSEWHERE, CONSIDER MAKING IT A SEPARATE METHOD. RIGHT NOW,
                 // THIS IS CREATING A NEW CONTEXT WHICH IS EXPENSIVE
-                let secp = secp256k1::Secp256k1::verification_only();
+                let secp = secp256k1_zkp::Secp256k1::verification_only();
                 if secp.verify(&msg, &sig, &pk.key).is_err() {
                     return Some(Err(Error::PkEvaluationError(pk.clone().to_public_key())));
                 }
@@ -863,13 +864,13 @@ fn verify_sersig<'txin, F>(
     verify_sig: F,
     pk: &bitcoin::PublicKey,
     sigser: &[u8],
-) -> Result<secp256k1::Signature, Error>
+) -> Result<secp256k1_zkp::Signature, Error>
 where
     F: FnOnce(&bitcoin::PublicKey, ElementsSig) -> bool,
 {
     if let Some((sighash_byte, sig)) = sigser.split_last() {
         let sighashtype = elements::SigHashType::from_u32(*sighash_byte as u32);
-        let sig = secp256k1::Signature::from_der(sig)?;
+        let sig = secp256k1_zkp::Signature::from_der(sig)?;
         if verify_sig(pk, (sig, sighashtype)) {
             Ok(sig)
         } else {
@@ -886,7 +887,7 @@ mod tests {
     use super::*;
     use bitcoin;
     use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
-    use elements::secp256k1::{self, Secp256k1, VerifyOnly};
+    use elements::secp256k1_zkp::{self, Secp256k1, VerifyOnly};
     use miniscript::context::NoChecks;
     use ElementsSig;
     use Miniscript;
@@ -898,13 +899,13 @@ mod tests {
     ) -> (
         Vec<bitcoin::PublicKey>,
         Vec<Vec<u8>>,
-        Vec<secp256k1::Signature>,
-        secp256k1::Message,
+        Vec<secp256k1_zkp::Signature>,
+        secp256k1_zkp::Message,
         Secp256k1<VerifyOnly>,
     ) {
-        let secp_sign = secp256k1::Secp256k1::signing_only();
-        let secp_verify = secp256k1::Secp256k1::verification_only();
-        let msg = secp256k1::Message::from_slice(&b"Yoda: btc, I trust. HODL I must!"[..])
+        let secp_sign = secp256k1_zkp::Secp256k1::signing_only();
+        let secp_verify = secp256k1_zkp::Secp256k1::verification_only();
+        let msg = secp256k1_zkp::Message::from_slice(&b"Yoda: btc, I trust. HODL I must!"[..])
             .expect("32 bytes");
         let mut pks = vec![];
         let mut secp_sigs = vec![];
@@ -915,9 +916,9 @@ mod tests {
             sk[1] = (i >> 8) as u8;
             sk[2] = (i >> 16) as u8;
 
-            let sk = secp256k1::SecretKey::from_slice(&sk[..]).expect("secret key");
+            let sk = secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("secret key");
             let pk = bitcoin::PublicKey {
-                key: secp256k1::PublicKey::from_secret_key(&secp_sign, &sk),
+                key: secp256k1_zkp::PublicKey::from_secret_key(&secp_sign, &sk),
                 compressed: true,
             };
             let sig = secp_sign.sign(&msg, &sk);
@@ -958,7 +959,7 @@ mod tests {
                 cov: None,
                 has_errored: false,
             }
-        };
+        }
 
         let pk = ms_str!("c:pk_k({})", pks[0]);
         let pkh = ms_str!("c:pk_h({})", pks[1].to_pubkeyhash());
