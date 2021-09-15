@@ -14,10 +14,12 @@ use std::{fmt, hash};
 // use miniscript::types::Type;
 // use std::sync::Arc;
 // use Error;
-use miniscript::ToPublicKey;
+use policy;
+use Error;
 use MiniscriptKey;
+use ToPublicKey;
 
-use crate::Satisfier;
+use crate::{policy::Liftable, Satisfier};
 
 use super::{
     satisfy::Satisfaction,
@@ -27,7 +29,7 @@ use super::{
 /// Extensions to elements-miniscript.
 /// Refer to implementations(todo!) for example and tutorials
 pub trait Extension<Pk: MiniscriptKey>:
-    Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash
+    Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash + Liftable<Pk>
 {
     /// Calculate the correctness property for the leaf fragment.
     /// See miniscript reference for more info on different types
@@ -95,6 +97,12 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
     }
 }
 
+impl<Pk: MiniscriptKey> Liftable<Pk> for NoExt {
+    fn lift(&self) -> Result<policy::Semantic<Pk>, Error> {
+        unreachable!()
+    }
+}
+
 impl fmt::Display for NoExt {
     fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unreachable!()
@@ -137,6 +145,12 @@ impl<Pk: MiniscriptKey> Extension<Pk> for AllExt {
 
 impl fmt::Display for AllExt {
     fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        todo!()
+    }
+}
+
+impl<Pk: MiniscriptKey> Liftable<Pk> for AllExt {
+    fn lift(&self) -> Result<policy::Semantic<Pk>, Error> {
         todo!()
     }
 }

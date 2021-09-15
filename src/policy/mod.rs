@@ -181,7 +181,7 @@ where
                     .map(|k| Semantic::KeyHash(k.to_pubkeyhash()))
                     .collect(),
             ),
-            Terminal::Ext(_) => todo!(),
+            Terminal::Ext(ref e) => e.lift()?,
         }
         .normalized();
         Ok(ret)
