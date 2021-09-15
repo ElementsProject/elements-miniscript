@@ -19,7 +19,7 @@
 //! assuming that the spent coin was descriptor controlled.
 //!
 
-use bitcoin;
+use bitcoin::PublicKey;
 use elements::{self, secp256k1_zkp, SigHash};
 use elements::{confidential, sighash};
 use elements::{
@@ -37,26 +37,50 @@ mod error;
 mod inner;
 mod stack;
 
+use crate::{AllExt, Extension};
+
 pub use self::error::Error;
 use self::stack::Stack;
 
 /// An iterable Miniscript-structured representation of the spending of a coin
-pub struct Interpreter<'txin> {
-    inner: inner::Inner,
+pub struct Interpreter<'txin, Ext: Extension<PublicKey>> {
+    inner: inner::Inner<Ext>,
     stack: Stack<'txin>,
     script_code: elements::Script,
     age: u32,
     height: u32,
 }
 
-impl<'txin> Interpreter<'txin> {
+impl<'txin> Interpreter<'txin, AllExt> {
     /// Constructs an interpreter from the data of a spending transaction
     ///
     /// Accepts a signature-validating function. If you are willing to trust
     /// that ECSDA signatures are valid, this can be set to the constant true
     /// function; otherwise, it should be a closure containing a sighash and
     /// secp context, which can actually verify a given signature.
+    /// For downstream cursom implementations of [`Extension`], use [`Interpreter::from_txdata_ext`]
     pub fn from_txdata(
+        spk: &elements::Script,
+        script_sig: &'txin elements::Script,
+        witness: &'txin [Vec<u8>],
+        age: u32,
+        height: u32,
+    ) -> Result<Self, Error> {
+        Interpreter::from_txdata_ext(spk, script_sig, witness, age, height)
+    }
+}
+
+impl<'txin, Ext> Interpreter<'txin, Ext>
+where
+    Ext: Extension<PublicKey>,
+{
+    /// Constructs an interpreter from the data of a spending transaction
+    ///
+    /// Accepts a signature-validating function. If you are willing to trust
+    /// that ECSDA signatures are valid, this can be set to the constant true
+    /// function; otherwise, it should be a closure containing a sighash and
+    /// secp context, which can actually verify a given signature.
+    pub fn from_txdata_ext(
         spk: &elements::Script,
         script_sig: &'txin elements::Script,
         witness: &'txin [Vec<u8>],
@@ -86,10 +110,11 @@ impl<'txin> Interpreter<'txin> {
     ///
     /// Running the iterator through will consume the internal stack of the
     /// `Iterpreter`, and it should not be used again after this.
-    pub fn iter<'iter, F: FnMut(&bitcoin::PublicKey, ElementsSig) -> bool>(
-        &'iter mut self,
-        verify_sig: F,
-    ) -> Iter<'txin, 'iter, F> {
+    pub fn iter<'iter, F>(&'iter mut self, verify_sig: F) -> Iter<'txin, 'iter, Ext, F>
+    where
+        Ext: Extension<PublicKey>,
+        F: FnMut(&PublicKey, ElementsSig) -> bool,
+    {
         Iter {
             verify_sig: verify_sig,
             public_key: if let inner::Inner::PublicKey(ref pk, _) = self.inner {
@@ -172,7 +197,7 @@ impl<'txin> Interpreter<'txin> {
     /// This may not represent the original descriptor used to produce the transaction,
     /// since it cannot distinguish between sorted and unsorted multisigs (and anyway
     /// it can only see the final keys, keyorigin info is lost in serializing to Bitcoin).
-    pub fn inferred_descriptor(&self) -> Result<Descriptor<bitcoin::PublicKey>, ::Error> {
+    pub fn inferred_descriptor(&self) -> Result<Descriptor<PublicKey>, ::Error> {
         use std::str::FromStr;
         Descriptor::from_str(&self.inferred_descriptor_string())
     }
@@ -208,7 +233,7 @@ impl<'txin> Interpreter<'txin> {
         unsigned_tx: &'a elements::Transaction,
         input_idx: usize,
         amount: confidential::Value,
-    ) -> impl Fn(&bitcoin::PublicKey, ElementsSig) -> bool + 'a {
+    ) -> impl Fn(&PublicKey, ElementsSig) -> bool + 'a {
         // Precompute all sighash types because the borrowck doesn't like us
         // pulling self into the closure
         let sighashes = [
@@ -240,7 +265,7 @@ impl<'txin> Interpreter<'txin> {
             ),
         ];
 
-        move |pk: &bitcoin::PublicKey, (sig, sighash_type)| {
+        move |pk: &PublicKey, (sig, sighash_type)| {
             // This is an awkward way to do this lookup, but it lets us do exhaustiveness
             // checking in case future rust-bitcoin versions add new sighash types
             let sighash = match sighash_type {
@@ -277,7 +302,7 @@ pub enum SatisfiedConstraint<'intp, 'txin> {
     ///Public key and corresponding signature
     PublicKey {
         /// The bitcoin key
-        key: &'intp bitcoin::PublicKey,
+        key: &'intp PublicKey,
         /// corresponding signature
         sig: secp256k1_zkp::Signature,
     },
@@ -286,7 +311,7 @@ pub enum SatisfiedConstraint<'intp, 'txin> {
         /// The pubkey hash
         keyhash: &'intp hash160::Hash,
         /// Corresponding public key
-        key: bitcoin::PublicKey,
+        key: PublicKey,
         /// Corresponding signature for the hash
         sig: secp256k1_zkp::Signature,
     },
@@ -329,9 +354,12 @@ pub enum SatisfiedConstraint<'intp, 'txin> {
 ///the top of the stack, we need to decide whether to execute right child or not.
 ///This is also useful for wrappers and thresholds which push a value on the stack
 ///depending on evaluation of the children.
-struct NodeEvaluationState<'intp> {
+struct NodeEvaluationState<'intp, Ext>
+where
+    Ext: Extension<PublicKey>,
+{
     ///The node which is being evaluated
-    node: &'intp Miniscript<bitcoin::PublicKey, NoChecks>,
+    node: &'intp Miniscript<PublicKey, NoChecks, Ext>,
     ///number of children evaluated
     n_evaluated: usize,
     ///number of children satisfied
@@ -349,22 +377,27 @@ struct NodeEvaluationState<'intp> {
 ///
 /// In case the script is actually dissatisfied, this may return several values
 /// before ultimately returning an error.
-pub struct Iter<'intp, 'txin: 'intp, F: FnMut(&bitcoin::PublicKey, ElementsSig) -> bool> {
+pub struct Iter<'intp, 'txin: 'intp, Ext, F>
+where
+    Ext: Extension<PublicKey>,
+    F: FnMut(&PublicKey, ElementsSig) -> bool,
+{
     verify_sig: F,
-    public_key: Option<&'intp bitcoin::PublicKey>,
-    state: Vec<NodeEvaluationState<'intp>>,
+    public_key: Option<&'intp PublicKey>,
+    state: Vec<NodeEvaluationState<'intp, Ext>>,
     stack: &'intp mut Stack<'txin>,
     age: u32,
     height: u32,
-    cov: Option<&'intp bitcoin::PublicKey>,
+    cov: Option<&'intp PublicKey>,
     has_errored: bool,
 }
 
 ///Iterator for Iter
-impl<'intp, 'txin: 'intp, F> Iterator for Iter<'intp, 'txin, F>
+impl<'intp, 'txin: 'intp, Ext, F> Iterator for Iter<'intp, 'txin, Ext, F>
 where
     NoChecks: ScriptContext,
-    F: FnMut(&bitcoin::PublicKey, ElementsSig) -> bool,
+    Ext: Extension<PublicKey>,
+    F: FnMut(&PublicKey, ElementsSig) -> bool,
 {
     type Item = Result<SatisfiedConstraint<'intp, 'txin>, Error>;
 
@@ -382,15 +415,16 @@ where
     }
 }
 
-impl<'intp, 'txin: 'intp, F> Iter<'intp, 'txin, F>
+impl<'intp, 'txin: 'intp, F, Ext> Iter<'intp, 'txin, Ext, F>
 where
     NoChecks: ScriptContext,
-    F: FnMut(&bitcoin::PublicKey, ElementsSig) -> bool,
+    F: FnMut(&PublicKey, ElementsSig) -> bool,
+    Ext: Extension<PublicKey>,
 {
     /// Helper function to push a NodeEvaluationState on state stack
     fn push_evaluation_state(
         &mut self,
-        node: &'intp Miniscript<bitcoin::PublicKey, NoChecks>,
+        node: &'intp Miniscript<PublicKey, NoChecks, Ext>,
         n_evaluated: usize,
         n_satisfied: usize,
     ) -> () {
@@ -862,11 +896,11 @@ where
 /// Helper function to verify serialized signature
 fn verify_sersig<'txin, F>(
     verify_sig: F,
-    pk: &bitcoin::PublicKey,
+    pk: &PublicKey,
     sigser: &[u8],
 ) -> Result<secp256k1_zkp::Signature, Error>
 where
-    F: FnOnce(&bitcoin::PublicKey, ElementsSig) -> bool,
+    F: FnOnce(&PublicKey, ElementsSig) -> bool,
 {
     if let Some((sighash_byte, sig)) = sigser.split_last() {
         let sighashtype = elements::SigHashType::from_u32(*sighash_byte as u32);
@@ -883,6 +917,8 @@ where
 
 #[cfg(test)]
 mod tests {
+
+    use crate::AllExt;
 
     use super::*;
     use bitcoin;
@@ -940,8 +976,8 @@ mod tests {
         fn from_stack<'txin, 'elem, F>(
             verify_fn: F,
             stack: &'elem mut Stack<'txin>,
-            ms: &'elem Miniscript<bitcoin::PublicKey, NoChecks>,
-        ) -> Iter<'elem, 'txin, F>
+            ms: &'elem Miniscript<bitcoin::PublicKey, NoChecks, AllExt>,
+        ) -> Iter<'elem, 'txin, AllExt, F>
         where
             F: FnMut(&bitcoin::PublicKey, ElementsSig) -> bool,
         {

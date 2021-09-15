@@ -5,6 +5,8 @@ use miniscript::limits::{
     HEIGHT_TIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE, SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
 
+use crate::Extension;
+
 use super::{Error, ErrorKind, Property, ScriptContext};
 use script_num_size;
 use std::cmp;
@@ -856,14 +858,15 @@ impl Property for ExtData {
 
     /// Compute the type of a fragment assuming all the children of
     /// Miniscript have been computed already.
-    fn type_check<Pk, Ctx, C>(
-        fragment: &Terminal<Pk, Ctx>,
+    fn type_check<Pk, Ctx, C, Ext>(
+        fragment: &Terminal<Pk, Ctx, Ext>,
         _child: C,
-    ) -> Result<Self, Error<Pk, Ctx>>
+    ) -> Result<Self, Error<Pk, Ctx, Ext>>
     where
         C: FnMut(usize) -> Option<Self>,
         Ctx: ScriptContext,
         Pk: MiniscriptKey,
+        Ext: Extension<Pk>,
     {
         let wrap_err = |result: Result<Self, ErrorKind>| {
             result.map_err(|kind| Error {
@@ -981,6 +984,7 @@ impl Property for ExtData {
                     error: kind,
                 })
             }
+            Terminal::Ext(_) => todo!(),
         };
         if let Ok(ref ret) = ret {
             ret.sanity_checks()

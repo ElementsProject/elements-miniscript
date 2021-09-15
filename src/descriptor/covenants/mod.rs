@@ -55,6 +55,8 @@ pub use self::script_internals::CovOperations;
 #[allow(unused_imports)]
 mod tests {
 
+    use crate::AllExt;
+
     use super::cov::*;
     use super::*;
     use bitcoin;
@@ -101,7 +103,8 @@ mod tests {
         assert_eq!(desc.desc_type(), DescriptorType::Cov);
         let script = desc.explicit_script();
 
-        let cov_desc = CovenantDescriptor::<bitcoin::PublicKey>::parse_insane(&script).unwrap();
+        let cov_desc =
+            CovenantDescriptor::<bitcoin::PublicKey, AllExt>::parse_insane(&script).unwrap();
 
         assert_eq!(cov_desc.to_string(), desc.to_string());
     }

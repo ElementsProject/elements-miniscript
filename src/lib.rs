@@ -163,6 +163,7 @@ pub use descriptor::{Descriptor, DescriptorPublicKey, DescriptorTrait};
 pub use interpreter::Interpreter;
 pub use miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0};
 pub use miniscript::decode::Terminal;
+pub use miniscript::ext::{AllExt, Extension};
 pub use miniscript::satisfy::{elementssig_from_rawsig, elementssig_to_rawsig};
 pub use miniscript::satisfy::{ElementsSig, Preimage32, Satisfier};
 pub use miniscript::Miniscript;
@@ -270,12 +271,13 @@ pub enum Error {
 }
 
 #[doc(hidden)]
-impl<Pk, Ctx> From<miniscript::types::Error<Pk, Ctx>> for Error
+impl<Pk, Ctx, Ext> From<miniscript::types::Error<Pk, Ctx, Ext>> for Error
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
+    Ext: Extension<Pk>,
 {
-    fn from(e: miniscript::types::Error<Pk, Ctx>) -> Error {
+    fn from(e: miniscript::types::Error<Pk, Ctx, Ext>) -> Error {
         Error::TypeCheck(e.to_string())
     }
 }

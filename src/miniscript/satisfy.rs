@@ -41,6 +41,8 @@ use Miniscript;
 use ScriptContext;
 use Terminal;
 
+use super::ext::Extension;
+
 /// Type alias for a signature/hashtype pair
 pub type ElementsSig = (secp256k1_zkp::Signature, elements::SigHashType);
 /// Type alias for 32 byte Preimage.
@@ -889,9 +891,9 @@ pub struct Satisfaction {
 
 impl Satisfaction {
     // produce a non-malleable satisafaction for thesh frag
-    fn thresh<Pk, Ctx, Sat, F>(
+    fn thresh<Pk, Ctx, Sat, Ext, F>(
         k: usize,
-        subs: &[Arc<Miniscript<Pk, Ctx>>],
+        subs: &[Arc<Miniscript<Pk, Ctx, Ext>>],
         stfr: &Sat,
         root_has_sig: bool,
         min_fn: &mut F,
@@ -900,6 +902,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
+        Ext: Extension<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
     {
         let mut sats = subs
@@ -990,9 +993,9 @@ impl Satisfaction {
     }
 
     // produce a possily malleable satisafaction for thesh frag
-    fn thresh_mall<Pk, Ctx, Sat, F>(
+    fn thresh_mall<Pk, Ctx, Sat, Ext, F>(
         k: usize,
-        subs: &[Arc<Miniscript<Pk, Ctx>>],
+        subs: &[Arc<Miniscript<Pk, Ctx, Ext>>],
         stfr: &Sat,
         root_has_sig: bool,
         min_fn: &mut F,
@@ -1001,6 +1004,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
+        Ext: Extension<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
     {
         let mut sats = subs
@@ -1104,8 +1108,8 @@ impl Satisfaction {
     }
 
     // produce a non-malleable satisfaction
-    fn satisfy_helper<Pk, Ctx, Sat, F, G>(
-        term: &Terminal<Pk, Ctx>,
+    fn satisfy_helper<Pk, Ctx, Sat, Ext, F, G>(
+        term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,
         root_has_sig: bool,
         min_fn: &mut F,
@@ -1115,8 +1119,9 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
+        Ext: Extension<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
-        G: FnMut(usize, &[Arc<Miniscript<Pk, Ctx>>], &Sat, bool, &mut F) -> Satisfaction,
+        G: FnMut(usize, &[Arc<Miniscript<Pk, Ctx, Ext>>], &Sat, bool, &mut F) -> Satisfaction,
     {
         match *term {
             Terminal::PkK(ref pk) => Satisfaction {
@@ -1326,12 +1331,13 @@ impl Satisfaction {
                     }
                 }
             }
+            Terminal::Ext(_) => todo!(),
         }
     }
 
     // Helper function to produce a dissatisfaction
-    fn dissatisfy_helper<Pk, Ctx, Sat, F, G>(
-        term: &Terminal<Pk, Ctx>,
+    fn dissatisfy_helper<Pk, Ctx, Sat, Ext, F, G>(
+        term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,
         root_has_sig: bool,
         min_fn: &mut F,
@@ -1341,8 +1347,9 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
+        Ext: Extension<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
-        G: FnMut(usize, &[Arc<Miniscript<Pk, Ctx>>], &Sat, bool, &mut F) -> Satisfaction,
+        G: FnMut(usize, &[Arc<Miniscript<Pk, Ctx, Ext>>], &Sat, bool, &mut F) -> Satisfaction,
     {
         match *term {
             Terminal::PkK(..) => Satisfaction {
@@ -1450,19 +1457,22 @@ impl Satisfaction {
                 stack: Witness::Stack(vec![vec![]; k + 1]),
                 has_sig: false,
             },
+            Terminal::Ext(_) => todo!(),
         }
     }
 
     /// Produce a satisfaction non-malleable satisfaction
-    pub(super) fn satisfy<
+    pub(super) fn satisfy<Pk, Ctx, Sat, Ext>(
+        term: &Terminal<Pk, Ctx, Ext>,
+        stfr: &Sat,
+        root_has_sig: bool,
+    ) -> Self
+    where
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-    >(
-        term: &Terminal<Pk, Ctx>,
-        stfr: &Sat,
-        root_has_sig: bool,
-    ) -> Self {
+        Ext: Extension<Pk>,
+    {
         Self::satisfy_helper(
             term,
             stfr,
@@ -1477,8 +1487,9 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
+        Ext: Extension<Pk>,
     >(
-        term: &Terminal<Pk, Ctx>,
+        term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,
         root_has_sig: bool,
     ) -> Self {

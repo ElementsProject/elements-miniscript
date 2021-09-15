@@ -22,6 +22,8 @@ pub mod malleability;
 
 use std::{error, fmt};
 
+use crate::Extension;
+
 pub use self::correctness::{Base, Correctness, Input};
 pub use self::extra_props::ExtData;
 pub use self::malleability::{Dissat, Malleability};
@@ -97,14 +99,19 @@ pub enum ErrorKind {
 
 /// Error type for typechecking
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct Error<Pk: MiniscriptKey, Ctx: ScriptContext> {
+pub struct Error<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
     /// The fragment that failed typecheck
-    pub fragment: Terminal<Pk, Ctx>,
+    pub fragment: Terminal<Pk, Ctx, Ext>,
     /// The reason that typechecking failed
     pub error: ErrorKind,
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> error::Error for Error<Pk, Ctx> {
+impl<Pk, Ctx, Ext> error::Error for Error<Pk, Ctx, Ext>
+where
+    Pk: MiniscriptKey,
+    Ctx: ScriptContext,
+    Ext: Extension<Pk>,
+{
     fn cause(&self) -> Option<&error::Error> {
         None
     }
@@ -114,7 +121,12 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> error::Error for Error<Pk, Ctx> {
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Error<Pk, Ctx> {
+impl<Pk, Ctx, Ext> fmt::Display for Error<Pk, Ctx, Ext>
+where
+    Pk: MiniscriptKey,
+    Ctx: ScriptContext,
+    Ext: Extension<Pk>,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.error {
             ErrorKind::ZeroTime => write!(
@@ -402,14 +414,15 @@ pub trait Property: Sized {
     /// Compute the type of a fragment, given a function to look up
     /// the types of its children, if available and relevant for the
     /// given fragment
-    fn type_check<Pk, Ctx, C>(
-        fragment: &Terminal<Pk, Ctx>,
+    fn type_check<Pk, Ctx, C, Ext>(
+        fragment: &Terminal<Pk, Ctx, Ext>,
         mut child: C,
-    ) -> Result<Self, Error<Pk, Ctx>>
+    ) -> Result<Self, Error<Pk, Ctx, Ext>>
     where
         C: FnMut(usize) -> Option<Self>,
         Pk: MiniscriptKey,
         Ctx: ScriptContext,
+        Ext: Extension<Pk>,
     {
         let mut get_child = |sub, n| {
             child(n)
@@ -541,6 +554,7 @@ pub trait Property: Sized {
                     error: kind,
                 })
             }
+            Terminal::Ext(_) => todo!(),
         };
         if let Ok(ref ret) = ret {
             ret.sanity_checks()
@@ -800,14 +814,15 @@ impl Property for Type {
 
     /// Compute the type of a fragment assuming all the children of
     /// Miniscript have been computed already.
-    fn type_check<Pk, Ctx, C>(
-        fragment: &Terminal<Pk, Ctx>,
+    fn type_check<Pk, Ctx, C, Ext>(
+        fragment: &Terminal<Pk, Ctx, Ext>,
         _child: C,
-    ) -> Result<Self, Error<Pk, Ctx>>
+    ) -> Result<Self, Error<Pk, Ctx, Ext>>
     where
         C: FnMut(usize) -> Option<Self>,
         Pk: MiniscriptKey,
         Ctx: ScriptContext,
+        Ext: Extension<Pk>,
     {
         let wrap_err = |result: Result<Self, ErrorKind>| {
             result.map_err(|kind| Error {
@@ -925,6 +940,7 @@ impl Property for Type {
                     error: kind,
                 })
             }
+            Terminal::Ext(_) => todo!(),
         };
         if let Ok(ref ret) = ret {
             ret.sanity_checks()

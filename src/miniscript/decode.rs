@@ -30,6 +30,8 @@ use std::sync::Arc;
 use Error;
 use MiniscriptKey;
 
+use super::ext::Extension;
+
 fn return_none<T>(_: usize) -> Option<T> {
     None
 }
@@ -63,7 +65,7 @@ enum NonTerm {
 /// All AST elements
 #[allow(broken_intra_doc_links)]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext> {
+pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
     /// `1`
     True,
     /// `0`
@@ -106,57 +108,61 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext> {
     OutputsPref(Vec<u8>),
     // Wrappers
     /// `TOALTSTACK [E] FROMALTSTACK`
-    Alt(Arc<Miniscript<Pk, Ctx>>),
+    Alt(Arc<Miniscript<Pk, Ctx, Ext>>),
     /// `SWAP [E1]`
-    Swap(Arc<Miniscript<Pk, Ctx>>),
+    Swap(Arc<Miniscript<Pk, Ctx, Ext>>),
     /// `[Kt]/[Ke] CHECKSIG`
-    Check(Arc<Miniscript<Pk, Ctx>>),
+    Check(Arc<Miniscript<Pk, Ctx, Ext>>),
     /// `DUP IF [V] ENDIF`
-    DupIf(Arc<Miniscript<Pk, Ctx>>),
+    DupIf(Arc<Miniscript<Pk, Ctx, Ext>>),
     /// [T] VERIFY
-    Verify(Arc<Miniscript<Pk, Ctx>>),
+    Verify(Arc<Miniscript<Pk, Ctx, Ext>>),
     /// SIZE 0NOTEQUAL IF [Fn] ENDIF
-    NonZero(Arc<Miniscript<Pk, Ctx>>),
+    NonZero(Arc<Miniscript<Pk, Ctx, Ext>>),
     /// [X] 0NOTEQUAL
-    ZeroNotEqual(Arc<Miniscript<Pk, Ctx>>),
+    ZeroNotEqual(Arc<Miniscript<Pk, Ctx, Ext>>),
     // Conjunctions
     /// [V] [T]/[V]/[F]/[Kt]
-    AndV(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>),
+    AndV(Arc<Miniscript<Pk, Ctx, Ext>>, Arc<Miniscript<Pk, Ctx, Ext>>),
     /// [E] [W] BOOLAND
-    AndB(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>),
+    AndB(Arc<Miniscript<Pk, Ctx, Ext>>, Arc<Miniscript<Pk, Ctx, Ext>>),
     /// [various] NOTIF [various] ELSE [various] ENDIF
     AndOr(
-        Arc<Miniscript<Pk, Ctx>>,
-        Arc<Miniscript<Pk, Ctx>>,
-        Arc<Miniscript<Pk, Ctx>>,
+        Arc<Miniscript<Pk, Ctx, Ext>>,
+        Arc<Miniscript<Pk, Ctx, Ext>>,
+        Arc<Miniscript<Pk, Ctx, Ext>>,
     ),
     // Disjunctions
     /// [E] [W] BOOLOR
-    OrB(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>),
+    OrB(Arc<Miniscript<Pk, Ctx, Ext>>, Arc<Miniscript<Pk, Ctx, Ext>>),
     /// [E] IFDUP NOTIF [T]/[E] ENDIF
-    OrD(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>),
+    OrD(Arc<Miniscript<Pk, Ctx, Ext>>, Arc<Miniscript<Pk, Ctx, Ext>>),
     /// [E] NOTIF [V] ENDIF
-    OrC(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>),
+    OrC(Arc<Miniscript<Pk, Ctx, Ext>>, Arc<Miniscript<Pk, Ctx, Ext>>),
     /// IF [various] ELSE [various] ENDIF
-    OrI(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>),
+    OrI(Arc<Miniscript<Pk, Ctx, Ext>>, Arc<Miniscript<Pk, Ctx, Ext>>),
     // Thresholds
     /// [E] ([W] ADD)* k EQUAL
-    Thresh(usize, Vec<Arc<Miniscript<Pk, Ctx>>>),
+    Thresh(usize, Vec<Arc<Miniscript<Pk, Ctx, Ext>>>),
     /// k (<key>)* n CHECKMULTISIG
     Multi(usize, Vec<Pk>),
+    /// Extensions
+    Ext(Ext),
 }
 
 ///Vec representing terminals stack while decoding.
-struct TerminalStack<Pk: MiniscriptKey, Ctx: ScriptContext>(Vec<Miniscript<Pk, Ctx>>);
+struct TerminalStack<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>>(
+    Vec<Miniscript<Pk, Ctx, Ext>>,
+);
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> TerminalStack<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> TerminalStack<Pk, Ctx, Ext> {
     ///Wrapper around self.0.pop()
-    fn pop(&mut self) -> Option<Miniscript<Pk, Ctx>> {
+    fn pop(&mut self) -> Option<Miniscript<Pk, Ctx, Ext>> {
         self.0.pop()
     }
 
     ///reduce, type check and push a 0-arg node
-    fn reduce0(&mut self, ms: Terminal<Pk, Ctx>) -> Result<(), Error> {
+    fn reduce0(&mut self, ms: Terminal<Pk, Ctx, Ext>) -> Result<(), Error> {
         let ty = Type::type_check(&ms, return_none)?;
         let ext = ExtData::type_check(&ms, return_none)?;
         let ms = Miniscript {
@@ -173,7 +179,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> TerminalStack<Pk, Ctx> {
     ///reduce, type check and push a 1-arg node
     fn reduce1<F>(&mut self, wrap: F) -> Result<(), Error>
     where
-        F: FnOnce(Arc<Miniscript<Pk, Ctx>>) -> Terminal<Pk, Ctx>,
+        F: FnOnce(Arc<Miniscript<Pk, Ctx, Ext>>) -> Terminal<Pk, Ctx, Ext>,
     {
         let top = self.pop().unwrap();
         let wrapped_ms = wrap(Arc::new(top));
@@ -194,7 +200,10 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> TerminalStack<Pk, Ctx> {
     ///reduce, type check and push a 2-arg node
     fn reduce2<F>(&mut self, wrap: F) -> Result<(), Error>
     where
-        F: FnOnce(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>) -> Terminal<Pk, Ctx>,
+        F: FnOnce(
+            Arc<Miniscript<Pk, Ctx, Ext>>,
+            Arc<Miniscript<Pk, Ctx, Ext>>,
+        ) -> Terminal<Pk, Ctx, Ext>,
     {
         let left = self.pop().unwrap();
         let right = self.pop().unwrap();
@@ -217,9 +226,9 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> TerminalStack<Pk, Ctx> {
 
 /// Parse a script fragment into an `Terminal`
 #[allow(unreachable_patterns)]
-pub fn parse<Ctx: ScriptContext>(
+pub fn parse<Ctx: ScriptContext, Ext: Extension<bitcoin::PublicKey>>(
     tokens: &mut TokenIter,
-) -> Result<Miniscript<bitcoin::PublicKey, Ctx>, Error> {
+) -> Result<Miniscript<bitcoin::PublicKey, Ctx, Ext>, Error> {
     let mut non_term = Vec::with_capacity(tokens.len());
     let mut term = TerminalStack(Vec::with_capacity(tokens.len()));
 
