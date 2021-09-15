@@ -490,6 +490,10 @@ impl Property for Correctness {
         })
     }
 
+    fn from_ext<Pk: miniscript::MiniscriptKey, E: crate::Extension<Pk>>(e: &E) -> Self {
+        e.corr_prop()
+    }
+
     fn threshold<S>(k: usize, n: usize, mut sub_ck: S) -> Result<Self, ErrorKind>
     where
         S: FnMut(usize) -> Result<Self, ErrorKind>,

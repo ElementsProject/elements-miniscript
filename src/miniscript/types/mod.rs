@@ -411,6 +411,11 @@ pub trait Property: Sized {
     where
         S: FnMut(usize) -> Result<Self, ErrorKind>;
 
+    /// Compute the type of an extension
+    /// Extensions are always leaf, they should have a fixed type property and hence
+    /// should not fail
+    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(e: &E) -> Self;
+
     /// Compute the type of a fragment, given a function to look up
     /// the types of its children, if available and relevant for the
     /// given fragment
@@ -554,7 +559,7 @@ pub trait Property: Sized {
                     error: kind,
                 })
             }
-            Terminal::Ext(_) => todo!(),
+            Terminal::Ext(ref ext) => Ok(Self::from_ext(ext)),
         };
         if let Ok(ref ret) = ret {
             ret.sanity_checks()
@@ -812,6 +817,13 @@ impl Property for Type {
         })
     }
 
+    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(e: &E) -> Self {
+        Type {
+            corr: Property::from_ext(e),
+            mall: Property::from_ext(e),
+        }
+    }
+
     /// Compute the type of a fragment assuming all the children of
     /// Miniscript have been computed already.
     fn type_check<Pk, Ctx, C, Ext>(
@@ -940,7 +952,7 @@ impl Property for Type {
                     error: kind,
                 })
             }
-            Terminal::Ext(_) => todo!(),
+            Terminal::Ext(ref e) => Ok(Self::from_ext(e)),
         };
         if let Ok(ref ret) = ret {
             ret.sanity_checks()

@@ -856,6 +856,10 @@ impl Property for ExtData {
         })
     }
 
+    fn from_ext<Pk: miniscript::MiniscriptKey, E: crate::Extension<Pk>>(e: &E) -> Self {
+        e.extra_prop()
+    }
+
     /// Compute the type of a fragment assuming all the children of
     /// Miniscript have been computed already.
     fn type_check<Pk, Ctx, C, Ext>(
@@ -984,7 +988,7 @@ impl Property for ExtData {
                     error: kind,
                 })
             }
-            Terminal::Ext(_) => todo!(),
+            Terminal::Ext(ref e) => Ok(Self::from_ext(e)),
         };
         if let Ok(ref ret) = ret {
             ret.sanity_checks()
