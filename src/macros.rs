@@ -19,9 +19,9 @@ macro_rules! policy_str {
 /// A macro that implements serde serialization and deserialization using the
 /// `fmt::Display` and `str::FromStr` traits.
 macro_rules! serde_string_impl_pk {
-    ($name:ident, $expecting:expr $(, $gen:ident; $gen_con:ident)*) => {
+    ($name:ident, $expecting:expr $(, $gen:ident; $gen_con:ident)? $(=> $ext:ident ; $ext_bound:ident)?) => {
         #[cfg(feature = "serde")]
-        impl<'de, Pk $(, $gen)*> $crate::serde::Deserialize<'de> for $name<Pk $(, $gen)*>
+        impl<'de, Pk $(, $gen)* $(, $ext)*> $crate::serde::Deserialize<'de> for $name<Pk $(, $gen)* $(, $ext)* >
         where
             Pk: $crate::MiniscriptKey + $crate::std::str::FromStr,
             Pk::Hash: $crate::std::str::FromStr,
@@ -29,8 +29,9 @@ macro_rules! serde_string_impl_pk {
             <<Pk as $crate::MiniscriptKey>::Hash as $crate::std::str::FromStr>::Err:
                 $crate::std::fmt::Display,
             $($gen : $gen_con,)*
+            $($ext : $ext_bound<Pk>,)*
         {
-            fn deserialize<D>(deserializer: D) -> Result<$name<Pk $(, $gen)*>, D::Error>
+            fn deserialize<D>(deserializer: D) -> Result<$name<Pk $(, $gen)* $(, $ext)*>, D::Error>
             where
                 D: $crate::serde::de::Deserializer<'de>,
             {
@@ -39,8 +40,8 @@ macro_rules! serde_string_impl_pk {
                 use $crate::std::str::FromStr;
 
                 #[allow(unused_parens)]
-                struct Visitor<Pk $(, $gen)*>(PhantomData<(Pk $(, $gen)*)>);
-                impl<'de, Pk $(, $gen)*> $crate::serde::de::Visitor<'de> for Visitor<Pk $(, $gen)*>
+                struct Visitor<Pk $(, $gen)* $(, $ext)*>(PhantomData<(Pk $(, $gen)* $(, $ext)*)>);
+                impl<'de, Pk $(, $gen)* $(, $ext)*> $crate::serde::de::Visitor<'de> for Visitor<Pk $(, $gen)* $(, $ext)*>
                 where
                     Pk: $crate::MiniscriptKey + $crate::std::str::FromStr,
                     Pk::Hash: $crate::std::str::FromStr,
@@ -48,8 +49,9 @@ macro_rules! serde_string_impl_pk {
                     <<Pk as $crate::MiniscriptKey>::Hash as $crate::std::str::FromStr>::Err:
                         $crate::std::fmt::Display,
                     $($gen: $gen_con,)*
+                    $($ext : $ext_bound<Pk>,)*
                 {
-                    type Value = $name<Pk $(, $gen)*>;
+                    type Value = $name<Pk $(, $gen)* $(, $ext)*>;
 
                     fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
                         formatter.write_str($expecting)
@@ -82,10 +84,11 @@ macro_rules! serde_string_impl_pk {
         }
 
         #[cfg(feature = "serde")]
-        impl<'de, Pk $(, $gen)*> $crate::serde::Serialize for $name<Pk $(, $gen)*>
+        impl<'de, Pk $(, $gen)* $(, $ext)*> $crate::serde::Serialize for $name<Pk $(, $gen)* $(, $ext)*>
         where
             Pk: $crate::MiniscriptKey,
             $($gen: $gen_con,)*
+            $($ext : $ext_bound<Pk>,)*
         {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where

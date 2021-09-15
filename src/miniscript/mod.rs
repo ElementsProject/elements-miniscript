@@ -447,7 +447,7 @@ where
     }
 }
 
-serde_string_impl_pk!(Miniscript, "a miniscript", Ctx; ScriptContext);
+serde_string_impl_pk!(Miniscript, "a miniscript", Ctx; ScriptContext => Ext2 ; Extension);
 
 #[cfg(test)]
 mod tests {

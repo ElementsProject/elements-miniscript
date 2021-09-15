@@ -14,8 +14,8 @@
 
 //! # Policy Compiler
 //!
-//! Optimizing compiler from concrete policies to Miniscript
-//!
+//! Optimizing compiler from concrete policies to Miniscript.
+//! Currently the policy compiler does not support any extensions
 
 use std::collections::BTreeMap;
 use std::convert::From;
@@ -29,6 +29,8 @@ use policy::Concrete;
 use std::collections::vec_deque::VecDeque;
 use std::hash;
 use std::sync::Arc;
+use Extension;
+use NoExt;
 use {policy, Terminal};
 use {Miniscript, MiniscriptKey};
 
@@ -227,6 +229,10 @@ impl Property for CompilerExtData {
             sat_cost: (MAX_SCRIPT_ELEMENT_SIZE - pref.len()) as f64,
             dissat_cost: Some(0.0),
         }
+    }
+
+    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(_e: &E) -> Self {
+        unreachable!("NoExt context should not have extensions")
     }
 
     fn cast_alt(self) -> Result<Self, types::ErrorKind> {
@@ -457,7 +463,7 @@ impl Property for CompilerExtData {
 #[derive(Clone, Debug)]
 struct AstElemExt<Pk: MiniscriptKey, Ctx: ScriptContext> {
     /// The actual Miniscript fragment with type information
-    ms: Arc<Miniscript<Pk, Ctx>>,
+    ms: Arc<Miniscript<Pk, Ctx, NoExt>>,
     /// Its "type" in terms of compiler data
     comp_ext_data: CompilerExtData,
 }
@@ -479,7 +485,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> AstElemExt<Pk, Ctx> {
 }
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> AstElemExt<Pk, Ctx> {
-    fn terminal(ast: Terminal<Pk, Ctx>) -> AstElemExt<Pk, Ctx> {
+    fn terminal(ast: Terminal<Pk, Ctx, NoExt>) -> AstElemExt<Pk, Ctx> {
         AstElemExt {
             comp_ext_data: CompilerExtData::type_check(&ast, |_| None).unwrap(),
             ms: Arc::new(Miniscript::from_ast(ast).expect("Terminal creation must always succeed")),
@@ -487,10 +493,10 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> AstElemExt<Pk, Ctx> {
     }
 
     fn binary(
-        ast: Terminal<Pk, Ctx>,
+        ast: Terminal<Pk, Ctx, NoExt>,
         l: &AstElemExt<Pk, Ctx>,
         r: &AstElemExt<Pk, Ctx>,
-    ) -> Result<AstElemExt<Pk, Ctx>, types::Error<Pk, Ctx>> {
+    ) -> Result<AstElemExt<Pk, Ctx>, types::Error<Pk, Ctx, NoExt>> {
         let lookup_ext = |n| match n {
             0 => Some(l.comp_ext_data),
             1 => Some(r.comp_ext_data),
@@ -513,11 +519,11 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> AstElemExt<Pk, Ctx> {
     }
 
     fn ternary(
-        ast: Terminal<Pk, Ctx>,
+        ast: Terminal<Pk, Ctx, NoExt>,
         a: &AstElemExt<Pk, Ctx>,
         b: &AstElemExt<Pk, Ctx>,
         c: &AstElemExt<Pk, Ctx>,
-    ) -> Result<AstElemExt<Pk, Ctx>, types::Error<Pk, Ctx>> {
+    ) -> Result<AstElemExt<Pk, Ctx>, types::Error<Pk, Ctx, NoExt>> {
         let lookup_ext = |n| match n {
             0 => Some(a.comp_ext_data),
             1 => Some(b.comp_ext_data),
@@ -544,7 +550,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> AstElemExt<Pk, Ctx> {
 /// Different types of casts possible for each node.
 #[derive(Copy, Clone)]
 struct Cast<Pk: MiniscriptKey, Ctx: ScriptContext> {
-    node: fn(Arc<Miniscript<Pk, Ctx>>) -> Terminal<Pk, Ctx>,
+    node: fn(Arc<Miniscript<Pk, Ctx, NoExt>>) -> Terminal<Pk, Ctx, NoExt>,
     ast_type: fn(types::Type) -> Result<types::Type, ErrorKind>,
     ext_data: fn(types::ExtData) -> Result<types::ExtData, ErrorKind>,
     comp_ext_data: fn(CompilerExtData) -> Result<CompilerExtData, types::ErrorKind>,
@@ -1067,7 +1073,10 @@ fn compile_binary<Pk, Ctx, F>(
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
-    F: Fn(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>) -> Terminal<Pk, Ctx>,
+    F: Fn(
+        Arc<Miniscript<Pk, Ctx, NoExt>>,
+        Arc<Miniscript<Pk, Ctx, NoExt>>,
+    ) -> Terminal<Pk, Ctx, NoExt>,
 {
     for l in left_comp.values_mut() {
         let lref = Arc::clone(&l.ms);
@@ -1120,7 +1129,7 @@ fn compile_tern<Pk: MiniscriptKey, Ctx: ScriptContext>(
 /// Obtain the best compilation of for p=1.0 and q=0
 pub fn best_compilation<Pk: MiniscriptKey, Ctx: ScriptContext>(
     policy: &Concrete<Pk>,
-) -> Result<Miniscript<Pk, Ctx>, CompilerError> {
+) -> Result<Miniscript<Pk, Ctx, NoExt>, CompilerError> {
     let mut policy_cache = PolicyCache::<Pk, Ctx>::new();
     let x = &*best_t(&mut policy_cache, policy, 1.0, None)?.ms;
     if !x.ty.mall.safe {
@@ -1189,6 +1198,7 @@ mod tests {
     use std::collections::HashMap;
     use std::str::FromStr;
     use std::string::String;
+    use NoExt;
 
     use miniscript::{satisfy, Legacy, Segwitv0};
     use policy::Liftable;
@@ -1198,7 +1208,7 @@ mod tests {
     type SPolicy = Concrete<String>;
     type BPolicy = Concrete<bitcoin::PublicKey>;
     type DummySegwitAstElemExt = policy::compiler::AstElemExt<String, Segwitv0>;
-    type SegwitMiniScript = Miniscript<bitcoin::PublicKey, Segwitv0>;
+    type SegwitMiniScript = Miniscript<bitcoin::PublicKey, Segwitv0, NoExt>;
 
     fn pubkeys_and_a_sig(n: usize) -> (Vec<bitcoin::PublicKey>, secp256k1_zkp::Signature) {
         let mut ret = Vec::with_capacity(n);
@@ -1227,7 +1237,7 @@ mod tests {
 
     fn policy_compile_lift_check(s: &str) -> Result<(), CompilerError> {
         let policy = SPolicy::from_str(s).expect("parse");
-        let miniscript: Miniscript<String, Segwitv0> = policy.compile()?;
+        let miniscript: Miniscript<String, Segwitv0, NoExt> = policy.compile()?;
 
         assert_eq!(
             policy.lift().unwrap().sorted(),
@@ -1359,7 +1369,7 @@ mod tests {
 
         let ms: SegwitMiniScript = policy.compile().unwrap();
 
-        let ms_comp_res: Miniscript<bitcoin::PublicKey, Segwitv0> = ms_str!(
+        let ms_comp_res: Miniscript<bitcoin::PublicKey, Segwitv0, NoExt> = ms_str!(
             "or_d(multi(3,{},{},{},{},{}),\
              and_v(v:thresh(2,c:pk_h({}),\
              ac:pk_h({}),ac:pk_h({})),older(10000)))",

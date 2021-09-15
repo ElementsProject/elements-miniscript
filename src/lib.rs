@@ -163,7 +163,7 @@ pub use descriptor::{Descriptor, DescriptorPublicKey, DescriptorTrait};
 pub use interpreter::Interpreter;
 pub use miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0};
 pub use miniscript::decode::Terminal;
-pub use miniscript::ext::{AllExt, Extension};
+pub use miniscript::ext::{AllExt, Extension, NoExt};
 pub use miniscript::satisfy::{elementssig_from_rawsig, elementssig_to_rawsig};
 pub use miniscript::satisfy::{ElementsSig, Preimage32, Satisfier};
 pub use miniscript::Miniscript;
