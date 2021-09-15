@@ -1331,7 +1331,7 @@ impl Satisfaction {
                     }
                 }
             }
-            Terminal::Ext(_) => todo!(),
+            Terminal::Ext(ref e) => e.satisfy(stfr),
         }
     }
 
@@ -1457,7 +1457,7 @@ impl Satisfaction {
                 stack: Witness::Stack(vec![vec![]; k + 1]),
                 has_sig: false,
             },
-            Terminal::Ext(_) => todo!(),
+            Terminal::Ext(ref e) => e.dissatisfy(stfr),
         }
     }
 

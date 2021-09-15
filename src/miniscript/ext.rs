@@ -14,11 +14,18 @@ use std::{fmt, hash};
 // use miniscript::types::Type;
 // use std::sync::Arc;
 // use Error;
+use miniscript::ToPublicKey;
 use MiniscriptKey;
 
-use super::types::{Correctness, ExtData, Malleability};
+use crate::Satisfier;
+
+use super::{
+    satisfy::Satisfaction,
+    types::{Correctness, ExtData, Malleability},
+};
 
 /// Extensions to elements-miniscript.
+/// Refer to implementations(todo!) for example and tutorials
 pub trait Extension<Pk: MiniscriptKey>:
     Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash
 {
@@ -33,9 +40,28 @@ pub trait Extension<Pk: MiniscriptKey>:
     /// Calculate the Extra properties property for the leaf fragment.
     /// See current implementation for different fragments in extra_props.rs
     fn extra_prop(&self) -> ExtData;
+
+    /// Produce a satisfaction for this from satisfier.
+    /// See satisfaction code in satisfy.rs for example
+    /// Note that the [`Satisfaction`] struct also covers the case when
+    /// satisfaction is impossible/unavailable
+    fn satisfy<S>(&self, _sat: &S) -> Satisfaction
+    where
+        Pk: ToPublicKey,
+        S: Satisfier<Pk>;
+
+    /// Produce a satisfaction for this from satisfier.
+    /// See satisfaction code in satisfy.rs for example
+    /// Note that the [`Satisfaction`] struct also covers the case when
+    /// dissatisfaction is impossible/unavailable
+    fn dissatisfy<S>(&self, _sat: &S) -> Satisfaction
+    where
+        Pk: ToPublicKey,
+        S: Satisfier<Pk>;
 }
 
 /// No Extensions for elements-miniscript
+/// All the implementations for the this function are unreachable
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct NoExt;
 
@@ -49,6 +75,22 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
     }
 
     fn extra_prop(&self) -> ExtData {
+        unreachable!()
+    }
+
+    fn satisfy<S>(&self, _sat: &S) -> Satisfaction
+    where
+        Pk: ToPublicKey,
+        S: Satisfier<Pk>,
+    {
+        unreachable!()
+    }
+
+    fn dissatisfy<S>(&self, _sat: &S) -> Satisfaction
+    where
+        Pk: ToPublicKey,
+        S: Satisfier<Pk>,
+    {
         unreachable!()
     }
 }
@@ -73,6 +115,22 @@ impl<Pk: MiniscriptKey> Extension<Pk> for AllExt {
     }
 
     fn extra_prop(&self) -> ExtData {
+        todo!()
+    }
+
+    fn satisfy<S>(&self, _sat: &S) -> Satisfaction
+    where
+        Pk: ToPublicKey,
+        S: Satisfier<Pk>,
+    {
+        todo!()
+    }
+
+    fn dissatisfy<S>(&self, _sat: &S) -> Satisfaction
+    where
+        Pk: ToPublicKey,
+        S: Satisfier<Pk>,
+    {
         todo!()
     }
 }
