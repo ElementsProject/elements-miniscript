@@ -866,7 +866,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                     .push_int(keys.len() as i64)
                     .push_opcode(opcodes::all::OP_CHECKMULTISIG)
             }
-            Terminal::Ext(_) => todo!(),
+            Terminal::Ext(ref e) => e.push_to_builder(builder),
         }
     }
 
@@ -928,7 +928,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                     + script_num_size(pks.len())
                     + pks.iter().map(|pk| pk.serialized_len()).sum::<usize>()
             }
-            Terminal::Ext(_) => todo!(),
+            Terminal::Ext(ref e) => e.script_size(),
         }
     }
 }

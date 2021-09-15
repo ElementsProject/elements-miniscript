@@ -8,6 +8,7 @@
 
 use std::{fmt, hash};
 
+use elements::script::Builder;
 use miniscript::{ForEach, TranslatePk};
 // use miniscript::lex::{Token as Tk, TokenIter};
 // use miniscript::types::extra_props::ExtData;
@@ -70,6 +71,14 @@ pub trait Extension<Pk: MiniscriptKey>:
     {
         false
     }
+
+    /// Encoding of the current fragment
+    fn push_to_builder(&self, builder: Builder) -> Builder
+    where
+        Pk: ToPublicKey;
+
+    /// Get the script size of the current fragment
+    fn script_size(&self) -> usize;
 }
 
 /// No Extensions for elements-miniscript
@@ -111,6 +120,17 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
         Pk: 'a,
         Pk::Hash: 'a,
     {
+        unreachable!()
+    }
+
+    fn push_to_builder(&self, _builder: Builder) -> Builder
+    where
+        Pk: ToPublicKey,
+    {
+        unreachable!()
+    }
+
+    fn script_size(&self) -> usize {
         unreachable!()
     }
 }
@@ -185,6 +205,17 @@ where
         Pk: 'a,
         Pk::Hash: 'a,
     {
+        todo!()
+    }
+
+    fn push_to_builder(&self, _builder: Builder) -> Builder
+    where
+        Pk: ToPublicKey,
+    {
+        todo!()
+    }
+
+    fn script_size(&self) -> usize {
         todo!()
     }
 }
