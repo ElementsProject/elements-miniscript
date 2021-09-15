@@ -168,6 +168,38 @@ pub use miniscript::satisfy::{elementssig_from_rawsig, elementssig_to_rawsig};
 pub use miniscript::satisfy::{ElementsSig, Preimage32, Satisfier};
 pub use miniscript::Miniscript;
 
+/// Same as upstream [`TranslatePk`] but with support for extensions
+pub trait TranslatePkExt<P: MiniscriptKey, Q: MiniscriptKey, QExt: Extension<Q>> {
+    /// The associated output type. This must be Self<Q>
+    type Output;
+
+    /// Translate a struct from one Generic to another where the
+    /// translation for Pk is provided by translatefpk, and translation for
+    /// PkH is provided by translatefpkh
+    fn translate_pk<Fpk, Fpkh, E>(
+        &self,
+        translatefpk: Fpk,
+        translatefpkh: Fpkh,
+    ) -> Result<Self::Output, E>
+    where
+        Fpk: FnMut(&P) -> Result<Q, E>,
+        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>;
+
+    /// Calls `translate_pk` with conversion functions that cannot fail
+    fn translate_pk_infallible<Fpk, Fpkh>(
+        &self,
+        mut translatefpk: Fpk,
+        mut translatefpkh: Fpkh,
+    ) -> Self::Output
+    where
+        Fpk: FnMut(&P) -> Q,
+        Fpkh: FnMut(&P::Hash) -> Q::Hash,
+    {
+        self.translate_pk::<_, _, ()>(|pk| Ok(translatefpk(pk)), |pkh| Ok(translatefpkh(pkh)))
+            .expect("infallible translation function")
+    }
+}
+
 /// Tweak a MiniscriptKey to obtain the tweaked key
 // Ideally, we want this in a trait, but doing so we cannot
 // use it in the implementation of DescriptorTrait from

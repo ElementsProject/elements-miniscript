@@ -479,9 +479,10 @@ impl<P, Q, Ext> TranslatePk<P, Q> for CovenantDescriptor<P, Ext>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
-    Ext: Extension<P> + Extension<Q>,
+    Ext: Extension<P> + TranslatePk<P, Q>,
+    <Ext as TranslatePk<P, Q>>::Output: Extension<Q>,
 {
-    type Output = CovenantDescriptor<Q, Ext>;
+    type Output = CovenantDescriptor<Q, <Ext as TranslatePk<P, Q>>::Output>;
 
     fn translate_pk<Fpk, Fpkh, E>(
         &self,

@@ -65,9 +65,11 @@ where
     Pk: MiniscriptKey,
     Q: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk> + Extension<Q>,
+    Ext: Extension<Pk> + Extension<Q> + TranslatePk<Pk, Q>,
+    Ext: TranslatePk<Pk, Q>,
+    <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
 {
-    type Output = Terminal<Q, Ctx, Ext>;
+    type Output = Terminal<Q, Ctx, <Ext as TranslatePk<Pk, Q>>::Output>;
 
     /// Convert an AST element with one public key type to one of another
     /// public key type .This will panic while converting to
@@ -129,19 +131,20 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
             }
             Terminal::Thresh(_, ref subs) => subs.iter().all(|sub| sub.real_for_each_key(pred)),
             Terminal::Multi(_, ref keys) => keys.iter().all(|key| pred(ForEach::Key(key))),
-            Terminal::Ext(_) => todo!(),
+            Terminal::Ext(ref e) => e.real_for_each_key(pred),
         }
     }
     pub(super) fn real_translate_pk<FPk, FPkh, Q, Error>(
         &self,
         translatefpk: &mut FPk,
         translatefpkh: &mut FPkh,
-    ) -> Result<Terminal<Q, Ctx, Ext>, Error>
+    ) -> Result<Terminal<Q, Ctx, <Ext as TranslatePk<Pk, Q>>::Output>, Error>
     where
         FPk: FnMut(&Pk) -> Result<Q, Error>,
         FPkh: FnMut(&Pk::Hash) -> Result<Q::Hash, Error>,
         Q: MiniscriptKey,
-        Ext: Extension<Q>,
+        Ext: TranslatePk<Pk, Q>,
+        <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
     {
         let frag = match *self {
             Terminal::PkK(ref p) => Terminal::PkK(translatefpk(p)?),
@@ -222,7 +225,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                 let keys: Result<Vec<Q>, _> = keys.iter().map(&mut *translatefpk).collect();
                 Terminal::Multi(k, keys?)
             }
-            Terminal::Ext(_) => todo!(),
+            Terminal::Ext(ref e) => Terminal::Ext(e.translate_pk(translatefpk, translatefpkh)?),
         };
         Ok(frag)
     }

@@ -266,9 +266,10 @@ where
     Pk: MiniscriptKey,
     Q: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk> + Extension<Q>,
+    Ext: Extension<Pk> + TranslatePk<Pk, Q>,
+    <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
 {
-    type Output = Miniscript<Q, Ctx, Ext>;
+    type Output = Miniscript<Q, Ctx, <Ext as TranslatePk<Pk, Q>>::Output>;
 
     /// This will panic if translatefpk returns an uncompressed key when
     /// converting to a Segwit descriptor. To prevent this panic, ensure
@@ -299,12 +300,13 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
         &self,
         translatefpk: &mut FPk,
         translatefpkh: &mut FPkh,
-    ) -> Result<Miniscript<Q, Ctx, Ext>, FuncError>
+    ) -> Result<Miniscript<Q, Ctx, <Ext as TranslatePk<Pk, Q>>::Output>, FuncError>
     where
         FPk: FnMut(&Pk) -> Result<Q, FuncError>,
         FPkh: FnMut(&Pk::Hash) -> Result<Q::Hash, FuncError>,
         Q: MiniscriptKey,
-        Ext: Extension<Q>,
+        Ext: TranslatePk<Pk, Q>,
+        <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
     {
         let inner = self.node.real_translate_pk(translatefpk, translatefpkh)?;
         let ms = Miniscript {

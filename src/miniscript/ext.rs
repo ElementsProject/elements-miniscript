@@ -8,6 +8,7 @@
 
 use std::{fmt, hash};
 
+use miniscript::{ForEach, TranslatePk};
 // use miniscript::lex::{Token as Tk, TokenIter};
 // use miniscript::types::extra_props::ExtData;
 // use miniscript::types::Property;
@@ -60,6 +61,15 @@ pub trait Extension<Pk: MiniscriptKey>:
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>;
+
+    /// Check if the predicate holds for all keys
+    fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a,
+    {
+        false
+    }
 }
 
 /// No Extensions for elements-miniscript
@@ -95,6 +105,14 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
     {
         unreachable!()
     }
+
+    fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a,
+    {
+        unreachable!()
+    }
 }
 
 impl<Pk: MiniscriptKey> Liftable<Pk> for NoExt {
@@ -109,11 +127,31 @@ impl fmt::Display for NoExt {
     }
 }
 
+impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for NoExt {
+    type Output = NoExt;
+
+    fn translate_pk<Fpk, Fpkh, E>(
+        &self,
+        mut _translatefpk: Fpk,
+        _translatefpkh: Fpkh,
+    ) -> Result<Self::Output, E>
+    where
+        Fpk: FnMut(&P) -> Result<Q, E>,
+        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
+        Q: MiniscriptKey,
+    {
+        unreachable!()
+    }
+}
+
 /// All known Extensions for elements-miniscript
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct AllExt;
 
-impl<Pk: MiniscriptKey> Extension<Pk> for AllExt {
+impl<Pk> Extension<Pk> for AllExt
+where
+    Pk: MiniscriptKey,
+{
     fn corr_prop(&self) -> Correctness {
         todo!()
     }
@@ -141,6 +179,14 @@ impl<Pk: MiniscriptKey> Extension<Pk> for AllExt {
     {
         todo!()
     }
+
+    fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a,
+    {
+        todo!()
+    }
 }
 
 impl fmt::Display for AllExt {
@@ -151,6 +197,23 @@ impl fmt::Display for AllExt {
 
 impl<Pk: MiniscriptKey> Liftable<Pk> for AllExt {
     fn lift(&self) -> Result<policy::Semantic<Pk>, Error> {
+        todo!()
+    }
+}
+
+impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for AllExt {
+    type Output = AllExt;
+
+    fn translate_pk<Fpk, Fpkh, E>(
+        &self,
+        mut _translatefpk: Fpk,
+        _translatefpkh: Fpkh,
+    ) -> Result<Self::Output, E>
+    where
+        Fpk: FnMut(&P) -> Result<Q, E>,
+        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
+        Q: MiniscriptKey,
+    {
         todo!()
     }
 }
