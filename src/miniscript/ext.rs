@@ -24,6 +24,7 @@ use ToPublicKey;
 use crate::{policy::Liftable, Satisfier};
 
 use super::{
+    context::ScriptContextError,
     satisfy::Satisfaction,
     types::{Correctness, ExtData, Malleability},
 };
@@ -79,6 +80,13 @@ pub trait Extension<Pk: MiniscriptKey>:
 
     /// Get the script size of the current fragment
     fn script_size(&self) -> usize;
+
+    /// Validity rules for fragment in segwit context
+    fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError> {
+        Ok(())
+    }
+
+    //todo: Add checks after we introduce Tap ctx
 }
 
 /// No Extensions for elements-miniscript

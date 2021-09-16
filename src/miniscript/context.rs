@@ -24,7 +24,7 @@ use Error;
 use crate::Extension;
 use {Miniscript, MiniscriptKey, Terminal};
 /// Error for Script Context
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum ScriptContextError {
     /// Script Context does not permit PkH for non-malleability
     /// It is not possible to estimate the pubkey size at the creation
@@ -57,6 +57,8 @@ pub enum ScriptContextError {
     ImpossibleSatisfaction,
     /// Covenant Prefix/ Suffix maximum allowed stack element exceeds 520 bytes
     CovElementSizeExceeded,
+    /// Extension Error for Downstream implementations, includes a string
+    ExtensionError(String),
 }
 
 impl fmt::Display for ScriptContextError {
@@ -107,6 +109,7 @@ impl fmt::Display for ScriptContextError {
                     "Prefix/Suffix len in sighash covenents exceeds 520 bytes"
                 )
             }
+            ScriptContextError::ExtensionError(ref s) => write!(f, "Extension Error: {}", s),
         }
     }
 }
@@ -314,6 +317,11 @@ impl ScriptContext for Legacy {
         if ms.ext.pk_cost > MAX_SCRIPT_ELEMENT_SIZE {
             return Err(ScriptContextError::MaxRedeemScriptSizeExceeded);
         }
+        if let Terminal::Ext(ref _e) = ms.node {
+            return Err(ScriptContextError::ExtensionError(String::from(
+                "No Extensions in Legacy context",
+            )));
+        }
         Ok(())
     }
 
@@ -396,6 +404,10 @@ impl ScriptContext for Segwitv0 {
                 }
                 Ok(())
             }
+            Terminal::Ext(ref e) => {
+                e.segwit_ctx_checks()?;
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
@@ -472,6 +484,11 @@ impl ScriptContext for BareCtx {
     ) -> Result<(), ScriptContextError> {
         if ms.ext.pk_cost > MAX_SCRIPT_SIZE {
             return Err(ScriptContextError::MaxWitnessScriptSizeExceeded);
+        }
+        if let Terminal::Ext(ref _e) = ms.node {
+            return Err(ScriptContextError::ExtensionError(String::from(
+                "No Extensions in Bare context",
+            )));
         }
         Ok(())
     }
