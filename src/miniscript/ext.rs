@@ -21,7 +21,7 @@ use Error;
 use MiniscriptKey;
 use ToPublicKey;
 
-use crate::{policy::Liftable, Satisfier};
+use crate::{expression::Tree, policy::Liftable, Satisfier};
 
 use super::{
     context::ScriptContextError,
@@ -93,6 +93,12 @@ pub trait Extension<Pk: MiniscriptKey>:
     /// for making sure tokens is mutated correctly. If parsing is not successful, the tokens
     /// should not be consumed.
     fn from_token_iter(_tokens: &mut TokenIter) -> Result<Self, ()>;
+
+    /// Create an instance of this object from a Tree with root name and children as
+    /// Vec<Tree>.
+    // Ideally, we would want a FromTree implementation here, but that is not possible
+    // as we would need to create a new Tree by removing wrappers from root.
+    fn from_name_tree(_name: &str, _child: &Vec<Tree>) -> Result<Self, ()>;
 }
 
 /// No Extensions for elements-miniscript
@@ -150,6 +156,11 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
 
     fn from_token_iter(_tokens: &mut TokenIter) -> Result<Self, ()> {
         // No extensions should return Err on parsing
+        Err(())
+    }
+
+    fn from_name_tree(_name: &str, _child: &Vec<Tree>) -> Result<Self, ()> {
+        // No extensions should not parse any extensions from String
         Err(())
     }
 }
@@ -239,6 +250,10 @@ where
     }
 
     fn from_token_iter(_tokens: &mut TokenIter) -> Result<Self, ()> {
+        Err(())
+    }
+
+    fn from_name_tree(_name: &str, _child: &Vec<Tree>) -> Result<Self, ()> {
         Err(())
     }
 }

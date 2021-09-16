@@ -314,6 +314,7 @@ where
                 Terminal::False => f.write_str("0"),
                 Terminal::Version(k) => write!(f, "ver_eq({})", k),
                 Terminal::OutputsPref(ref pref) => write!(f, "outputs_pref({})", pref.to_hex()),
+                Terminal::Ext(ref e) => write!(f, "{:?}", e),
                 Terminal::AndV(ref l, ref r) => write!(f, "and_v({:?},{:?})", l, r),
                 Terminal::AndB(ref l, ref r) => write!(f, "and_b({:?},{:?})", l, r),
                 Terminal::AndOr(ref a, ref b, ref c) => {
@@ -371,6 +372,7 @@ where
             Terminal::False => f.write_str("0"),
             Terminal::Version(n) => write!(f, "ver_eq({})", n),
             Terminal::OutputsPref(ref pref) => write!(f, "outputs_pref({})", pref.to_hex()),
+            Terminal::Ext(ref e) => write!(f, "{}", e),
             Terminal::AndV(ref l, ref r) if r.node != Terminal::True => {
                 write!(f, "and_v({},{})", l, r)
             }
@@ -617,11 +619,17 @@ where
 
                 pks.map(|pks| Terminal::Multi(k, pks))
             }
-            _ => Err(Error::Unexpected(format!(
-                "{}({} args) while parsing Miniscript",
-                top.name,
-                top.args.len(),
-            ))),
+            (name, _num_child) => {
+                // If nothing matches try to parse as extension
+                match Ext::from_name_tree(&name, &top.args) {
+                    Ok(e) => Ok(Terminal::Ext(e)),
+                    Err(..) => Err(Error::Unexpected(format!(
+                        "{}({} args) while parsing Miniscript",
+                        top.name,
+                        top.args.len(),
+                    ))),
+                }
+            }
         }?;
         for ch in frag_wrap.chars().rev() {
             // Check whether the wrapper is valid under the current context
