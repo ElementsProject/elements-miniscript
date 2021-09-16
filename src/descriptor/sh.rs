@@ -33,7 +33,7 @@ use {
     ToPublicKey, TranslatePk,
 };
 
-use miniscript::ext::NoExt;
+use NoExt;
 
 use super::{
     checksum::{desc_checksum, verify_checksum},

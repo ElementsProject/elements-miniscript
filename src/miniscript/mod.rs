@@ -36,20 +36,19 @@ pub mod analyzable;
 pub mod astelem;
 pub(crate) mod context;
 pub mod decode;
-pub mod ext;
 pub mod iter;
 pub mod lex;
 pub mod limits;
 pub mod satisfy;
 pub mod types;
 
-use self::ext::Extension;
 use self::lex::{lex, TokenIter};
 use self::types::Property;
 pub use miniscript::context::ScriptContext;
 use miniscript::decode::Terminal;
 use miniscript::types::extra_props::ExtData;
 use miniscript::types::Type;
+use Extension;
 
 use std::cmp;
 use std::sync::Arc;

@@ -30,7 +30,7 @@ use std::sync::Arc;
 use Error;
 use MiniscriptKey;
 
-use super::ext::Extension;
+use Extension;
 
 fn return_none<T>(_: usize) -> Option<T> {
     None

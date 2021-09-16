@@ -41,7 +41,7 @@ use Miniscript;
 use ScriptContext;
 use Terminal;
 
-use super::ext::Extension;
+use Extension;
 
 /// Type alias for a signature/hashtype pair
 pub type ElementsSig = (secp256k1_zkp::Signature, elements::SigHashType);

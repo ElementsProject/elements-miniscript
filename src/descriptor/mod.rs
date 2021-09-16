@@ -37,8 +37,8 @@ use elements;
 use elements::secp256k1_zkp;
 use elements::Script;
 
-use miniscript::ext::NoExt;
 use AllExt;
+use NoExt;
 
 use self::checksum::verify_checksum;
 use expression;

@@ -144,6 +144,7 @@ mod macros;
 
 pub mod descriptor;
 pub mod expression;
+pub mod extensions;
 pub mod interpreter;
 pub mod miniscript;
 pub mod policy;
@@ -160,10 +161,10 @@ use elements::hashes::sha256;
 use elements::{opcodes, script, secp256k1_zkp, secp256k1_zkp::Secp256k1};
 
 pub use descriptor::{Descriptor, DescriptorPublicKey, DescriptorTrait};
+pub use extensions::{AllExt, Extension, NoExt};
 pub use interpreter::Interpreter;
 pub use miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0};
 pub use miniscript::decode::Terminal;
-pub use miniscript::ext::{AllExt, Extension, NoExt};
 pub use miniscript::satisfy::{elementssig_from_rawsig, elementssig_to_rawsig};
 pub use miniscript::satisfy::{ElementsSig, Preimage32, Satisfier};
 pub use miniscript::Miniscript;
