@@ -21,7 +21,7 @@ use Error;
 use MiniscriptKey;
 use ToPublicKey;
 
-use crate::{expression::Tree, policy::Liftable, Satisfier};
+use {expression::Tree, policy::Liftable, Satisfier};
 
 use super::{
     context::ScriptContextError,
@@ -31,7 +31,7 @@ use super::{
 };
 
 /// Extensions to elements-miniscript.
-/// Refer to implementations(todo!) for example and tutorials
+/// Refer to implementations(unimplemented!) for example and tutorials
 pub trait Extension<Pk: MiniscriptKey>:
     Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash + Liftable<Pk>
 {
@@ -87,7 +87,7 @@ pub trait Extension<Pk: MiniscriptKey>:
         Ok(())
     }
 
-    //todo: Add checks after we introduce Tap ctx
+    //unimplemented: Add checks after we introduce Tap ctx
 
     /// Parse the terminal from [`TokenIter`]. Implementers of this trait are responsible
     /// for making sure tokens is mutated correctly. If parsing is not successful, the tokens
@@ -203,15 +203,15 @@ where
     Pk: MiniscriptKey,
 {
     fn corr_prop(&self) -> Correctness {
-        todo!()
+        unimplemented!()
     }
 
     fn mall_prop(&self) -> Malleability {
-        todo!()
+        unimplemented!()
     }
 
     fn extra_prop(&self) -> ExtData {
-        todo!()
+        unimplemented!()
     }
 
     fn satisfy<S>(&self, _sat: &S) -> Satisfaction
@@ -219,7 +219,7 @@ where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        todo!()
+        unimplemented!()
     }
 
     fn dissatisfy<S>(&self, _sat: &S) -> Satisfaction
@@ -227,7 +227,7 @@ where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        todo!()
+        unimplemented!()
     }
 
     fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
@@ -235,18 +235,18 @@ where
         Pk: 'a,
         Pk::Hash: 'a,
     {
-        todo!()
+        unimplemented!()
     }
 
     fn push_to_builder(&self, _builder: Builder) -> Builder
     where
         Pk: ToPublicKey,
     {
-        todo!()
+        unimplemented!()
     }
 
     fn script_size(&self) -> usize {
-        todo!()
+        unimplemented!()
     }
 
     fn from_token_iter(_tokens: &mut TokenIter) -> Result<Self, ()> {
@@ -260,13 +260,13 @@ where
 
 impl fmt::Display for AllExt {
     fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        unimplemented!()
     }
 }
 
 impl<Pk: MiniscriptKey> Liftable<Pk> for AllExt {
     fn lift(&self) -> Result<policy::Semantic<Pk>, Error> {
-        todo!()
+        unimplemented!()
     }
 }
 
@@ -283,6 +283,6 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for AllExt {
         Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
         Q: MiniscriptKey,
     {
-        todo!()
+        unimplemented!()
     }
 }

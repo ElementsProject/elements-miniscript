@@ -55,7 +55,7 @@ pub use self::script_internals::CovOperations;
 #[allow(unused_imports)]
 mod tests {
 
-    use crate::AllExt;
+    use AllExt;
 
     use super::cov::*;
     use super::*;

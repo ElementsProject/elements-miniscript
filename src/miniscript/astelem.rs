@@ -35,7 +35,7 @@ use miniscript::ScriptContext;
 use script_num_size;
 use {Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslatePk};
 
-use crate::Extension;
+use Extension;
 
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 

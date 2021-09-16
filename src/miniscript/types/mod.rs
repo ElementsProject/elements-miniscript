@@ -22,7 +22,7 @@ pub mod malleability;
 
 use std::{error, fmt};
 
-use crate::Extension;
+use Extension;
 
 pub use self::correctness::{Base, Correctness, Input};
 pub use self::extra_props::ExtData;

@@ -21,7 +21,7 @@ use std::fmt;
 use util::witness_to_scriptsig;
 use Error;
 
-use crate::Extension;
+use Extension;
 use {Miniscript, MiniscriptKey, Terminal};
 /// Error for Script Context
 #[derive(Clone, PartialEq, Eq, Debug)]

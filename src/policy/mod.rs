@@ -36,7 +36,7 @@ use Terminal;
 
 use descriptor::CovError;
 
-use crate::miniscript::ext::Extension;
+use miniscript::ext::Extension;
 
 pub use self::concrete::Policy as Concrete;
 /// Semantic policies are "abstract" policies elsewhere; but we

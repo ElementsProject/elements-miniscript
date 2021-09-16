@@ -16,7 +16,7 @@ use bitcoin;
 use elements::hashes::{hash160, sha256, Hash};
 use elements::{self, script};
 
-use crate::Extension;
+use Extension;
 
 use super::{stack, Error, Stack};
 use descriptor::{CovOperations, CovenantDescriptor};

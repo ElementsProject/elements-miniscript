@@ -5,7 +5,7 @@ use miniscript::limits::{
     HEIGHT_TIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE, SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
 
-use crate::Extension;
+use Extension;
 
 use super::{Error, ErrorKind, Property, ScriptContext};
 use script_num_size;
@@ -856,7 +856,7 @@ impl Property for ExtData {
         })
     }
 
-    fn from_ext<Pk: miniscript::MiniscriptKey, E: crate::Extension<Pk>>(e: &E) -> Self {
+    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(e: &E) -> Self {
         e.extra_prop()
     }
 

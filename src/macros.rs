@@ -19,7 +19,7 @@ macro_rules! policy_str {
 /// A macro that implements serde serialization and deserialization using the
 /// `fmt::Display` and `str::FromStr` traits.
 macro_rules! serde_string_impl_pk {
-    ($name:ident, $expecting:expr $(, $gen:ident; $gen_con:ident)? $(=> $ext:ident ; $ext_bound:ident)?) => {
+    ($name:ident, $expecting:expr $(, $gen:ident; $gen_con:ident)* $(=> $ext:ident ; $ext_bound:ident)*) => {
         #[cfg(feature = "serde")]
         impl<'de, Pk $(, $gen)* $(, $ext)*> $crate::serde::Deserialize<'de> for $name<Pk $(, $gen)* $(, $ext)* >
         where

@@ -22,7 +22,7 @@ use miniscript::iter::PkPkh;
 use std::collections::HashSet;
 use std::fmt;
 
-use crate::Extension;
+use Extension;
 use {Miniscript, MiniscriptKey, ScriptContext};
 /// Possible reasons Miniscript guarantees can fail
 /// We currently mark Miniscript as Non-Analyzable if

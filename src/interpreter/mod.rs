@@ -37,7 +37,7 @@ mod error;
 mod inner;
 mod stack;
 
-use crate::{AllExt, Extension};
+use {AllExt, Extension};
 
 pub use self::error::Error;
 use self::stack::Stack;
@@ -356,7 +356,7 @@ pub enum SatisfiedConstraint<'intp, 'txin> {
 ///depending on evaluation of the children.
 struct NodeEvaluationState<'intp, Ext>
 where
-    Ext: Extension<PublicKey>,
+    Ext: 'intp + Extension<PublicKey>,
 {
     ///The node which is being evaluated
     node: &'intp Miniscript<PublicKey, NoChecks, Ext>,
@@ -379,7 +379,7 @@ where
 /// before ultimately returning an error.
 pub struct Iter<'intp, 'txin: 'intp, Ext, F>
 where
-    Ext: Extension<PublicKey>,
+    Ext: 'intp + Extension<PublicKey>,
     F: FnMut(&PublicKey, ElementsSig) -> bool,
 {
     verify_sig: F,
@@ -918,7 +918,7 @@ where
 #[cfg(test)]
 mod tests {
 
-    use crate::AllExt;
+    use AllExt;
 
     use super::*;
     use bitcoin;

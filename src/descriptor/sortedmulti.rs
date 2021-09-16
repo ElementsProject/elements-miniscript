@@ -25,7 +25,7 @@ use miniscript::{self, context::ScriptContext, decode::Terminal};
 use policy;
 use script_num_size;
 
-use crate::miniscript::ext::NoExt;
+use miniscript::ext::NoExt;
 use {errstr, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, ToPublicKey};
 
 /// Contents of a "sortedmulti" descriptor

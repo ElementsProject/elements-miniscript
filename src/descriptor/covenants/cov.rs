@@ -65,7 +65,7 @@ use {
     ForEach, ForEachKey, Miniscript, ScriptContext, Segwitv0, TranslatePk,
 };
 
-use crate::Extension;
+use Extension;
 
 use super::super::{
     checksum::{desc_checksum, verify_checksum},

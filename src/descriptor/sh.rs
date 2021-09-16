@@ -33,7 +33,7 @@ use {
     ToPublicKey, TranslatePk,
 };
 
-use crate::miniscript::ext::NoExt;
+use miniscript::ext::NoExt;
 
 use super::{
     checksum::{desc_checksum, verify_checksum},

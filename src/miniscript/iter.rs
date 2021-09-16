@@ -16,7 +16,7 @@
 //!
 //! Iterators for Miniscript with special functions for iterating
 //! over Public Keys, Public Key Hashes or both.
-use crate::Extension;
+use Extension;
 
 use super::decode::Terminal;
 use super::{Miniscript, MiniscriptKey, ScriptContext};
@@ -211,7 +211,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
 
 /// Iterator for traversing all [Miniscript] miniscript AST references starting from some specific
 /// node which constructs the iterator via [Miniscript::iter] method.
-pub struct Iter<'a, Pk: 'a + MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
+pub struct Iter<'a, Pk: 'a + MiniscriptKey, Ctx: 'a + ScriptContext, Ext: 'a + Extension<Pk>> {
     next: Option<&'a Miniscript<Pk, Ctx, Ext>>,
     // Here we store vec of path elements, where each element is a tuple, consisting of:
     // 1. Miniscript node on the path
@@ -228,7 +228,7 @@ impl<'a, Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Iter<'a, Pk,
     }
 }
 
-impl<'a, Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Iterator
+impl<'a, Pk: MiniscriptKey, Ctx: 'a + ScriptContext, Ext: 'a + Extension<Pk>> Iterator
     for Iter<'a, Pk, Ctx, Ext>
 {
     type Item = &'a Miniscript<Pk, Ctx, Ext>;
@@ -275,7 +275,7 @@ impl<'a, Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Iterator
 
 /// Iterator for traversing all [MiniscriptKey]'s in AST starting from some specific node which
 /// constructs the iterator via [Miniscript::iter_pk] method.
-pub struct PkIter<'a, Pk: 'a + MiniscriptKey, Ctx: 'a + ScriptContext, Ext: Extension<Pk>> {
+pub struct PkIter<'a, Pk: 'a + MiniscriptKey, Ctx: 'a + ScriptContext, Ext: 'a + Extension<Pk>> {
     node_iter: Iter<'a, Pk, Ctx, Ext>,
     curr_node: Option<&'a Miniscript<Pk, Ctx, Ext>>,
     key_index: usize,
@@ -319,7 +319,7 @@ impl<'a, Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Iterator
 
 /// Iterator for traversing all [MiniscriptKey] hashes in AST starting from some specific node which
 /// constructs the iterator via [Miniscript::iter_pkh] method.
-pub struct PkhIter<'a, Pk: 'a + MiniscriptKey, Ctx: 'a + ScriptContext, Ext: Extension<Pk>> {
+pub struct PkhIter<'a, Pk: 'a + MiniscriptKey, Ctx: 'a + ScriptContext, Ext: 'a + Extension<Pk>> {
     node_iter: Iter<'a, Pk, Ctx, Ext>,
     curr_node: Option<&'a Miniscript<Pk, Ctx, Ext>>,
     key_index: usize,
@@ -373,7 +373,7 @@ pub enum PkPkh<Pk: MiniscriptKey> {
 /// Iterator for traversing all [MiniscriptKey]'s and hashes, depending what data are present in AST,
 /// starting from some specific node which constructs the iterator via
 /// [Miniscript::iter_pk_pkh] method.
-pub struct PkPkhIter<'a, Pk: 'a + MiniscriptKey, Ctx: 'a + ScriptContext, Ext: Extension<Pk>> {
+pub struct PkPkhIter<'a, Pk: 'a + MiniscriptKey, Ctx: 'a + ScriptContext, Ext: 'a + Extension<Pk>> {
     node_iter: Iter<'a, Pk, Ctx, Ext>,
     curr_node: Option<&'a Miniscript<Pk, Ctx, Ext>>,
     key_index: usize,
