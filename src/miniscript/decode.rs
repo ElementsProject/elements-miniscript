@@ -236,6 +236,17 @@ pub fn parse<Ctx: ScriptContext, Ext: Extension<bitcoin::PublicKey>>(
     non_term.push(NonTerm::MaybeSwap);
     non_term.push(NonTerm::Expression);
     loop {
+        // Parse extensions as expressions
+        if let Some(NonTerm::Expression) = non_term.last() {
+            match Ext::from_token_iter(tokens) {
+                Ok(ext) => {
+                    // Since we successfully parsed the expression, pop it
+                    non_term.pop();
+                    term.reduce0(Terminal::Ext(ext))?;
+                }
+                Err(..) => {}
+            }
+        }
         match non_term.pop() {
             Some(NonTerm::Expression) => {
                 match_token!(

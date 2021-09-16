@@ -25,6 +25,7 @@ use crate::{policy::Liftable, Satisfier};
 
 use super::{
     context::ScriptContextError,
+    lex::TokenIter,
     satisfy::Satisfaction,
     types::{Correctness, ExtData, Malleability},
 };
@@ -87,6 +88,11 @@ pub trait Extension<Pk: MiniscriptKey>:
     }
 
     //todo: Add checks after we introduce Tap ctx
+
+    /// Parse the terminal from [`TokenIter`]. Implementers of this trait are responsible
+    /// for making sure tokens is mutated correctly. If parsing is not successful, the tokens
+    /// should not be consumed.
+    fn from_token_iter(_tokens: &mut TokenIter) -> Result<Self, ()>;
 }
 
 /// No Extensions for elements-miniscript
@@ -140,6 +146,11 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
 
     fn script_size(&self) -> usize {
         unreachable!()
+    }
+
+    fn from_token_iter(_tokens: &mut TokenIter) -> Result<Self, ()> {
+        // No extensions should return Err on parsing
+        Err(())
     }
 }
 
@@ -225,6 +236,10 @@ where
 
     fn script_size(&self) -> usize {
         todo!()
+    }
+
+    fn from_token_iter(_tokens: &mut TokenIter) -> Result<Self, ()> {
+        Err(())
     }
 }
 
