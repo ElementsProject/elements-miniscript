@@ -88,7 +88,7 @@ pub trait Extension<Pk: MiniscriptKey>:
     /// Vec<Tree>.
     // Ideally, we would want a FromTree implementation here, but that is not possible
     // as we would need to create a new Tree by removing wrappers from root.
-    fn from_name_tree(_name: &str, _child: &Vec<Tree>) -> Result<Self, ()>;
+    fn from_name_tree(_name: &str, children: &[Tree]) -> Result<Self, ()>;
 }
 
 /// No Extensions for elements-miniscript
@@ -149,7 +149,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
         Err(())
     }
 
-    fn from_name_tree(_name: &str, _child: &Vec<Tree>) -> Result<Self, ()> {
+    fn from_name_tree(_name: &str, _children: &[Tree]) -> Result<Self, ()> {
         // No extensions should not parse any extensions from String
         Err(())
     }
@@ -243,7 +243,7 @@ where
         Err(())
     }
 
-    fn from_name_tree(_name: &str, _child: &Vec<Tree>) -> Result<Self, ()> {
+    fn from_name_tree(_name: &str, _children: &[Tree]) -> Result<Self, ()> {
         Err(())
     }
 }
