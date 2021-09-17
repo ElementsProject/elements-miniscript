@@ -151,6 +151,7 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
 }
 
 ///Vec representing terminals stack while decoding.
+#[derive(Debug)]
 struct TerminalStack<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>>(
     Vec<Miniscript<Pk, Ctx, Ext>>,
 );
@@ -243,6 +244,7 @@ pub fn parse<Ctx: ScriptContext, Ext: Extension<bitcoin::PublicKey>>(
                     // Since we successfully parsed the expression, pop it
                     non_term.pop();
                     term.reduce0(Terminal::Ext(ext))?;
+                    continue;
                 }
                 Err(..) => {}
             }
