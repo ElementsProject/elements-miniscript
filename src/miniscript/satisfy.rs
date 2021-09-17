@@ -671,7 +671,7 @@ impl Ord for Witness {
 
 impl Witness {
     /// Turn a signature into (part of) a satisfaction
-    fn signature<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pk: &Pk) -> Self {
+    pub fn signature<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pk: &Pk) -> Self {
         match sat.lookup_sig(pk) {
             Some((sig, hashtype)) => {
                 let mut ret = sig.serialize_der().to_vec();
@@ -684,7 +684,7 @@ impl Witness {
     }
 
     /// Turn a public key related to a pkh into (part of) a satisfaction
-    fn pkh_public_key<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &Pk::Hash) -> Self {
+    pub fn pkh_public_key<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &Pk::Hash) -> Self {
         match sat.lookup_pkh_pk(pkh) {
             Some(pk) => Witness::Stack(vec![pk.to_public_key().to_bytes()]),
             // public key hashes are assumed to be unavailable
@@ -694,7 +694,7 @@ impl Witness {
     }
 
     /// Turn a key/signature pair related to a pkh into (part of) a satisfaction
-    fn pkh_signature<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &Pk::Hash) -> Self {
+    pub fn pkh_signature<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &Pk::Hash) -> Self {
         match sat.lookup_pkh_sig(pkh) {
             Some((pk, (sig, hashtype))) => {
                 let mut ret = sig.serialize_der().to_vec();
@@ -706,7 +706,10 @@ impl Witness {
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    fn ripemd160_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: ripemd160::Hash) -> Self {
+    pub fn ripemd160_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(
+        sat: S,
+        h: ripemd160::Hash,
+    ) -> Self {
         match sat.lookup_ripemd160(h) {
             Some(pre) => Witness::Stack(vec![pre.to_vec()]),
             // Note hash preimages are unavailable instead of impossible
@@ -715,7 +718,7 @@ impl Witness {
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    fn hash160_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: hash160::Hash) -> Self {
+    pub fn hash160_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: hash160::Hash) -> Self {
         match sat.lookup_hash160(h) {
             Some(pre) => Witness::Stack(vec![pre.to_vec()]),
             // Note hash preimages are unavailable instead of impossible
@@ -724,7 +727,7 @@ impl Witness {
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    fn sha256_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: sha256::Hash) -> Self {
+    pub fn sha256_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: sha256::Hash) -> Self {
         match sat.lookup_sha256(h) {
             Some(pre) => Witness::Stack(vec![pre.to_vec()]),
             // Note hash preimages are unavailable instead of impossible
@@ -733,7 +736,7 @@ impl Witness {
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    fn hash256_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: sha256d::Hash) -> Self {
+    pub fn hash256_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: sha256d::Hash) -> Self {
         match sat.lookup_hash256(h) {
             Some(pre) => Witness::Stack(vec![pre.to_vec()]),
             // Note hash preimages are unavailable instead of impossible
@@ -742,7 +745,7 @@ impl Witness {
     }
 
     /// Turn a version into (part of) a satisfaction
-    fn ver_eq_satisfy<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, n: u32) -> Self {
+    pub fn ver_eq_satisfy<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, n: u32) -> Self {
         match sat.lookup_nversion() {
             Some(k) => {
                 if k == n {
@@ -758,7 +761,7 @@ impl Witness {
     }
 
     /// Turn a output prefix into (part of) a satisfaction
-    fn output_pref_satisfy<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pref: &[u8]) -> Self {
+    pub fn output_pref_satisfy<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pref: &[u8]) -> Self {
         match sat.lookup_outputs() {
             Some(outs) => {
                 let mut ser_out = Vec::new();
@@ -847,27 +850,27 @@ impl Witness {
 
 impl Witness {
     /// Produce something like a 32-byte 0 push
-    fn hash_dissatisfaction() -> Self {
+    pub fn hash_dissatisfaction() -> Self {
         Witness::Stack(vec![vec![0; 32]])
     }
 
     /// Construct a satisfaction equivalent to an empty stack
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         Witness::Stack(vec![])
     }
 
     /// Construct a satisfaction equivalent to `OP_1`
-    fn push_1() -> Self {
+    pub fn push_1() -> Self {
         Witness::Stack(vec![vec![1]])
     }
 
     /// Construct a satisfaction equivalent to a single empty push
-    fn push_0() -> Self {
+    pub fn push_0() -> Self {
         Witness::Stack(vec![vec![]])
     }
 
     /// Concatenate, or otherwise combine, two satisfactions
-    fn combine(one: Self, two: Self) -> Self {
+    pub fn combine(one: Self, two: Self) -> Self {
         match (one, two) {
             (Witness::Impossible, _) | (_, Witness::Impossible) => Witness::Impossible,
             (Witness::Unavailable, _) | (_, Witness::Unavailable) => Witness::Unavailable,
