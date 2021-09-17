@@ -97,6 +97,9 @@ impl fmt::Display for Token {
 #[derive(Debug, Clone)]
 /// Iterator that goes through a vector of tokens backward (our parser wants to read
 /// backward and this is more efficient anyway since we can use `Vec::pop()`).
+// This really does not need to be an iterator because the way we are using it, we are
+// actually collecting lexed symbols into a vector. If that is the case, might as well
+// use the inner vector directly
 pub struct TokenIter(Vec<Token>);
 
 impl TokenIter {
@@ -108,6 +111,28 @@ impl TokenIter {
     /// Look at the top at Iterator
     pub fn peek(&self) -> Option<&Token> {
         self.0.last()
+    }
+
+    /// Look at the slice with the last n elements
+    pub fn peek_slice(&self, n: usize) -> Option<&[Token]> {
+        if n <= self.len() {
+            Some(self.0[self.len() - n..].as_ref())
+        } else {
+            None
+        }
+    }
+
+    /// Advance the iterator n times
+    /// Returns Some(()) if the iterator can be advanced n times
+    pub fn advance(&mut self, n: usize) -> Option<()> {
+        if n <= self.len() {
+            for _ in 0..n {
+                self.next();
+            }
+            Some(())
+        } else {
+            None
+        }
     }
 
     /// Push a value to the iterator
