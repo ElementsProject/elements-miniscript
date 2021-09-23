@@ -1597,7 +1597,9 @@ mod benches {
     use super::{CompilerError, Concrete};
     use miniscript::Segwitv0;
     use Miniscript;
-    type SegwitMsRes = Result<Miniscript<String, Segwitv0>, CompilerError>;
+    use NoExt;
+
+    type SegwitMsRes = Result<Miniscript<String, Segwitv0, NoExt>, CompilerError>;
     #[bench]
     pub fn compile_basic(bh: &mut Bencher) {
         let h = (0..64).map(|_| "a").collect::<String>();
