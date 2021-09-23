@@ -23,8 +23,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::{fmt, str};
 
-use elements::encode::serialize;
-use elements::hashes::hex::{FromHex, ToHex};
+use elements::hashes::hex::FromHex;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use elements::{opcodes, script};
 
@@ -106,9 +105,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
             | Terminal::Ripemd160(..)
             | Terminal::Hash160(..)
             | Terminal::True
-            | Terminal::False
-            | Terminal::Version(..)
-            | Terminal::OutputsPref(..) => true,
+            | Terminal::False => true,
             Terminal::Alt(ref sub)
             | Terminal::Swap(ref sub)
             | Terminal::Check(ref sub)
@@ -157,8 +154,6 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
             Terminal::Hash160(x) => Terminal::Hash160(x),
             Terminal::True => Terminal::True,
             Terminal::False => Terminal::False,
-            Terminal::Version(n) => Terminal::Version(n),
-            Terminal::OutputsPref(ref pref) => Terminal::OutputsPref(pref.clone()),
             Terminal::Alt(ref sub) => Terminal::Alt(Arc::new(
                 sub.real_translate_pk(translatefpk, translatefpkh)?,
             )),
@@ -312,8 +307,6 @@ where
                 Terminal::Hash160(h) => write!(f, "hash160({})", h),
                 Terminal::True => f.write_str("1"),
                 Terminal::False => f.write_str("0"),
-                Terminal::Version(k) => write!(f, "ver_eq({})", k),
-                Terminal::OutputsPref(ref pref) => write!(f, "outputs_pref({})", pref.to_hex()),
                 Terminal::Ext(ref e) => write!(f, "{:?}", e),
                 Terminal::AndV(ref l, ref r) => write!(f, "and_v({:?},{:?})", l, r),
                 Terminal::AndB(ref l, ref r) => write!(f, "and_b({:?},{:?})", l, r),
@@ -370,8 +363,6 @@ where
             Terminal::Hash160(h) => write!(f, "hash160({})", h),
             Terminal::True => f.write_str("1"),
             Terminal::False => f.write_str("0"),
-            Terminal::Version(n) => write!(f, "ver_eq({})", n),
-            Terminal::OutputsPref(ref pref) => write!(f, "outputs_pref({})", pref.to_hex()),
             Terminal::Ext(ref e) => write!(f, "{}", e),
             Terminal::AndV(ref l, ref r) if r.node != Terminal::True => {
                 write!(f, "and_v({},{})", l, r)
@@ -545,13 +536,6 @@ where
             }),
             ("1", 0) => Ok(Terminal::True),
             ("0", 0) => Ok(Terminal::False),
-            ("ver_eq", 1) => {
-                let n = expression::terminal(&top.args[0], expression::parse_num)?;
-                Ok(Terminal::Version(n))
-            }
-            ("outputs_pref", 1) => expression::terminal(&top.args[0], |x| {
-                Vec::<u8>::from_hex(x).map(Terminal::OutputsPref)
-            }),
             ("and_v", 2) => {
                 let expr = expression::binary(top, Terminal::AndV)?;
                 if let Terminal::AndV(_, ref right) = expr {
@@ -798,8 +782,6 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::True => builder.push_opcode(opcodes::OP_TRUE),
             Terminal::False => builder.push_opcode(opcodes::OP_FALSE),
-            Terminal::Version(n) => builder.check_item_eq(12, &serialize(&n)),
-            Terminal::OutputsPref(ref pref) => builder.check_item_pref(4, pref),
             Terminal::Alt(ref sub) => builder
                 .push_opcode(opcodes::all::OP_TOALTSTACK)
                 .push_astelem(sub)
@@ -897,13 +879,6 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
             Terminal::Hash160(..) => 21 + 6,
             Terminal::True => 1,
             Terminal::False => 1,
-            Terminal::Version(_n) => 4 + 1 + 1 + 4, // opcodes + push opcodes + target size
-            Terminal::OutputsPref(ref pref) => {
-                // CAT CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
-                // HASH256 DEPTH <10> SUB PICK EQUAL
-                8 + pref.len() + 1 /* line1 opcodes + pref.push */
-                + 6 /* line 2 */
-            }
             Terminal::Alt(ref sub) => sub.node.script_size() + 2,
             Terminal::Swap(ref sub) => sub.node.script_size() + 1,
             Terminal::Check(ref sub) => sub.node.script_size() + 1,

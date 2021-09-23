@@ -89,23 +89,6 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
     Ripemd160(ripemd160::Hash),
     /// `SIZE 32 EQUALVERIFY HASH160 <hash> EQUAL`
     Hash160(hash160::Hash),
-    // Elements
-    /// `DEPTH <12> SUB PICK <num> EQUAL`
-    Version(u32),
-    /// Prefix is initally encoded in the script pubkey
-    /// User provides a suffix such that hash of (prefix || suffix)
-    /// is equal to hashOutputs
-    /// Since, there is a policy restriction that initial pushes must be
-    /// only 80 bytes, we need user to provide suffix in separate items
-    /// There can be atmost 7 cats, because the script element must be less
-    /// than 520 bytes total in order to compute an hash256 on it.
-    /// Even if the witness does not require 7 pushes, the user should push
-    /// 7 elements with possibly empty values.
-    ///
-    /// CAT CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
-    /// HASH256
-    /// DEPTH <10> SUB PICK EQUALVERIFY
-    OutputsPref(Vec<u8>),
     // Wrappers
     /// `TOALTSTACK [E] FROMALTSTACK`
     Alt(Arc<Miniscript<Pk, Ctx, Ext>>),
@@ -304,30 +287,18 @@ pub fn parse<Ctx: ScriptContext, Ext: Extension<bitcoin::PublicKey>>(
                                     ))?
                                 },
                             ),
-                            Tk::PickPush4(ver), Tk::Sub=> match_token!(
-                                tokens,
-                                Tk::Num(12), Tk::Depth => {
-                                    non_term.push(NonTerm::Verify);
-                                    term.reduce0(Terminal::Version(ver))?
-                                },
-                            ),
-                            Tk::Pick, Tk::Sub => match_token!(
-                                tokens,
-                                Tk::Num(4), Tk::Depth => match_token!(
-                                    tokens,
-                                    Tk::Hash256, Tk::Cat, Tk::Swap, Tk::Push(bytes), Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat =>
-                                        {
-                                            non_term.push(NonTerm::Verify);
-                                            term.reduce0(Terminal::OutputsPref(bytes))?
-                                        },
-                                ),
-                            ),
                             Tk::Num(k) => {
                                 non_term.push(NonTerm::Verify);
                                 non_term.push(NonTerm::ThreshW {
                                     k: k as usize,
                                     n: 0
                                 });
+                            },
+                            x => {
+                                tokens.un_next(x);
+                                tokens.un_next(Tk::Equal);
+                                non_term.push(NonTerm::Verify);
+                                non_term.push(NonTerm::Expression);
                             },
                         ),
                         x => {
@@ -381,18 +352,6 @@ pub fn parse<Ctx: ScriptContext, Ext: Extension<bitcoin::PublicKey>>(
                             Tk::Size => term.reduce0(Terminal::Hash160(
                                 hash160::Hash::from_inner(hash)
                             ))?,
-                        ),
-                        Tk::PickPush4(ver), Tk::Sub => match_token!(
-                            tokens,
-                            Tk::Num(12), Tk::Depth => term.reduce0(Terminal::Version(ver))?,
-                        ),
-                        Tk::Pick, Tk::Sub => match_token!(
-                            tokens,
-                            Tk::Num(4), Tk::Depth => match_token!(
-                                tokens,
-                                Tk::Hash256, Tk::Cat, Tk::Swap, Tk::Push(bytes), Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat =>
-                                    term.reduce0(Terminal::OutputsPref(bytes))?,
-                            ),
                         ),
                         // thresholds
                         Tk::Num(k) => {

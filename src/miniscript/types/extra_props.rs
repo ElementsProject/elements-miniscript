@@ -922,8 +922,6 @@ impl Property for ExtData {
             Terminal::Hash256(..) => Ok(Self::from_hash256()),
             Terminal::Ripemd160(..) => Ok(Self::from_ripemd160()),
             Terminal::Hash160(..) => Ok(Self::from_hash160()),
-            Terminal::Version(..) => Ok(Self::from_ver_eq()),
-            Terminal::OutputsPref(ref pref) => Ok(Self::from_output_pref(pref)),
             Terminal::Alt(ref sub) => wrap_err(Self::cast_alt(sub.ext.clone())),
             Terminal::Swap(ref sub) => wrap_err(Self::cast_swap(sub.ext.clone())),
             Terminal::Check(ref sub) => wrap_err(Self::cast_check(sub.ext.clone())),

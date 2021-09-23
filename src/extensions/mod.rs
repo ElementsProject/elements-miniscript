@@ -21,6 +21,10 @@ use miniscript::{
 };
 
 use interpreter::{self, Stack};
+mod outputs_pref;
+mod tx_ver;
+pub use self::outputs_pref::OutputsPref;
+pub use self::tx_ver::VerEq;
 
 /// Extensions to elements-miniscript.
 /// Refer to implementations(unimplemented!) for example and tutorials
@@ -61,10 +65,7 @@ pub trait Extension<Pk: MiniscriptKey>:
     fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
     where
         Pk: 'a,
-        Pk::Hash: 'a,
-    {
-        false
-    }
+        Pk::Hash: 'a;
 
     /// Encoding of the current fragment
     fn push_to_builder(&self, builder: Builder) -> Builder
@@ -98,6 +99,7 @@ pub trait Extension<Pk: MiniscriptKey>:
     /// and check which constraints are satisfied
     /// Output [`None`] when the ext fragment is dissatisfied, output Some(Err) when there is
     /// an error in interpreter value. Finally, if the evaluation is successful output Some(Ok())
+    /// After taproot this should also access to the transaction data
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut Stack<'txin>,
@@ -205,85 +207,120 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for NoExt {
 }
 
 /// All known Extensions for elements-miniscript
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
-pub struct AllExt;
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
+pub enum AllExt {
+    /// Version Equal
+    VerEq(VerEq),
+    /// Outputs Prefix equal
+    OutputsPref(OutputsPref),
+}
+
+// Apply the function on each arm
+macro_rules! all_arms_fn {
+    ($slf: ident, $f: ident, $($args:ident, )* ) => {
+        match $slf {
+            AllExt::VerEq(v) => <VerEq as Extension<Pk>>::$f(v, $($args, )*),
+            AllExt::OutputsPref(p) => <OutputsPref as Extension<Pk>>::$f(p, $($args, )*),
+        }
+    };
+}
+
+// try all extensions one by one
+// Self::$f(args)
+macro_rules! try_from_arms {
+    ($f: ident, $($args: ident, )*) => {
+        if let Ok(v) = <VerEq as Extension<Pk>>::$f($($args, )*) {
+            Ok(AllExt::VerEq(v))
+        } else if let Ok(v) = <OutputsPref as Extension<Pk>>::$f($($args, )*) {
+            Ok(AllExt::OutputsPref(v))
+        } else {
+            Err(())
+        }
+    };
+}
 
 impl<Pk> Extension<Pk> for AllExt
 where
     Pk: MiniscriptKey,
 {
     fn corr_prop(&self) -> Correctness {
-        unimplemented!()
+        all_arms_fn!(self, corr_prop,)
     }
 
     fn mall_prop(&self) -> Malleability {
-        unimplemented!()
+        all_arms_fn!(self, mall_prop,)
     }
 
     fn extra_prop(&self) -> ExtData {
-        unimplemented!()
+        all_arms_fn!(self, extra_prop,)
     }
 
-    fn satisfy<S>(&self, _sat: &S) -> Satisfaction
+    fn satisfy<S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        unimplemented!()
+        all_arms_fn!(self, satisfy, sat,)
     }
 
-    fn dissatisfy<S>(&self, _sat: &S) -> Satisfaction
+    fn dissatisfy<S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        unimplemented!()
+        all_arms_fn!(self, dissatisfy, sat,)
     }
 
-    fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
+    fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: &mut F) -> bool
     where
         Pk: 'a,
         Pk::Hash: 'a,
     {
-        unimplemented!()
+        all_arms_fn!(self, real_for_each_key, pred,)
     }
 
-    fn push_to_builder(&self, _builder: Builder) -> Builder
+    fn push_to_builder(&self, builder: Builder) -> Builder
     where
         Pk: ToPublicKey,
     {
-        unimplemented!()
+        all_arms_fn!(self, push_to_builder, builder,)
     }
 
     fn script_size(&self) -> usize {
-        unimplemented!()
+        all_arms_fn!(self, script_size,)
     }
 
-    fn from_token_iter(_tokens: &mut TokenIter) -> Result<Self, ()> {
-        Err(())
+    fn from_token_iter(tokens: &mut TokenIter) -> Result<Self, ()> {
+        try_from_arms!(from_token_iter, tokens,)
     }
 
-    fn from_name_tree(_name: &str, _children: &[Tree]) -> Result<Self, ()> {
-        Err(())
+    fn from_name_tree(name: &str, children: &[Tree]) -> Result<Self, ()> {
+        try_from_arms!(from_name_tree, name, children,)
     }
 
     fn evaluate<'intp, 'txin>(
         &'intp self,
-        _stack: &mut Stack<'txin>,
+        stack: &mut Stack<'txin>,
     ) -> Option<Result<(), interpreter::Error>> {
-        Some(Err(interpreter::Error::CouldNotEvaluate))
+        all_arms_fn!(self, evaluate, stack,)
     }
 }
 
 impl fmt::Display for AllExt {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        unimplemented!()
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AllExt::VerEq(v) => v.fmt(f),
+            AllExt::OutputsPref(p) => p.fmt(f),
+        }
     }
 }
 
 impl<Pk: MiniscriptKey> Liftable<Pk> for AllExt {
     fn lift(&self) -> Result<policy::Semantic<Pk>, Error> {
-        unimplemented!()
+        match self {
+            AllExt::VerEq(v) => v.lift(),
+            AllExt::OutputsPref(p) => p.lift(),
+        }
     }
 }
 
@@ -292,14 +329,20 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for AllExt {
 
     fn translate_pk<Fpk, Fpkh, E>(
         &self,
-        mut _translatefpk: Fpk,
-        _translatefpkh: Fpkh,
+        translatefpk: Fpk,
+        translatefpkh: Fpkh,
     ) -> Result<Self::Output, E>
     where
         Fpk: FnMut(&P) -> Result<Q, E>,
         Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
         Q: MiniscriptKey,
     {
-        unimplemented!()
+        let ext = match self {
+            AllExt::VerEq(v) => AllExt::VerEq(v.translate_pk(translatefpk, translatefpkh)?),
+            AllExt::OutputsPref(p) => {
+                AllExt::OutputsPref(p.translate_pk(translatefpk, translatefpkh)?)
+            }
+        };
+        Ok(ext)
     }
 }

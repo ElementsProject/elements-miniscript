@@ -146,7 +146,7 @@ where
             Terminal::Hash160(h) => Semantic::Hash160(h),
             Terminal::True => Semantic::Trivial,
             Terminal::False => Semantic::Unsatisfiable,
-            Terminal::Version(_) | Terminal::OutputsPref(_) => return Err(CovError::CovenantLift)?,
+            // Terminal::Version(_) | Terminal::OutputsPref(_) => return Err(CovError::CovenantLift)?,
             Terminal::Alt(ref sub)
             | Terminal::Swap(ref sub)
             | Terminal::Check(ref sub)

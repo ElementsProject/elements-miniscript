@@ -398,12 +398,6 @@ impl ScriptContext for Segwitv0 {
                 }
                 Ok(())
             }
-            Terminal::OutputsPref(ref pref) => {
-                if pref.len() > MAX_SCRIPT_ELEMENT_SIZE {
-                    return Err(ScriptContextError::CovElementSizeExceeded);
-                }
-                Ok(())
-            }
             Terminal::Ext(ref e) => {
                 e.segwit_ctx_checks()?;
                 Ok(())

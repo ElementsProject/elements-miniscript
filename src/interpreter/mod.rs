@@ -40,7 +40,7 @@ mod stack;
 use {AllExt, Extension};
 
 pub use self::error::Error;
-pub use self::stack::Stack;
+pub use self::stack::{Element, Stack};
 
 /// An iterable Miniscript-structured representation of the spending of a coin
 pub struct Interpreter<'txin, Ext: Extension<PublicKey>> {
@@ -526,22 +526,6 @@ where
                         Some(Ok(())) => return Some(Ok(SatisfiedConstraint::Ext { ext: ext })),
                         Some(Err(e)) => return Some(Err(e)),
                         None => {}
-                    }
-                }
-                Terminal::Version(ref ver) => {
-                    debug_assert_eq!(node_state.n_evaluated, 0);
-                    debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_ver(ver);
-                    if res.is_some() {
-                        return res;
-                    }
-                }
-                Terminal::OutputsPref(ref pref) => {
-                    debug_assert_eq!(node_state.n_evaluated, 0);
-                    debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_outputs_pref(pref);
-                    if res.is_some() {
-                        return res;
                     }
                 }
                 Terminal::Alt(ref sub) | Terminal::Swap(ref sub) | Terminal::Check(ref sub) => {

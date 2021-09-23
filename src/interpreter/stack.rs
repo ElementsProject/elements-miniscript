@@ -25,8 +25,6 @@ use {ElementsSig, ToPublicKey};
 use Extension;
 
 use super::{verify_sersig, Error, HashLockType, SatisfiedConstraint};
-use miniscript::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
-use util;
 /// Definition of Stack Element of the Stack used for interpretation of Miniscript.
 /// All stack elements with vec![] go to Dissatisfied and vec![1] are marked to Satisfied.
 /// Others are directly pushed as witness
@@ -390,81 +388,6 @@ impl<'txin> Stack<'txin> {
             }
         } else {
             Some(Err(Error::UnexpectedStackEnd))
-        }
-    }
-
-    /// Evaluate a ver fragment. Get the version from the global stack
-    /// context and check equality
-    pub fn evaluate_ver<'intp, Ext: Extension<PublicKey>>(
-        &mut self,
-        n: &'intp u32,
-    ) -> Option<Result<SatisfiedConstraint<'intp, 'txin, Ext>, Error>> {
-        // Version is at index 11
-        let ver = self[11];
-        if let Err(e) = ver.try_push() {
-            return Some(Err(e));
-        }
-        let elem = ver.as_push();
-        if elem.len() == 4 {
-            let wit_ver = util::slice_to_u32_le(elem);
-            if wit_ver == *n {
-                self.push(Element::Satisfied);
-                Some(Ok(SatisfiedConstraint::VerEq { n: n }))
-            } else {
-                None
-            }
-        } else {
-            Some(Err(Error::CovWitnessSizeErr {
-                pos: 1,
-                expected: 4,
-                actual: elem.len(),
-            }))
-        }
-    }
-
-    /// Evaluate a output_pref fragment. Get the hashoutputs from the global
-    /// stack context and check it's preimage starts with prefix.
-    /// The user provides the suffix as witness in 6 different elements
-    pub fn evaluate_outputs_pref<'intp, Ext: Extension<PublicKey>>(
-        &mut self,
-        pref: &'intp [u8],
-    ) -> Option<Result<SatisfiedConstraint<'intp, 'txin, Ext>, Error>> {
-        // Version is at index 1
-        let hash_outputs = self[3];
-        if let Err(e) = hash_outputs.try_push() {
-            return Some(Err(e));
-        }
-        // Maximum number of suffix elements
-        let max_elems = MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE + 1;
-        let hash_outputs = hash_outputs.as_push();
-        if hash_outputs.len() == 32 {
-            // We want to cat the last 6 elements(5 cats) in suffix
-            if self.len() < max_elems {
-                return Some(Err(Error::UnexpectedStackEnd));
-            }
-            let mut outputs_builder = Vec::new();
-            outputs_builder.extend(pref);
-            let len = self.len();
-            // Add the max_elems suffix elements
-            for i in 0..max_elems {
-                outputs_builder.extend(self[len - max_elems + i].into_slice());
-            }
-            // Pop the max_elems suffix elements
-            for _ in 0..max_elems {
-                self.pop().unwrap();
-            }
-            if sha256d::Hash::hash(&outputs_builder).as_inner() == hash_outputs {
-                self.push(Element::Satisfied);
-                Some(Ok(SatisfiedConstraint::OutputsPref { pref: pref }))
-            } else {
-                None
-            }
-        } else {
-            Some(Err(Error::CovWitnessSizeErr {
-                pos: 9,
-                expected: 32,
-                actual: hash_outputs.len(),
-            }))
         }
     }
 
