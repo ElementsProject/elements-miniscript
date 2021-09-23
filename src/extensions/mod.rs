@@ -20,6 +20,8 @@ use miniscript::{
     types::{Correctness, ExtData, Malleability},
 };
 
+use interpreter::{self, Stack};
+
 /// Extensions to elements-miniscript.
 /// Refer to implementations(unimplemented!) for example and tutorials
 pub trait Extension<Pk: MiniscriptKey>:
@@ -89,6 +91,17 @@ pub trait Extension<Pk: MiniscriptKey>:
     // Ideally, we would want a FromTree implementation here, but that is not possible
     // as we would need to create a new Tree by removing wrappers from root.
     fn from_name_tree(_name: &str, children: &[Tree]) -> Result<Self, ()>;
+
+    /// Interpreter support
+    /// Evaluate the fragment based on inputs from stack. If an implementation of this
+    /// is provided the user can use the interpreter API to parse scripts from blockchain
+    /// and check which constraints are satisfied
+    /// Output [`None`] when the ext fragment is dissatisfied, output Some(Err) when there is
+    /// an error in interpreter value. Finally, if the evaluation is successful output Some(Ok())
+    fn evaluate<'intp, 'txin>(
+        &'intp self,
+        stack: &mut Stack<'txin>,
+    ) -> Option<Result<(), interpreter::Error>>;
 }
 
 /// No Extensions for elements-miniscript
@@ -152,6 +165,13 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
     fn from_name_tree(_name: &str, _children: &[Tree]) -> Result<Self, ()> {
         // No extensions should not parse any extensions from String
         Err(())
+    }
+
+    fn evaluate<'intp, 'txin>(
+        &'intp self,
+        _stack: &mut Stack<'txin>,
+    ) -> Option<Result<(), interpreter::Error>> {
+        unreachable!()
     }
 }
 
@@ -245,6 +265,13 @@ where
 
     fn from_name_tree(_name: &str, _children: &[Tree]) -> Result<Self, ()> {
         Err(())
+    }
+
+    fn evaluate<'intp, 'txin>(
+        &'intp self,
+        _stack: &mut Stack<'txin>,
+    ) -> Option<Result<(), interpreter::Error>> {
+        Some(Err(interpreter::Error::CouldNotEvaluate))
     }
 }
 
