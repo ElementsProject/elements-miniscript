@@ -109,19 +109,19 @@ pub trait Extension<Pk: MiniscriptKey>:
 /// No Extensions for elements-miniscript
 /// All the implementations for the this function are unreachable
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
-pub struct NoExt;
+pub enum NoExt {}
 
 impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
     fn corr_prop(&self) -> Correctness {
-        unreachable!()
+        match *self {}
     }
 
     fn mall_prop(&self) -> Malleability {
-        unreachable!()
+        match *self {}
     }
 
     fn extra_prop(&self) -> ExtData {
-        unreachable!()
+        match *self {}
     }
 
     fn satisfy<S>(&self, _sat: &S) -> Satisfaction
@@ -129,7 +129,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        unreachable!()
+        match *self {}
     }
 
     fn dissatisfy<S>(&self, _sat: &S) -> Satisfaction
@@ -137,7 +137,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        unreachable!()
+        match *self {}
     }
 
     fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
@@ -145,18 +145,18 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
         Pk: 'a,
         Pk::Hash: 'a,
     {
-        unreachable!()
+        match *self {}
     }
 
     fn push_to_builder(&self, _builder: Builder) -> Builder
     where
         Pk: ToPublicKey,
     {
-        unreachable!()
+        match *self {}
     }
 
     fn script_size(&self) -> usize {
-        unreachable!()
+        match *self {}
     }
 
     fn from_token_iter(_tokens: &mut TokenIter) -> Result<Self, ()> {
@@ -173,19 +173,19 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
         &'intp self,
         _stack: &mut Stack<'txin>,
     ) -> Option<Result<(), interpreter::Error>> {
-        unreachable!()
+        match *self {}
     }
 }
 
 impl<Pk: MiniscriptKey> Liftable<Pk> for NoExt {
     fn lift(&self) -> Result<policy::Semantic<Pk>, Error> {
-        unreachable!()
+        match *self {}
     }
 }
 
 impl fmt::Display for NoExt {
     fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        unreachable!()
+        match *self {}
     }
 }
 
@@ -202,7 +202,7 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for NoExt {
         Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
         Q: MiniscriptKey,
     {
-        unreachable!()
+        match *self {}
     }
 }
 
