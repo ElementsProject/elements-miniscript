@@ -4,13 +4,14 @@ extern crate regex;
 use regex::Regex;
 use std::str::FromStr;
 
+use miniscript::AllExt;
 use miniscript::DummyKey;
 use miniscript::Miniscript;
 use miniscript::Segwitv0;
 
 fn do_test(data: &[u8]) {
     let s = String::from_utf8_lossy(data);
-    if let Ok(desc) = Miniscript::<DummyKey, Segwitv0>::from_str(&s) {
+    if let Ok(desc) = Miniscript::<DummyKey, Segwitv0, AllExt>::from_str(&s) {
         let output = desc.to_string();
 
         let multi_wrap_pk_re = Regex::new("([a-z]+)c:pk_k\\(").unwrap();

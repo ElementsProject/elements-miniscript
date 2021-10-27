@@ -24,6 +24,8 @@ use expression;
 use miniscript::{self, context::ScriptContext, decode::Terminal};
 use policy;
 use script_num_size;
+
+use NoExt;
 use {errstr, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, ToPublicKey};
 
 /// Contents of a "sortedmulti" descriptor
@@ -50,7 +52,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         // Check the limits before creating a new SortedMultiVec
         // For example, under p2sh context the scriptlen can only be
         // upto 520 bytes.
-        let term: miniscript::decode::Terminal<Pk, Ctx> = Terminal::Multi(k, pks.clone());
+        // sorted_multi has no extensions enabled
+        let term: miniscript::decode::Terminal<Pk, Ctx, NoExt> = Terminal::Multi(k, pks.clone());
         let ms = Miniscript::from_ast(term)?;
 
         // This would check all the consensus rules for p2sh/p2wsh and
@@ -119,7 +122,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> ForEachKey<Pk> for SortedMultiVec<Pk
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
     /// utility function to sanity a sorted multi vec
     pub fn sanity_check(&self) -> Result<(), Error> {
-        let ms: Miniscript<Pk, Ctx> =
+        let ms: Miniscript<Pk, Ctx, NoExt> =
             Miniscript::from_ast(Terminal::Multi(self.k, self.pks.clone()))
                 .expect("Must typecheck");
         // '?' for doing From conversion
@@ -130,7 +133,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
     /// Create Terminal::Multi containing sorted pubkeys
-    pub fn sorted_node(&self) -> Terminal<Pk, Ctx>
+    pub fn sorted_node(&self) -> Terminal<Pk, Ctx, NoExt>
     where
         Pk: ToPublicKey,
     {

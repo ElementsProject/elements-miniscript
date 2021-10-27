@@ -30,6 +30,8 @@ use {
     TranslatePk,
 };
 
+use NoExt;
+
 use super::{
     checksum::{desc_checksum, verify_checksum},
     DescriptorTrait, ElementsTrait, SortedMultiVec, ELMTS_STR,
@@ -53,7 +55,7 @@ impl<Pk: MiniscriptKey> Wsh<Pk> {
     }
 
     /// Create a new wsh descriptor
-    pub fn new(ms: Miniscript<Pk, Segwitv0>) -> Result<Self, Error> {
+    pub fn new(ms: Miniscript<Pk, Segwitv0, NoExt>) -> Result<Self, Error> {
         // do the top-level checks
         Segwitv0::top_level_checks(&ms)?;
         Ok(Self {
@@ -114,7 +116,9 @@ pub enum WshInner<Pk: MiniscriptKey> {
     /// Sorted Multi
     SortedMulti(SortedMultiVec<Pk, Segwitv0>),
     /// Wsh Miniscript
-    Ms(Miniscript<Pk, Segwitv0>),
+    // no extensions in regular wsh or shwsh
+    // extensions are only supported in cov descriptors
+    Ms(Miniscript<Pk, Segwitv0, NoExt>),
 }
 
 impl<Pk: MiniscriptKey> Liftable<Pk> for Wsh<Pk> {

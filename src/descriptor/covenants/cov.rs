@@ -65,6 +65,8 @@ use {
     ForEach, ForEachKey, Miniscript, ScriptContext, Segwitv0, TranslatePk,
 };
 
+use Extension;
+
 use super::super::{
     checksum::{desc_checksum, verify_checksum},
     ElementsTrait, ELMTS_STR,
@@ -85,33 +87,34 @@ pub(crate) const COV_SCRIPT_SIZE: usize = 120;
 pub(crate) const COV_SCRIPT_OPCODE_COST: usize = 74;
 /// The covenant descriptor
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct CovenantDescriptor<Pk: MiniscriptKey> {
+pub struct CovenantDescriptor<Pk: MiniscriptKey, Ext: Extension<Pk>> {
     /// the pk constraining the Covenant
     /// The key over which we want CHECKSIGFROMSTACK
     pub(crate) pk: Pk,
     /// the underlying Miniscript
     /// Must be under segwit context
-    pub(crate) ms: Miniscript<Pk, Segwitv0>,
+    // All known extensions are enabled in covenant descriptor
+    pub(crate) ms: Miniscript<Pk, Segwitv0, Ext>,
 }
 
-impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
     /// Get the pk from covenant
     pub fn pk(&self) -> &Pk {
         &self.pk
     }
 
     /// Get a reference to Miniscript inside covenant
-    pub fn to_ms(&self) -> &Miniscript<Pk, Segwitv0> {
+    pub fn to_ms(&self) -> &Miniscript<Pk, Segwitv0, Ext> {
         &self.ms
     }
 
     /// Consume self and return inner miniscript
-    pub fn into_ms(self) -> Miniscript<Pk, Segwitv0> {
+    pub fn into_ms(self) -> Miniscript<Pk, Segwitv0, Ext> {
         self.ms
     }
 
     /// Create a new Self from components
-    pub fn new(pk: Pk, ms: Miniscript<Pk, Segwitv0>) -> Result<Self, Error> {
+    pub fn new(pk: Pk, ms: Miniscript<Pk, Segwitv0, Ext>) -> Result<Self, Error> {
         // // 1) Check the 201 opcode count here
         let ms_op_count = ms.ext.ops_count_sat;
         // statically computed
@@ -205,7 +208,7 @@ impl<Pk: MiniscriptKey> CovenantDescriptor<Pk> {
     }
 }
 
-impl CovenantDescriptor<bitcoin::PublicKey> {
+impl<Ext: Extension<bitcoin::PublicKey>> CovenantDescriptor<bitcoin::PublicKey, Ext> {
     /// Check if the given script is a covenant descriptor
     /// Consumes the iterator so that only remaining miniscript
     /// needs to be parsed from the iterator
@@ -244,7 +247,7 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
     // All code for covenants can thus be separated in a module
     // This parsing is parse_insane
     pub fn parse_insane(script: &script::Script) -> Result<Self, Error> {
-        let (pk, ms) = Self::parse_cov_components(script)?;
+        let (pk, ms) = Self::parse_cov_components::<_>(script)?;
         Self::new(pk, ms)
     }
 
@@ -252,13 +255,17 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
     // descriptor. This allows us to parse Miniscript with
     // it's context so that it can be used with NoChecks
     // context while using the interpreter
-    pub(crate) fn parse_cov_components<Ctx: ScriptContext>(
+    pub(crate) fn parse_cov_components<Ctx>(
         script: &script::Script,
-    ) -> Result<(bitcoin::PublicKey, Miniscript<bitcoin::PublicKey, Ctx>), Error> {
+    ) -> Result<(bitcoin::PublicKey, Miniscript<bitcoin::PublicKey, Ctx, Ext>), Error>
+    where
+        Ctx: ScriptContext,
+        Ext: Extension<bitcoin::PublicKey>,
+    {
         let tokens = lex(script)?;
         let mut iter = TokenIter::new(tokens);
 
-        let pk = CovenantDescriptor::<bitcoin::PublicKey>::check_cov_script(&mut iter)?;
+        let pk = CovenantDescriptor::<bitcoin::PublicKey, Ext>::check_cov_script(&mut iter)?;
         let ms = decode::parse(&mut iter)?;
         Segwitv0::check_global_validity(&ms)?;
         if ms.ty.corr.base != types::Base::B {
@@ -281,10 +288,11 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
     }
 }
 
-impl<Pk: MiniscriptKey> FromTree for CovenantDescriptor<Pk>
+impl<Pk: MiniscriptKey, Ext> FromTree for CovenantDescriptor<Pk, Ext>
 where
     Pk: FromStr,
     Pk::Hash: FromStr,
+    Ext: Extension<Pk>,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
@@ -304,13 +312,21 @@ where
         }
     }
 }
-impl<Pk: MiniscriptKey> fmt::Debug for CovenantDescriptor<Pk> {
+impl<Pk, Ext> fmt::Debug for CovenantDescriptor<Pk, Ext>
+where
+    Pk: MiniscriptKey,
+    Ext: Extension<Pk>,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}covwsh({},{})", ELMTS_STR, self.pk, self.ms)
     }
 }
 
-impl<Pk: MiniscriptKey> fmt::Display for CovenantDescriptor<Pk> {
+impl<Pk, Ext> fmt::Display for CovenantDescriptor<Pk, Ext>
+where
+    Pk: MiniscriptKey,
+    Ext: Extension<Pk>,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let desc = format!("{}covwsh({},{})", ELMTS_STR, self.pk, self.ms);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
@@ -318,28 +334,32 @@ impl<Pk: MiniscriptKey> fmt::Display for CovenantDescriptor<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> FromStr for CovenantDescriptor<Pk>
+impl<Pk, Ext> FromStr for CovenantDescriptor<Pk, Ext>
 where
     Pk: FromStr,
     Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
+    Pk: MiniscriptKey,
+    Ext: Extension<Pk>,
 {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
-        CovenantDescriptor::<Pk>::from_tree(&top)
+        CovenantDescriptor::<Pk, Ext>::from_tree(&top)
     }
 }
 
-impl<Pk: MiniscriptKey> ElementsTrait<Pk> for CovenantDescriptor<Pk>
+impl<Pk, Ext> ElementsTrait<Pk> for CovenantDescriptor<Pk, Ext>
 where
     Pk: FromStr,
     Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
+    Pk: MiniscriptKey,
+    Ext: Extension<Pk>,
 {
     fn blind_addr(
         &self,
@@ -357,12 +377,14 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for CovenantDescriptor<Pk>
+impl<Pk, Ext> DescriptorTrait<Pk> for CovenantDescriptor<Pk, Ext>
 where
     Pk: FromStr,
     Pk::Hash: FromStr,
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
+    Pk: MiniscriptKey,
+    Ext: Extension<Pk>,
 {
     fn sanity_check(&self) -> Result<(), Error> {
         self.ms.sanity_check()?;
@@ -443,7 +465,7 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey> ForEachKey<Pk> for CovenantDescriptor<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension<Pk>> ForEachKey<Pk> for CovenantDescriptor<Pk, Ext> {
     fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
@@ -453,8 +475,14 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for CovenantDescriptor<Pk> {
     }
 }
 
-impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for CovenantDescriptor<P> {
-    type Output = CovenantDescriptor<Q>;
+impl<P, Q, Ext> TranslatePk<P, Q> for CovenantDescriptor<P, Ext>
+where
+    P: MiniscriptKey,
+    Q: MiniscriptKey,
+    Ext: Extension<P> + TranslatePk<P, Q>,
+    <Ext as TranslatePk<P, Q>>::Output: Extension<Q>,
+{
+    type Output = CovenantDescriptor<Q, <Ext as TranslatePk<P, Q>>::Output>;
 
     fn translate_pk<Fpk, Fpkh, E>(
         &self,

@@ -32,6 +32,8 @@ use {
     TranslatePk,
 };
 
+use NoExt;
+
 use super::{
     checksum::{desc_checksum, verify_checksum},
     DescriptorTrait, ElementsTrait, ELMTS_STR,
@@ -42,24 +44,24 @@ use super::{
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Bare<Pk: MiniscriptKey> {
     /// underlying miniscript
-    ms: Miniscript<Pk, BareCtx>,
+    ms: Miniscript<Pk, BareCtx, NoExt>,
 }
 
 impl<Pk: MiniscriptKey> Bare<Pk> {
     /// Create a new raw descriptor
-    pub fn new(ms: Miniscript<Pk, BareCtx>) -> Result<Self, Error> {
+    pub fn new(ms: Miniscript<Pk, BareCtx, NoExt>) -> Result<Self, Error> {
         // do the top-level checks
         BareCtx::top_level_checks(&ms)?;
         Ok(Self { ms: ms })
     }
 
     /// get the inner
-    pub fn into_inner(self) -> Miniscript<Pk, BareCtx> {
+    pub fn into_inner(self) -> Miniscript<Pk, BareCtx, NoExt> {
         self.ms
     }
 
     /// get the inner
-    pub fn as_inner(&self) -> &Miniscript<Pk, BareCtx> {
+    pub fn as_inner(&self) -> &Miniscript<Pk, BareCtx, NoExt> {
         &self.ms
     }
 }
@@ -98,7 +100,7 @@ where
                 name: top.name.split_at(2).1,
                 args: top.args.clone(),
             };
-            let sub = Miniscript::<Pk, BareCtx>::from_tree(&new_tree)?;
+            let sub = Miniscript::<Pk, BareCtx, NoExt>::from_tree(&new_tree)?;
             BareCtx::top_level_checks(&sub)?;
             Bare::new(sub)
         } else {

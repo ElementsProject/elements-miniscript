@@ -4,9 +4,10 @@ use miniscript::Segwitv0;
 use miniscript::{policy, DummyKey, Miniscript};
 use policy::Liftable;
 
+use miniscript::NoExt;
 use std::str::FromStr;
 
-type DummyScript = Miniscript<DummyKey, Segwitv0>;
+type DummyScript = Miniscript<DummyKey, Segwitv0, NoExt>;
 type DummyPolicy = policy::Concrete<DummyKey>;
 
 fn do_test(data: &[u8]) {
