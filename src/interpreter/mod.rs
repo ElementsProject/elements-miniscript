@@ -37,7 +37,7 @@ mod error;
 mod inner;
 mod stack;
 
-use {AllExt, Extension};
+use {CovenantExt, Extension};
 
 pub use self::error::Error;
 pub use self::stack::{Element, Stack};
@@ -51,7 +51,7 @@ pub struct Interpreter<'txin, Ext: Extension<PublicKey>> {
     height: u32,
 }
 
-impl<'txin> Interpreter<'txin, AllExt> {
+impl<'txin> Interpreter<'txin, CovenantExt> {
     /// Constructs an interpreter from the data of a spending transaction
     ///
     /// Accepts a signature-validating function. If you are willing to trust
@@ -916,7 +916,7 @@ where
 #[cfg(test)]
 mod tests {
 
-    use AllExt;
+    use CovenantExt;
 
     use super::*;
     use bitcoin;
@@ -974,8 +974,8 @@ mod tests {
         fn from_stack<'txin, 'elem, F>(
             verify_fn: F,
             stack: &'elem mut Stack<'txin>,
-            ms: &'elem Miniscript<bitcoin::PublicKey, NoChecks, AllExt>,
-        ) -> Iter<'elem, 'txin, AllExt, F>
+            ms: &'elem Miniscript<bitcoin::PublicKey, NoChecks, CovenantExt>,
+        ) -> Iter<'elem, 'txin, CovenantExt, F>
         where
             F: FnMut(&bitcoin::PublicKey, ElementsSig) -> bool,
         {
@@ -1017,7 +1017,8 @@ mod tests {
         let mut stack = Stack::from(vec![stack::Element::Push(&der_sigs[0])]);
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &pk);
-        let pk_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> = constraints.collect();
+        let pk_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             pk_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKey {
@@ -1030,7 +1031,7 @@ mod tests {
         let mut stack = Stack::from(vec![stack::Element::Dissatisfied]);
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &pk);
-        let pk_err: Result<Vec<SatisfiedConstraint<AllExt>>, Error> = constraints.collect();
+        let pk_err: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> = constraints.collect();
         assert!(pk_err.is_err());
 
         //Check Pkh
@@ -1041,7 +1042,8 @@ mod tests {
         ]);
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &pkh);
-        let pkh_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> = constraints.collect();
+        let pkh_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             pkh_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKeyHash {
@@ -1055,7 +1057,7 @@ mod tests {
         let mut stack = Stack::from(vec![]);
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &after);
-        let after_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> =
+        let after_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
             constraints.collect();
         assert_eq!(
             after_satisfied.unwrap(),
@@ -1066,7 +1068,7 @@ mod tests {
         let mut stack = Stack::from(vec![]);
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &older);
-        let older_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> =
+        let older_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
             constraints.collect();
         assert_eq!(
             older_satisfied.unwrap(),
@@ -1077,7 +1079,7 @@ mod tests {
         let mut stack = Stack::from(vec![stack::Element::Push(&preimage)]);
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &sha256);
-        let sah256_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> =
+        let sah256_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
             constraints.collect();
         assert_eq!(
             sah256_satisfied.unwrap(),
@@ -1091,7 +1093,7 @@ mod tests {
         let mut stack = Stack::from(vec![stack::Element::Push(&preimage)]);
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &hash256);
-        let sha256d_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> =
+        let sha256d_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
             constraints.collect();
         assert_eq!(
             sha256d_satisfied.unwrap(),
@@ -1105,7 +1107,7 @@ mod tests {
         let mut stack = Stack::from(vec![stack::Element::Push(&preimage)]);
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &hash160);
-        let hash160_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> =
+        let hash160_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
             constraints.collect();
         assert_eq!(
             hash160_satisfied.unwrap(),
@@ -1119,7 +1121,7 @@ mod tests {
         let mut stack = Stack::from(vec![stack::Element::Push(&preimage)]);
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &ripemd160);
-        let ripemd160_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> =
+        let ripemd160_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
             constraints.collect();
         assert_eq!(
             ripemd160_satisfied.unwrap(),
@@ -1144,7 +1146,7 @@ mod tests {
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &elem);
 
-        let and_v_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> =
+        let and_v_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
             constraints.collect();
         assert_eq!(
             and_v_satisfied.unwrap(),
@@ -1170,7 +1172,7 @@ mod tests {
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &elem);
 
-        let and_b_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> =
+        let and_b_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
             constraints.collect();
         assert_eq!(
             and_b_satisfied.unwrap(),
@@ -1200,7 +1202,7 @@ mod tests {
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &elem);
 
-        let and_or_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> =
+        let and_or_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
             constraints.collect();
         assert_eq!(
             and_or_satisfied.unwrap(),
@@ -1226,7 +1228,7 @@ mod tests {
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &elem);
 
-        let and_or_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> =
+        let and_or_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
             constraints.collect();
         assert_eq!(
             and_or_satisfied.unwrap(),
@@ -1246,7 +1248,8 @@ mod tests {
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &elem);
 
-        let or_b_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> = constraints.collect();
+        let or_b_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             or_b_satisfied.unwrap(),
             vec![SatisfiedConstraint::HashLock {
@@ -1261,7 +1264,8 @@ mod tests {
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &elem);
 
-        let or_d_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> = constraints.collect();
+        let or_d_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             or_d_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKey {
@@ -1279,7 +1283,8 @@ mod tests {
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &elem);
 
-        let or_c_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> = constraints.collect();
+        let or_c_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             or_c_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKey {
@@ -1297,7 +1302,8 @@ mod tests {
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &elem);
 
-        let or_i_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> = constraints.collect();
+        let or_i_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             or_i_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKey {
@@ -1325,7 +1331,7 @@ mod tests {
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &elem);
 
-        let thresh_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> =
+        let thresh_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
             constraints.collect();
         assert_eq!(
             thresh_satisfied.unwrap(),
@@ -1363,7 +1369,7 @@ mod tests {
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &elem);
 
-        let multi_satisfied: Result<Vec<SatisfiedConstraint<AllExt>>, Error> =
+        let multi_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
             constraints.collect();
         assert_eq!(
             multi_satisfied.unwrap(),
@@ -1401,7 +1407,8 @@ mod tests {
         let mut vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(&mut vfyfn, &mut stack, &elem);
 
-        let multi_error: Result<Vec<SatisfiedConstraint<AllExt>>, Error> = constraints.collect();
+        let multi_error: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert!(multi_error.is_err());
     }
 }

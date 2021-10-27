@@ -55,7 +55,7 @@ pub use self::script_internals::CovOperations;
 #[allow(unused_imports)]
 mod tests {
 
-    use AllExt;
+    use CovenantExt;
 
     use super::cov::*;
     use super::*;
@@ -104,7 +104,7 @@ mod tests {
         let script = desc.explicit_script();
 
         let cov_desc =
-            CovenantDescriptor::<bitcoin::PublicKey, AllExt>::parse_insane(&script).unwrap();
+            CovenantDescriptor::<bitcoin::PublicKey, CovenantExt>::parse_insane(&script).unwrap();
 
         assert_eq!(cov_desc.to_string(), desc.to_string());
     }

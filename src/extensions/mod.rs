@@ -208,7 +208,7 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for NoExt {
 
 /// All known Extensions for elements-miniscript
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
-pub enum AllExt {
+pub enum CovenantExt {
     /// Version Equal
     VerEq(VerEq),
     /// Outputs Prefix equal
@@ -219,8 +219,8 @@ pub enum AllExt {
 macro_rules! all_arms_fn {
     ($slf: ident, $f: ident, $($args:ident, )* ) => {
         match $slf {
-            AllExt::VerEq(v) => <VerEq as Extension<Pk>>::$f(v, $($args, )*),
-            AllExt::OutputsPref(p) => <OutputsPref as Extension<Pk>>::$f(p, $($args, )*),
+            CovenantExt::VerEq(v) => <VerEq as Extension<Pk>>::$f(v, $($args, )*),
+            CovenantExt::OutputsPref(p) => <OutputsPref as Extension<Pk>>::$f(p, $($args, )*),
         }
     };
 }
@@ -230,16 +230,16 @@ macro_rules! all_arms_fn {
 macro_rules! try_from_arms {
     ($f: ident, $($args: ident, )*) => {
         if let Ok(v) = <VerEq as Extension<Pk>>::$f($($args, )*) {
-            Ok(AllExt::VerEq(v))
+            Ok(CovenantExt::VerEq(v))
         } else if let Ok(v) = <OutputsPref as Extension<Pk>>::$f($($args, )*) {
-            Ok(AllExt::OutputsPref(v))
+            Ok(CovenantExt::OutputsPref(v))
         } else {
             Err(())
         }
     };
 }
 
-impl<Pk> Extension<Pk> for AllExt
+impl<Pk> Extension<Pk> for CovenantExt
 where
     Pk: MiniscriptKey,
 {
@@ -306,26 +306,26 @@ where
     }
 }
 
-impl fmt::Display for AllExt {
+impl fmt::Display for CovenantExt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AllExt::VerEq(v) => v.fmt(f),
-            AllExt::OutputsPref(p) => p.fmt(f),
+            CovenantExt::VerEq(v) => v.fmt(f),
+            CovenantExt::OutputsPref(p) => p.fmt(f),
         }
     }
 }
 
-impl<Pk: MiniscriptKey> Liftable<Pk> for AllExt {
+impl<Pk: MiniscriptKey> Liftable<Pk> for CovenantExt {
     fn lift(&self) -> Result<policy::Semantic<Pk>, Error> {
         match self {
-            AllExt::VerEq(v) => v.lift(),
-            AllExt::OutputsPref(p) => p.lift(),
+            CovenantExt::VerEq(v) => v.lift(),
+            CovenantExt::OutputsPref(p) => p.lift(),
         }
     }
 }
 
-impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for AllExt {
-    type Output = AllExt;
+impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for CovenantExt {
+    type Output = CovenantExt;
 
     fn translate_pk<Fpk, Fpkh, E>(
         &self,
@@ -338,9 +338,11 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for AllExt {
         Q: MiniscriptKey,
     {
         let ext = match self {
-            AllExt::VerEq(v) => AllExt::VerEq(v.translate_pk(translatefpk, translatefpkh)?),
-            AllExt::OutputsPref(p) => {
-                AllExt::OutputsPref(p.translate_pk(translatefpk, translatefpkh)?)
+            CovenantExt::VerEq(v) => {
+                CovenantExt::VerEq(v.translate_pk(translatefpk, translatefpkh)?)
+            }
+            CovenantExt::OutputsPref(p) => {
+                CovenantExt::OutputsPref(p.translate_pk(translatefpk, translatefpkh)?)
             }
         };
         Ok(ext)

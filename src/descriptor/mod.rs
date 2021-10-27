@@ -37,7 +37,7 @@ use elements;
 use elements::secp256k1_zkp;
 use elements::Script;
 
-use AllExt;
+use CovenantExt;
 
 use self::checksum::verify_checksum;
 use expression;
@@ -348,7 +348,7 @@ pub enum Descriptor<Pk: MiniscriptKey> {
     Wsh(Wsh<Pk>),
     /// Covenant descriptor with all known extensions
     /// Downstream implementations of extensions should implement directly use descriptor API
-    Cov(CovenantDescriptor<Pk, AllExt>),
+    Cov(CovenantDescriptor<Pk, CovenantExt>),
 }
 
 impl<Pk: MiniscriptKey> Descriptor<Pk> {
@@ -437,7 +437,7 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
 
     /// Create a new covenant descriptor
     // All extensions are supported in wsh descriptor
-    pub fn new_cov_wsh(pk: Pk, ms: Miniscript<Pk, Segwitv0, AllExt>) -> Result<Self, Error> {
+    pub fn new_cov_wsh(pk: Pk, ms: Miniscript<Pk, Segwitv0, CovenantExt>) -> Result<Self, Error> {
         let cov = CovenantDescriptor::new(pk, ms)?;
         Ok(Descriptor::Cov(cov))
     }
@@ -466,7 +466,7 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
     }
 
     /// Tries to convert descriptor as a covenant descriptor
-    pub fn as_cov(&self) -> Result<&CovenantDescriptor<Pk, AllExt>, Error> {
+    pub fn as_cov(&self) -> Result<&CovenantDescriptor<Pk, CovenantExt>, Error> {
         if let Descriptor::Cov(cov) = self {
             Ok(cov)
         } else {
