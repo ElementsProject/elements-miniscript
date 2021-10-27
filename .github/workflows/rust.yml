@@ -14,7 +14,7 @@ jobs:
       - name: Checkout Crate
         uses: actions/checkout@v2
       - name: Install hongfuzz dependancies
-        run: sudo apt install build-essential binutils-dev libunwind-dev libblocksruntime-dev liblzma-dev
+        run: sudo apt-get update -y && sudo apt install -y build-essential binutils-dev libunwind-dev libblocksruntime-dev liblzma-dev
       - name: Checkout Toolchain
         uses: actions-rs/toolchain@v1
         with:
