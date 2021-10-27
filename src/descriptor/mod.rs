@@ -38,7 +38,6 @@ use elements::secp256k1_zkp;
 use elements::Script;
 
 use AllExt;
-use NoExt;
 
 use self::checksum::verify_checksum;
 use expression;
@@ -358,7 +357,7 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
     /// Create a new pk descriptor
     pub fn new_pk(pk: Pk) -> Self {
         // roundabout way to constuct `c:pk_k(pk)`
-        let ms: Miniscript<Pk, BareCtx, NoExt> =
+        let ms: Miniscript<Pk, BareCtx> =
             Miniscript::from_ast(miniscript::decode::Terminal::Check(Arc::new(
                 Miniscript::from_ast(miniscript::decode::Terminal::PkK(pk))
                     .expect("Type check cannot fail"),
@@ -389,28 +388,28 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
     /// Create a new sh for a given redeem script
     /// Errors when miniscript exceeds resource limits under p2sh context
     /// or does not type check at the top level
-    pub fn new_sh(ms: Miniscript<Pk, Legacy, NoExt>) -> Result<Self, Error> {
+    pub fn new_sh(ms: Miniscript<Pk, Legacy>) -> Result<Self, Error> {
         Ok(Descriptor::Sh(Sh::new(ms)?))
     }
 
     /// Create a new wsh descriptor from witness script
     /// Errors when miniscript exceeds resource limits under p2sh context
     /// or does not type check at the top level
-    pub fn new_wsh(ms: Miniscript<Pk, Segwitv0, NoExt>) -> Result<Self, Error> {
+    pub fn new_wsh(ms: Miniscript<Pk, Segwitv0>) -> Result<Self, Error> {
         Ok(Descriptor::Wsh(Wsh::new(ms)?))
     }
 
     /// Create a new sh wrapped wsh descriptor with witness script
     /// Errors when miniscript exceeds resource limits under wsh context
     /// or does not type check at the top level
-    pub fn new_sh_wsh(ms: Miniscript<Pk, Segwitv0, NoExt>) -> Result<Self, Error> {
+    pub fn new_sh_wsh(ms: Miniscript<Pk, Segwitv0>) -> Result<Self, Error> {
         Ok(Descriptor::Sh(Sh::new_wsh(ms)?))
     }
 
     /// Create a new bare descriptor from witness script
     /// Errors when miniscript exceeds resource limits under bare context
     /// or does not type check at the top level
-    pub fn new_bare(ms: Miniscript<Pk, BareCtx, NoExt>) -> Result<Self, Error> {
+    pub fn new_bare(ms: Miniscript<Pk, BareCtx>) -> Result<Self, Error> {
         Ok(Descriptor::Bare(Bare::new(ms)?))
     }
 

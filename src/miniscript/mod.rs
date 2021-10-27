@@ -48,7 +48,7 @@ pub use miniscript::context::ScriptContext;
 use miniscript::decode::Terminal;
 use miniscript::types::extra_props::ExtData;
 use miniscript::types::Type;
-use Extension;
+use {Extension, NoExt};
 
 use std::cmp;
 use std::sync::Arc;
@@ -57,7 +57,7 @@ use {expression, Error, ForEach, ForEachKey, ToPublicKey, TranslatePk};
 
 /// Top-level script AST type
 #[derive(Clone, Hash)]
-pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
+pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk> = NoExt> {
     ///A node in the Abstract Syntax Tree(
     pub node: Terminal<Pk, Ctx, Ext>,
     ///The correctness and malleability type information for the AST node

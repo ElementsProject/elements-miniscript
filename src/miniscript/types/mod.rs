@@ -22,7 +22,7 @@ pub mod malleability;
 
 use std::{error, fmt};
 
-use Extension;
+use {Extension, NoExt};
 
 pub use self::correctness::{Base, Correctness, Input};
 pub use self::extra_props::ExtData;
@@ -99,7 +99,7 @@ pub enum ErrorKind {
 
 /// Error type for typechecking
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct Error<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
+pub struct Error<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk> = NoExt> {
     /// The fragment that failed typecheck
     pub fragment: Terminal<Pk, Ctx, Ext>,
     /// The reason that typechecking failed

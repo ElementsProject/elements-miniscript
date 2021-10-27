@@ -19,8 +19,6 @@
 //! `https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki`
 //!
 
-use NoExt;
-
 use super::{sanity_check, Pset};
 use super::{Error, InputError, PsetInputSatisfier};
 use bitcoin::{self, PublicKey};
@@ -130,9 +128,8 @@ pub(super) fn get_descriptor(
             match CovenantDescriptor::parse_insane(witness_script) {
                 Ok(cov) => Ok(Descriptor::Cov(cov)),
                 Err(_) => {
-                    let ms = Miniscript::<bitcoin::PublicKey, Segwitv0, NoExt>::parse_insane(
-                        witness_script,
-                    )?;
+                    let ms =
+                        Miniscript::<bitcoin::PublicKey, Segwitv0>::parse_insane(witness_script)?;
                     Ok(Descriptor::new_wsh(ms)?)
                 }
             }
@@ -158,7 +155,7 @@ pub(super) fn get_descriptor(
                                 p2wsh_expected: redeem_script.clone(),
                             });
                         }
-                        let ms = Miniscript::<bitcoin::PublicKey, Segwitv0, NoExt>::parse_insane(
+                        let ms = Miniscript::<bitcoin::PublicKey, Segwitv0>::parse_insane(
                             witness_script,
                         )?;
                         Ok(Descriptor::new_sh_wsh(ms)?)
@@ -185,9 +182,8 @@ pub(super) fn get_descriptor(
                         return Err(InputError::NonEmptyWitnessScript);
                     }
                     if let Some(ref redeem_script) = inp.redeem_script {
-                        let ms = Miniscript::<bitcoin::PublicKey, Legacy, NoExt>::parse_insane(
-                            redeem_script,
-                        )?;
+                        let ms =
+                            Miniscript::<bitcoin::PublicKey, Legacy>::parse_insane(redeem_script)?;
                         Ok(Descriptor::new_sh(ms)?)
                     } else {
                         Err(InputError::MissingWitnessScript)
@@ -203,7 +199,7 @@ pub(super) fn get_descriptor(
         if inp.redeem_script.is_some() {
             return Err(InputError::NonEmptyRedeemScript);
         }
-        let ms = Miniscript::<bitcoin::PublicKey, BareCtx, NoExt>::parse_insane(script_pubkey)?;
+        let ms = Miniscript::<bitcoin::PublicKey, BareCtx>::parse_insane(script_pubkey)?;
         Ok(Descriptor::new_bare(ms)?)
     }
 }
