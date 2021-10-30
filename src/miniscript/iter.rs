@@ -448,10 +448,10 @@ pub mod test {
     use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
     use elements::secp256k1_zkp;
     use miniscript::context::Segwitv0;
-    use AllExt;
+    use CovenantExt;
 
     pub type TestData = (
-        Miniscript<bitcoin::PublicKey, Segwitv0, AllExt>,
+        Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt>,
         Vec<bitcoin::PublicKey>,
         Vec<hash160::Hash>,
         bool, // Indicates that the top-level contains public key or hashes

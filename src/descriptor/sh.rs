@@ -33,8 +33,6 @@ use {
     ToPublicKey, TranslatePk,
 };
 
-use NoExt;
-
 use super::{
     checksum::{desc_checksum, verify_checksum},
     DescriptorTrait, ElementsTrait, SortedMultiVec, Wpkh, Wsh, ELMTS_STR,
@@ -58,7 +56,7 @@ pub enum ShInner<Pk: MiniscriptKey> {
     SortedMulti(SortedMultiVec<Pk, Legacy>),
     /// p2sh miniscript
     // p2sh has no extension support
-    Ms(Miniscript<Pk, Legacy, NoExt>),
+    Ms(Miniscript<Pk, Legacy>),
 }
 
 impl<Pk: MiniscriptKey> Liftable<Pk> for Sh<Pk> {
@@ -154,7 +152,7 @@ impl<Pk: MiniscriptKey> Sh<Pk> {
     }
 
     /// Create a new p2sh descriptor with the raw miniscript
-    pub fn new(ms: Miniscript<Pk, Legacy, NoExt>) -> Result<Self, Error> {
+    pub fn new(ms: Miniscript<Pk, Legacy>) -> Result<Self, Error> {
         // do the top-level checks
         Legacy::top_level_checks(&ms)?;
         Ok(Self {
@@ -173,7 +171,7 @@ impl<Pk: MiniscriptKey> Sh<Pk> {
     }
 
     /// Create a new p2sh wrapped wsh descriptor with the raw miniscript
-    pub fn new_wsh(ms: Miniscript<Pk, Segwitv0, NoExt>) -> Result<Self, Error> {
+    pub fn new_wsh(ms: Miniscript<Pk, Segwitv0>) -> Result<Self, Error> {
         Ok(Self {
             inner: ShInner::Wsh(Wsh::new(ms)?),
         })

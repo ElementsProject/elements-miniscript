@@ -48,7 +48,7 @@ pub use miniscript::context::ScriptContext;
 use miniscript::decode::Terminal;
 use miniscript::types::extra_props::ExtData;
 use miniscript::types::Type;
-use Extension;
+use {Extension, NoExt};
 
 use std::cmp;
 use std::sync::Arc;
@@ -57,7 +57,7 @@ use {expression, Error, ForEach, ForEachKey, ToPublicKey, TranslatePk};
 
 /// Top-level script AST type
 #[derive(Clone, Hash)]
-pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
+pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk> = NoExt> {
     ///A node in the Abstract Syntax Tree(
     pub node: Terminal<Pk, Ctx, Ext>,
     ///The correctness and malleability type information for the AST node
@@ -465,9 +465,9 @@ mod tests {
     use std::str;
     use std::str::FromStr;
     use std::sync::Arc;
-    use AllExt;
+    use CovenantExt;
 
-    type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0, AllExt>;
+    type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt>;
 
     fn pubkeys(n: usize) -> Vec<bitcoin::PublicKey> {
         let mut ret = Vec::with_capacity(n);
@@ -491,7 +491,7 @@ mod tests {
     }
 
     fn string_rtt<Pk, Ctx, Str1, Str2>(
-        script: Miniscript<Pk, Ctx, AllExt>,
+        script: Miniscript<Pk, Ctx, CovenantExt>,
         expected_debug: Str1,
         expected_display: Str2,
     ) where
@@ -616,7 +616,7 @@ mod tests {
 
     #[test]
     fn recursive_key_parsing() {
-        type MsStr = Miniscript<String, Segwitv0, AllExt>;
+        type MsStr = Miniscript<String, Segwitv0, CovenantExt>;
         assert!(MsStr::from_str("pk(slip77(k))").is_ok());
         assert!(MsStr::from_str("pk(musig(a))").is_ok());
         assert!(MsStr::from_str("pk(musig(a,b))").is_ok());
@@ -640,7 +640,7 @@ mod tests {
         .unwrap();
         let hash = hash160::Hash::from_inner([17; 20]);
 
-        let pkk_ms: Miniscript<DummyKey, Segwitv0, AllExt> = Miniscript {
+        let pkk_ms: Miniscript<DummyKey, Segwitv0, CovenantExt> = Miniscript {
             node: Terminal::Check(Arc::new(Miniscript {
                 node: Terminal::PkK(DummyKey),
                 ty: Type::from_pk_k(),
@@ -653,7 +653,7 @@ mod tests {
         };
         string_rtt(pkk_ms, "[B/onduesm]c:[K/onduesm]pk_k(DummyKey)", "pk()");
 
-        let pkh_ms: Miniscript<DummyKey, Segwitv0, AllExt> = Miniscript {
+        let pkh_ms: Miniscript<DummyKey, Segwitv0, CovenantExt> = Miniscript {
             node: Terminal::Check(Arc::new(Miniscript {
                 node: Terminal::PkH(DummyKeyHash),
                 ty: Type::from_pk_h(),

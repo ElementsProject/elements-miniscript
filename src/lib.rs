@@ -161,7 +161,7 @@ use elements::hashes::sha256;
 use elements::{opcodes, script, secp256k1_zkp, secp256k1_zkp::Secp256k1};
 
 pub use descriptor::{Descriptor, DescriptorPublicKey, DescriptorTrait};
-pub use extensions::{AllExt, Extension, NoExt};
+pub use extensions::{CovenantExt, Extension, NoExt};
 pub use interpreter::Interpreter;
 pub use miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0};
 pub use miniscript::decode::Terminal;

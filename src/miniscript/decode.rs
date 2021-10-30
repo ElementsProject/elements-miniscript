@@ -30,7 +30,7 @@ use std::sync::Arc;
 use Error;
 use MiniscriptKey;
 
-use Extension;
+use {Extension, NoExt};
 
 fn return_none<T>(_: usize) -> Option<T> {
     None
@@ -65,7 +65,7 @@ enum NonTerm {
 /// All AST elements
 #[allow(broken_intra_doc_links)]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
+pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk> = NoExt> {
     /// `1`
     True,
     /// `0`

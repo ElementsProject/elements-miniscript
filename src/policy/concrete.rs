@@ -26,9 +26,7 @@ use expression::{self, FromTree};
 use miniscript::limits::{HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_TYPE_FLAG};
 use miniscript::types::extra_props::TimeLockInfo;
 #[cfg(feature = "compiler")]
-use {
-    miniscript::ScriptContext, policy::compiler, policy::compiler::CompilerError, Miniscript, NoExt,
-};
+use {miniscript::ScriptContext, policy::compiler, policy::compiler::CompilerError, Miniscript};
 use {Error, ForEach, ForEachKey, MiniscriptKey};
 /// Concrete policy which corresponds directly to a Miniscript structure,
 /// and whose disjunctions are annotated with satisfaction probabilities
@@ -126,7 +124,7 @@ impl fmt::Display for PolicyError {
 impl<Pk: MiniscriptKey> Policy<Pk> {
     /// Compile the descriptor into an optimized `Miniscript` representation
     #[cfg(feature = "compiler")]
-    pub fn compile<Ctx: ScriptContext>(&self) -> Result<Miniscript<Pk, Ctx, NoExt>, CompilerError> {
+    pub fn compile<Ctx: ScriptContext>(&self) -> Result<Miniscript<Pk, Ctx>, CompilerError> {
         self.is_valid()?;
         match self.is_safe_nonmalleable() {
             (false, _) => Err(CompilerError::TopLevelNonSafe),
