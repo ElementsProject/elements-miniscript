@@ -343,7 +343,9 @@ impl Property for Correctness {
                 (Input::Zero, Input::OneNonZero) | (Input::OneNonZero, Input::Zero) => {
                     Input::OneNonZero
                 }
-                (Input::AnyNonZero, _) | (Input::Zero, Input::AnyNonZero) => Input::AnyNonZero,
+                (Input::OneNonZero, _)
+                | (Input::AnyNonZero, _)
+                | (Input::Zero, Input::AnyNonZero) => Input::AnyNonZero,
                 _ => Input::Any,
             },
             dissatisfiable: left.dissatisfiable && right.dissatisfiable,
