@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::{cmp, i64, mem};
 
 use bitcoin;
-use elements::{self, secp256k1};
+use elements::{self, secp256k1_zkp};
 use elements::{confidential, OutPoint, Script};
 use elements::{
     encode::serialize,
@@ -41,7 +41,7 @@ use ScriptContext;
 use Terminal;
 
 /// Type alias for a signature/hashtype pair
-pub type ElementsSig = (secp256k1::Signature, elements::SigHashType);
+pub type ElementsSig = (secp256k1_zkp::Signature, elements::SigHashType);
 /// Type alias for 32 byte Preimage.
 pub type Preimage32 = [u8; 32];
 
@@ -51,7 +51,7 @@ pub type Preimage32 = [u8; 32];
 pub fn bitcoinsig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, ::interpreter::Error> {
     let (flag, sig) = rawsig.split_last().unwrap();
     let flag = elements::SigHashType::from_u32(*flag as u32);
-    let sig = secp256k1::Signature::from_der(sig)?;
+    let sig = secp256k1_zkp::Signature::from_der(sig)?;
     Ok((sig, flag))
 }
 /// Trait describing a lookup table for signatures, hash preimages, etc.

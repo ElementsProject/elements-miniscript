@@ -20,7 +20,7 @@ extern crate elements_miniscript as miniscript;
 
 use elements::confidential;
 use elements::encode::Decodable;
-use elements::secp256k1; // secp256k1 re-exported from rust-bitcoin
+use elements::secp256k1_zkp; // secp256k1 re-exported from rust-bitcoin
 use std::str::FromStr;
 fn main() {
     // some random liquid tx from mempool(Dec 3rd 2020)
@@ -70,7 +70,7 @@ fn main() {
 
     // 2. Example two: verify the signatures to ensure that invalid
     //    signatures are not treated as having participated in the script
-    let secp = secp256k1::Secp256k1::new();
+    let secp = secp256k1_zkp::Secp256k1::new();
     // Sometimes it is necessary to have additional information to get the bitcoin::PublicKey
     // from the MiniscriptKey which can supplied by `to_pk_ctx` parameter. For example,
     // when calculating the script pubkey of a descriptor with xpubs, the secp context and
@@ -110,8 +110,8 @@ fn main() {
 
     // 3. Example three: same, but with the wrong signature hash, to demonstrate
     //    what happens given an apparently invalid script
-    let secp = secp256k1::Secp256k1::new();
-    let message = secp256k1::Message::from_slice(&[0x01; 32][..]).expect("32-byte hash");
+    let secp = secp256k1_zkp::Secp256k1::new();
+    let message = secp256k1_zkp::Message::from_slice(&[0x01; 32][..]).expect("32-byte hash");
 
     let mut interpreter = miniscript::Interpreter::from_txdata(
         &spk_input_1,
