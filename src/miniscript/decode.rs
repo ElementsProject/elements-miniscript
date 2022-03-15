@@ -101,7 +101,7 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext> {
     /// 7 elements with possibly empty values.
     ///
     /// CAT CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
-    /// HASH256  
+    /// HASH256
     /// DEPTH <10> SUB PICK EQUALVERIFY
     OutputsPref(Vec<u8>),
     // Wrappers
