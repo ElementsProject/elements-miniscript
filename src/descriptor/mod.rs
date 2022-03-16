@@ -36,6 +36,8 @@ use elements;
 use elements::secp256k1_zkp;
 use elements::Script;
 
+use CovenantExt;
+
 use self::checksum::verify_checksum;
 use expression;
 use miniscript;
@@ -232,6 +234,25 @@ pub enum DescriptorType {
     Tr,
 }
 
+impl fmt::Display for DescriptorType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            DescriptorType::Bare => write!(f, "bare"),
+            DescriptorType::Sh => write!(f, "sh"),
+            DescriptorType::Pkh => write!(f, "pkh"),
+            DescriptorType::Wpkh => write!(f, "wpkh"),
+            DescriptorType::Wsh => write!(f, "wsh"),
+            DescriptorType::ShWsh => write!(f, "shwsh"),
+            DescriptorType::ShWpkh => write!(f, "shwpkh"),
+            DescriptorType::ShSortedMulti => write!(f, "shsortedmulti"),
+            DescriptorType::WshSortedMulti => write!(f, "wshsortedmulti"),
+            DescriptorType::ShWshSortedMulti => write!(f, "shwshsortedmulti"),
+            DescriptorType::LegacyPegin => write!(f, "legacy_pegin"),
+            DescriptorType::Pegin => write!(f, "pegin"),
+            DescriptorType::Cov => write!(f, "elcovwsh"),
+        }
+    }
+}
 impl FromStr for DescriptorType {
     type Err = Error;
 
@@ -349,10 +370,11 @@ pub enum Descriptor<Pk: MiniscriptKey> {
     Sh(Sh<Pk>),
     /// Pay-to-Witness-ScriptHash with Segwitv0 context
     Wsh(Wsh<Pk>),
-    /// Covenant descriptor
-    Cov(CovenantDescriptor<Pk>),
     /// Pay-to-Taproot
     Tr(Tr<Pk>),
+    /// Covenant descriptor with all known extensions
+    /// Downstream implementations of extensions should implement directly use descriptor API
+    Cov(CovenantDescriptor<Pk, CovenantExt>),
 }
 
 impl<Pk: MiniscriptKey> Descriptor<Pk> {
@@ -457,6 +479,13 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
         Ok(Descriptor::Tr(Tr::new(key, script)?))
     }
 
+    /// Create a new covenant descriptor
+    // All extensions are supported in wsh descriptor
+    pub fn new_cov_wsh(pk: Pk, ms: Miniscript<Pk, Segwitv0, CovenantExt>) -> Result<Self, Error> {
+        let cov = CovenantDescriptor::new(pk, ms)?;
+        Ok(Descriptor::Cov(cov))
+    }
+
     /// Get the [DescriptorType] of [Descriptor]
     pub fn desc_type(&self) -> DescriptorType {
         match *self {
@@ -481,9 +510,8 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
         }
     }
 
-    /// Unwrap a descriptor as a covenant descriptor
-    /// Panics if the descriptor is not of [DescriptorType::Cov]
-    pub fn as_cov(&self) -> Result<&CovenantDescriptor<Pk>, Error> {
+    /// Tries to convert descriptor as a covenant descriptor
+    pub fn as_cov(&self) -> Result<&CovenantDescriptor<Pk, CovenantExt>, Error> {
         if let Descriptor::Cov(cov) = self {
             Ok(cov)
         } else {

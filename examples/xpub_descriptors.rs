@@ -18,13 +18,13 @@ extern crate bitcoin;
 extern crate elements;
 extern crate elements_miniscript as miniscript;
 
-use miniscript::bitcoin::secp256k1;
+use miniscript::elements::secp256k1_zkp;
 use miniscript::{Descriptor, DescriptorPublicKey, DescriptorTrait, TranslatePk2};
 
 use std::str::FromStr;
 fn main() {
     // For deriving from descriptors, we need to provide a secp context
-    let secp_ctx = secp256k1::Secp256k1::verification_only();
+    let secp_ctx = secp256k1_zkp::Secp256k1::verification_only();
     // P2WSH and single xpubs
     let addr_one = Descriptor::<DescriptorPublicKey>::from_str(
             "elwsh(sortedmulti(1,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH))",

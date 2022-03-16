@@ -6,6 +6,8 @@ use miniscript::limits::{
     SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
 
+use Extension;
+
 use super::{Error, ErrorKind, Property, ScriptContext};
 use script_num_size;
 use std::cmp;
@@ -1035,16 +1037,21 @@ impl Property for ExtData {
         })
     }
 
+    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(e: &E) -> Self {
+        e.extra_prop()
+    }
+
     /// Compute the type of a fragment assuming all the children of
     /// Miniscript have been computed already.
-    fn type_check<Pk, Ctx, C>(
-        fragment: &Terminal<Pk, Ctx>,
+    fn type_check<Pk, Ctx, C, Ext>(
+        fragment: &Terminal<Pk, Ctx, Ext>,
         _child: C,
-    ) -> Result<Self, Error<Pk, Ctx>>
+    ) -> Result<Self, Error<Pk, Ctx, Ext>>
     where
         C: FnMut(usize) -> Option<Self>,
         Ctx: ScriptContext,
         Pk: MiniscriptKey,
+        Ext: Extension<Pk>,
     {
         let wrap_err = |result: Result<Self, ErrorKind>| {
             result.map_err(|kind| Error {
@@ -1102,8 +1109,6 @@ impl Property for ExtData {
             Terminal::Hash256(..) => Ok(Self::from_hash256()),
             Terminal::Ripemd160(..) => Ok(Self::from_ripemd160()),
             Terminal::Hash160(..) => Ok(Self::from_hash160()),
-            Terminal::Version(..) => Ok(Self::from_ver_eq()),
-            Terminal::OutputsPref(ref pref) => Ok(Self::from_output_pref(pref)),
             Terminal::Alt(ref sub) => wrap_err(Self::cast_alt(sub.ext.clone())),
             Terminal::Swap(ref sub) => wrap_err(Self::cast_swap(sub.ext.clone())),
             Terminal::Check(ref sub) => wrap_err(Self::cast_check(sub.ext.clone())),
@@ -1168,6 +1173,7 @@ impl Property for ExtData {
                     error: kind,
                 })
             }
+            Terminal::Ext(ref e) => Ok(Self::from_ext(e)),
         };
         if let Ok(ref ret) = ret {
             ret.sanity_checks()

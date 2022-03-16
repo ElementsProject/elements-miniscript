@@ -94,6 +94,9 @@
 //! ```
 //!
 //!
+#![allow(bare_trait_objects)]
+// Required for rustc 1.29
+#![recursion_limit = "128"]
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
 // Coding conventions
 #![deny(unsafe_code)]
@@ -141,9 +144,11 @@ mod macros;
 
 pub mod descriptor;
 pub mod expression;
+pub mod extensions;
 pub mod interpreter;
 pub mod miniscript;
 pub mod policy;
+pub mod pset;
 
 mod util;
 
@@ -154,9 +159,11 @@ use elements::{opcodes, script, secp256k1_zkp, secp256k1_zkp::Secp256k1};
 
 pub use descriptor::pretaproot::{traits::PreTaprootDescriptorTrait, PreTaprootDescriptor};
 pub use descriptor::{Descriptor, DescriptorPublicKey, DescriptorTrait};
+pub use extensions::{CovenantExt, Extension, NoExt};
 pub use interpreter::Interpreter;
 pub use miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0, Tap};
 pub use miniscript::decode::Terminal;
+pub use miniscript::satisfy::{elementssig_from_rawsig, elementssig_to_rawsig};
 pub use miniscript::satisfy::{ElementsSig, Preimage32, Satisfier};
 pub use miniscript::Miniscript;
 
@@ -188,6 +195,38 @@ mod contracthash {
         };
         hmac_engine.input(contract);
         Hmac::from_engine(hmac_engine)
+    }
+}
+
+/// Same as upstream [`TranslatePk`] but with support for extensions
+pub trait TranslatePkExt<P: MiniscriptKey, Q: MiniscriptKey, QExt: Extension<Q>> {
+    /// The associated output type. This must be Self<Q>
+    type Output;
+
+    /// Translate a struct from one Generic to another where the
+    /// translation for Pk is provided by translatefpk, and translation for
+    /// PkH is provided by translatefpkh
+    fn translate_pk<Fpk, Fpkh, E>(
+        &self,
+        translatefpk: Fpk,
+        translatefpkh: Fpkh,
+    ) -> Result<Self::Output, E>
+    where
+        Fpk: FnMut(&P) -> Result<Q, E>,
+        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>;
+
+    /// Calls `translate_pk` with conversion functions that cannot fail
+    fn translate_pk_infallible<Fpk, Fpkh>(
+        &self,
+        mut translatefpk: Fpk,
+        mut translatefpkh: Fpkh,
+    ) -> Self::Output
+    where
+        Fpk: FnMut(&P) -> Q,
+        Fpkh: FnMut(&P::Hash) -> Q::Hash,
+    {
+        self.translate_pk::<_, _, ()>(|pk| Ok(translatefpk(pk)), |pkh| Ok(translatefpkh(pkh)))
+            .expect("infallible translation function")
     }
 }
 
@@ -301,12 +340,13 @@ pub enum Error {
 }
 
 #[doc(hidden)]
-impl<Pk, Ctx> From<miniscript::types::Error<Pk, Ctx>> for Error
+impl<Pk, Ctx, Ext> From<miniscript::types::Error<Pk, Ctx, Ext>> for Error
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
+    Ext: Extension<Pk>,
 {
-    fn from(e: miniscript::types::Error<Pk, Ctx>) -> Error {
+    fn from(e: miniscript::types::Error<Pk, Ctx, Ext>) -> Error {
         Error::TypeCheck(e.to_string())
     }
 }
@@ -343,6 +383,13 @@ impl From<miniscript::analyzable::AnalysisError> for Error {
 impl From<elements::secp256k1_zkp::Error> for Error {
     fn from(e: elements::secp256k1_zkp::Error) -> Error {
         Error::Secp(e)
+    }
+}
+
+#[doc(hidden)]
+impl From<elements::secp256k1_zkp::UpstreamError> for Error {
+    fn from(e: elements::secp256k1_zkp::UpstreamError) -> Error {
+        Error::Secp(elements::secp256k1_zkp::Error::Upstream(e))
     }
 }
 

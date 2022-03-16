@@ -23,29 +23,35 @@ use std::sync::Arc;
 use std::{cmp, i64, mem};
 
 use bitcoin;
+use elements::hashes::{hash160, ripemd160, sha256, sha256d};
 use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, secp256k1_zkp};
 use elements::{confidential, OutPoint, Script};
-use elements::{
-    encode::serialize,
-    hashes::{hash160, ripemd160, sha256, sha256d},
-};
 use {MiniscriptKey, ToPublicKey};
 
 use bitcoin::secp256k1::XOnlyPublicKey;
 use miniscript::limits::{
-    HEIGHT_TIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE,
-    SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
+    HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
 use util::witness_size;
 use Miniscript;
 use ScriptContext;
 use Terminal;
 
+use Extension;
+
 /// Type alias for a signature/hashtype pair
 pub type ElementsSig = (secp256k1_zkp::ecdsa::Signature, elements::SigHashType);
 /// Type alias for 32 byte Preimage.
 pub type Preimage32 = [u8; 32];
+
+/// Convert to raw sig
+pub fn elementssig_to_rawsig(sig: &ElementsSig) -> Vec<u8> {
+    let ser_sig = sig.0.serialize_der();
+    let mut raw_sig = Vec::from(&ser_sig[..]);
+    raw_sig.push(sig.1 as u8);
+    raw_sig
+}
 
 /// Helper function to create ElementsSig from Rawsig
 /// Useful for downstream when implementing Satisfier.
@@ -835,11 +841,12 @@ impl Witness {
                 // Signatures cannot be forged
                 None => Witness::Impossible,
             },
+            super::context::SigType::ExtensionError(_) => todo!(),
         }
     }
 
     /// Turn a public key related to a pkh into (part of) a satisfaction
-    fn pkh_public_key<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &Pk::Hash) -> Self {
+    pub fn pkh_public_key<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &Pk::Hash) -> Self {
         match sat.lookup_pkh_pk(pkh) {
             Some(pk) => Witness::Stack(vec![pk.to_public_key().to_bytes()]),
             // public key hashes are assumed to be unavailable
@@ -849,15 +856,22 @@ impl Witness {
     }
 
     /// Turn a key/signature pair related to a pkh into (part of) a satisfaction
-    fn pkh_signature<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &Pk::Hash) -> Self {
-        match sat.lookup_pkh_ecdsa_sig(pkh) {
-            Some((pk, sig)) => Witness::Stack(vec![sig.to_vec(), pk.to_public_key().to_bytes()]),
+    pub fn pkh_signature<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &Pk::Hash) -> Self {
+        match sat.lookup_pkh_sig(pkh) {
+            Some((pk, (sig, hashtype))) => {
+                let mut ret = sig.serialize_der().to_vec();
+                ret.push(hashtype.as_u32() as u8);
+                Witness::Stack(vec![ret.to_vec(), pk.to_public_key().to_bytes()])
+            }
             None => Witness::Impossible,
         }
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    fn ripemd160_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: ripemd160::Hash) -> Self {
+    pub fn ripemd160_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(
+        sat: S,
+        h: ripemd160::Hash,
+    ) -> Self {
         match sat.lookup_ripemd160(h) {
             Some(pre) => Witness::Stack(vec![pre.to_vec()]),
             // Note hash preimages are unavailable instead of impossible
@@ -866,7 +880,7 @@ impl Witness {
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    fn hash160_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: hash160::Hash) -> Self {
+    pub fn hash160_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: hash160::Hash) -> Self {
         match sat.lookup_hash160(h) {
             Some(pre) => Witness::Stack(vec![pre.to_vec()]),
             // Note hash preimages are unavailable instead of impossible
@@ -875,7 +889,7 @@ impl Witness {
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    fn sha256_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: sha256::Hash) -> Self {
+    pub fn sha256_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: sha256::Hash) -> Self {
         match sat.lookup_sha256(h) {
             Some(pre) => Witness::Stack(vec![pre.to_vec()]),
             // Note hash preimages are unavailable instead of impossible
@@ -884,113 +898,10 @@ impl Witness {
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    fn hash256_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: sha256d::Hash) -> Self {
+    pub fn hash256_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: sha256d::Hash) -> Self {
         match sat.lookup_hash256(h) {
             Some(pre) => Witness::Stack(vec![pre.to_vec()]),
             // Note hash preimages are unavailable instead of impossible
-            None => Witness::Unavailable,
-        }
-    }
-
-    /// Turn a version into (part of) a satisfaction
-    fn ver_eq_satisfy<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, n: u32) -> Self {
-        match sat.lookup_nversion() {
-            Some(k) => {
-                if k == n {
-                    Witness::empty()
-                } else {
-                    Witness::Impossible
-                }
-            }
-            // Note the unavailable instead of impossible because we don't know
-            // the version
-            None => Witness::Unavailable,
-        }
-    }
-
-    /// Turn a output prefix into (part of) a satisfaction
-    fn output_pref_satisfy<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pref: &[u8]) -> Self {
-        match sat.lookup_outputs() {
-            Some(outs) => {
-                let mut ser_out = Vec::new();
-                let num_wit_elems =
-                    MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE + 1;
-                let mut witness = Vec::with_capacity(num_wit_elems);
-                for out in outs {
-                    ser_out.extend(serialize(out));
-                }
-                // We need less than 520 bytes of serialized hashoutputs
-                // in order to compute hash256 inside script
-                if ser_out.len() > MAX_SCRIPT_ELEMENT_SIZE {
-                    return Witness::Impossible;
-                }
-                if ser_out.starts_with(pref) {
-                    let mut iter = ser_out.into_iter().skip(pref.len()).peekable();
-
-                    while iter.peek().is_some() {
-                        let chk_size = MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
-                        let chunk: Vec<u8> = iter.by_ref().take(chk_size).collect();
-                        witness.push(chunk);
-                    }
-                    // Append empty elems to make for extra cats
-                    // in the spk
-                    while witness.len() < num_wit_elems {
-                        witness.push(vec![]);
-                    }
-                    Witness::Stack(witness)
-                } else {
-                    Witness::Impossible
-                }
-            }
-            // Note the unavailable instead of impossible because we don't know
-            // the hashoutputs yet
-            None => Witness::Unavailable,
-        }
-    }
-
-    /// Dissatisfy ver fragment
-    fn ver_eq_dissatisfy<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, n: u32) -> Self {
-        if let Some(k) = sat.lookup_nversion() {
-            if k == n {
-                Witness::Impossible
-            } else {
-                Witness::empty()
-            }
-        } else {
-            Witness::empty()
-        }
-    }
-
-    /// Turn a output prefix into (part of) a satisfaction
-    fn output_pref_dissatisfy<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pref: &[u8]) -> Self {
-        match sat.lookup_outputs() {
-            Some(outs) => {
-                let mut ser_out = Vec::new();
-                for out in outs {
-                    ser_out.extend(serialize(out));
-                }
-                let num_wit_elems = MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
-                let mut witness = Vec::with_capacity(num_wit_elems);
-                if pref != ser_out.as_slice() {
-                    while witness.len() < num_wit_elems {
-                        witness.push(vec![]);
-                    }
-                    Witness::Stack(witness)
-                } else if pref.len() != MAX_SCRIPT_ELEMENT_SIZE {
-                    // Case when prefix == ser_out and it is possible
-                    // to add more witness
-                    witness.push(vec![1]);
-                    while witness.len() < num_wit_elems {
-                        witness.push(vec![]);
-                    }
-                    Witness::Stack(witness)
-                } else {
-                    // case when pref == ser_out and len of both is 520
-                    Witness::Impossible
-                }
-            }
-            // Note the unavailable instead of impossible because we don't know
-            // the hashoutputs yet
             None => Witness::Unavailable,
         }
     }
@@ -998,27 +909,27 @@ impl Witness {
 
 impl Witness {
     /// Produce something like a 32-byte 0 push
-    fn hash_dissatisfaction() -> Self {
+    pub fn hash_dissatisfaction() -> Self {
         Witness::Stack(vec![vec![0; 32]])
     }
 
     /// Construct a satisfaction equivalent to an empty stack
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         Witness::Stack(vec![])
     }
 
     /// Construct a satisfaction equivalent to `OP_1`
-    fn push_1() -> Self {
+    pub fn push_1() -> Self {
         Witness::Stack(vec![vec![1]])
     }
 
     /// Construct a satisfaction equivalent to a single empty push
-    fn push_0() -> Self {
+    pub fn push_0() -> Self {
         Witness::Stack(vec![vec![]])
     }
 
     /// Concatenate, or otherwise combine, two satisfactions
-    fn combine(one: Self, two: Self) -> Self {
+    pub fn combine(one: Self, two: Self) -> Self {
         match (one, two) {
             (Witness::Impossible, _) | (_, Witness::Impossible) => Witness::Impossible,
             (Witness::Unavailable, _) | (_, Witness::Unavailable) => Witness::Unavailable,
@@ -1042,9 +953,9 @@ pub struct Satisfaction {
 
 impl Satisfaction {
     // produce a non-malleable satisafaction for thesh frag
-    fn thresh<Pk, Ctx, Sat, F>(
+    fn thresh<Pk, Ctx, Sat, Ext, F>(
         k: usize,
-        subs: &[Arc<Miniscript<Pk, Ctx>>],
+        subs: &[Arc<Miniscript<Pk, Ctx, Ext>>],
         stfr: &Sat,
         root_has_sig: bool,
         leaf_hash: &TapLeafHash,
@@ -1054,6 +965,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
+        Ext: Extension<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
     {
         let mut sats = subs
@@ -1160,9 +1072,9 @@ impl Satisfaction {
     }
 
     // produce a possily malleable satisafaction for thesh frag
-    fn thresh_mall<Pk, Ctx, Sat, F>(
+    fn thresh_mall<Pk, Ctx, Sat, Ext, F>(
         k: usize,
-        subs: &[Arc<Miniscript<Pk, Ctx>>],
+        subs: &[Arc<Miniscript<Pk, Ctx, Ext>>],
         stfr: &Sat,
         root_has_sig: bool,
         leaf_hash: &TapLeafHash,
@@ -1172,6 +1084,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
+        Ext: Extension<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
     {
         let mut sats = subs
@@ -1289,8 +1202,8 @@ impl Satisfaction {
     }
 
     // produce a non-malleable satisfaction
-    fn satisfy_helper<Pk, Ctx, Sat, F, G>(
-        term: &Terminal<Pk, Ctx>,
+    fn satisfy_helper<Pk, Ctx, Sat, Ext, F, G>(
+        term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,
         root_has_sig: bool,
         leaf_hash: &TapLeafHash,
@@ -1301,10 +1214,11 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
+        Ext: Extension<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
         G: FnMut(
             usize,
-            &[Arc<Miniscript<Pk, Ctx>>],
+            &[Arc<Miniscript<Pk, Ctx, Ext>>],
             &Sat,
             bool,
             &TapLeafHash,
@@ -1373,14 +1287,6 @@ impl Satisfaction {
             },
             Terminal::False => Satisfaction {
                 stack: Witness::Impossible,
-                has_sig: false,
-            },
-            Terminal::Version(n) => Satisfaction {
-                stack: Witness::ver_eq_satisfy(stfr, n),
-                has_sig: false,
-            },
-            Terminal::OutputsPref(ref pref) => Satisfaction {
-                stack: Witness::output_pref_satisfy(stfr, pref),
                 has_sig: false,
             },
             Terminal::Alt(ref sub)
@@ -1601,12 +1507,13 @@ impl Satisfaction {
                     }
                 }
             }
+            Terminal::Ext(ref e) => e.satisfy(stfr),
         }
     }
 
     // Helper function to produce a dissatisfaction
-    fn dissatisfy_helper<Pk, Ctx, Sat, F, G>(
-        term: &Terminal<Pk, Ctx>,
+    fn dissatisfy_helper<Pk, Ctx, Sat, Ext, F, G>(
+        term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,
         root_has_sig: bool,
         leaf_hash: &TapLeafHash,
@@ -1617,10 +1524,11 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
+        Ext: Extension<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
         G: FnMut(
             usize,
-            &[Arc<Miniscript<Pk, Ctx>>],
+            &[Arc<Miniscript<Pk, Ctx, Ext>>],
             &Sat,
             bool,
             &TapLeafHash,
@@ -1657,14 +1565,6 @@ impl Satisfaction {
             | Terminal::Ripemd160(_)
             | Terminal::Hash160(_) => Satisfaction {
                 stack: Witness::hash_dissatisfaction(),
-                has_sig: false,
-            },
-            Terminal::Version(n) => Satisfaction {
-                stack: Witness::ver_eq_dissatisfy(stfr, n),
-                has_sig: false,
-            },
-            Terminal::OutputsPref(ref pref) => Satisfaction {
-                stack: Witness::output_pref_dissatisfy(stfr, pref),
                 has_sig: false,
             },
             Terminal::Alt(ref sub)
@@ -1779,20 +1679,23 @@ impl Satisfaction {
                 stack: Witness::Stack(vec![vec![]; pks.len()]),
                 has_sig: false,
             },
+            Terminal::Ext(ref e) => e.dissatisfy(stfr),
         }
     }
 
     /// Produce a satisfaction non-malleable satisfaction
-    pub(super) fn satisfy<
-        Pk: MiniscriptKey + ToPublicKey,
-        Ctx: ScriptContext,
-        Sat: Satisfier<Pk>,
-    >(
-        term: &Terminal<Pk, Ctx>,
+    pub(super) fn satisfy<Pk, Ctx, Sat, Ext>(
+        term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,
         root_has_sig: bool,
         leaf_hash: &TapLeafHash,
-    ) -> Self {
+    ) -> Self
+    where
+        Pk: MiniscriptKey + ToPublicKey,
+        Ctx: ScriptContext,
+        Sat: Satisfier<Pk>,
+        Ext: Extension<Pk>,
+    {
         Self::satisfy_helper(
             term,
             stfr,
@@ -1808,8 +1711,9 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
+        Ext: Extension<Pk>,
     >(
-        term: &Terminal<Pk, Ctx>,
+        term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,
         root_has_sig: bool,
         leaf_hash: &TapLeafHash,

@@ -21,8 +21,10 @@
 //! with these is easier.
 
 use bitcoin::hashes::Hash;
+use bitcoin::Script as BtcScript;
 use bitcoin::{self, blockdata::script, hashes};
-use bitcoin::{secp256k1, Script as BtcScript};
+use bitcoin::{hashes::hash160, Address as BtcAddress};
+use elements::secp256k1_zkp;
 use expression::{self, FromTree};
 use policy::{semantic, Liftable};
 use std::{fmt, str::FromStr};
@@ -151,10 +153,10 @@ where
         Ok(())
     }
 
-    fn bitcoin_address<C: secp256k1::Verification>(
+    fn bitcoin_address<C: secp256k1_zkp::Verification>(
         &self,
         network: bitcoin::Network,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> Result<bitcoin::Address, Error>
     where
         Pk: ToPublicKey,
@@ -168,9 +170,9 @@ where
         ))
     }
 
-    fn bitcoin_script_pubkey<C: secp256k1::Verification>(
+    fn bitcoin_script_pubkey<C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> BtcScript
     where
         Pk: ToPublicKey,
@@ -180,9 +182,9 @@ where
             .script_pubkey()
     }
 
-    fn bitcoin_unsigned_script_sig<C: secp256k1::Verification>(
+    fn bitcoin_unsigned_script_sig<C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> BtcScript
     where
         Pk: ToPublicKey,
@@ -195,9 +197,9 @@ where
             .into_script()
     }
 
-    fn bitcoin_witness_script<C: secp256k1::Verification>(
+    fn bitcoin_witness_script<C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> Result<BtcScript, Error>
     where
         Pk: ToPublicKey,
@@ -212,9 +214,9 @@ where
         Ok(tweaked_desc.explicit_script()?)
     }
 
-    fn get_bitcoin_satisfaction<S, C: secp256k1::Verification>(
+    fn get_bitcoin_satisfaction<S, C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
         satisfier: S,
     ) -> Result<(Vec<Vec<u8>>, BtcScript), Error>
     where
@@ -239,7 +241,7 @@ where
 
     fn script_code<C: secp256k1::Verification>(
         &self,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> Result<BtcScript, Error>
     where
         Pk: ToPublicKey,

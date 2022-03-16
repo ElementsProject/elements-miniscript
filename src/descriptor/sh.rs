@@ -20,7 +20,7 @@
 
 use std::{fmt, str::FromStr};
 
-use bitcoin::secp256k1;
+use elements::secp256k1_zkp;
 use elements::{self, script, Script};
 
 use expression::{self, FromTree};
@@ -55,6 +55,7 @@ pub enum ShInner<Pk: MiniscriptKey> {
     /// Inner Sorted Multi
     SortedMulti(SortedMultiVec<Pk, Legacy>),
     /// p2sh miniscript
+    // p2sh has no extension support
     Ms(Miniscript<Pk, Legacy>),
 }
 
@@ -217,7 +218,7 @@ where
 {
     fn blind_addr(
         &self,
-        blinder: Option<secp256k1::PublicKey>,
+        blinder: Option<secp256k1_zkp::PublicKey>,
         params: &'static elements::AddressParams,
     ) -> Result<elements::Address, Error>
     where

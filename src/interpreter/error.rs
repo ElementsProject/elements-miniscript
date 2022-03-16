@@ -12,9 +12,11 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
-use bitcoin::hashes::{hash160, hex::ToHex};
-use bitcoin::util::taproot;
-use bitcoin::{self, secp256k1};
+use bitcoin;
+use elements::hashes::hash160;
+use elements::secp256k1_zkp;
+use elements::taproot;
+use elements::{self, secp256k1_zkp};
 use std::{error, fmt};
 
 use super::BitcoinKey;
@@ -90,7 +92,7 @@ pub enum Error {
     /// Could not satisfy, relative locktime not met
     RelativeLocktimeNotMet(u32),
     /// Forward-secp related errors
-    Secp(secp256k1::Error),
+    Secp(secp256k1_zkp::Error),
     /// Miniscript requires the entire top level script to be satisfied.
     ScriptSatisfactionError,
     /// Schnorr Signature error
@@ -158,8 +160,8 @@ impl fmt::Display for PkEvalErrInner {
 }
 
 #[doc(hidden)]
-impl From<secp256k1::Error> for Error {
-    fn from(e: secp256k1::Error) -> Error {
+impl From<secp256k1_zkp::Error> for Error {
+    fn from(e: secp256k1_zkp::Error) -> Error {
         Error::Secp(e)
     }
 }
@@ -182,6 +184,12 @@ impl From<bitcoin::EcdsaSigError> for Error {
 impl From<bitcoin::SchnorrSigError> for Error {
     fn from(e: bitcoin::SchnorrSigError) -> Error {
         Error::SchnorrSig(e)
+    }
+}
+
+impl From<elements::secp256k1_zkp::UpstreamError> for Error {
+    fn from(e: elements::secp256k1_zkp::UpstreamError) -> Error {
+        Error::Secp(elements::secp256k1_zkp::Error::Upstream(e))
     }
 }
 

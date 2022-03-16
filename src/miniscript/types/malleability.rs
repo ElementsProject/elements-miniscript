@@ -15,6 +15,7 @@
 //! Malleability-related Type properties
 
 use super::{ErrorKind, Property};
+use {Extension, MiniscriptKey};
 
 /// Whether the fragment has a dissatisfaction, and if so, whether
 /// it is unique. Affects both correctness and malleability-freeness,
@@ -317,6 +318,10 @@ impl Property for Malleability {
                 && b.non_malleable
                 && (a.safe || b.safe || c.safe),
         })
+    }
+
+    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(e: &E) -> Self {
+        e.mall_prop()
     }
 
     fn threshold<S>(k: usize, n: usize, mut sub_ck: S) -> Result<Self, ErrorKind>

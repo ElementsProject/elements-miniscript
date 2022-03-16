@@ -19,7 +19,7 @@
 //! assuming that the spent coin was descriptor controlled.
 //!
 
-use bitcoin;
+use bitcoin::PublicKey;
 use elements::{self, secp256k1_zkp, SigHash};
 use elements::{confidential, sighash};
 use elements::{
@@ -42,10 +42,13 @@ use MiniscriptKey;
 pub use self::error::Error;
 use self::error::PkEvalErrInner;
 use self::stack::Stack;
+use {CovenantExt, Extension};
+
+pub use self::stack::{Element, Stack};
 
 /// An iterable Miniscript-structured representation of the spending of a coin
-pub struct Interpreter<'txin> {
-    inner: inner::Inner,
+pub struct Interpreter<'txin, Ext: Extension<PublicKey>> {
+    inner: inner::Inner<Ext>,
     stack: Stack<'txin>,
     /// For non-Taproot spends, the scriptCode; for Taproot script-spends, this
     /// is the leaf script; for key-spends it is `None`.
@@ -160,14 +163,36 @@ impl MiniscriptKey for BitcoinKey {
     }
 }
 
-impl<'txin> Interpreter<'txin> {
+impl<'txin> Interpreter<'txin, CovenantExt> {
     /// Constructs an interpreter from the data of a spending transaction
     ///
     /// Accepts a signature-validating function. If you are willing to trust
     /// that ECSDA signatures are valid, this can be set to the constant true
     /// function; otherwise, it should be a closure containing a sighash and
     /// secp context, which can actually verify a given signature.
+    /// For downstream cursom implementations of [`Extension`], use [`Interpreter::from_txdata_ext`]
     pub fn from_txdata(
+        spk: &elements::Script,
+        script_sig: &'txin elements::Script,
+        witness: &'txin [Vec<u8>],
+        age: u32,
+        height: u32,
+    ) -> Result<Self, Error> {
+        Interpreter::from_txdata_ext(spk, script_sig, witness, age, height)
+    }
+}
+
+impl<'txin, Ext> Interpreter<'txin, Ext>
+where
+    Ext: Extension<PublicKey>,
+{
+    /// Constructs an interpreter from the data of a spending transaction
+    ///
+    /// Accepts a signature-validating function. If you are willing to trust
+    /// that ECSDA signatures are valid, this can be set to the constant true
+    /// function; otherwise, it should be a closure containing a sighash and
+    /// secp context, which can actually verify a given signature.
+    pub fn from_txdata_ext(
         spk: &elements::Script,
         script_sig: &'txin elements::Script,
         witness: &'txin [Vec<u8>],
@@ -483,7 +508,7 @@ pub enum HashLockType {
 /// 'intp represents the lifetime of descriptor and `stack represents
 /// the lifetime of witness
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum SatisfiedConstraint {
+pub enum SatisfiedConstraint<Ext: Extension<BitcoinKey>> {
     ///Public key and corresponding signature
     PublicKey {
         /// KeySig pair
@@ -518,14 +543,20 @@ pub enum SatisfiedConstraint {
     /// Check Version eq
     VerEq {
         /// The version of transaction
-        n: &'intp u32,
+        n: u32,
     },
 
     /// Serialized outputs of this transaction start
     /// this prefix
     OutputsPref {
         /// The version of transaction
-        pref: &'intp [u8],
+        pref: Vec<u8>,
+    },
+
+    /// Extension Interpreter
+    Ext {
+        /// Extension
+        ext: Box<Ext>,
     },
 }
 
@@ -535,9 +566,12 @@ pub enum SatisfiedConstraint {
 ///the top of the stack, we need to decide whether to execute right child or not.
 ///This is also useful for wrappers and thresholds which push a value on the stack
 ///depending on evaluation of the children.
-struct NodeEvaluationState<'intp> {
+struct NodeEvaluationState<'intp, Ext>
+where
+    Ext: 'intp + Extension<PublicKey>,
+{
     ///The node which is being evaluated
-    node: &'intp Miniscript<BitcoinKey, NoChecks>,
+    node: &'intp Miniscript<BitcoinKey, NoChecks, Ext>,
     ///number of children evaluated
     n_evaluated: usize,
     ///number of children satisfied
@@ -555,23 +589,27 @@ struct NodeEvaluationState<'intp> {
 ///
 /// In case the script is actually dissatisfied, this may return several values
 /// before ultimately returning an error.
-pub struct Iter<'intp, 'txin: 'intp> {
+pub struct Iter<'intp, 'txin: 'intp, Ext>
+where
+    Ext: 'intp + Extension<PublicKey>,
+{
     verify_sig: Box<dyn FnMut(&KeySigPair) -> bool + 'intp>,
     public_key: Option<&'intp BitcoinKey>,
     state: Vec<NodeEvaluationState<'intp>>,
     stack: Stack<'txin>,
     age: u32,
     height: u32,
-    cov: Option<&'intp bitcoin::PublicKey>,
+    cov: Option<&'intp PublicKey>,
     has_errored: bool,
 }
 
 ///Iterator for Iter
-impl<'intp, 'txin: 'intp> Iterator for Iter<'intp, 'txin>
+impl<'intp, 'txin: 'intp, Ext> Iterator for Iter<'intp, 'txin, Ext>
 where
     NoChecks: ScriptContext,
+    Ext: Extension<BitcoinKey>,
 {
-    type Item = Result<SatisfiedConstraint, Error>;
+    type Item = Result<SatisfiedConstraint<Ext>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.has_errored {
@@ -587,14 +625,15 @@ where
     }
 }
 
-impl<'intp, 'txin: 'intp> Iter<'intp, 'txin>
+impl<'intp, 'txin: 'intp, Ext> Iter<'intp, 'txin, Ext>
 where
     NoChecks: ScriptContext,
+    Ext: Extension<BitcoinKey>,
 {
     /// Helper function to push a NodeEvaluationState on state stack
     fn push_evaluation_state(
         &mut self,
-        node: &'intp Miniscript<BitcoinKey, NoChecks>,
+        node: &'intp Miniscript<BitcoinKey, NoChecks, Ext>,
         n_evaluated: usize,
         n_satisfied: usize,
     ) -> () {
@@ -606,7 +645,7 @@ where
     }
 
     /// Helper function to step the iterator
-    fn iter_next(&mut self) -> Option<Result<SatisfiedConstraint, Error>> {
+    fn iter_next(&mut self) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         while let Some(node_state) = self.state.pop() {
             //non-empty stack
             match node_state.node.node {
@@ -684,20 +723,12 @@ where
                         return res;
                     }
                 }
-                Terminal::Version(ref ver) => {
-                    debug_assert_eq!(node_state.n_evaluated, 0);
-                    debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_ver(ver);
-                    if res.is_some() {
-                        return res;
-                    }
-                }
-                Terminal::OutputsPref(ref pref) => {
-                    debug_assert_eq!(node_state.n_evaluated, 0);
-                    debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_outputs_pref(pref);
-                    if res.is_some() {
-                        return res;
+                Terminal::Ext(ref ext) => {
+                    let res = ext.evaluate(self.stack);
+                    match res {
+                        Some(Ok(())) => return Some(Ok(SatisfiedConstraint::Ext { ext: ext })),
+                        Some(Err(e)) => return Some(Err(e)),
+                        None => {}
                     }
                 }
                 Terminal::Alt(ref sub) | Terminal::Swap(ref sub) | Terminal::Check(ref sub) => {
@@ -999,7 +1030,7 @@ where
             let mut ser_sig = Vec::new();
             // 1.29 errors
             {
-                let sighash_bytes = self.stack[11].as_push();
+                let sighash_bytes = self.stack[1].as_push();
                 let sighash_u32 = util::slice_to_u32_le(sighash_bytes);
                 let sighash_ty = SigHashType::from_u32(sighash_u32);
                 let sig_vec = self.stack[0].as_push();
@@ -1014,6 +1045,7 @@ where
                 // Do the checkSigFromStackCheck
                 let sighash_msg: Vec<u8> = self.stack.0[1..]
                     .into_iter()
+                    .rev()
                     .map(|x| Vec::from(x.as_push()))
                     .flatten()
                     .collect();
@@ -1099,6 +1131,7 @@ mod tests {
     use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
     use elements::secp256k1_zkp::{Secp256k1, VerifyOnly};
     use miniscript::context::NoChecks;
+    use CovenantExt;
     use ElementsSig;
     use Miniscript;
     use MiniscriptKey;
@@ -1200,7 +1233,9 @@ mod tests {
         let stack = Stack::from(vec![stack::Element::Push(&der_sigs[0])]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &pk);
-        let pk_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let pk_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
+
         assert_eq!(
             pk_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKey {
@@ -1212,7 +1247,8 @@ mod tests {
         let stack = Stack::from(vec![stack::Element::Dissatisfied]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &pk);
-        let pk_err: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+
+        let pk_err: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> = constraints.collect();
         assert!(pk_err.is_err());
 
         //Check Pkh
@@ -1223,7 +1259,8 @@ mod tests {
         ]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &pkh);
-        let pkh_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let pkh_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             pkh_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKeyHash {
@@ -1236,7 +1273,8 @@ mod tests {
         let stack = Stack::from(vec![]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &after);
-        let after_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let after_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             after_satisfied.unwrap(),
             vec![SatisfiedConstraint::AbsoluteTimeLock { time: 1000 }]
@@ -1246,7 +1284,8 @@ mod tests {
         let stack = Stack::from(vec![]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &older);
-        let older_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let older_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             older_satisfied.unwrap(),
             vec![SatisfiedConstraint::RelativeTimeLock { time: 1000 }]
@@ -1256,7 +1295,8 @@ mod tests {
         let stack = Stack::from(vec![stack::Element::Push(&preimage)]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &sha256);
-        let sah256_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let sah256_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             sah256_satisfied.unwrap(),
             vec![SatisfiedConstraint::HashLock {
@@ -1269,7 +1309,8 @@ mod tests {
         let stack = Stack::from(vec![stack::Element::Push(&preimage)]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &hash256);
-        let sha256d_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let sha256d_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             sha256d_satisfied.unwrap(),
             vec![SatisfiedConstraint::HashLock {
@@ -1282,7 +1323,8 @@ mod tests {
         let stack = Stack::from(vec![stack::Element::Push(&preimage)]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &hash160);
-        let hash160_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let hash160_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             hash160_satisfied.unwrap(),
             vec![SatisfiedConstraint::HashLock {
@@ -1295,7 +1337,9 @@ mod tests {
         let stack = Stack::from(vec![stack::Element::Push(&preimage)]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &ripemd160);
-        let ripemd160_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let ripemd160_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
+
         assert_eq!(
             ripemd160_satisfied.unwrap(),
             vec![SatisfiedConstraint::HashLock {
@@ -1319,7 +1363,8 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let and_v_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let and_v_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             and_v_satisfied.unwrap(),
             vec![
@@ -1345,7 +1390,8 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let and_b_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let and_b_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             and_b_satisfied.unwrap(),
             vec![
@@ -1373,7 +1419,8 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let and_or_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let and_or_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             and_or_satisfied.unwrap(),
             vec![
@@ -1397,7 +1444,8 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let and_or_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let and_or_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             and_or_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKeyHash {
@@ -1418,7 +1466,8 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let or_b_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let or_b_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             or_b_satisfied.unwrap(),
             vec![SatisfiedConstraint::HashLock {
@@ -1436,7 +1485,8 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let or_d_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let or_d_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             or_d_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKey {
@@ -1456,7 +1506,8 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let or_c_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let or_c_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             or_c_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKey {
@@ -1476,7 +1527,8 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let or_i_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let or_i_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             or_i_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKey {
@@ -1499,7 +1551,8 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let thresh_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let thresh_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             thresh_satisfied.unwrap(),
             vec![
@@ -1529,7 +1582,8 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let multi_satisfied: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let multi_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert_eq!(
             multi_satisfied.unwrap(),
             vec![
@@ -1559,7 +1613,8 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let multi_error: Result<Vec<SatisfiedConstraint>, Error> = constraints.collect();
+        let multi_error: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+            constraints.collect();
         assert!(multi_error.is_err());
     }
 

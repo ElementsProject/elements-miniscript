@@ -36,6 +36,8 @@ use Terminal;
 
 use descriptor::CovError;
 
+use Extension;
+
 pub use self::concrete::Policy as Concrete;
 /// Semantic policies are "abstract" policies elsewhere; but we
 /// avoid this word because it is a reserved keyword in Rust
@@ -95,7 +97,7 @@ impl fmt::Display for LiftError {
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
     /// Lifting corresponds conversion of miniscript into Policy
     /// [policy.semantic.Policy] for human readable or machine analysis.
     /// However, naively lifting miniscripts can result in incorrect
@@ -115,7 +117,9 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Liftable<Pk> for Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Liftable<Pk>
+    for Miniscript<Pk, Ctx, Ext>
+{
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
         // check whether the root miniscript can have a spending path that is
         // a combination of heightlock and timelock
@@ -124,7 +128,12 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Liftable<Pk> for Miniscript<Pk, Ctx>
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Liftable<Pk> for Terminal<Pk, Ctx> {
+impl<Pk, Ctx, Ext> Liftable<Pk> for Terminal<Pk, Ctx, Ext>
+where
+    Pk: MiniscriptKey,
+    Ctx: ScriptContext,
+    Ext: Extension<Pk>,
+{
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
         let ret = match *self {
             Terminal::PkK(ref pk) => Semantic::KeyHash(pk.to_pubkeyhash()),
@@ -137,7 +146,6 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Liftable<Pk> for Terminal<Pk, Ctx> {
             Terminal::Hash160(h) => Semantic::Hash160(h),
             Terminal::True => Semantic::Trivial,
             Terminal::False => Semantic::Unsatisfiable,
-            Terminal::Version(_) | Terminal::OutputsPref(_) => return Err(CovError::CovenantLift)?,
             Terminal::Alt(ref sub)
             | Terminal::Swap(ref sub)
             | Terminal::Check(ref sub)
@@ -172,6 +180,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Liftable<Pk> for Terminal<Pk, Ctx> {
                     .map(|k| Semantic::KeyHash(k.to_pubkeyhash()))
                     .collect(),
             ),
+            Terminal::Ext(ref e) => e.lift()?,
         }
         .normalized();
         Ok(ret)

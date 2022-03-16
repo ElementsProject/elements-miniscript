@@ -26,6 +26,7 @@ use miniscript::{
 };
 use policy;
 use script_num_size;
+
 use {errstr, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, ToPublicKey};
 
 /// Contents of a "sortedmulti" descriptor
@@ -52,6 +53,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         // Check the limits before creating a new SortedMultiVec
         // For example, under p2sh context the scriptlen can only be
         // upto 520 bytes.
+        // sorted_multi has no extensions enabled
         let term: miniscript::decode::Terminal<Pk, Ctx> = Terminal::Multi(k, pks.clone());
         let ms = Miniscript::from_ast(term)?;
 

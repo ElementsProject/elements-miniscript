@@ -23,8 +23,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::{fmt, str};
 
-use elements::encode::serialize;
-use elements::hashes::hex::{FromHex, ToHex};
+use elements::hashes::hex::FromHex;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use elements::{opcodes, script};
 
@@ -38,13 +37,15 @@ use script_num_size;
 use util::MsKeyBuilder;
 use {Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslatePk};
 
+use Extension;
+
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx, Ext> {
     /// Internal helper function for displaying wrapper types; returns
     /// a character to display before the `:` as well as a reference
     /// to the wrapped type to allow easy recursion
-    fn wrap_char(&self) -> Option<(char, &Arc<Miniscript<Pk, Ctx>>)> {
+    fn wrap_char(&self) -> Option<(char, &Arc<Miniscript<Pk, Ctx, Ext>>)> {
         match *self {
             Terminal::Alt(ref sub) => Some(('a', sub)),
             Terminal::Swap(ref sub) => Some(('s', sub)),
@@ -61,10 +62,16 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
     }
 }
 
-impl<Pk: MiniscriptKey, Q: MiniscriptKey, Ctx: ScriptContext> TranslatePk<Pk, Q>
-    for Terminal<Pk, Ctx>
+impl<Pk, Q, Ctx, Ext> TranslatePk<Pk, Q> for Terminal<Pk, Ctx, Ext>
+where
+    Pk: MiniscriptKey,
+    Q: MiniscriptKey,
+    Ctx: ScriptContext,
+    Ext: Extension<Pk> + Extension<Q> + TranslatePk<Pk, Q>,
+    Ext: TranslatePk<Pk, Q>,
+    <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
 {
-    type Output = Terminal<Q, Ctx>;
+    type Output = Terminal<Q, Ctx, <Ext as TranslatePk<Pk, Q>>::Output>;
 
     /// Convert an AST element with one public key type to one of another
     /// public key type .This will panic while converting to
@@ -82,7 +89,7 @@ impl<Pk: MiniscriptKey, Q: MiniscriptKey, Ctx: ScriptContext> TranslatePk<Pk, Q>
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx, Ext> {
     pub(super) fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(
         &'a self,
         pred: &mut F,
@@ -101,9 +108,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             | Terminal::Ripemd160(..)
             | Terminal::Hash160(..)
             | Terminal::True
-            | Terminal::False
-            | Terminal::Version(..)
-            | Terminal::OutputsPref(..) => true,
+            | Terminal::False => true,
             Terminal::Alt(ref sub)
             | Terminal::Swap(ref sub)
             | Terminal::Check(ref sub)
@@ -128,18 +133,21 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => {
                 keys.iter().all(|key| pred(ForEach::Key(key)))
             }
+            Terminal::Ext(ref e) => e.real_for_each_key(pred),
         }
     }
     pub(super) fn real_translate_pk<FPk, FPkh, Q, Error, CtxQ>(
         &self,
         translatefpk: &mut FPk,
         translatefpkh: &mut FPkh,
-    ) -> Result<Terminal<Q, CtxQ>, Error>
+    ) -> Result<Terminal<Q, CtxQ, <Ext as TranslatePk<Pk, Q>>::Output>, Error>
     where
         FPk: FnMut(&Pk) -> Result<Q, Error>,
         FPkh: FnMut(&Pk::Hash) -> Result<Q::Hash, Error>,
         Q: MiniscriptKey,
         CtxQ: ScriptContext,
+        Ext: TranslatePk<Pk, Q>,
+        <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
     {
         let frag: Terminal<Q, CtxQ> = match *self {
             Terminal::PkK(ref p) => Terminal::PkK(translatefpk(p)?),
@@ -152,8 +160,6 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             Terminal::Hash160(x) => Terminal::Hash160(x),
             Terminal::True => Terminal::True,
             Terminal::False => Terminal::False,
-            Terminal::Version(n) => Terminal::Version(n),
-            Terminal::OutputsPref(ref pref) => Terminal::OutputsPref(pref.clone()),
             Terminal::Alt(ref sub) => Terminal::Alt(Arc::new(
                 sub.real_translate_pk(translatefpk, translatefpkh)?,
             )),
@@ -207,7 +213,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                 Arc::new(right.real_translate_pk(translatefpk, translatefpkh)?),
             ),
             Terminal::Thresh(k, ref subs) => {
-                let subs: Result<Vec<Arc<Miniscript<Q, _>>>, _> = subs
+                let subs: Result<Vec<Arc<Miniscript<Q, _, _>>>, _> = subs
                     .iter()
                     .map(|s| {
                         s.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)
@@ -224,12 +230,18 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                 let keys: Result<Vec<Q>, _> = keys.iter().map(&mut *translatefpk).collect();
                 Terminal::MultiA(k, keys?)
             }
+            Terminal::Ext(ref e) => Terminal::Ext(e.translate_pk(translatefpk, translatefpkh)?),
         };
         Ok(frag)
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> ForEachKey<Pk> for Terminal<Pk, Ctx> {
+impl<Pk, Ctx, Ext> ForEachKey<Pk> for Terminal<Pk, Ctx, Ext>
+where
+    Pk: MiniscriptKey,
+    Ctx: ScriptContext,
+    Ext: Extension<Pk>,
+{
     fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
@@ -239,7 +251,12 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> ForEachKey<Pk> for Terminal<Pk, Ctx>
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Debug for Terminal<Pk, Ctx> {
+impl<Pk, Ctx, Ext> fmt::Debug for Terminal<Pk, Ctx, Ext>
+where
+    Pk: MiniscriptKey,
+    Ctx: ScriptContext,
+    Ext: Extension<Pk>,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("[")?;
         if let Ok(type_map) = types::Type::type_check(self, |_| None) {
@@ -300,8 +317,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Debug for Terminal<Pk, Ctx> {
                 Terminal::Hash160(h) => write!(f, "hash160({})", h),
                 Terminal::True => f.write_str("1"),
                 Terminal::False => f.write_str("0"),
-                Terminal::Version(k) => write!(f, "ver_eq({})", k),
-                Terminal::OutputsPref(ref pref) => write!(f, "outputs_pref({})", pref.to_hex()),
+                Terminal::Ext(ref e) => write!(f, "{:?}", e),
                 Terminal::AndV(ref l, ref r) => write!(f, "and_v({:?},{:?})", l, r),
                 Terminal::AndB(ref l, ref r) => write!(f, "and_b({:?},{:?})", l, r),
                 Terminal::AndOr(ref a, ref b, ref c) => {
@@ -342,7 +358,12 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Debug for Terminal<Pk, Ctx> {
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Terminal<Pk, Ctx> {
+impl<Pk, Ctx, Ext> fmt::Display for Terminal<Pk, Ctx, Ext>
+where
+    Pk: MiniscriptKey,
+    Ctx: ScriptContext,
+    Ext: Extension<Pk>,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Terminal::PkK(ref pk) => write!(f, "pk_k({})", pk),
@@ -359,8 +380,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Terminal<Pk, Ctx> {
             Terminal::Hash160(h) => write!(f, "hash160({})", h),
             Terminal::True => f.write_str("1"),
             Terminal::False => f.write_str("0"),
-            Terminal::Version(n) => write!(f, "ver_eq({})", n),
-            Terminal::OutputsPref(ref pref) => write!(f, "outputs_pref({})", pref.to_hex()),
+            Terminal::Ext(ref e) => write!(f, "{}", e),
             Terminal::AndV(ref l, ref r) if r.node != Terminal::True => {
                 write!(f, "and_v({},{})", l, r)
             }
@@ -439,28 +459,30 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Terminal<Pk, Ctx> {
     }
 }
 
-impl<Pk, Ctx> expression::FromTree for Arc<Terminal<Pk, Ctx>>
+impl<Pk, Ctx, Ext> expression::FromTree for Arc<Terminal<Pk, Ctx, Ext>>
 where
     Pk: MiniscriptKey + str::FromStr,
     Pk::Hash: str::FromStr,
     Ctx: ScriptContext,
+    Ext: Extension<Pk>,
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Arc<Terminal<Pk, Ctx>>, Error> {
+    fn from_tree(top: &expression::Tree) -> Result<Arc<Terminal<Pk, Ctx, Ext>>, Error> {
         Ok(Arc::new(expression::FromTree::from_tree(top)?))
     }
 }
 
-impl<Pk, Ctx> expression::FromTree for Terminal<Pk, Ctx>
+impl<Pk, Ctx, Ext> expression::FromTree for Terminal<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey + str::FromStr,
     Pk::Hash: str::FromStr,
     Ctx: ScriptContext,
+    Ext: Extension<Pk>,
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Terminal<Pk, Ctx>, Error> {
+    fn from_tree(top: &expression::Tree) -> Result<Terminal<Pk, Ctx, Ext>, Error> {
         let mut aliased_wrap;
         let frag_name;
         let frag_wrap;
@@ -573,7 +595,7 @@ where
                     return Err(errstr("empty thresholds not allowed in descriptors"));
                 }
 
-                let subs: Result<Vec<Arc<Miniscript<Pk, Ctx>>>, _> = top.args[1..]
+                let subs: Result<Vec<Arc<Miniscript<Pk, Ctx, Ext>>>, _> = top.args[1..]
                     .iter()
                     .map(|sub| expression::FromTree::from_tree(sub))
                     .collect();
@@ -601,11 +623,17 @@ where
                     pks.map(|pks| Terminal::MultiA(k, pks))
                 }
             }
-            _ => Err(Error::Unexpected(format!(
-                "{}({} args) while parsing Miniscript",
-                top.name,
-                top.args.len(),
-            ))),
+            (name, _num_child) => {
+                // If nothing matches try to parse as extension
+                match Ext::from_name_tree(&name, &top.args) {
+                    Ok(e) => Ok(Terminal::Ext(e)),
+                    Err(..) => Err(Error::Unexpected(format!(
+                        "{}({} args) while parsing Miniscript",
+                        top.name,
+                        top.args.len(),
+                    ))),
+                }
+            }
         }?;
         for ch in frag_wrap.chars().rev() {
             // Check whether the wrapper is valid under the current context
@@ -651,14 +679,16 @@ where
 }
 
 /// Helper trait to add a `push_astelem` method to `script::Builder`
-trait PushAstElem<Pk: MiniscriptKey, Ctx: ScriptContext> {
-    fn push_astelem(self, ast: &Miniscript<Pk, Ctx>) -> Self
+trait PushAstElem<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
+    fn push_astelem(self, ast: &Miniscript<Pk, Ctx, Ext>) -> Self
     where
         Pk: ToPublicKey;
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> PushAstElem<Pk, Ctx> for script::Builder {
-    fn push_astelem(self, ast: &Miniscript<Pk, Ctx>) -> Self
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> PushAstElem<Pk, Ctx, Ext>
+    for script::Builder
+{
+    fn push_astelem(self, ast: &Miniscript<Pk, Ctx, Ext>) -> Self
     where
         Pk: ToPublicKey,
     {
@@ -691,8 +721,8 @@ pub trait StackCtxOperations: Sized {
 
 impl StackCtxOperations for script::Builder {
     fn check_item_eq(self, idx: u32, target: &[u8]) -> Self {
-        self.push_int((idx + 1) as i64) // +1 for depth increase
-            .push_opcode(opcodes::all::OP_DEPTH)
+        self.push_opcode(opcodes::all::OP_DEPTH)
+            .push_int(idx as i64)
             .push_opcode(opcodes::all::OP_SUB)
             .push_opcode(opcodes::all::OP_PICK)
             .push_slice(target)
@@ -715,15 +745,15 @@ impl StackCtxOperations for script::Builder {
         builder = builder.push_opcode(opcodes::all::OP_HASH256);
 
         builder
-            .push_int((idx + 1) as i64) // +1 for depth increase
             .push_opcode(opcodes::all::OP_DEPTH)
+            .push_int(idx as i64)
             .push_opcode(opcodes::all::OP_SUB)
             .push_opcode(opcodes::all::OP_PICK)
             .push_opcode(opcodes::all::OP_EQUAL)
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx, Ext> {
     /// Encode the element as a fragment of Bitcoin Script. The inverse
     /// function, from Script to an AST element, is implemented in the
     /// `parse` module.
@@ -772,8 +802,6 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::True => builder.push_opcode(opcodes::OP_TRUE),
             Terminal::False => builder.push_opcode(opcodes::OP_FALSE),
-            Terminal::Version(n) => builder.check_item_eq(1, &serialize(&n)),
-            Terminal::OutputsPref(ref pref) => builder.check_item_pref(9, pref),
             Terminal::Alt(ref sub) => builder
                 .push_opcode(opcodes::all::OP_TOALTSTACK)
                 .push_astelem(sub)
@@ -862,6 +890,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                     .push_int(k as i64)
                     .push_opcode(opcodes::all::OP_NUMEQUAL)
             }
+            Terminal::Ext(ref e) => e.push_to_builder(builder),
         }
     }
 
@@ -884,13 +913,6 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             Terminal::Hash160(..) => 21 + 6,
             Terminal::True => 1,
             Terminal::False => 1,
-            Terminal::Version(_n) => 4 + 1 + 1 + 4, // opcodes + push opcodes + target size
-            Terminal::OutputsPref(ref pref) => {
-                // CAT CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
-                // HASH256 DEPTH <10> SUB PICK EQUAL
-                8 + pref.len() + 1 /* line1 opcodes + pref.push */
-                + 6 /* line 2 */
-            }
             Terminal::Alt(ref sub) => sub.node.script_size() + 2,
             Terminal::Swap(ref sub) => sub.node.script_size() + 1,
             Terminal::Check(ref sub) => sub.node.script_size() + 1,
@@ -929,6 +951,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                     + pks.iter().map(|pk| Ctx::pk_len(pk)).sum::<usize>() // n keys
                     + pks.len() // n times CHECKSIGADD
             }
+            Terminal::Ext(ref e) => e.script_size(),
         }
     }
 }

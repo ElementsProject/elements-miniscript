@@ -18,6 +18,9 @@ use elements::{self, script};
 
 use super::{stack, BitcoinKey, Error, Stack, TypedHash160};
 use bitcoin::blockdata::witness::Witness;
+use Extension;
+
+use super::{stack, Error, Stack};
 use descriptor::{CovOperations, CovenantDescriptor};
 use elements::schnorr::TapTweak;
 use elements::taproot::{ControlBlock, TAPROOT_ANNEX_PREFIX};
@@ -56,9 +59,9 @@ fn pk_from_stackelem<'a>(
 
 // Parse the script with appropriate context to check for context errors like
 // correct usage of x-only keys or multi_a
-fn script_from_stackelem<'a, Ctx: ScriptContext>(
+fn script_from_stackelem<'a, Ctx: ScriptContext, Ext: Extension<super::BitcoinKey>>(
     elem: &stack::Element<'a>,
-) -> Result<Miniscript<Ctx::Key, Ctx>, Error> {
+) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
     match *elem {
         stack::Element::Push(sl) => {
             Miniscript::parse_insane(&elements::Script::from(sl.to_owned())).map_err(Error::from)
@@ -72,9 +75,12 @@ fn script_from_stackelem<'a, Ctx: ScriptContext>(
 
 // Try to parse covenant components from witness script
 // stack element
-fn cov_components_from_stackelem<'a>(
+fn cov_components_from_stackelem<'a, Ext: Extension<bitcoin::PublicKey>>(
     elem: &stack::Element<'a>,
-) -> Option<(bitcoin::PublicKey, Miniscript<bitcoin::PublicKey, NoChecks>)> {
+) -> Option<(
+    bitcoin::PublicKey,
+    Miniscript<bitcoin::PublicKey, NoChecks, Ext>,
+)> {
     match *elem {
         stack::Element::Push(sl) => {
             CovenantDescriptor::parse_cov_components(&elements::Script::from(sl.to_owned())).ok()
@@ -105,22 +111,23 @@ pub enum ScriptType {
 
 /// Structure representing a script under evaluation as a Miniscript
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub(super) enum Inner {
+pub enum Inner<Ext: Extension<bitcoin::PublicKey>> {
     /// The script being evaluated is a simple public key check (pay-to-pk,
     /// pay-to-pkhash or pay-to-witness-pkhash)
     // Technically, this allows representing a (XonlyKey, Sh) output but we make sure
     // that only appropriate outputs are created
     PublicKey(super::BitcoinKey, PubkeyType),
     /// The script being evaluated is an actual script
-    Script(Miniscript<bitcoin::PublicKey, NoChecks>, ScriptType),
+    Script(Miniscript<super::BitcoinKey, NoChecks, Ext>, ScriptType),
     /// The Covenant Miniscript
     /// Only Witnessv0 scripts are supported for now
     CovScript(
         bitcoin::PublicKey,
-        Miniscript<bitcoin::PublicKey, NoChecks>,
+        Miniscript<bitcoin::PublicKey, NoChecks, Ext>,
         // Add scriptType when we support additional things here
         // ScriptType,
     ),
+    // todo: add extensions support as explicit enum
 }
 
 // The `Script` returned by this method is always generated/cloned ... when
@@ -130,11 +137,11 @@ pub(super) enum Inner {
 /// Parses an `Inner` and appropriate `Stack` from completed transaction data,
 /// as well as the script that should be used as a scriptCode in a sighash
 /// Tr outputs don't have script code and return None.
-pub fn from_txdata<'txin>(
+pub fn from_txdata<'txin, Ext: Extension<bitcoin::PublicKey>>(
     spk: &elements::Script,
     script_sig: &'txin elements::Script,
     witness: &'txin [Vec<u8>],
-) -> Result<(Inner, Stack<'txin>, Option<elements::Script>), Error> {
+) -> Result<(Inner<Ext>, Stack<'txin>, Option<elements::Script>), Error> {
     let mut ssig_stack: Stack = script_sig
         .instructions_minimal()
         .map(stack::Element::from_instruction)
@@ -440,6 +447,7 @@ mod tests {
     use elements::script;
     use elements::{self, Script};
     use std::str::FromStr;
+    use CovenantExt;
 
     struct KeyTestData {
         pk_spk: elements::Script,
@@ -527,41 +535,29 @@ mod tests {
 
         // Compressed pk, empty scriptsig
         let (inner, stack, script_code) =
-            from_txdata(&comp.pk_spk, &blank_script, &empty_wit).expect("parse txdata");
-        assert_eq!(
-            inner,
-            Inner::PublicKey(fixed.pk_comp.into(), PubkeyType::Pk)
-        );
+            from_txdata::<CovenantExt>(&comp.pk_spk, &blank_script, &[]).expect("parse txdata");
+        assert_eq!(inner, Inner::PublicKey(fixed.pk_comp, PubkeyType::Pk));
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(comp.pk_spk.clone()));
 
         // Uncompressed pk, empty scriptsig
         let (inner, stack, script_code) =
-            from_txdata(&uncomp.pk_spk, &blank_script, &empty_wit).expect("parse txdata");
-        assert_eq!(
-            inner,
-            Inner::PublicKey(fixed.pk_uncomp.into(), PubkeyType::Pk)
-        );
+            from_txdata::<CovenantExt>(&uncomp.pk_spk, &blank_script, &[]).expect("parse txdata");
+        assert_eq!(inner, Inner::PublicKey(fixed.pk_uncomp, PubkeyType::Pk));
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(uncomp.pk_spk.clone()));
 
         // Compressed pk, correct scriptsig
         let (inner, stack, script_code) =
-            from_txdata(&comp.pk_spk, &comp.pk_sig, &empty_wit).expect("parse txdata");
-        assert_eq!(
-            inner,
-            Inner::PublicKey(fixed.pk_comp.into(), PubkeyType::Pk)
-        );
+            from_txdata::<CovenantExt>(&comp.pk_spk, &comp.pk_sig, &[]).expect("parse txdata");
+        assert_eq!(inner, Inner::PublicKey(fixed.pk_comp, PubkeyType::Pk));
         assert_eq!(stack, Stack::from(vec![comp.pk_sig[1..].into()]));
         assert_eq!(script_code, Some(comp.pk_spk.clone()));
 
         // Uncompressed pk, correct scriptsig
         let (inner, stack, script_code) =
-            from_txdata(&uncomp.pk_spk, &uncomp.pk_sig, &empty_wit).expect("parse txdata");
-        assert_eq!(
-            inner,
-            Inner::PublicKey(fixed.pk_uncomp.into(), PubkeyType::Pk)
-        );
+            from_txdata::<CovenantExt>(&uncomp.pk_spk, &uncomp.pk_sig, &[]).expect("parse txdata");
+        assert_eq!(inner, Inner::PublicKey(fixed.pk_uncomp, PubkeyType::Pk));
         assert_eq!(stack, Stack::from(vec![uncomp.pk_sig[1..].into()]));
         assert_eq!(script_code, Some(uncomp.pk_spk));
 
@@ -569,19 +565,21 @@ mod tests {
         let mut spk = comp.pk_spk.to_bytes();
         spk[1] = 5;
         let spk = elements::Script::from(spk);
-        let err = from_txdata(&spk, &elements::Script::new(), &[]).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&spk, &elements::Script::new(), &[]).unwrap_err();
         assert_eq!(err.to_string(), "could not parse pubkey");
 
         // Scriptpubkey has invalid script
         let mut spk = comp.pk_spk.to_bytes();
         spk[0] = 100;
         let spk = elements::Script::from(spk);
-        let err = from_txdata(&spk, &elements::Script::new(), &[]).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&spk, &elements::Script::new(), &[]).unwrap_err();
         assert_eq!(&err.to_string()[0..12], "parse error:");
 
         // Witness is nonempty
+
         let wit = vec![vec![]];
-        let err = from_txdata(&comp.pk_spk, &comp.pk_sig, &wit).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&comp.pk_spk, &comp.pk_sig, &[vec![]]).unwrap_err();
+
         assert_eq!(err.to_string(), "legacy spend had nonempty witness");
     }
 
@@ -593,56 +591,47 @@ mod tests {
         let empty_wit = vec![];
 
         // pkh, empty scriptsig; this time it errors out
-        let err = from_txdata(&comp.pkh_spk, &elements::Script::new(), &[]).unwrap_err();
+        let err =
+            from_txdata::<CovenantExt>(&comp.pkh_spk, &elements::Script::new(), &[]).unwrap_err();
         assert_eq!(err.to_string(), "unexpected end of stack");
 
         // pkh, wrong pubkey
-        let err = from_txdata(&comp.pkh_spk, &uncomp.pkh_sig_justkey, &empty_wit).unwrap_err();
+        let err =
+            from_txdata::<CovenantExt>(&comp.pkh_spk, &uncomp.pkh_sig_justkey, &[]).unwrap_err();
         assert_eq!(err.to_string(), "public key did not match scriptpubkey");
 
         // pkh, right pubkey, no signature
         let (inner, stack, script_code) =
-            from_txdata(&comp.pkh_spk, &comp.pkh_sig_justkey, &empty_wit).expect("parse txdata");
-        assert_eq!(
-            inner,
-            Inner::PublicKey(fixed.pk_comp.into(), PubkeyType::Pkh)
-        );
+            from_txdata::<CovenantExt>(&comp.pkh_spk, &comp.pkh_sig_justkey, &[])
+                .expect("parse txdata");
+        assert_eq!(inner, Inner::PublicKey(fixed.pk_comp, PubkeyType::Pkh));
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(comp.pkh_spk.clone()));
 
         let (inner, stack, script_code) =
-            from_txdata(&uncomp.pkh_spk, &uncomp.pkh_sig_justkey, &empty_wit)
+            from_txdata::<CovenantExt>(&uncomp.pkh_spk, &uncomp.pkh_sig_justkey, &[])
                 .expect("parse txdata");
-        assert_eq!(
-            inner,
-            Inner::PublicKey(fixed.pk_uncomp.into(), PubkeyType::Pkh)
-        );
+        assert_eq!(inner, Inner::PublicKey(fixed.pk_uncomp, PubkeyType::Pkh));
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(uncomp.pkh_spk.clone()));
 
         // pkh, right pubkey, signature
         let (inner, stack, script_code) =
-            from_txdata(&comp.pkh_spk, &comp.pkh_sig_justkey, &empty_wit).expect("parse txdata");
-        assert_eq!(
-            inner,
-            Inner::PublicKey(fixed.pk_comp.into(), PubkeyType::Pkh)
-        );
+            from_txdata::<CovenantExt>(&comp.pkh_spk, &comp.pkh_sig_justkey, &[])
+                .expect("parse txdata");
+        assert_eq!(inner, Inner::PublicKey(fixed.pk_comp, PubkeyType::Pkh));
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(comp.pkh_spk.clone()));
 
         let (inner, stack, script_code) =
-            from_txdata(&uncomp.pkh_spk, &uncomp.pkh_sig_justkey, &empty_wit)
+            from_txdata::<CovenantExt>(&uncomp.pkh_spk, &uncomp.pkh_sig_justkey, &[])
                 .expect("parse txdata");
-        assert_eq!(
-            inner,
-            Inner::PublicKey(fixed.pk_uncomp.into(), PubkeyType::Pkh)
-        );
+        assert_eq!(inner, Inner::PublicKey(fixed.pk_uncomp, PubkeyType::Pkh));
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(uncomp.pkh_spk.clone()));
 
         // Witness is nonempty
-        let wit = vec![vec![]];
-        let err = from_txdata(&comp.pkh_spk, &comp.pkh_sig, &wit).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&comp.pkh_spk, &comp.pkh_sig, &[vec![]]).unwrap_err();
         assert_eq!(err.to_string(), "legacy spend had nonempty witness");
     }
 
@@ -654,12 +643,13 @@ mod tests {
         let blank_script = elements::Script::new();
 
         // wpkh, empty witness; this time it errors out
-        let err = from_txdata(&comp.wpkh_spk, &blank_script, &vec![]).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&comp.wpkh_spk, &blank_script, &[]).unwrap_err();
         assert_eq!(err.to_string(), "unexpected end of stack");
 
         // wpkh, uncompressed pubkey
         let err =
-            from_txdata(&comp.wpkh_spk, &blank_script, &uncomp.wpkh_stack_justkey).unwrap_err();
+            from_txdata::<CovenantExt>(&comp.wpkh_spk, &blank_script, &uncomp.wpkh_stack_justkey)
+                .unwrap_err();
         assert_eq!(
             err.to_string(),
             "uncompressed pubkey in non-legacy descriptor"
@@ -667,7 +657,8 @@ mod tests {
 
         // wpkh, wrong pubkey
         let err =
-            from_txdata(&uncomp.wpkh_spk, &blank_script, &comp.wpkh_stack_justkey).unwrap_err();
+            from_txdata::<CovenantExt>(&uncomp.wpkh_spk, &blank_script, &comp.wpkh_stack_justkey)
+                .unwrap_err();
         assert_eq!(
             err.to_string(),
             "public key did not match scriptpubkey (segwit v0)"
@@ -675,7 +666,7 @@ mod tests {
 
         // wpkh, right pubkey, no signature
         let (inner, stack, script_code) =
-            from_txdata(&comp.wpkh_spk, &blank_script, &comp.wpkh_stack_justkey)
+            from_txdata::<CovenantExt>(&comp.wpkh_spk, &blank_script, &comp.wpkh_stack_justkey)
                 .expect("parse txdata");
         assert_eq!(
             inner,
@@ -686,7 +677,8 @@ mod tests {
 
         // wpkh, right pubkey, signature
         let (inner, stack, script_code) =
-            from_txdata(&comp.wpkh_spk, &blank_script, &comp.wpkh_stack).expect("parse txdata");
+            from_txdata::<CovenantExt>(&comp.wpkh_spk, &blank_script, &comp.wpkh_stack)
+                .expect("parse txdata");
         assert_eq!(
             inner,
             Inner::PublicKey(fixed.pk_comp.into(), PubkeyType::Wpkh)
@@ -697,8 +689,14 @@ mod tests {
         );
         assert_eq!(script_code, Some(comp.pkh_spk));
 
+        assert_eq!(inner, Inner::PublicKey(fixed.pk_comp, PubkeyType::Wpkh));
+        assert_eq!(stack, Stack::from(vec![comp.wpkh_stack[0][..].into()]));
+        assert_eq!(script_code, comp.pkh_spk);
+
         // Scriptsig is nonempty
-        let err = from_txdata(&comp.wpkh_spk, &comp.pk_sig, &comp.wpkh_stack_justkey).unwrap_err();
+        let err =
+            from_txdata::<CovenantExt>(&comp.wpkh_spk, &comp.pk_sig, &comp.wpkh_stack_justkey)
+                .unwrap_err();
         assert_eq!(err.to_string(), "segwit spend had nonempty scriptsig");
     }
 
@@ -710,15 +708,19 @@ mod tests {
         let blank_script = elements::Script::new();
 
         // sh_wpkh, missing witness or scriptsig
-        let err = from_txdata(&comp.sh_wpkh_spk, &blank_script, &vec![]).unwrap_err();
+
+        let err = from_txdata::<CovenantExt>(&comp.sh_wpkh_spk, &blank_script, &[]).unwrap_err();
         assert_eq!(err.to_string(), "unexpected end of stack");
-        let err = from_txdata(&comp.sh_wpkh_spk, &comp.sh_wpkh_sig, &vec![]).unwrap_err();
+        let err =
+            from_txdata::<CovenantExt>(&comp.sh_wpkh_spk, &comp.sh_wpkh_sig, &[]).unwrap_err();
+
         assert_eq!(err.to_string(), "unexpected end of stack");
-        let err = from_txdata(&comp.sh_wpkh_spk, &blank_script, &comp.sh_wpkh_stack).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&comp.sh_wpkh_spk, &blank_script, &comp.sh_wpkh_stack)
+            .unwrap_err();
         assert_eq!(err.to_string(), "unexpected end of stack");
 
         // sh_wpkh, uncompressed pubkey
-        let err = from_txdata(
+        let err = from_txdata::<CovenantExt>(
             &uncomp.sh_wpkh_spk,
             &uncomp.sh_wpkh_sig,
             &uncomp.sh_wpkh_stack_justkey,
@@ -730,7 +732,7 @@ mod tests {
         );
 
         // sh_wpkh, wrong redeem script for scriptpubkey
-        let err = from_txdata(
+        let err = from_txdata::<CovenantExt>(
             &uncomp.sh_wpkh_spk,
             &comp.sh_wpkh_sig,
             &comp.sh_wpkh_stack_justkey,
@@ -739,7 +741,7 @@ mod tests {
         assert_eq!(err.to_string(), "redeem script did not match scriptpubkey",);
 
         // sh_wpkh, wrong redeem script for witness script
-        let err = from_txdata(
+        let err = from_txdata::<CovenantExt>(
             &uncomp.sh_wpkh_spk,
             &uncomp.sh_wpkh_sig,
             &comp.sh_wpkh_stack_justkey,
@@ -748,7 +750,7 @@ mod tests {
         assert_eq!(err.to_string(), "witness script did not match scriptpubkey",);
 
         // sh_wpkh, right pubkey, no signature
-        let (inner, stack, script_code) = from_txdata(
+        let (inner, stack, script_code) = from_txdata::<CovenantExt>(
             &comp.sh_wpkh_spk,
             &comp.sh_wpkh_sig,
             &comp.sh_wpkh_stack_justkey,
@@ -763,7 +765,7 @@ mod tests {
 
         // sh_wpkh, right pubkey, signature
         let (inner, stack, script_code) =
-            from_txdata(&comp.sh_wpkh_spk, &comp.sh_wpkh_sig, &comp.sh_wpkh_stack)
+            from_txdata::<CovenantExt>(&comp.sh_wpkh_spk, &comp.sh_wpkh_sig, &comp.sh_wpkh_stack)
                 .expect("parse txdata");
         assert_eq!(
             inner,
@@ -786,24 +788,25 @@ mod tests {
     fn script_bare() {
         let preimage = b"12345678----____12345678----____";
         let hash = hash160::Hash::hash(&preimage[..]);
-        let (miniscript, spk) = ms_inner_script(&format!("hash160({})", hash));
+
+        let miniscript: ::Miniscript<bitcoin::PublicKey, NoChecks, CovenantExt> =
+            ::Miniscript::from_str_insane(&format!("hash160({})", hash)).unwrap();
 
         let blank_script = elements::Script::new();
         let empty_wit = vec![];
 
         // bare script has no validity requirements beyond being a sane script
         let (inner, stack, script_code) =
-            from_txdata(&spk, &blank_script, &empty_wit).expect("parse txdata");
+            from_txdata::<CovenantExt>(&spk, &blank_script, &[]).expect("parse txdata");
         assert_eq!(inner, Inner::Script(miniscript, ScriptType::Bare));
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(spk.clone()));
 
-        let err = from_txdata(&blank_script, &blank_script, &empty_wit).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&blank_script, &blank_script, &[]).unwrap_err();
         assert_eq!(&err.to_string()[0..12], "parse error:");
 
         // nonempty witness
-        let wit = vec![vec![]];
-        let err = from_txdata(&spk, &blank_script, &wit).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&spk, &blank_script, &[vec![]]).unwrap_err();
         assert_eq!(&err.to_string(), "legacy spend had nonempty witness");
     }
 
@@ -811,6 +814,8 @@ mod tests {
     fn script_sh() {
         let preimage = b"12345678----____12345678----____";
         let hash = hash160::Hash::hash(&preimage[..]);
+        let miniscript: ::Miniscript<bitcoin::PublicKey, NoChecks, CovenantExt> =
+            ::Miniscript::from_str_insane(&format!("hash160({})", hash)).unwrap();
 
         let (miniscript, redeem_script) = ms_inner_script(&format!("hash160({})", hash));
         let rs_hash = hash160::Hash::hash(&redeem_script[..]).into();
@@ -823,23 +828,23 @@ mod tests {
         let empty_wit = vec![];
 
         // sh without scriptsig
-        let err = from_txdata(&spk, &blank_script, &empty_wit).unwrap_err();
+
+        let err = from_txdata::<CovenantExt>(&spk, &blank_script, &[]).unwrap_err();
         assert_eq!(&err.to_string(), "unexpected end of stack");
 
         // with incorrect scriptsig
-        let err = from_txdata(&spk, &spk, &empty_wit).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&spk, &spk, &[]).unwrap_err();
         assert_eq!(&err.to_string(), "expected push in script");
 
         // with correct scriptsig
         let (inner, stack, script_code) =
-            from_txdata(&spk, &script_sig, &empty_wit).expect("parse txdata");
+            from_txdata::<CovenantExt>(&spk, &script_sig, &[]).expect("parse txdata");
         assert_eq!(inner, Inner::Script(miniscript, ScriptType::Sh));
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(redeem_script.clone()));
 
         // nonempty witness
-        let wit = vec![vec![]];
-        let err = from_txdata(&spk, &script_sig, &wit).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&spk, &script_sig, &[vec![]]).unwrap_err();
         assert_eq!(&err.to_string(), "legacy spend had nonempty witness");
     }
 
@@ -847,7 +852,11 @@ mod tests {
     fn script_wsh() {
         let preimage = b"12345678----____12345678----____";
         let hash = hash160::Hash::hash(&preimage[..]);
-        let (miniscript, witness_script) = ms_inner_script(&format!("hash160({})", hash));
+
+        let miniscript: ::Miniscript<bitcoin::PublicKey, NoChecks, CovenantExt> =
+            ::Miniscript::from_str_insane(&format!("hash160({})", hash)).unwrap();
+
+        let witness_script = miniscript.encode();
         let wit_hash = sha256::Hash::hash(&witness_script[..]).into();
         let wit_stack = vec![witness_script.to_bytes()];
 
@@ -855,17 +864,16 @@ mod tests {
         let blank_script = elements::Script::new();
 
         // wsh without witness
-        let err = from_txdata(&spk, &blank_script, &vec![]).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&spk, &blank_script, &[]).unwrap_err();
         assert_eq!(&err.to_string(), "unexpected end of stack");
 
         // with incorrect witness
-        let wit = vec![spk.to_bytes()];
-        let err = from_txdata(&spk, &blank_script, &wit).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&spk, &blank_script, &[spk.to_bytes()]).unwrap_err();
         assert_eq!(&err.to_string()[0..12], "parse error:");
 
         // with correct witness
         let (inner, stack, script_code) =
-            from_txdata(&spk, &blank_script, &wit_stack).expect("parse txdata");
+            from_txdata::<CovenantExt>(&spk, &blank_script, &wit_stack).expect("parse txdata");
         assert_eq!(inner, Inner::Script(miniscript, ScriptType::Wsh));
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(witness_script.clone()));
@@ -874,7 +882,7 @@ mod tests {
         let script_sig = script::Builder::new()
             .push_slice(&witness_script[..])
             .into_script();
-        let err = from_txdata(&spk, &script_sig, &wit_stack).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&spk, &script_sig, &wit_stack).unwrap_err();
         assert_eq!(&err.to_string(), "segwit spend had nonempty scriptsig");
     }
 
@@ -882,7 +890,11 @@ mod tests {
     fn script_sh_wsh() {
         let preimage = b"12345678----____12345678----____";
         let hash = hash160::Hash::hash(&preimage[..]);
-        let (miniscript, witness_script) = ms_inner_script(&format!("hash160({})", hash));
+
+        let miniscript: ::Miniscript<bitcoin::PublicKey, NoChecks, CovenantExt> =
+            ::Miniscript::from_str_insane(&format!("hash160({})", hash)).unwrap();
+
+        let witness_script = miniscript.encode();
         let wit_hash = sha256::Hash::hash(&witness_script[..]).into();
         let wit_stack = vec![witness_script.to_bytes()];
 
@@ -896,25 +908,26 @@ mod tests {
         let spk = Script::new_p2sh(&rs_hash);
 
         // shwsh without witness or scriptsig
-        let err = from_txdata(&spk, &blank_script, &vec![]).unwrap_err();
+
+        let err = from_txdata::<CovenantExt>(&spk, &blank_script, &[]).unwrap_err();
         assert_eq!(&err.to_string(), "unexpected end of stack");
-        let err = from_txdata(&spk, &script_sig, &vec![]).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&spk, &script_sig, &[]).unwrap_err();
         assert_eq!(&err.to_string(), "unexpected end of stack");
-        let err = from_txdata(&spk, &blank_script, &wit_stack).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&spk, &blank_script, &wit_stack).unwrap_err();
         assert_eq!(&err.to_string(), "unexpected end of stack");
 
         // with incorrect witness
-        let wit = vec![spk.to_bytes()];
-        let err = from_txdata(&spk, &script_sig, &wit).unwrap_err();
+
+        let err = from_txdata::<CovenantExt>(&spk, &script_sig, &[spk.to_bytes()]).unwrap_err();
         assert_eq!(&err.to_string()[0..12], "parse error:");
 
         // with incorrect scriptsig
-        let err = from_txdata(&spk, &redeem_script, &wit_stack).unwrap_err();
+        let err = from_txdata::<CovenantExt>(&spk, &redeem_script, &wit_stack).unwrap_err();
         assert_eq!(&err.to_string(), "redeem script did not match scriptpubkey");
 
         // with correct witness
         let (inner, stack, script_code) =
-            from_txdata(&spk, &script_sig, &wit_stack).expect("parse txdata");
+            from_txdata::<CovenantExt>(&spk, &script_sig, &wit_stack).expect("parse txdata");
         assert_eq!(inner, Inner::Script(miniscript, ScriptType::ShWsh));
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(witness_script));

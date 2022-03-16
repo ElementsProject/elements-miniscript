@@ -48,6 +48,7 @@ pub use miniscript::context::ScriptContext;
 use miniscript::decode::Terminal;
 use miniscript::types::extra_props::ExtData;
 use miniscript::types::Type;
+use {Extension, NoExt};
 
 use std::cmp;
 use std::sync::Arc;
@@ -58,9 +59,9 @@ use {expression, Error, ForEach, ForEachKey, ToPublicKey, TranslatePk};
 mod ms_tests;
 /// Top-level script AST type
 #[derive(Clone, Hash)]
-pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext> {
+pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk> = NoExt> {
     ///A node in the Abstract Syntax Tree(
-    pub node: Terminal<Pk, Ctx>,
+    pub node: Terminal<Pk, Ctx, Ext>,
     ///The correctness and malleability type information for the AST node
     pub ty: types::Type,
     ///Additional information helpful for extra analysis.
@@ -72,8 +73,10 @@ pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext> {
 /// `PartialOrd` of `Miniscript` must depend only on node and not the type information.
 /// The type information and extra_properties can be deterministically determined
 /// by the ast.
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> PartialOrd for Miniscript<Pk, Ctx> {
-    fn partial_cmp(&self, other: &Miniscript<Pk, Ctx>) -> Option<cmp::Ordering> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> PartialOrd
+    for Miniscript<Pk, Ctx, Ext>
+{
+    fn partial_cmp(&self, other: &Miniscript<Pk, Ctx, Ext>) -> Option<cmp::Ordering> {
         Some(self.node.cmp(&other.node))
     }
 }
@@ -81,8 +84,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> PartialOrd for Miniscript<Pk, Ctx> {
 /// `Ord` of `Miniscript` must depend only on node and not the type information.
 /// The type information and extra_properties can be deterministically determined
 /// by the ast.
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Ord for Miniscript<Pk, Ctx> {
-    fn cmp(&self, other: &Miniscript<Pk, Ctx>) -> cmp::Ordering {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Ord for Miniscript<Pk, Ctx, Ext> {
+    fn cmp(&self, other: &Miniscript<Pk, Ctx, Ext>) -> cmp::Ordering {
         self.node.cmp(&other.node)
     }
 }
@@ -90,8 +93,10 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Ord for Miniscript<Pk, Ctx> {
 /// `PartialEq` of `Miniscript` must depend only on node and not the type information.
 /// The type information and extra_properties can be deterministically determined
 /// by the ast.
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> PartialEq for Miniscript<Pk, Ctx> {
-    fn eq(&self, other: &Miniscript<Pk, Ctx>) -> bool {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> PartialEq
+    for Miniscript<Pk, Ctx, Ext>
+{
+    fn eq(&self, other: &Miniscript<Pk, Ctx, Ext>) -> bool {
         self.node.eq(&other.node)
     }
 }
@@ -99,19 +104,21 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> PartialEq for Miniscript<Pk, Ctx> {
 /// `Eq` of `Miniscript` must depend only on node and not the type information.
 /// The type information and extra_properties can be deterministically determined
 /// by the ast.
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Eq for Miniscript<Pk, Ctx> {}
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Eq for Miniscript<Pk, Ctx, Ext> {}
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Debug for Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> fmt::Debug
+    for Miniscript<Pk, Ctx, Ext>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.node)
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
     /// Add type information(Type and Extdata) to Miniscript based on
     /// `AstElem` fragment. Dependent on display and clone because of Error
     /// Display code of type_check.
-    pub fn from_ast(t: Terminal<Pk, Ctx>) -> Result<Miniscript<Pk, Ctx>, Error> {
+    pub fn from_ast(t: Terminal<Pk, Ctx, Ext>) -> Result<Miniscript<Pk, Ctx, Ext>, Error> {
         Ok(Miniscript {
             ty: Type::type_check(&t, |_| None)?,
             ext: ExtData::type_check(&t, |_| None)?,
@@ -121,25 +128,31 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> fmt::Display
+    for Miniscript<Pk, Ctx, Ext>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.node)
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
     /// Extracts the `AstElem` representing the root of the miniscript
-    pub fn into_inner(self) -> Terminal<Pk, Ctx> {
+    pub fn into_inner(self) -> Terminal<Pk, Ctx, Ext> {
         self.node
     }
 
     /// Get a reference to the inner `AstElem` representing the root of miniscript
-    pub fn as_inner(&self) -> &Terminal<Pk, Ctx> {
+    pub fn as_inner(&self) -> &Terminal<Pk, Ctx, Ext> {
         &self.node
     }
 }
 
-impl<Ctx: ScriptContext> Miniscript<Ctx::Key, Ctx> {
+impl<Ctx, Ext> Miniscript<Ctx::Key, Ctx, Ext>
+where
+    Ctx: ScriptContext,
+    Ext: Extension<Ctx::Key>,
+{
     /// Attempt to parse an insane(scripts don't clear sanity checks)
     /// script into a Miniscript representation.
     /// Use this to parse scripts with repeated pubkeys, timelock mixing, malleable
@@ -147,7 +160,7 @@ impl<Ctx: ScriptContext> Miniscript<Ctx::Key, Ctx> {
     /// Some of the analysis guarantees of miniscript are lost when dealing with
     /// insane scripts. In general, in a multi-party setting users should only
     /// accept sane scripts.
-    pub fn parse_insane(script: &script::Script) -> Result<Miniscript<Ctx::Key, Ctx>, Error> {
+    pub fn parse_insane(script: &script::Script) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
         let tokens = lex(script)?;
         let mut iter = TokenIter::new(tokens);
 
@@ -200,17 +213,18 @@ impl<Ctx: ScriptContext> Miniscript<Ctx::Key, Ctx> {
     ///
     /// }
     /// ```
-    pub fn parse(script: &script::Script) -> Result<Miniscript<Ctx::Key, Ctx>, Error> {
+    pub fn parse(script: &script::Script) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
         let ms = Self::parse_insane(script)?;
         ms.sanity_check()?;
         Ok(ms)
     }
 }
 
-impl<Pk, Ctx> Miniscript<Pk, Ctx>
+impl<Pk, Ctx, Ext> Miniscript<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
+    Ext: Extension<Pk>,
 {
     /// Encode as a Bitcoin script
     pub fn encode(&self) -> script::Script
@@ -232,7 +246,7 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
     /// Maximum number of witness elements used to satisfy the Miniscript
     /// fragment, including the witness script itself. Used to estimate
     /// the weight of the `VarInt` that specifies this number in a serialized
@@ -260,11 +274,13 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     /// length prefix (segwit) or push opcode (pre-segwit) and sighash
     /// postfix.
     pub fn max_satisfaction_size(&self) -> Result<usize, Error> {
-        Ctx::max_satisfaction_size(self).ok_or(Error::ImpossibleSatisfaction)
+        Ctx::max_satisfaction_size::<Pk, Ctx, Ext>(self).ok_or(Error::ImpossibleSatisfaction)
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> ForEachKey<Pk> for Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> ForEachKey<Pk>
+    for Miniscript<Pk, Ctx, Ext>
+{
     fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
@@ -274,10 +290,15 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> ForEachKey<Pk> for Miniscript<Pk, Ct
     }
 }
 
-impl<Pk: MiniscriptKey, Q: MiniscriptKey, Ctx: ScriptContext> TranslatePk<Pk, Q>
-    for Miniscript<Pk, Ctx>
+impl<Pk, Q, Ctx, Ext> TranslatePk<Pk, Q> for Miniscript<Pk, Ctx, Ext>
+where
+    Pk: MiniscriptKey,
+    Q: MiniscriptKey,
+    Ctx: ScriptContext,
+    Ext: Extension<Pk> + TranslatePk<Pk, Q>,
+    <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
 {
-    type Output = Miniscript<Q, Ctx>;
+    type Output = Miniscript<Q, Ctx, <Ext as TranslatePk<Pk, Q>>::Output>;
 
     /// This will panic if translatefpk returns an uncompressed key when
     /// converting to a Segwit descriptor. To prevent this panic, ensure
@@ -295,7 +316,7 @@ impl<Pk: MiniscriptKey, Q: MiniscriptKey, Ctx: ScriptContext> TranslatePk<Pk, Q>
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
     fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: &mut F) -> bool
     where
         Pk: 'a,
@@ -308,12 +329,14 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
         &self,
         translatefpk: &mut FPk,
         translatefpkh: &mut FPkh,
-    ) -> Result<Miniscript<Q, CtxQ>, FuncError>
+    ) -> Result<Miniscript<Q, CtxQ, <Ext as TranslatePk<Pk, Q>>::Output>, FuncError>
     where
         FPk: FnMut(&Pk) -> Result<Q, FuncError>,
         FPkh: FnMut(&Pk::Hash) -> Result<Q::Hash, FuncError>,
         Q: MiniscriptKey,
         CtxQ: ScriptContext,
+        Ext: TranslatePk<Pk, Q>,
+        <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
     {
         let inner = self.node.real_translate_pk(translatefpk, translatefpkh)?;
         let ms = Miniscript {
@@ -334,7 +357,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     /// Some of the analysis guarantees of miniscript are lost when dealing with
     /// insane scripts. In general, in a multi-party setting users should only
     /// accept sane scripts.
-    pub fn from_str_insane(s: &str) -> Result<Miniscript<Pk, Ctx>, Error>
+    pub fn from_str_insane(s: &str) -> Result<Miniscript<Pk, Ctx, Ext>, Error>
     where
         Pk: str::FromStr,
         Pk::Hash: str::FromStr,
@@ -343,7 +366,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     {
         // This checks for invalid ASCII chars
         let top = expression::Tree::from_str(s)?;
-        let ms: Miniscript<Pk, Ctx> = expression::FromTree::from_tree(&top)?;
+        let ms: Miniscript<Pk, Ctx, Ext> = expression::FromTree::from_tree(&top)?;
 
         if ms.ty.corr.base != types::Base::B {
             Err(Error::NonTopLevel(format!("{:?}", ms)))
@@ -353,7 +376,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
     /// Attempt to produce non-malleable satisfying witness for the
     /// witness script represented by the parse tree
     pub fn satisfy<S: satisfy::Satisfier<Pk>>(&self, satisfier: S) -> Result<Vec<Vec<u8>>, Error>
@@ -366,7 +389,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
             .stack
         {
             satisfy::Witness::Stack(stack) => {
-                Ctx::check_witness::<Pk>(&stack)?;
+                Ctx::check_witness::<Pk, Ext>(&stack)?;
                 Ok(stack)
             }
             satisfy::Witness::Unavailable | satisfy::Witness::Impossible => {
@@ -394,7 +417,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
         .stack
         {
             satisfy::Witness::Stack(stack) => {
-                Ctx::check_witness::<Pk>(&stack)?;
+                Ctx::check_witness::<Pk, Ext>(&stack)?;
                 Ok(stack)
             }
             satisfy::Witness::Unavailable | satisfy::Witness::Impossible => {
@@ -404,31 +427,33 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     }
 }
 
-impl<Pk, Ctx> expression::FromTree for Arc<Miniscript<Pk, Ctx>>
+impl<Pk, Ctx, Ext> expression::FromTree for Arc<Miniscript<Pk, Ctx, Ext>>
 where
     Pk: MiniscriptKey + str::FromStr,
     Pk::Hash: str::FromStr,
     Ctx: ScriptContext,
+    Ext: Extension<Pk>,
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Arc<Miniscript<Pk, Ctx>>, Error> {
+    fn from_tree(top: &expression::Tree) -> Result<Arc<Miniscript<Pk, Ctx, Ext>>, Error> {
         Ok(Arc::new(expression::FromTree::from_tree(top)?))
     }
 }
 
-impl<Pk, Ctx> expression::FromTree for Miniscript<Pk, Ctx>
+impl<Pk, Ctx, Ext> expression::FromTree for Miniscript<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey + str::FromStr,
     Pk::Hash: str::FromStr,
     Ctx: ScriptContext,
+    Ext: Extension<Pk>,
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
     /// Parse an expression tree into a Miniscript. As a general rule, this
     /// should not be called directly; rather go through the descriptor API.
-    fn from_tree(top: &expression::Tree) -> Result<Miniscript<Pk, Ctx>, Error> {
-        let inner: Terminal<Pk, Ctx> = expression::FromTree::from_tree(top)?;
+    fn from_tree(top: &expression::Tree) -> Result<Miniscript<Pk, Ctx, Ext>, Error> {
+        let inner: Terminal<Pk, Ctx, Ext> = expression::FromTree::from_tree(top)?;
         Ok(Miniscript {
             ty: Type::type_check(&inner, |_| None)?,
             ext: ExtData::type_check(&inner, |_| None)?,
@@ -441,24 +466,25 @@ where
 /// Parse a Miniscript from string and perform sanity checks
 /// See [Miniscript::from_str_insane] to parse scripts from string that
 /// do not clear the [Miniscript::sanity_check] checks.
-impl<Pk, Ctx> str::FromStr for Miniscript<Pk, Ctx>
+impl<Pk, Ctx, Ext> str::FromStr for Miniscript<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey + str::FromStr,
     Pk::Hash: str::FromStr,
     Ctx: ScriptContext,
+    Ext: Extension<Pk>,
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
     type Err = Error;
 
-    fn from_str(s: &str) -> Result<Miniscript<Pk, Ctx>, Error> {
+    fn from_str(s: &str) -> Result<Miniscript<Pk, Ctx, Ext>, Error> {
         let ms = Self::from_str_insane(s)?;
         ms.sanity_check()?;
         Ok(ms)
     }
 }
 
-serde_string_impl_pk!(Miniscript, "a miniscript", Ctx; ScriptContext);
+serde_string_impl_pk!(Miniscript, "a miniscript", Ctx; ScriptContext => Ext2 ; Extension);
 
 #[cfg(test)]
 mod tests {
@@ -483,8 +509,10 @@ mod tests {
     use std::sync::Arc;
     use TranslatePk2;
 
-    type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0>;
-    type Tapscript = Miniscript<bitcoin::secp256k1::XOnlyPublicKey, Tap>;
+    use CovenantExt;
+
+    type Tapscript = Miniscript<bitcoin::secp256k1::XOnlyPublicKey, Tap, AllExt>;
+    type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt>;
 
     fn pubkeys(n: usize) -> Vec<bitcoin::PublicKey> {
         let mut ret = Vec::with_capacity(n);
@@ -508,7 +536,7 @@ mod tests {
     }
 
     fn string_rtt<Pk, Ctx, Str1, Str2>(
-        script: Miniscript<Pk, Ctx>,
+        script: Miniscript<Pk, Ctx, CovenantExt>,
         expected_debug: Str1,
         expected_display: Str2,
     ) where
@@ -633,7 +661,7 @@ mod tests {
 
     #[test]
     fn recursive_key_parsing() {
-        type MsStr = Miniscript<String, Segwitv0>;
+        type MsStr = Miniscript<String, Segwitv0, CovenantExt>;
         assert!(MsStr::from_str("pk(slip77(k))").is_ok());
         assert!(MsStr::from_str("pk(musig(a))").is_ok());
         assert!(MsStr::from_str("pk(musig(a,b))").is_ok());
@@ -657,7 +685,7 @@ mod tests {
         .unwrap();
         let hash = hash160::Hash::from_inner([17; 20]);
 
-        let pkk_ms: Miniscript<DummyKey, Segwitv0> = Miniscript {
+        let pkk_ms: Miniscript<DummyKey, Segwitv0, CovenantExt> = Miniscript {
             node: Terminal::Check(Arc::new(Miniscript {
                 node: Terminal::PkK(DummyKey),
                 ty: Type::from_pk_k(),
@@ -670,7 +698,7 @@ mod tests {
         };
         string_rtt(pkk_ms, "[B/onduesm]c:[K/onduesm]pk_k(DummyKey)", "pk()");
 
-        let pkh_ms: Miniscript<DummyKey, Segwitv0> = Miniscript {
+        let pkh_ms: Miniscript<DummyKey, Segwitv0, CovenantExt> = Miniscript {
             node: Terminal::Check(Arc::new(Miniscript {
                 node: Terminal::PkH(DummyKeyHash),
                 ty: Type::from_pk_h(),
@@ -976,7 +1004,7 @@ mod tests {
     fn cov_script_rtt() {
         roundtrip(
             &ms_str!("ver_eq(4)"),
-            "Script(OP_PUSHNUM_2 OP_DEPTH OP_SUB OP_PICK OP_PUSHBYTES_4 04000000 OP_EQUAL)",
+            "Script(OP_DEPTH OP_PUSHNUM_12 OP_SUB OP_PICK OP_PUSHBYTES_4 04000000 OP_EQUAL)",
         );
     }
 

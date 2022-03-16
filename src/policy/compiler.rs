@@ -14,8 +14,8 @@
 
 //! # Policy Compiler
 //!
-//! Optimizing compiler from concrete policies to Miniscript
-//!
+//! Optimizing compiler from concrete policies to Miniscript.
+//! Currently the policy compiler does not support any extensions
 
 use std::collections::BTreeMap;
 use std::convert::From;
@@ -30,6 +30,7 @@ use policy::Concrete;
 use std::collections::vec_deque::VecDeque;
 use std::hash;
 use std::sync::Arc;
+use Extension;
 use {policy, Terminal};
 use {Miniscript, MiniscriptKey};
 
@@ -228,6 +229,10 @@ impl Property for CompilerExtData {
             sat_cost: (MAX_SCRIPT_ELEMENT_SIZE - pref.len()) as f64,
             dissat_cost: Some(0.0),
         }
+    }
+
+    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(_e: &E) -> Self {
+        unreachable!("NoExt context should not have extensions")
     }
 
     fn cast_alt(self) -> Result<Self, types::ErrorKind> {
@@ -1591,6 +1596,7 @@ mod benches {
     use super::{CompilerError, Concrete};
     use miniscript::Segwitv0;
     use Miniscript;
+
     type SegwitMsRes = Result<Miniscript<String, Segwitv0>, CompilerError>;
     #[bench]
     pub fn compile_basic(bh: &mut Bencher) {

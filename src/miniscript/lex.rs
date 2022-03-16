@@ -36,6 +36,7 @@ pub enum Token<'s> {
     CheckSig,
     CheckSigFromStack,
     CheckSigAdd,
+    CheckSigFromStackVerify,
     CheckMultiSig,
     CheckSequenceVerify,
     CheckLockTimeVerify,
@@ -91,7 +92,10 @@ impl<'s> fmt::Display for Token<'s> {
 #[derive(Debug, Clone)]
 /// Iterator that goes through a vector of tokens backward (our parser wants to read
 /// backward and this is more efficient anyway since we can use `Vec::pop()`).
-pub struct TokenIter<'s>(Vec<Token<'s>>);
+// This really does not need to be an iterator because the way we are using it, we are
+// actually collecting lexed symbols into a vector. If that is the case, might as well
+// use the inner vector directly
+pub struct TokenIter(Vec<Token>);
 
 impl<'s> TokenIter<'s> {
     /// Create a new TokenIter
@@ -102,6 +106,28 @@ impl<'s> TokenIter<'s> {
     /// Look at the top at Iterator
     pub fn peek(&self) -> Option<&'s Token> {
         self.0.last()
+    }
+
+    /// Look at the slice with the last n elements
+    pub fn peek_slice(&self, n: usize) -> Option<&[Token]> {
+        if n <= self.len() {
+            Some(self.0[self.len() - n..].as_ref())
+        } else {
+            None
+        }
+    }
+
+    /// Advance the iterator n times
+    /// Returns Some(()) if the iterator can be advanced n times
+    pub fn advance(&mut self, n: usize) -> Option<()> {
+        if n <= self.len() {
+            for _ in 0..n {
+                self.next();
+            }
+            Some(())
+        } else {
+            None
+        }
     }
 
     /// Push a value to the iterator
@@ -171,6 +197,9 @@ pub fn lex<'s>(script: &'s script::Script) -> Result<Vec<Token<'s>>, Error> {
             }
             script::Instruction::Op(opcodes::all::OP_CHECKSIGFROMSTACK) => {
                 ret.push(Token::CheckSigFromStack);
+            }
+            script::Instruction::Op(opcodes::all::OP_CHECKSIGFROMSTACKVERIFY) => {
+                ret.push(Token::CheckSigFromStackVerify);
             }
             script::Instruction::Op(opcodes::all::OP_CHECKSIGVERIFY) => {
                 ret.push(Token::CheckSig);

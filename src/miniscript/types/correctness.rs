@@ -15,6 +15,7 @@
 //! Correctness/Soundness type properties
 
 use super::{ErrorKind, Property};
+use {Extension, MiniscriptKey};
 
 /// Basic type representing where the fragment can go
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -490,6 +491,10 @@ impl Property for Correctness {
             dissatisfiable: c.dissatisfiable,
             unit: b.unit && c.unit,
         })
+    }
+
+    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(e: &E) -> Self {
+        e.corr_prop()
     }
 
     fn threshold<S>(k: usize, n: usize, mut sub_ck: S) -> Result<Self, ErrorKind>
