@@ -486,9 +486,9 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
             Tk::CheckSigFromStack, Tk::FromAltStack, Tk::Sha256, Tk::Cat,
             Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat, Tk::Cat,
             Tk::Cat, Tk::Cat, Tk::Verify, Tk::CheckSig, Tk::CodeSep, Tk::ToAltStack,
-            Tk::Dup, Tk::Pubkey(pk), Tk::Cat, Tk::Left, Tk::Num(1),
+            Tk::Dup, Tk::Bytes33(pk), Tk::Cat, Tk::Left, Tk::Num(1),
             Tk::Over, Tk::Pick, Tk::Num(11), Tk::Verify => {
-                return Ok(pk);
+                return Ok(bitcoin::PublicKey::from_slice(pk)?);
             },
             _ => return Err(Error::CovError(CovError::BadCovDescriptor)),
         );
@@ -510,13 +510,13 @@ impl CovenantDescriptor<bitcoin::PublicKey> {
     // descriptor. This allows us to parse Miniscript with
     // it's context so that it can be used with NoChecks
     // context while using the interpreter
-    pub(crate) fn parse_cov_components<Ctx: ScriptContext>(
+    pub(crate) fn parse_cov_components(
         script: &script::Script,
-    ) -> Result<(bitcoin::PublicKey, Miniscript<bitcoin::PublicKey, Ctx>), Error> {
+    ) -> Result<(bitcoin::PublicKey, Miniscript<bitcoin::PublicKey, Segwitv0>), Error> {
         let tokens = lex(script)?;
         let mut iter = TokenIter::new(tokens);
 
-        let pk = CovenantDescriptor::<bitcoin::PublicKey>::check_cov_script(&mut iter)?;
+        let pk = CovenantDescriptor::check_cov_script(&mut iter)?;
         let ms = decode::parse(&mut iter)?;
         Segwitv0::check_global_validity(&ms)?;
         if ms.ty.corr.base != types::Base::B {
@@ -699,6 +699,14 @@ where
     {
         self.explicit_script()
     }
+
+    fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
+    where
+        Pk: ToPublicKey,
+        S: Satisfier<Pk>,
+    {
+        todo!()
+    }
 }
 
 impl<Pk: MiniscriptKey> ForEachKey<Pk> for CovenantDescriptor<Pk> {
@@ -819,7 +827,7 @@ mod tests {
             sk[2] = (i >> 16) as u8;
             let sk = secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("secret key");
             let pk = bitcoin::PublicKey {
-                key: secp256k1_zkp::PublicKey::from_secret_key(&secp_sign, &sk),
+                inner: secp256k1_zkp::PublicKey::from_secret_key(&secp_sign, &sk),
                 compressed: true,
             };
             sks.push(sk);

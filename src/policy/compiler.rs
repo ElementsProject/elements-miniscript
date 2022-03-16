@@ -22,6 +22,7 @@ use std::convert::From;
 use std::marker::PhantomData;
 use std::{cmp, error, f64, fmt, mem};
 
+use miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
 use miniscript::limits::MAX_SCRIPT_ELEMENT_SIZE;
 use miniscript::types::{self, ErrorKind, ExtData, Property, Type};
 use miniscript::ScriptContext;
@@ -1016,7 +1017,7 @@ where
                 })
                 .collect();
 
-            if key_vec.len() == subs.len() && subs.len() <= 20 {
+            if key_vec.len() == subs.len() && subs.len() <= MAX_PUBKEYS_PER_MULTISIG {
                 insert_wrap!(AstElemExt::terminal(Terminal::Multi(k, key_vec)));
             }
             // Not a threshold, it's always more optimal to translate it to and()s as we save the
@@ -1200,7 +1201,7 @@ mod tests {
     type DummySegwitAstElemExt = policy::compiler::AstElemExt<String, Segwitv0>;
     type SegwitMiniScript = Miniscript<bitcoin::PublicKey, Segwitv0>;
 
-    fn pubkeys_and_a_sig(n: usize) -> (Vec<bitcoin::PublicKey>, secp256k1_zkp::Signature) {
+    fn pubkeys_and_a_sig(n: usize) -> (Vec<bitcoin::PublicKey>, secp256k1::ecdsa::Signature) {
         let mut ret = Vec::with_capacity(n);
         let secp = secp256k1_zkp::Secp256k1::new();
         let mut sk = [0; 32];
@@ -1210,7 +1211,7 @@ mod tests {
             sk[2] = (i >> 16) as u8;
 
             let pk = bitcoin::PublicKey {
-                key: secp256k1_zkp::PublicKey::from_secret_key(
+                inner: secp256k1_zkp::PublicKey::from_secret_key(
                     &secp,
                     &secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("sk"),
                 ),
@@ -1218,7 +1219,7 @@ mod tests {
             };
             ret.push(pk);
         }
-        let sig = secp.sign(
+        let sig = secp.sign_ecdsa(
             &secp256k1_zkp::Message::from_slice(&sk[..]).expect("secret key"),
             &secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("secret key"),
         );
@@ -1271,6 +1272,7 @@ mod tests {
         assert!(policy_compile_lift_check("and(pk(A),pk(B))").is_ok());
         assert!(policy_compile_lift_check("or(pk(A),pk(B))").is_ok());
         assert!(policy_compile_lift_check("thresh(2,pk(A),pk(B),pk(C))").is_ok());
+        assert!(policy_compile_lift_check("or(thresh(1,pk(A),pk(B)),pk(C))").is_ok());
 
         assert_eq!(
             policy_compile_lift_check("thresh(2,after(9),after(9),pk(A))"),
@@ -1388,9 +1390,11 @@ mod tests {
         assert_eq!(abs.n_keys(), 5);
         assert_eq!(abs.minimum_n_keys(), Some(3));
 
-        let bitcoinsig = (sig, SigHashType::All);
-        let mut sigvec = sig.serialize_der().to_vec();
-        sigvec.push(1); // sighash all
+        let bitcoinsig = bitcoin::EcdsaSig {
+            sig,
+            hash_ty: bitcoin::EcdsaSigHashType::All,
+        };
+        let sigvec = bitcoinsig.to_vec();
 
         let no_sat = HashMap::<bitcoin::PublicKey, ElementsSig>::new();
         let mut left_sat = HashMap::<bitcoin::PublicKey, ElementsSig>::new();

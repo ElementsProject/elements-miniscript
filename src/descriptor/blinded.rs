@@ -169,7 +169,7 @@ where
         Pk: ToPublicKey,
     {
         self.desc
-            .blind_addr(Some(self.blinder.to_public_key().key), params)
+            .blind_addr(Some(self.blinder.to_public_key().inner), params)
     }
 
     fn script_pubkey(&self) -> Script

@@ -22,30 +22,22 @@
 //! Thus, as a simple solution we implement these as a separate
 //! struct with it's own API.
 
+use bitcoin::blockdata::opcodes;
+use bitcoin::hashes::hash160;
 use bitcoin::hashes::Hash;
 use bitcoin::{self, blockdata::script, hashes};
-#[allow(deprecated)]
-use bitcoin::{blockdata::opcodes, util::contracthash};
-use bitcoin::{hashes::hash160, Address as BtcAddress};
 use bitcoin::{secp256k1, Script as BtcScript};
 use expression::{self, FromTree};
 use policy::{semantic, Liftable};
-use std::{
-    fmt::Debug,
-    fmt::{self, Display},
-    marker::PhantomData,
-    str::FromStr,
-    sync::Arc,
-};
+use std::{fmt, fmt::Debug, str::FromStr, sync::Arc};
 use Descriptor;
 use Error;
-use Miniscript;
 use {
-    BtcDescriptor, BtcDescriptorTrait, BtcError, BtcFromTree, BtcLiftable, BtcMiniscript,
-    BtcPolicy, BtcSatisfier, BtcSegwitv0, BtcTerminal, BtcTree,
+    BtcError, BtcFromTree, BtcLiftable, BtcMiniscript, BtcPolicy, BtcSatisfier, BtcSegwitv0,
+    BtcTerminal, BtcTree,
 };
 
-use {DescriptorTrait, Segwitv0, TranslatePk};
+use {DescriptorTrait, TranslatePk};
 
 use {tweak_key, util::varint_len};
 
@@ -111,10 +103,6 @@ impl MiniscriptKey for LegacyPeginKey {
 
     fn is_uncompressed(&self) -> bool {
         false
-    }
-
-    fn serialized_len(&self) -> usize {
-        33
     }
 
     fn to_pubkeyhash(&self) -> Self::Hash {
@@ -221,6 +209,61 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
             desc,
             ms,
         }
+    }
+
+    fn explicit_script<C: secp256k1::Verification>(
+        &self,
+        secp: &secp256k1::Secp256k1<C>,
+    ) -> BtcScript
+    where
+        Pk: ToPublicKey + FromStr,
+        <Pk as MiniscriptKey>::Hash: FromStr,
+        <Pk as FromStr>::Err: ToString,
+        <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
+    {
+        let tweak_vec = self.desc.explicit_script().into_bytes();
+        let tweak = hashes::sha256::Hash::hash(&tweak_vec);
+        // Hopefully, we never have to use this and dynafed is deployed
+        let mut builder = script::Builder::new()
+            .push_opcode(opcodes::all::OP_DEPTH)
+            .push_int(self.fed_k as i64 + 1)
+            .push_opcode(opcodes::all::OP_EQUAL)
+            .push_opcode(opcodes::all::OP_IF)
+            // manually serialize the left CMS branch, without the OP_CMS
+            .push_int(self.fed_k as i64);
+
+        for key in &self.fed_pks {
+            let tweaked_pk = tweak_key(key.as_untweaked(), secp, tweak.as_inner());
+            builder = builder.push_key(&tweaked_pk);
+        }
+        let mut nearly_done = builder
+            .push_int(self.fed_pks.len() as i64)
+            .push_opcode(opcodes::all::OP_ELSE)
+            .into_script()
+            .to_bytes();
+
+        let right = if let BtcTerminal::OrD(_l, right) = &self.ms.node {
+            right
+        } else {
+            unreachable!("Only valid pegin descriptors should be created inside LegacyPegin")
+        };
+        let right = right.translate_pk_infallible(
+            |pk| pk.as_untweaked().clone(),
+            |_| unreachable!("No Keyhashes in legacy pegins"),
+        );
+        let mut rser = right.encode().into_bytes();
+        // ...and we have an OP_VERIFY style checksequenceverify, which in
+        // Liquid production was encoded with OP_DROP instead...
+        assert_eq!(rser[4], opcodes::all::OP_VERIFY.into_u8());
+        rser[4] = opcodes::all::OP_DROP.into_u8();
+        // ...then we should serialize it by sharing the OP_CMS across
+        // both branches, and add an OP_DEPTH check to distinguish the
+        // branches rather than doing the normal cascade construction
+        nearly_done.extend(rser);
+
+        let insert_point = nearly_done.len() - 1;
+        nearly_done.insert(insert_point, 0x68);
+        bitcoin::Script::from(nearly_done)
     }
 
     /// Create a new descriptor with hard coded values for the
@@ -358,7 +401,7 @@ where
         Pk: ToPublicKey,
     {
         Ok(bitcoin::Address::p2shwsh(
-            &self.bitcoin_witness_script(secp),
+            &self.explicit_script(secp),
             network,
         ))
     }
@@ -382,7 +425,7 @@ where
     where
         Pk: ToPublicKey,
     {
-        let witness_script = self.bitcoin_witness_script(secp);
+        let witness_script = self.explicit_script(secp);
         script::Builder::new()
             .push_slice(&witness_script.to_v0_p2wsh()[..])
             .into_script()
@@ -391,53 +434,11 @@ where
     fn bitcoin_witness_script<C: secp256k1::Verification>(
         &self,
         secp: &secp256k1::Secp256k1<C>,
-    ) -> BtcScript
+    ) -> Result<BtcScript, Error>
     where
         Pk: ToPublicKey,
     {
-        let tweak_vec = self.desc.explicit_script().into_bytes();
-        let tweak = hashes::sha256::Hash::hash(&tweak_vec);
-        // Hopefully, we never have to use this and dynafed is deployed
-        let mut builder = script::Builder::new()
-            .push_opcode(opcodes::all::OP_DEPTH)
-            .push_int(self.fed_k as i64 + 1)
-            .push_opcode(opcodes::all::OP_EQUAL)
-            .push_opcode(opcodes::all::OP_IF)
-            // manually serialize the left CMS branch, without the OP_CMS
-            .push_int(self.fed_k as i64);
-
-        for key in &self.fed_pks {
-            let tweaked_pk = tweak_key(key.as_untweaked(), secp, tweak.as_inner());
-            builder = builder.push_key(&tweaked_pk);
-        }
-        let mut nearly_done = builder
-            .push_int(self.fed_pks.len() as i64)
-            .push_opcode(opcodes::all::OP_ELSE)
-            .into_script()
-            .to_bytes();
-
-        let right = if let BtcTerminal::OrD(_l, right) = &self.ms.node {
-            right
-        } else {
-            unreachable!("Only valid pegin descriptors should be created inside LegacyPegin")
-        };
-        let right = right.translate_pk_infallible(
-            |pk| pk.as_untweaked().clone(),
-            |_| unreachable!("No Keyhashes in legacy pegins"),
-        );
-        let mut rser = right.encode().into_bytes();
-        // ...and we have an OP_VERIFY style checksequenceverify, which in
-        // Liquid production was encoded with OP_DROP instead...
-        assert_eq!(rser[4], opcodes::all::OP_VERIFY.into_u8());
-        rser[4] = opcodes::all::OP_DROP.into_u8();
-        // ...then we should serialize it by sharing the OP_CMS across
-        // both branches, and add an OP_DEPTH check to distinguish the
-        // branches rather than doing the normal cascade construction
-        nearly_done.extend(rser);
-
-        let insert_point = nearly_done.len() - 1;
-        nearly_done.insert(insert_point, 0x68);
-        bitcoin::Script::from(nearly_done)
+        Ok(self.explicit_script(secp))
     }
 
     fn get_bitcoin_satisfaction<S, C: secp256k1::Verification>(
@@ -455,12 +456,8 @@ where
         let mut sigs = vec![];
         for key in &self.fed_pks {
             let tweaked_pk = tweak_key(key.as_untweaked(), secp, tweak.as_inner());
-            match satisfier.lookup_sig(&tweaked_pk) {
-                Some(sig) => {
-                    let mut sig_vec = sig.0.serialize_der().to_vec();
-                    sig_vec.push(sig.1.as_u32() as u8);
-                    sigs.push(sig_vec)
-                }
+            match satisfier.lookup_ecdsa_sig(&tweaked_pk) {
+                Some(sig) => sigs.push(sig.to_vec()),
                 None => {}
             }
         }
@@ -473,12 +470,8 @@ where
         } else {
             let mut emer_sigs = vec![];
             for emer_key in &self.emer_pks {
-                match satisfier.lookup_sig(emer_key.as_untweaked()) {
-                    Some(sig) => {
-                        let mut sig_vec = sig.0.serialize_der().to_vec();
-                        sig_vec.push(sig.1.as_u32() as u8);
-                        emer_sigs.push(sig_vec)
-                    }
+                match satisfier.lookup_ecdsa_sig(emer_key.as_untweaked()) {
+                    Some(sig) => emer_sigs.push(sig.to_vec()),
                     None => {}
                 }
             }
@@ -502,7 +495,10 @@ where
             + self.ms.max_satisfaction_size()?)
     }
 
-    fn script_code<C: secp256k1::Verification>(&self, secp: &secp256k1::Secp256k1<C>) -> BtcScript
+    fn script_code<C: secp256k1::Verification>(
+        &self,
+        secp: &secp256k1::Secp256k1<C>,
+    ) -> Result<BtcScript, Error>
     where
         Pk: ToPublicKey,
     {

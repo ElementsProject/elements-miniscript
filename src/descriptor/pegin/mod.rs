@@ -121,7 +121,7 @@ pub trait PeginTrait<Pk: MiniscriptKey> {
     fn bitcoin_witness_script<C: secp256k1::Verification>(
         &self,
         secp: &secp256k1::Secp256k1<C>,
-    ) -> BtcScript
+    ) -> Result<BtcScript, Error>
     where
         Pk: ToPublicKey;
 
@@ -158,7 +158,7 @@ pub trait PeginTrait<Pk: MiniscriptKey> {
     {
         // easy default implementation
         let (witness, script_sig) = self.get_bitcoin_satisfaction(secp, satisfier)?;
-        txin.witness = witness;
+        txin.witness = bitcoin::Witness::from_vec(witness);
         txin.script_sig = script_sig;
         Ok(())
     }
@@ -179,7 +179,10 @@ pub trait PeginTrait<Pk: MiniscriptKey> {
     /// would be [NullCtx] and [descriptor.DescriptorPublicKeyCtx] if MiniscriptKey is [descriptor.DescriptorPublicKey]
     ///
     /// In general, this is defined by generic for the trait [ToPublicKey]
-    fn script_code<C: secp256k1::Verification>(&self, secp: &secp256k1::Secp256k1<C>) -> BtcScript
+    fn script_code<C: secp256k1::Verification>(
+        &self,
+        secp: &secp256k1::Secp256k1<C>,
+    ) -> Result<BtcScript, Error>
     where
         Pk: ToPublicKey;
 

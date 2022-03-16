@@ -7,7 +7,6 @@ description = "Elements Miniscript: Miniscript, but for elements"
 license = "CC0-1.0"
 
 [features]
-fuzztarget = ["bitcoin/fuzztarget"]
 compiler = []
 trace = []
 unstable = []
@@ -16,9 +15,9 @@ use-serde = ["bitcoin/use-serde", "serde"]
 rand = ["bitcoin/rand"]
 
 [dependencies]
-bitcoin = "0.27"
-elements = "0.18"
-miniscript = "6.0.1"
+bitcoin = {git = "https://github.com/rust-bitcoin/rust-bitcoin", rev = "efa9555ebdc78130b01a8a5ecd554ab922708622"}
+elements = {git = "https://github.com/sanket1729/rust-elements", rev = "1cd21cb93880211fd90958f380890a36213aaab1"}
+miniscript = {git = "https://github.com/sanket1729/rust-miniscript", rev = "b47a89bc14ad5d17dcff9cee0828615b9daaec57"}
 
 [dev-dependencies]
 serde_json = "<=1.0.44"

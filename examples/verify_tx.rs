@@ -35,8 +35,7 @@ fn main() {
         0xa9, 0x14, 0x10, 0xc4, 0x65, 0x2c, 0x0d, 0x2d, 0xf7, 0xaf, 0xaa, 0xaf, 0x82, 0x0e, 0x48,
         0x9c, 0xb2, 0x7f, 0xae, 0x60, 0xd4, 0x86, 0x87,
     ]);
-
-    let mut interpreter = miniscript::Interpreter::from_txdata(
+    let interpreter = miniscript::Interpreter::from_txdata(
         &spk_input_1,
         &transaction.input[0].script_sig,
         &transaction.input[0].witness.script_witness,
@@ -58,10 +57,14 @@ fn main() {
     //    the blockchain, standardness would've required they be
     //    either valid or 0-length.
     println!("\nExample one");
-    for elem in interpreter.iter(|_, _| true) {
+    for elem in interpreter.iter_assume_sigs() {
         // Don't bother checking signatures
         match elem.expect("no evaluation error") {
-            miniscript::interpreter::SatisfiedConstraint::PublicKey { key, sig } => {
+            miniscript::interpreter::SatisfiedConstraint::PublicKey { key_sig } => {
+                // Check that the signature is ecdsa sig
+                let (key, sig) = key_sig
+                    .as_ecdsa()
+                    .expect("Expected Ecdsa sig, found schnorr sig");
                 println!("Signed with {}: {}", key, sig);
             }
             _ => {}
@@ -75,7 +78,7 @@ fn main() {
     // from the MiniscriptKey which can supplied by `to_pk_ctx` parameter. For example,
     // when calculating the script pubkey of a descriptor with xpubs, the secp context and
     // child information maybe required.
-    let mut interpreter = miniscript::Interpreter::from_txdata(
+    let interpreter = miniscript::Interpreter::from_txdata(
         &spk_input_1,
         &transaction.input[0].script_sig,
         &transaction.input[0].witness.script_witness,
@@ -97,11 +100,15 @@ fn main() {
     let vfyfn = move |pk: &_, bitcoinsig: miniscript::ElementsSig| {
         bitcoinsig.1 == elements::SigHashType::All && vfyfn(pk, bitcoinsig)
     };
+    // We can set prevouts to be empty list because this is a legacy transaction
+    // and this information is not required for sighash computation.
+    let prevouts = sighash::Prevouts::All(&[]);
 
     println!("\nExample two");
-    for elem in interpreter.iter(vfyfn) {
+    for elem in interpreter.iter(&secp, &transaction, 0, &prevouts) {
         match elem.expect("no evaluation error") {
-            miniscript::interpreter::SatisfiedConstraint::PublicKey { key, sig } => {
+            miniscript::interpreter::SatisfiedConstraint::PublicKey { key_sig } => {
+                let (key, sig) = key_sig.as_ecdsa().unwrap();
                 println!("Signed with {}: {}", key, sig);
             }
             _ => {}
@@ -112,8 +119,7 @@ fn main() {
     //    what happens given an apparently invalid script
     let secp = secp256k1_zkp::Secp256k1::new();
     let message = secp256k1_zkp::Message::from_slice(&[0x01; 32][..]).expect("32-byte hash");
-
-    let mut interpreter = miniscript::Interpreter::from_txdata(
+    let interpreter = miniscript::Interpreter::from_txdata(
         &spk_input_1,
         &transaction.input[0].script_sig,
         &transaction.input[0].witness.script_witness,
@@ -122,9 +128,13 @@ fn main() {
     )
     .unwrap();
 
-    let iter = interpreter.iter(|pk, (sig, sighashtype)| {
-        sighashtype == elements::SigHashType::All && secp.verify(&message, &sig, &pk.key).is_ok()
-    });
+    let iter = interpreter.iter_custom(Box::new(|key_sig: &KeySigPair| {
+        let (pk, ecdsa_sig) = key_sig.as_ecdsa().expect("Ecdsa Sig");
+        ecdsa_sig.hash_ty == bitcoin::EcdsaSigHashType::All
+            && secp
+                .verify_ecdsa(&message, &ecdsa_sig.sig, &pk.inner)
+                .is_ok()
+    }));
     println!("\nExample three");
     for elem in iter {
         let error = elem.expect_err("evaluation error");

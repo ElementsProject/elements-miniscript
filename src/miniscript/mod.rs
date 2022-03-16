@@ -27,10 +27,10 @@
 use std::marker::PhantomData;
 use std::{fmt, str};
 
-use bitcoin;
 use elements::script;
+use elements::taproot::{LeafVersion, TapLeafHash};
 
-pub use self::context::{BareCtx, Legacy, Segwitv0};
+pub use self::context::{BareCtx, Legacy, Segwitv0, Tap};
 
 pub mod analyzable;
 pub mod astelem;
@@ -54,6 +54,8 @@ use std::sync::Arc;
 use MiniscriptKey;
 use {expression, Error, ForEach, ForEachKey, ToPublicKey, TranslatePk};
 
+#[cfg(test)]
+mod ms_tests;
 /// Top-level script AST type
 #[derive(Clone, Hash)]
 pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext> {
@@ -137,7 +139,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     }
 }
 
-impl<Ctx: ScriptContext> Miniscript<bitcoin::PublicKey, Ctx> {
+impl<Ctx: ScriptContext> Miniscript<Ctx::Key, Ctx> {
     /// Attempt to parse an insane(scripts don't clear sanity checks)
     /// script into a Miniscript representation.
     /// Use this to parse scripts with repeated pubkeys, timelock mixing, malleable
@@ -145,9 +147,7 @@ impl<Ctx: ScriptContext> Miniscript<bitcoin::PublicKey, Ctx> {
     /// Some of the analysis guarantees of miniscript are lost when dealing with
     /// insane scripts. In general, in a multi-party setting users should only
     /// accept sane scripts.
-    pub fn parse_insane(
-        script: &script::Script,
-    ) -> Result<Miniscript<bitcoin::PublicKey, Ctx>, Error> {
+    pub fn parse_insane(script: &script::Script) -> Result<Miniscript<Ctx::Key, Ctx>, Error> {
         let tokens = lex(script)?;
         let mut iter = TokenIter::new(tokens);
 
@@ -168,7 +168,39 @@ impl<Ctx: ScriptContext> Miniscript<bitcoin::PublicKey, Ctx> {
     /// This function will fail parsing for scripts that do not clear
     /// the [Miniscript::sanity_check] checks. Use [Miniscript::parse_insane] to
     /// parse such scripts.
-    pub fn parse(script: &script::Script) -> Result<Miniscript<bitcoin::PublicKey, Ctx>, Error> {
+    ///
+    /// ## Decode/Parse a miniscript from script hex
+    ///
+    /// ```rust
+    /// extern crate bitcoin;
+    /// extern crate miniscript;
+    ///
+    /// use miniscript::Miniscript;
+    /// use miniscript::{Segwitv0, Tap};
+    /// use miniscript::bitcoin::secp256k1::XOnlyPublicKey;
+    /// type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0>;
+    /// type TapScript = Miniscript<XOnlyPublicKey, Tap>;
+    /// use bitcoin::hashes::hex::FromHex;
+    /// fn main() {
+    ///     // parse x-only miniscript in Taproot context
+    ///     let tapscript_ms = TapScript::parse(&bitcoin::Script::from(Vec::<u8>::from_hex(
+    ///         "202788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
+    ///     ).expect("Even length hex")))
+    ///     .expect("Xonly keys are valid only in taproot context");
+    ///     // tapscript fails decoding when we use them with compressed keys
+    ///     let err = TapScript::parse(&bitcoin::Script::from(Vec::<u8>::from_hex(
+    ///         "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
+    ///     ).expect("Even length hex")))
+    ///     .expect_err("Compressed keys cannot be used in Taproot context");
+    ///     // Segwitv0 succeeds decoding with full keys.
+    ///     Segwitv0Script::parse(&bitcoin::Script::from(Vec::<u8>::from_hex(
+    ///         "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
+    ///     ).expect("Even length hex")))
+    ///     .expect("Compressed keys are allowed in Segwit context");
+    ///
+    /// }
+    /// ```
+    pub fn parse(script: &script::Script) -> Result<Miniscript<Ctx::Key, Ctx>, Error> {
         let ms = Self::parse_insane(script)?;
         ms.sanity_check()?;
         Ok(ms)
@@ -272,15 +304,16 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
         self.node.real_for_each_key(pred)
     }
 
-    fn real_translate_pk<FPk, FPkh, Q, FuncError>(
+    pub(crate) fn real_translate_pk<FPk, FPkh, Q, FuncError, CtxQ>(
         &self,
         translatefpk: &mut FPk,
         translatefpkh: &mut FPkh,
-    ) -> Result<Miniscript<Q, Ctx>, FuncError>
+    ) -> Result<Miniscript<Q, CtxQ>, FuncError>
     where
         FPk: FnMut(&Pk) -> Result<Q, FuncError>,
         FPkh: FnMut(&Pk::Hash) -> Result<Q::Hash, FuncError>,
         Q: MiniscriptKey,
+        CtxQ: ScriptContext,
     {
         let inner = self.node.real_translate_pk(translatefpk, translatefpkh)?;
         let ms = Miniscript {
@@ -327,9 +360,13 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     where
         Pk: ToPublicKey,
     {
-        match satisfy::Satisfaction::satisfy(&self.node, &satisfier, self.ty.mall.safe).stack {
+        // Only satisfactions for default versions (0xc0) are allowed.
+        let leaf_hash = TapLeafHash::from_script(&self.encode(), LeafVersion::TapScript);
+        match satisfy::Satisfaction::satisfy(&self.node, &satisfier, self.ty.mall.safe, &leaf_hash)
+            .stack
+        {
             satisfy::Witness::Stack(stack) => {
-                Ctx::check_witness::<Pk, Ctx>(&stack)?;
+                Ctx::check_witness::<Pk>(&stack)?;
                 Ok(stack)
             }
             satisfy::Witness::Unavailable | satisfy::Witness::Impossible => {
@@ -347,9 +384,17 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     where
         Pk: ToPublicKey,
     {
-        match satisfy::Satisfaction::satisfy_mall(&self.node, &satisfier, self.ty.mall.safe).stack {
+        let leaf_hash = TapLeafHash::from_script(&self.encode(), LeafVersion::TapScript);
+        match satisfy::Satisfaction::satisfy_mall(
+            &self.node,
+            &satisfier,
+            self.ty.mall.safe,
+            &leaf_hash,
+        )
+        .stack
+        {
             satisfy::Witness::Stack(stack) => {
-                Ctx::check_witness::<Pk, Ctx>(&stack)?;
+                Ctx::check_witness::<Pk>(&stack)?;
                 Ok(stack)
             }
             satisfy::Witness::Unavailable | satisfy::Witness::Impossible => {
@@ -417,8 +462,12 @@ serde_string_impl_pk!(Miniscript, "a miniscript", Ctx; ScriptContext);
 
 #[cfg(test)]
 mod tests {
-    use super::Segwitv0;
+
+    use bitcoin::util::taproot::TapLeafHash;
+    use {Satisfier, ToPublicKey};
+
     use super::{Miniscript, ScriptContext};
+    use super::{Segwitv0, Tap};
     use hex_script;
     use miniscript::types::{self, ExtData, Property, Type};
     use miniscript::Terminal;
@@ -432,8 +481,10 @@ mod tests {
     use std::str;
     use std::str::FromStr;
     use std::sync::Arc;
+    use TranslatePk2;
 
     type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0>;
+    type Tapscript = Miniscript<bitcoin::secp256k1::XOnlyPublicKey, Tap>;
 
     fn pubkeys(n: usize) -> Vec<bitcoin::PublicKey> {
         let mut ret = Vec::with_capacity(n);
@@ -445,7 +496,7 @@ mod tests {
             sk[2] = (i >> 16) as u8;
 
             let pk = bitcoin::PublicKey {
-                key: secp256k1_zkp::PublicKey::from_secret_key(
+                inner: secp256k1_zkp::PublicKey::from_secret_key(
                     &secp,
                     &secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("secret key"),
                 ),
@@ -690,19 +741,19 @@ mod tests {
     fn verify_parse() {
         let ms = "and_v(v:hash160(20195b5a3d650c17f0f29f91c33f8f6335193d07),or_d(sha256(96de8fc8c256fa1e1556d41af431cace7dca68707c78dd88c3acab8b17164c47),older(16)))";
         let ms: Segwitv0Script = Miniscript::from_str_insane(ms).unwrap();
-        assert_eq!(ms, Miniscript::parse_insane(&ms.encode()).unwrap());
+        assert_eq!(ms, Segwitv0Script::parse_insane(&ms.encode()).unwrap());
 
         let ms = "and_v(v:sha256(96de8fc8c256fa1e1556d41af431cace7dca68707c78dd88c3acab8b17164c47),or_d(sha256(96de8fc8c256fa1e1556d41af431cace7dca68707c78dd88c3acab8b17164c47),older(16)))";
         let ms: Segwitv0Script = Miniscript::from_str_insane(ms).unwrap();
-        assert_eq!(ms, Miniscript::parse_insane(&ms.encode()).unwrap());
+        assert_eq!(ms, Segwitv0Script::parse_insane(&ms.encode()).unwrap());
 
         let ms = "and_v(v:ripemd160(20195b5a3d650c17f0f29f91c33f8f6335193d07),or_d(sha256(96de8fc8c256fa1e1556d41af431cace7dca68707c78dd88c3acab8b17164c47),older(16)))";
         let ms: Segwitv0Script = Miniscript::from_str_insane(ms).unwrap();
-        assert_eq!(ms, Miniscript::parse_insane(&ms.encode()).unwrap());
+        assert_eq!(ms, Segwitv0Script::parse_insane(&ms.encode()).unwrap());
 
         let ms = "and_v(v:hash256(96de8fc8c256fa1e1556d41af431cace7dca68707c78dd88c3acab8b17164c47),or_d(sha256(96de8fc8c256fa1e1556d41af431cace7dca68707c78dd88c3acab8b17164c47),older(16)))";
         let ms: Segwitv0Script = Miniscript::from_str_insane(ms).unwrap();
-        assert_eq!(ms, Miniscript::parse_insane(&ms.encode()).unwrap());
+        assert_eq!(ms, Segwitv0Script::parse_insane(&ms.encode()).unwrap());
     }
 
     #[test]
@@ -713,7 +764,7 @@ mod tests {
 
         string_rtt(
             script,
-            "[B/onduesm]c:[K/onduesm]pk_k(PublicKey { compressed: true, key: PublicKey(aa4c32e50fb34a95a372940ae3654b692ea35294748c3dd2c08b29f87ba9288c8294efcb73dc719e45b91c45f084e77aebc07c1ff3ed8f37935130a36304a340) })",
+            "[B/onduesm]c:[K/onduesm]pk_k(PublicKey { compressed: true, inner: PublicKey(aa4c32e50fb34a95a372940ae3654b692ea35294748c3dd2c08b29f87ba9288c8294efcb73dc719e45b91c45f084e77aebc07c1ff3ed8f37935130a36304a340) })",
             "pk(028c28a97bf8298bc0d23d8c749452a32e694b65e30a9472a3954ab30fe5324caa)"
         );
 
@@ -721,7 +772,7 @@ mod tests {
 
         string_rtt(
             script,
-            "[B/onduesm]c:[K/onduesm]pk_k(PublicKey { compressed: true, key: PublicKey(aa4c32e50fb34a95a372940ae3654b692ea35294748c3dd2c08b29f87ba9288c8294efcb73dc719e45b91c45f084e77aebc07c1ff3ed8f37935130a36304a340) })",
+            "[B/onduesm]c:[K/onduesm]pk_k(PublicKey { compressed: true, inner: PublicKey(aa4c32e50fb34a95a372940ae3654b692ea35294748c3dd2c08b29f87ba9288c8294efcb73dc719e45b91c45f084e77aebc07c1ff3ed8f37935130a36304a340) })",
             "pk(028c28a97bf8298bc0d23d8c749452a32e694b65e30a9472a3954ab30fe5324caa)"
         );
 
@@ -729,7 +780,7 @@ mod tests {
 
         string_rtt(
             script,
-            "[B/onufsm]t[V/onfsm]v[B/onduesm]c:[K/onduesm]pk_k(PublicKey { compressed: true, key: PublicKey(aa4c32e50fb34a95a372940ae3654b692ea35294748c3dd2c08b29f87ba9288c8294efcb73dc719e45b91c45f084e77aebc07c1ff3ed8f37935130a36304a340) })",
+            "[B/onufsm]t[V/onfsm]v[B/onduesm]c:[K/onduesm]pk_k(PublicKey { compressed: true, inner: PublicKey(aa4c32e50fb34a95a372940ae3654b692ea35294748c3dd2c08b29f87ba9288c8294efcb73dc719e45b91c45f084e77aebc07c1ff3ed8f37935130a36304a340) })",
             "tv:pk(028c28a97bf8298bc0d23d8c749452a32e694b65e30a9472a3954ab30fe5324caa)"
         );
 
@@ -935,5 +986,138 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("unprintable character"));
+    }
+
+    #[test]
+    fn test_tapscript_rtt() {
+        // Test x-only invalid under segwitc0 context
+        let ms = Segwitv0Script::from_str_insane(&format!(
+            "pk(2788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)"
+        ));
+        assert_eq!(
+            ms.unwrap_err().to_string(),
+            "unexpected «Key secp256k1 error: secp: malformed public key»"
+        );
+        Tapscript::from_str_insane(&format!(
+            "pk(2788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)"
+        ))
+        .unwrap();
+
+        // Now test that bitcoin::PublicKey works with Taproot context
+        Miniscript::<bitcoin::PublicKey, Tap>::from_str_insane(&format!(
+            "pk(022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)"
+        ))
+        .unwrap();
+
+        // uncompressed keys should not be allowed
+        Miniscript::<bitcoin::PublicKey, Tap>::from_str_insane(&format!(
+            "pk(04eed24a081bf1b1e49e3300df4bebe04208ac7e516b6f3ea8eb6e094584267c13483f89dcf194132e12238cc5a34b6b286fc7990d68ed1db86b69ebd826c63b29)"
+        ))
+        .unwrap_err();
+
+        //---------------- test script <-> miniscript ---------------
+        // Test parsing from scripts: x-only fails decoding in segwitv0 ctx
+        Segwitv0Script::parse_insane(&hex_script(
+            "202788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
+        ))
+        .unwrap_err();
+        // x-only succeeds in tap ctx
+        Tapscript::parse_insane(&hex_script(
+            "202788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
+        ))
+        .unwrap();
+        // tapscript fails decoding with compressed
+        Tapscript::parse_insane(&hex_script(
+            "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
+        ))
+        .unwrap_err();
+        // Segwitv0 succeeds decoding with tapscript.
+        Segwitv0Script::parse_insane(&hex_script(
+            "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
+        ))
+        .unwrap();
+
+        // multi not allowed in tapscript
+        Tapscript::from_str_insane(&format!(
+            "multi(1,2788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)"
+        ))
+        .unwrap_err();
+        // but allowed in segwit
+        Segwitv0Script::from_str_insane(&format!(
+            "multi(1,022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)"
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn multi_a_tests() {
+        // Test from string tests
+        type Segwitv0Ms = Miniscript<String, Segwitv0>;
+        type TapMs = Miniscript<String, Tap>;
+        let segwit_multi_a_ms = Segwitv0Ms::from_str_insane("multi_a(1,A,B,C)");
+        assert_eq!(
+            segwit_multi_a_ms.unwrap_err().to_string(),
+            "Multi a(CHECKSIGADD) only allowed post tapscript"
+        );
+        let tap_multi_a_ms = TapMs::from_str_insane("multi_a(1,A,B,C)").unwrap();
+        assert_eq!(tap_multi_a_ms.to_string(), "multi_a(1,A,B,C)");
+
+        // Test encode/decode and translation tests
+        let tap_ms = tap_multi_a_ms.translate_pk2_infallible(|_| {
+            XOnlyPublicKey::from_str(
+                "e948a0bbf8b15ee47cf0851afbce8835b5f06d3003b8e7ed6104e82a1d41d6f8",
+            )
+            .unwrap()
+        });
+        // script rtt test
+        assert_eq!(
+            Miniscript::<XOnlyPublicKey, Tap>::parse_insane(&tap_ms.encode()).unwrap(),
+            tap_ms
+        );
+        assert_eq!(tap_ms.script_size(), 104);
+        assert_eq!(tap_ms.encode().len(), tap_ms.script_size());
+
+        // Test satisfaction code
+        struct SimpleSatisfier(secp256k1::schnorr::Signature);
+
+        // a simple satisfier that always outputs the same signature
+        impl<Pk: ToPublicKey> Satisfier<Pk> for SimpleSatisfier {
+            fn lookup_tap_leaf_script_sig(
+                &self,
+                _pk: &Pk,
+                _h: &TapLeafHash,
+            ) -> Option<bitcoin::SchnorrSig> {
+                Some(bitcoin::SchnorrSig {
+                    sig: self.0,
+                    hash_ty: bitcoin::SchnorrSigHashType::Default,
+                })
+            }
+        }
+
+        let schnorr_sig = secp256k1::schnorr::Signature::from_str("84526253c27c7aef56c7b71a5cd25bebb66dddda437826defc5b2568bde81f0784526253c27c7aef56c7b71a5cd25bebb66dddda437826defc5b2568bde81f07").unwrap();
+        let s = SimpleSatisfier(schnorr_sig);
+
+        let wit = tap_ms.satisfy(s).unwrap();
+        assert_eq!(wit, vec![schnorr_sig.as_ref().to_vec(), vec![], vec![]]);
+    }
+
+    #[test]
+    fn decode_bug_cpp_review() {
+        let ms = Miniscript::<String, Segwitv0>::from_str_insane(
+            "and_b(1,s:and_v(v:older(9),c:pk_k(A)))",
+        )
+        .unwrap();
+        let ms_trans = ms.translate_pk_infallible(
+            |_x| {
+                bitcoin::PublicKey::from_str(
+                    "02fbcf092916824cc56c4591abeedd54586f5ffc73c6ba88118162e3500ad695ea",
+                )
+                .unwrap()
+            },
+            |_x| unreachable!(),
+        );
+        let enc = ms_trans.encode();
+        let ms = Miniscript::<bitcoin::PublicKey, Segwitv0>::parse_insane(&enc).unwrap();
+        assert_eq!(ms_trans.encode(), ms.encode());
     }
 }

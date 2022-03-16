@@ -46,31 +46,25 @@ impl<'a> fmt::Display for Tree<'a> {
         write!(f, ")")
     }
 }
-impl<'a> Tree<'a> {
-    fn from_slice(sl: &'a str) -> Result<(Tree<'a>, &'a str), Error> {
-        Self::from_slice_helper(sl, 0u32)
-    }
 
-    fn from_slice_helper(mut sl: &'a str, depth: u32) -> Result<(Tree<'a>, &'a str), Error> {
-        if depth >= MAX_RECURSION_DEPTH {
-            return Err(Error::MaxRecursiveDepthExceeded);
-        }
-        enum Found {
-            Nothing,
-            Lparen(usize),
-            Comma(usize),
-            Rparen(usize),
-        }
+enum Found {
+    Nothing,
+    LBracket(usize), // Either a left ( or {
+    Comma(usize),
+    RBracket(usize), // Either a right ) or }
+}
 
-        let mut found = Found::Nothing;
-        // Decide whether we are parsing a key or not.
-        // When parsing a key ignore all the '(' and ')'.
-        // We keep count of lparan whenever we are inside a key context
-        // We exit the context whenever we find the corresponding ')'
-        // in which we entered the context. This allows to special case
-        // parse the '(' ')' inside key expressions.(slip77 and musig).
-        let mut key_ctx = false;
-        let mut key_lparan_count = 0;
+fn next_expr(sl: &str, delim: char) -> Found {
+    // Decide whether we are parsing a key or not.
+    // When parsing a key ignore all the '(' and ')'.
+    // We keep count of lparan whenever we are inside a key context
+    // We exit the context whenever we find the corresponding ')'
+    // in which we entered the context. This allows to special case
+    // parse the '(' ')' inside key expressions.(slip77 and musig).
+    let mut key_ctx = false;
+    let mut key_lparan_count = 0;
+    let mut found = Found::Nothing;
+    if delim == '(' {
         for (n, ch) in sl.char_indices() {
             match ch {
                 '(' => {
@@ -105,8 +99,65 @@ impl<'a> Tree<'a> {
                 _ => {}
             }
         }
+    } else if delim == '{' {
+        let mut new_count = 0;
+        for (n, ch) in sl.char_indices() {
+            match ch {
+                '{' => {
+                    found = Found::LBracket(n);
+                    break;
+                }
+                '(' => {
+                    new_count += 1;
+                }
+                ',' => {
+                    if new_count == 0 {
+                        found = Found::Comma(n);
+                        break;
+                    }
+                }
+                ')' => {
+                    new_count -= 1;
+                }
+                '}' => {
+                    found = Found::RBracket(n);
+                    break;
+                }
+                _ => {}
+            }
+        }
+    } else {
+        unreachable!("{}", "Internal: delimiters in parsing must be '(' or '{'");
+    }
+    found
+}
 
-        match found {
+// Get the corresponding delim
+fn closing_delim(delim: char) -> char {
+    match delim {
+        '(' => ')',
+        '{' => '}',
+        _ => unreachable!("Unknown delimiter"),
+    }
+}
+
+impl<'a> Tree<'a> {
+    /// Parse an expression with round brackets
+    pub fn from_slice(sl: &'a str) -> Result<(Tree<'a>, &'a str), Error> {
+        // Parsing TapTree or just miniscript
+        Self::from_slice_delim(sl, 0u32, '(')
+    }
+
+    pub(crate) fn from_slice_delim(
+        mut sl: &'a str,
+        depth: u32,
+        delim: char,
+    ) -> Result<(Tree<'a>, &'a str), Error> {
+        if depth >= MAX_RECURSION_DEPTH {
+            return Err(Error::MaxRecursiveDepthExceeded);
+        }
+
+        match next_expr(sl, delim) {
             // String-ending terminal
             Found::Nothing => Ok((
                 Tree {
@@ -116,7 +167,7 @@ impl<'a> Tree<'a> {
                 "",
             )),
             // Terminal
-            Found::Comma(n) | Found::Rparen(n) => Ok((
+            Found::Comma(n) | Found::RBracket(n) => Ok((
                 Tree {
                     name: &sl[..n],
                     args: vec![],
@@ -124,7 +175,7 @@ impl<'a> Tree<'a> {
                 &sl[n..],
             )),
             // Function call
-            Found::Lparen(n) => {
+            Found::LBracket(n) => {
                 let mut ret = Tree {
                     name: &sl[..n],
                     args: vec![],
@@ -132,18 +183,23 @@ impl<'a> Tree<'a> {
 
                 sl = &sl[n + 1..];
                 loop {
-                    let (arg, new_sl) = Tree::from_slice_helper(sl, depth + 1)?;
+                    let (arg, new_sl) = Tree::from_slice_delim(sl, depth + 1, delim)?;
                     ret.args.push(arg);
 
                     if new_sl.is_empty() {
-                        return Err(Error::ExpectedChar(')'));
+                        return Err(Error::ExpectedChar(closing_delim(delim)));
                     }
 
                     sl = &new_sl[1..];
                     match new_sl.as_bytes()[0] {
                         b',' => {}
-                        b')' => break,
-                        _ => return Err(Error::ExpectedChar(',')),
+                        last_byte => {
+                            if last_byte == closing_delim(delim) as u8 {
+                                break;
+                            } else {
+                                return Err(Error::ExpectedChar(closing_delim(delim)));
+                            }
+                        }
                     }
                 }
                 Ok((ret, sl))
@@ -156,7 +212,7 @@ impl<'a> Tree<'a> {
         // Filter out non-ASCII because we byte-index strings all over the
         // place and Rust gets very upset when you splinch a string.
         for ch in s.bytes() {
-            if ch > 0x7f {
+            if !ch.is_ascii() {
                 return Err(Error::Unprintable(ch));
             }
         }
@@ -240,4 +296,7 @@ mod tests {
         assert!(parse_num("+6").is_err());
         assert!(parse_num("-6").is_err());
     }
+
+    // Add tests for tapscript parsing
+    // tr(D,{or_i(pk(A),pk(B)),{after(9),pk(C)}})
 }

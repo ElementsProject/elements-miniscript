@@ -19,9 +19,11 @@
 
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use std::marker::PhantomData;
+use std::{error, fmt};
 use {bitcoin, Miniscript};
 
 use miniscript::lex::{Token as Tk, TokenIter};
+use miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
 use miniscript::types::extra_props::ExtData;
 use miniscript::types::Property;
 use miniscript::types::Type;
@@ -30,14 +32,72 @@ use std::sync::Arc;
 use Error;
 use MiniscriptKey;
 
+use ToPublicKey;
+
 fn return_none<T>(_: usize) -> Option<T> {
     None
+}
+
+/// Trait for parsing keys from byte slices
+pub trait ParseableKey: Sized + ToPublicKey + private::Sealed {
+    /// Parse a key from slice
+    fn from_slice(sl: &[u8]) -> Result<Self, KeyParseError>;
+}
+
+/// Decoding error while parsing keys
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum KeyParseError {
+    /// Bitcoin PublicKey parse error
+    FullKeyParseError(bitcoin::util::key::Error),
+    /// Xonly key parse Error
+    XonlyKeyParseError(bitcoin::secp256k1::Error),
+}
+
+impl ParseableKey for bitcoin::PublicKey {
+    fn from_slice(sl: &[u8]) -> Result<Self, KeyParseError> {
+        bitcoin::PublicKey::from_slice(sl).map_err(KeyParseError::FullKeyParseError)
+    }
+}
+
+impl ParseableKey for bitcoin::XOnlyPublicKey {
+    fn from_slice(sl: &[u8]) -> Result<Self, KeyParseError> {
+        bitcoin::XOnlyPublicKey::from_slice(sl).map_err(KeyParseError::XonlyKeyParseError)
+    }
+}
+
+impl error::Error for KeyParseError {
+    fn cause(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            KeyParseError::FullKeyParseError(e) => Some(e),
+            KeyParseError::XonlyKeyParseError(e) => Some(e),
+        }
+    }
+}
+
+impl fmt::Display for KeyParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            KeyParseError::FullKeyParseError(_e) => write!(f, "FullKey Parse Error"),
+            KeyParseError::XonlyKeyParseError(_e) => write!(f, "XonlyKey Parse Error"),
+        }
+    }
+}
+
+/// Private Mod to prevent downstream from implementing this public trait
+mod private {
+
+    pub trait Sealed {}
+
+    // Implement for those same types, but no others.
+    impl Sealed for super::bitcoin::PublicKey {}
+    impl Sealed for super::bitcoin::XOnlyPublicKey {}
 }
 
 #[derive(Copy, Clone, Debug)]
 enum NonTerm {
     Expression,
-    MaybeSwap,
+    WExpression,
+    Swap,
     MaybeAndV,
     Alt,
     Check,
@@ -144,9 +204,12 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext> {
     Thresh(usize, Vec<Arc<Miniscript<Pk, Ctx>>>),
     /// k (<key>)* n CHECKMULTISIG
     Multi(usize, Vec<Pk>),
+    /// <key> CHECKSIG (<key> CHECKSIGADD)*(n-1) k NUMEQUAL
+    MultiA(usize, Vec<Pk>),
 }
 
 ///Vec representing terminals stack while decoding.
+#[derive(Debug)]
 struct TerminalStack<Pk: MiniscriptKey, Ctx: ScriptContext>(Vec<Miniscript<Pk, Ctx>>);
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> TerminalStack<Pk, Ctx> {
@@ -215,16 +278,16 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> TerminalStack<Pk, Ctx> {
     }
 }
 
-/// Parse a script fragment into an `Terminal`
+/// Parse a script fragment into an `Miniscript`
 #[allow(unreachable_patterns)]
 pub fn parse<Ctx: ScriptContext>(
     tokens: &mut TokenIter,
-) -> Result<Miniscript<bitcoin::PublicKey, Ctx>, Error> {
+) -> Result<Miniscript<Ctx::Key, Ctx>, Error> {
     let mut non_term = Vec::with_capacity(tokens.len());
     let mut term = TerminalStack(Vec::with_capacity(tokens.len()));
 
+    // top level cannot be swap, must be B
     non_term.push(NonTerm::MaybeAndV);
-    non_term.push(NonTerm::MaybeSwap);
     non_term.push(NonTerm::Expression);
     loop {
         match non_term.pop() {
@@ -232,7 +295,32 @@ pub fn parse<Ctx: ScriptContext>(
                 match_token!(
                     tokens,
                     // pubkey
-                    Tk::Pubkey(pk) => term.reduce0(Terminal::PkK(pk))?,
+                    Tk::Bytes33(pk) => {
+                        let ret = Ctx::Key::from_slice(pk)
+                            .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?;
+                        term.reduce0(Terminal::PkK(ret))?
+                    },
+                    Tk::Bytes65(pk) => {
+                        let ret = Ctx::Key::from_slice(pk)
+                            .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?;
+                        term.reduce0(Terminal::PkK(ret))?
+                    },
+                    // Note this does not collide with hash32 because they always followed by equal
+                    // and would be parsed in different branch. If we get a naked Bytes32, it must be
+                    // a x-only key
+                    // In miniscript spec, bytes32 only occurs at three places.
+                    // - during parsing XOnly keys in Pk fragment
+                    // - during parsing XOnly keys in MultiA fragment
+                    // - checking for 32 bytes hashlocks (sha256/hash256)
+                    // The second case(MultiA) is disambiguated using NumEqual which is not used anywhere in miniscript
+                    // The third case can only occur hashlocks is disambiguated because hashlocks start from equal, and
+                    // it is impossible for any K type fragment to be followed by EQUAL in miniscript spec. Thus, EQUAL
+                    // after bytes32 means bytes32 is in a hashlock
+                    // Finally for the first case, K being parsed as a solo expression is a Pk type
+                    Tk::Bytes32(pk) => {
+                        let ret = Ctx::Key::from_slice(pk).map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?;
+                        term.reduce0(Terminal::PkK(ret))?
+                    },
                     // checksig
                     Tk::CheckSig => {
                         non_term.push(NonTerm::Check);
@@ -249,36 +337,36 @@ pub fn parse<Ctx: ScriptContext>(
                                     tokens,
                                     Tk::Dup => {
                                         term.reduce0(Terminal::PkH(
-                                            hash160::Hash::from_inner(hash)
+                                            hash160::Hash::from_slice(hash).expect("valid size")
                                         ))?
                                     },
                                     Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size => {
                                         non_term.push(NonTerm::Verify);
                                         term.reduce0(Terminal::Hash160(
-                                            hash160::Hash::from_inner(hash)
+                                            hash160::Hash::from_slice(hash).expect("valid size")
                                         ))?
                                     },
                                 ),
                                 Tk::Ripemd160, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size => {
                                     non_term.push(NonTerm::Verify);
                                     term.reduce0(Terminal::Ripemd160(
-                                        ripemd160::Hash::from_inner(hash)
+                                        ripemd160::Hash::from_slice(hash).expect("valid size")
                                     ))?
                                 },
                             ),
                             // Tk::Hash20(hash),
-                            Tk::Hash32(hash) => match_token!(
+                            Tk::Bytes32(hash) => match_token!(
                                 tokens,
                                 Tk::Sha256, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size => {
                                     non_term.push(NonTerm::Verify);
                                     term.reduce0(Terminal::Sha256(
-                                        sha256::Hash::from_inner(hash)
+                                        sha256::Hash::from_slice(hash).expect("valid size")
                                     ))?
                                 },
                                 Tk::Hash256, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size => {
                                     non_term.push(NonTerm::Verify);
                                     term.reduce0(Terminal::Hash256(
-                                        sha256d::Hash::from_inner(hash)
+                                        sha256d::Hash::from_slice(hash).expect("valid size")
                                     ))?
                                 },
                             ),
@@ -326,21 +414,21 @@ pub fn parse<Ctx: ScriptContext>(
                     // hashlocks
                     Tk::Equal => match_token!(
                         tokens,
-                        Tk::Hash32(hash) => match_token!(
+                        Tk::Bytes32(hash) => match_token!(
                             tokens,
                             Tk::Sha256,
                             Tk::Verify,
                             Tk::Equal,
                             Tk::Num(32),
                             Tk::Size => term.reduce0(Terminal::Sha256(
-                                sha256::Hash::from_inner(hash)
+                                sha256::Hash::from_slice(hash).expect("valid size")
                             ))?,
                             Tk::Hash256,
                             Tk::Verify,
                             Tk::Equal,
                             Tk::Num(32),
                             Tk::Size => term.reduce0(Terminal::Hash256(
-                                sha256d::Hash::from_inner(hash)
+                                sha256d::Hash::from_slice(hash).expect("valid size")
                             ))?,
                         ),
                         Tk::Hash20(hash) => match_token!(
@@ -350,14 +438,14 @@ pub fn parse<Ctx: ScriptContext>(
                             Tk::Equal,
                             Tk::Num(32),
                             Tk::Size => term.reduce0(Terminal::Ripemd160(
-                                ripemd160::Hash::from_inner(hash)
+                                ripemd160::Hash::from_slice(hash).expect("valid size")
                             ))?,
                             Tk::Hash160,
                             Tk::Verify,
                             Tk::Equal,
                             Tk::Num(32),
                             Tk::Size => term.reduce0(Terminal::Hash160(
-                                hash160::Hash::from_inner(hash)
+                                hash160::Hash::from_slice(hash).expect("valid size")
                             ))?,
                         ),
                         Tk::PickPush4(ver), Tk::Sub, Tk::Depth => match_token!(
@@ -383,45 +471,38 @@ pub fn parse<Ctx: ScriptContext>(
                             // `OP_ADD` or not and do the right thing
                         },
                     ),
-                    // fromaltstack
-                    Tk::FromAltStack => {
-                        non_term.push(NonTerm::Alt);
-                        non_term.push(NonTerm::MaybeAndV);
-                        non_term.push(NonTerm::MaybeSwap);
-                        non_term.push(NonTerm::Expression);
-                    },
                     // most other fragments
                     Tk::Num(0) => term.reduce0(Terminal::False)?,
                     Tk::Num(1) => term.reduce0(Terminal::True)?,
                     Tk::EndIf => {
                         non_term.push(NonTerm::EndIf);
                         non_term.push(NonTerm::MaybeAndV);
-                        non_term.push(NonTerm::MaybeSwap);
                         non_term.push(NonTerm::Expression);
                     },
                     // boolean conjunctions and disjunctions
                     Tk::BoolAnd => {
                         non_term.push(NonTerm::AndB);
                         non_term.push(NonTerm::Expression);
-                        non_term.push(NonTerm::MaybeSwap);
-                        non_term.push(NonTerm::Expression);
+                        non_term.push(NonTerm::WExpression);
                     },
                     Tk::BoolOr => {
                         non_term.push(NonTerm::OrB);
                         non_term.push(NonTerm::Expression);
-                        non_term.push(NonTerm::MaybeSwap);
-                        non_term.push(NonTerm::Expression);
+                        non_term.push(NonTerm::WExpression);
                     },
                     // CHECKMULTISIG based multisig
                     Tk::CheckMultiSig, Tk::Num(n) => {
-                        if n > 20 {
+                        if n as usize > MAX_PUBKEYS_PER_MULTISIG {
                             return Err(Error::CmsTooManyKeys(n));
                         }
                         let mut keys = Vec::with_capacity(n as usize);
                         for _ in 0..n {
                             match_token!(
                                 tokens,
-                                Tk::Pubkey(pk) => keys.push(pk),
+                                Tk::Bytes33(pk) => keys.push(<Ctx::Key>::from_slice(pk)
+                                    .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?),
+                                Tk::Bytes65(pk) => keys.push(<Ctx::Key>::from_slice(pk)
+                                    .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?),
                             );
                         }
                         let k = match_token!(
@@ -430,6 +511,29 @@ pub fn parse<Ctx: ScriptContext>(
                         );
                         keys.reverse();
                         term.reduce0(Terminal::Multi(k as usize, keys))?;
+                    },
+                    // MultiA
+                    Tk::NumEqual, Tk::Num(k) => {
+                        // Check size before allocating keys
+                        if k > MAX_BLOCK_WEIGHT/32 {
+                            return Err(Error::MultiATooManyKeys(MAX_BLOCK_WEIGHT/32))
+                        }
+                        let mut keys = Vec::with_capacity(k as usize); // atleast k capacity
+                        while tokens.peek() == Some(&Tk::CheckSigAdd) {
+                            match_token!(
+                                tokens,
+                                Tk::CheckSigAdd, Tk::Bytes32(pk) => keys.push(<Ctx::Key>::from_slice(pk)
+                                    .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?),
+                            );
+                        }
+                        // Last key must be with a CheckSig
+                        match_token!(
+                            tokens,
+                            Tk::CheckSig, Tk::Bytes32(pk) => keys.push(<Ctx::Key>::from_slice(pk)
+                                .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?),
+                        );
+                        keys.reverse();
+                        term.reduce0(Terminal::MultiA(k as usize, keys))?;
                     },
                 );
             }
@@ -440,15 +544,14 @@ pub fn parse<Ctx: ScriptContext>(
                     non_term.push(NonTerm::Expression);
                 }
             }
-            Some(NonTerm::MaybeSwap) => {
+            Some(NonTerm::Swap) => {
                 // Handle `SWAP` prefixing
-                if let Some(&Tk::Swap) = tokens.peek() {
-                    tokens.next();
-                    //                    let top = term.pop().unwrap();
-                    term.reduce1(Terminal::Swap)?;
-                    //                    term.push(Terminal::Swap(Arc::new(top)));
-                    non_term.push(NonTerm::MaybeSwap);
-                }
+                match_token!(
+                    tokens,
+                    Tk::Swap => {},
+                );
+                term.reduce1(Terminal::Swap)?;
+                // Swap must be always be terminating a NonTerm as it cannot be in and_v
             }
             Some(NonTerm::Alt) => {
                 match_token!(
@@ -495,14 +598,14 @@ pub fn parse<Ctx: ScriptContext>(
                     tokens,
                     Tk::Add => {
                         non_term.push(NonTerm::ThreshW { n: n + 1, k });
+                        non_term.push(NonTerm::WExpression);
                     },
                     x => {
                         tokens.un_next(x);
                         non_term.push(NonTerm::ThreshE { n: n + 1, k });
+                        non_term.push(NonTerm::Expression);
                     },
                 );
-                non_term.push(NonTerm::MaybeSwap);
-                non_term.push(NonTerm::Expression);
             }
             Some(NonTerm::ThreshE { n, k }) => {
                 let mut subs = Vec::with_capacity(n);
@@ -517,7 +620,6 @@ pub fn parse<Ctx: ScriptContext>(
                     Tk::Else => {
                         non_term.push(NonTerm::EndIfElse);
                         non_term.push(NonTerm::MaybeAndV);
-                        non_term.push(NonTerm::MaybeSwap);
                         non_term.push(NonTerm::Expression);
                     },
                     Tk::If => match_token!(
@@ -554,6 +656,14 @@ pub fn parse<Ctx: ScriptContext>(
                     },
                 );
             }
+            Some(NonTerm::WExpression) => {
+                // W expression must be either from swap or Fromaltstack
+                match_token!(tokens,
+                    Tk::FromAltStack => { non_term.push(NonTerm::Alt);},
+                    tok => { tokens.un_next(tok); non_term.push(NonTerm::Swap);},);
+                non_term.push(NonTerm::MaybeAndV);
+                non_term.push(NonTerm::Expression);
+            }
             None => {
                 // Done :)
                 break;
@@ -568,7 +678,12 @@ pub fn parse<Ctx: ScriptContext>(
 
 fn is_and_v(tokens: &mut TokenIter) -> bool {
     match tokens.peek() {
-        None | Some(&Tk::If) | Some(&Tk::NotIf) | Some(&Tk::Else) | Some(&Tk::ToAltStack) => false,
+        None
+        | Some(&Tk::If)
+        | Some(&Tk::NotIf)
+        | Some(&Tk::Else)
+        | Some(&Tk::ToAltStack)
+        | Some(&Tk::Swap) => false,
         _ => true,
     }
 }

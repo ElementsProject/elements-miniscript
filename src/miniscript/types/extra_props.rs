@@ -2,7 +2,8 @@
 //! correctness or malleability.
 
 use miniscript::limits::{
-    HEIGHT_TIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE, SEQUENCE_LOCKTIME_TYPE_FLAG,
+    HEIGHT_TIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE, SEQUENCE_LOCKTIME_DISABLE_FLAG,
+    SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
 
 use super::{Error, ErrorKind, Property, ScriptContext};
@@ -121,11 +122,26 @@ pub struct ExtData {
     pub max_dissat_size: Option<(usize, usize)>,
     /// The timelock info about heightlocks and timelocks
     pub timelock_info: TimeLockInfo,
+    /// Maximum stack + alt stack size during satisfaction execution
+    /// This does **not** include initial witness elements. This element only captures
+    /// the additional elements that are pushed during execution.
+    pub exec_stack_elem_count_sat: Option<usize>,
+    /// Maximum stack + alt stack size during dissat execution
+    /// This does **not** include initial witness elements. This element only captures
+    /// the additional elements that are pushed during execution.
+    pub exec_stack_elem_count_dissat: Option<usize>,
 }
 
 impl Property for ExtData {
     fn sanity_checks(&self) {
-        //No sanity checks
+        debug_assert_eq!(
+            self.stack_elem_count_sat.is_some(),
+            self.exec_stack_elem_count_sat.is_some()
+        );
+        debug_assert_eq!(
+            self.stack_elem_count_dissat.is_some(),
+            self.exec_stack_elem_count_dissat.is_some()
+        );
     }
 
     fn from_true() -> Self {
@@ -140,6 +156,8 @@ impl Property for ExtData {
             max_sat_size: Some((0, 0)),
             max_dissat_size: None,
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(1),
+            exec_stack_elem_count_dissat: None,
         }
     }
 
@@ -155,6 +173,8 @@ impl Property for ExtData {
             max_sat_size: None,
             max_dissat_size: Some((0, 0)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: None,
+            exec_stack_elem_count_dissat: Some(1),
         }
     }
 
@@ -170,6 +190,8 @@ impl Property for ExtData {
             max_sat_size: Some((73, 73)),
             max_dissat_size: Some((1, 1)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(1), // pushes the pk
+            exec_stack_elem_count_dissat: Some(1),
         }
     }
 
@@ -185,6 +207,8 @@ impl Property for ExtData {
             max_sat_size: Some((34 + 73, 34 + 73)),
             max_dissat_size: Some((35, 35)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(2), // dup and hash push
+            exec_stack_elem_count_dissat: Some(2),
         }
     }
 
@@ -206,6 +230,31 @@ impl Property for ExtData {
             max_sat_size: Some((1 + 73 * k, 1 + 73 * k)),
             max_dissat_size: Some((1 + k, 1 + k)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(n), // n pks
+            exec_stack_elem_count_dissat: Some(n),
+        }
+    }
+
+    fn from_multi_a(k: usize, n: usize) -> Self {
+        let num_cost = match (k > 16, n > 16) {
+            (true, true) => 4,
+            (false, true) => 3,
+            (true, false) => 3,
+            (false, false) => 2,
+        };
+        ExtData {
+            pk_cost: num_cost + 33 * n /*pks*/ + (n-1) /*checksigadds*/ + 1,
+            has_free_verify: true,
+            ops_count_static: 1, // We don't care about opcounts in tapscript
+            ops_count_sat: Some(n + 1),
+            ops_count_nsat: Some(n + 1),
+            stack_elem_count_sat: Some(n),
+            stack_elem_count_dissat: Some(n),
+            max_sat_size: Some(((n - k) + 64 * k, (n - k) + 64 * k)),
+            max_dissat_size: Some((n, n)),
+            timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(2), // the two nums before num equal verify
+            exec_stack_elem_count_dissat: Some(2),
         }
     }
 
@@ -226,6 +275,8 @@ impl Property for ExtData {
             max_sat_size: Some((33, 33)),
             max_dissat_size: Some((33, 33)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(2), // either size <32> or <hash256> <32 byte>
+            exec_stack_elem_count_dissat: Some(2),
         }
     }
 
@@ -241,6 +292,8 @@ impl Property for ExtData {
             max_sat_size: Some((33, 33)),
             max_dissat_size: Some((33, 33)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(2), // either size <32> or <hash256> <32 byte>
+            exec_stack_elem_count_dissat: Some(2),
         }
     }
 
@@ -256,6 +309,8 @@ impl Property for ExtData {
             max_sat_size: Some((33, 33)),
             max_dissat_size: Some((33, 33)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(2), // either size <32> or <hash256> <20 byte>
+            exec_stack_elem_count_dissat: Some(2),
         }
     }
 
@@ -271,6 +326,8 @@ impl Property for ExtData {
             max_sat_size: Some((33, 33)),
             max_dissat_size: Some((33, 33)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(2), // either size <32> or <hash256> <20 byte>
+            exec_stack_elem_count_dissat: Some(2),
         }
     }
 
@@ -296,6 +353,8 @@ impl Property for ExtData {
                 cltv_with_time: t >= HEIGHT_TIME_THRESHOLD,
                 contains_combination: false,
             },
+            exec_stack_elem_count_sat: Some(1), // <t>
+            exec_stack_elem_count_dissat: None,
         }
     }
 
@@ -317,6 +376,8 @@ impl Property for ExtData {
                 cltv_with_time: false,
                 contains_combination: false,
             },
+            exec_stack_elem_count_sat: Some(1), // <t>
+            exec_stack_elem_count_dissat: None,
         }
     }
 
@@ -340,6 +401,8 @@ impl Property for ExtData {
             max_sat_size: Some((0, 0)),
             max_dissat_size: Some((0, 0)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(2), // two things to compare on stack
+            exec_stack_elem_count_dissat: Some(2),
         }
     }
 
@@ -357,6 +420,8 @@ impl Property for ExtData {
             max_sat_size: Some((max_wit_sz, max_wit_sz)),
             max_dissat_size: Some((0, 0)), // all empty should dissatisfy
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(3), // context object, slice to hash, hash to compare
+            exec_stack_elem_count_dissat: Some(3),
         }
     }
 
@@ -372,6 +437,8 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: self.max_dissat_size,
             timelock_info: self.timelock_info,
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
         })
     }
 
@@ -387,6 +454,8 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: self.max_dissat_size,
             timelock_info: self.timelock_info,
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
         })
     }
 
@@ -402,6 +471,8 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: self.max_dissat_size,
             timelock_info: self.timelock_info,
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
         })
     }
 
@@ -417,6 +488,11 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size.map(|(w, s)| (w + 2, s + 1)),
             max_dissat_size: Some((1, 1)),
             timelock_info: self.timelock_info,
+            // Technically max(1, self.exec_stack_elem_count_sat), but all miniscript expressions
+            // that can be satisfied push at least one thing onto the stack.
+            // Even all V types push something onto the stack and then remove them
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: Some(1),
         })
     }
 
@@ -433,6 +509,8 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: None,
             timelock_info: self.timelock_info,
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: None,
         })
     }
 
@@ -448,6 +526,8 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: Some((1, 1)),
             timelock_info: self.timelock_info,
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: Some(1),
         })
     }
 
@@ -463,6 +543,9 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: self.max_dissat_size,
             timelock_info: self.timelock_info,
+            // Technically max(1, self.exec_stack_elem_count_sat), same rationale as cast_dupif
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
         })
     }
 
@@ -478,6 +561,9 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: None,
             timelock_info: self.timelock_info,
+            // Technically max(1, self.exec_stack_elem_count_sat), same rationale as cast_dupif
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: None,
         })
     }
 
@@ -497,6 +583,10 @@ impl Property for ExtData {
             stack_elem_count_dissat: self.stack_elem_count_dissat.map(|x| x + 1),
             max_sat_size: self.max_sat_size.map(|(w, s)| (w + 2, s + 1)),
             max_dissat_size: self.max_dissat_size.map(|(w, s)| (w + 1, s + 1)),
+            // TODO: fix dissat stack elem counting above in a later commit
+            // Technically max(1, self.exec_stack_elem_count_sat), same rationale as cast_dupif
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
             timelock_info: self.timelock_info,
         })
     }
@@ -513,6 +603,10 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size.map(|(w, s)| (w + 1, s + 1)),
             max_dissat_size: self.max_dissat_size.map(|(w, s)| (w + 2, s + 1)),
             timelock_info: self.timelock_info,
+            // TODO: fix dissat stack elem counting above in a later commit
+            // Technically max(1, self.exec_stack_elem_count_sat), same rationale as cast_dupif
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
         })
     }
 
@@ -540,6 +634,16 @@ impl Property for ExtData {
                 .max_dissat_size
                 .and_then(|(lw, ls)| r.max_dissat_size.map(|(rw, rs)| (lw + rw, ls + rs))),
             timelock_info: TimeLockInfo::comb_and_timelocks(l.timelock_info, r.timelock_info),
+            // Left element leaves a stack result on the stack top and then right element is evaluated
+            // Therefore + 1 is added to execution size of second element
+            exec_stack_elem_count_sat: opt_max(
+                l.exec_stack_elem_count_sat,
+                r.exec_stack_elem_count_sat.map(|x| x + 1),
+            ),
+            exec_stack_elem_count_dissat: opt_max(
+                l.exec_stack_elem_count_dissat,
+                r.exec_stack_elem_count_dissat.map(|x| x + 1),
+            ),
         })
     }
 
@@ -559,6 +663,12 @@ impl Property for ExtData {
                 .and_then(|(lw, ls)| r.max_sat_size.map(|(rw, rs)| (lw + rw, ls + rs))),
             max_dissat_size: None,
             timelock_info: TimeLockInfo::comb_and_timelocks(l.timelock_info, r.timelock_info),
+            // [X] leaves no element after evaluation, hence this is the max
+            exec_stack_elem_count_sat: opt_max(
+                l.exec_stack_elem_count_sat,
+                r.exec_stack_elem_count_sat,
+            ),
+            exec_stack_elem_count_dissat: None,
         })
     }
 
@@ -595,6 +705,20 @@ impl Property for ExtData {
                 .max_dissat_size
                 .and_then(|(lw, ls)| r.max_dissat_size.map(|(rw, rs)| (lw + rw, ls + rs))),
             timelock_info: TimeLockInfo::comb_or_timelocks(l.timelock_info, r.timelock_info),
+            exec_stack_elem_count_sat: cmp::max(
+                opt_max(
+                    l.exec_stack_elem_count_sat,
+                    r.exec_stack_elem_count_dissat.map(|x| x + 1),
+                ),
+                opt_max(
+                    l.exec_stack_elem_count_dissat,
+                    r.exec_stack_elem_count_sat.map(|x| x + 1),
+                ),
+            ),
+            exec_stack_elem_count_dissat: opt_max(
+                l.exec_stack_elem_count_dissat,
+                r.exec_stack_elem_count_dissat.map(|x| x + 1),
+            ),
         })
     }
 
@@ -628,6 +752,14 @@ impl Property for ExtData {
                 .max_dissat_size
                 .and_then(|(lw, ls)| r.max_dissat_size.map(|(rw, rs)| (lw + rw, ls + rs))),
             timelock_info: TimeLockInfo::comb_or_timelocks(l.timelock_info, r.timelock_info),
+            exec_stack_elem_count_sat: cmp::max(
+                opt_max(l.exec_stack_elem_count_sat, r.exec_stack_elem_count_dissat),
+                r.exec_stack_elem_count_sat,
+            ),
+            exec_stack_elem_count_dissat: opt_max(
+                l.exec_stack_elem_count_dissat,
+                r.exec_stack_elem_count_dissat.map(|x| x + 1),
+            ),
         })
     }
 
@@ -655,6 +787,11 @@ impl Property for ExtData {
             ),
             max_dissat_size: None,
             timelock_info: TimeLockInfo::comb_or_timelocks(l.timelock_info, r.timelock_info),
+            exec_stack_elem_count_sat: cmp::max(
+                opt_max(l.exec_stack_elem_count_sat, r.exec_stack_elem_count_dissat),
+                r.exec_stack_elem_count_sat,
+            ),
+            exec_stack_elem_count_dissat: None,
         })
     }
 
@@ -698,6 +835,15 @@ impl Property for ExtData {
                 (None, None) => None,
             },
             timelock_info: TimeLockInfo::comb_or_timelocks(l.timelock_info, r.timelock_info),
+            // TODO: fix elem count dissat bug
+            exec_stack_elem_count_sat: cmp::max(
+                l.exec_stack_elem_count_sat,
+                r.exec_stack_elem_count_sat,
+            ),
+            exec_stack_elem_count_dissat: cmp::max(
+                l.exec_stack_elem_count_dissat,
+                r.exec_stack_elem_count_dissat,
+            ),
         })
     }
 
@@ -737,6 +883,14 @@ impl Property for ExtData {
                 TimeLockInfo::comb_and_timelocks(a.timelock_info, b.timelock_info),
                 c.timelock_info,
             ),
+            exec_stack_elem_count_sat: cmp::max(
+                opt_max(a.exec_stack_elem_count_sat, b.exec_stack_elem_count_sat),
+                opt_max(c.exec_stack_elem_count_sat, a.exec_stack_elem_count_dissat),
+            ),
+            exec_stack_elem_count_dissat: opt_max(
+                a.exec_stack_elem_count_dissat,
+                c.exec_stack_elem_count_dissat,
+            ),
         })
     }
 
@@ -758,6 +912,10 @@ impl Property for ExtData {
         let mut max_sat_size_vec = Vec::with_capacity(n);
         let mut max_sat_size = Some((0, 0));
         let mut max_dissat_size = Some((0, 0));
+        // the max element count is same as max sat element count when satisfying one element + 1
+        let mut exec_stack_elem_count_sat_vec = Vec::with_capacity(n);
+        let mut exec_stack_elem_count_sat = Some(0);
+        let mut exec_stack_elem_count_dissat = Some(0);
 
         for i in 0..n {
             let sub = sub_ck(i)?;
@@ -793,6 +951,14 @@ impl Property for ExtData {
                 }
                 _ => {}
             }
+            exec_stack_elem_count_sat_vec.push((
+                sub.exec_stack_elem_count_sat,
+                sub.exec_stack_elem_count_dissat,
+            ));
+            exec_stack_elem_count_dissat = opt_max(
+                exec_stack_elem_count_dissat,
+                sub.exec_stack_elem_count_dissat,
+            );
         }
 
         // We sort by [satisfaction cost - dissatisfaction cost] to make a worst-case (the most
@@ -807,6 +973,19 @@ impl Property for ExtData {
                 x.and_then(|x| stack_elem_count_sat.map(|count| count + x))
             } else {
                 y.and_then(|y| stack_elem_count_sat.map(|count| count + y))
+            };
+        }
+
+        // Same logic as above
+        exec_stack_elem_count_sat_vec.sort_by(|a, b| {
+            a.0.map(|x| a.1.map(|y| x as isize - y as isize))
+                .cmp(&b.0.map(|x| b.1.map(|y| x as isize - y as isize)))
+        });
+        for (i, &(x, y)) in exec_stack_elem_count_sat_vec.iter().rev().enumerate() {
+            exec_stack_elem_count_sat = if i <= k {
+                opt_max(exec_stack_elem_count_sat, x)
+            } else {
+                opt_max(exec_stack_elem_count_sat, y)
             };
         }
 
@@ -851,6 +1030,8 @@ impl Property for ExtData {
             max_sat_size,
             max_dissat_size,
             timelock_info: TimeLockInfo::combine_thresh_timelocks(k, timelocks),
+            exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat,
         })
     }
 
@@ -877,7 +1058,7 @@ impl Property for ExtData {
             Terminal::False => Ok(Self::from_false()),
             Terminal::PkK(..) => Ok(Self::from_pk_k()),
             Terminal::PkH(..) => Ok(Self::from_pk_h()),
-            Terminal::Multi(k, ref pks) => {
+            Terminal::Multi(k, ref pks) | Terminal::MultiA(k, ref pks) => {
                 if k == 0 {
                     return Err(Error {
                         fragment: fragment.clone(),
@@ -890,23 +1071,29 @@ impl Property for ExtData {
                         error: ErrorKind::OverThreshold(k, pks.len()),
                     });
                 }
-                Ok(Self::from_multi(k, pks.len()))
+                match *fragment {
+                    Terminal::Multi(..) => Ok(Self::from_multi(k, pks.len())),
+                    Terminal::MultiA(..) => Ok(Self::from_multi_a(k, pks.len())),
+                    _ => unreachable!(),
+                }
             }
             Terminal::After(t) => {
-                // FIXME check if t > 2^31 - 1
-                if t == 0 {
+                // Note that for CLTV this is a limitation not of Bitcoin but Miniscript. The
+                // number on the stack would be a 5 bytes signed integer but Miniscript's B type
+                // only consumes 4 bytes from the stack.
+                if t == 0 || (t & SEQUENCE_LOCKTIME_DISABLE_FLAG) == 1 {
                     return Err(Error {
                         fragment: fragment.clone(),
-                        error: ErrorKind::ZeroTime,
+                        error: ErrorKind::InvalidTime,
                     });
                 }
                 Ok(Self::from_after(t))
             }
             Terminal::Older(t) => {
-                if t == 0 {
+                if t == 0 || (t & SEQUENCE_LOCKTIME_DISABLE_FLAG) == 1 {
                     return Err(Error {
                         fragment: fragment.clone(),
-                        error: ErrorKind::ZeroTime,
+                        error: ErrorKind::InvalidTime,
                     });
                 }
                 Ok(Self::from_older(t))
@@ -986,5 +1173,14 @@ impl Property for ExtData {
             ret.sanity_checks()
         }
         ret
+    }
+}
+
+// Returns Some(max(x,y)) is both x and y are Some. Otherwise, return none
+fn opt_max<T: Ord>(a: Option<T>, b: Option<T>) -> Option<T> {
+    if let (Some(x), Some(y)) = (a, b) {
+        Some(cmp::max(x, y))
+    } else {
+        None
     }
 }

@@ -21,7 +21,9 @@ use std::{fmt, marker::PhantomData, str::FromStr};
 use elements::script;
 
 use expression;
-use miniscript::{self, context::ScriptContext, decode::Terminal};
+use miniscript::{
+    self, context::ScriptContext, decode::Terminal, limits::MAX_PUBKEYS_PER_MULTISIG,
+};
 use policy;
 use script_num_size;
 use {errstr, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, ToPublicKey};
@@ -43,7 +45,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
     /// Internally checks all the applicable size limits and pubkey types limitations according to the current `Ctx`.
     pub fn new(k: usize, pks: Vec<Pk>) -> Result<Self, Error> {
         // A sortedmulti() is only defined for <= 20 keys (it maps to CHECKMULTISIG)
-        if pks.len() > 20 {
+        if pks.len() > MAX_PUBKEYS_PER_MULTISIG {
             Error::BadDescriptor("Too many public keys".to_string());
         }
 
@@ -138,9 +140,9 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         // Sort pubkeys lexicographically according to BIP 67
         pks.sort_by(|a, b| {
             a.to_public_key()
-                .key
+                .inner
                 .serialize()
-                .partial_cmp(&b.to_public_key().key.serialize())
+                .partial_cmp(&b.to_public_key().inner.serialize())
                 .unwrap()
         });
         Terminal::Multi(self.k, pks)
@@ -178,7 +180,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         script_num_size(self.k)
             + 1
             + script_num_size(self.pks.len())
-            + self.pks.iter().map(|pk| pk.serialized_len()).sum::<usize>()
+            + self.pks.iter().map(|pk| Ctx::pk_len(pk)).sum::<usize>()
     }
 
     /// Maximum number of witness elements used to satisfy the Miniscript

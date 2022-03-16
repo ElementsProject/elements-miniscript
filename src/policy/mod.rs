@@ -77,7 +77,7 @@ impl error::Error for LiftError {
     fn description(&self) -> &str {
         ""
     }
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&dyn error::Error> {
         None
     }
 }
@@ -166,7 +166,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Liftable<Pk> for Terminal<Pk, Ctx> {
                     subs.into_iter().map(|s| s.node.lift()).collect();
                 Semantic::Threshold(k, semantic_subs?)
             }
-            Terminal::Multi(k, ref keys) => Semantic::Threshold(
+            Terminal::Multi(k, ref keys) | Terminal::MultiA(k, ref keys) => Semantic::Threshold(
                 k,
                 keys.into_iter()
                     .map(|k| Semantic::KeyHash(k.to_pubkeyhash()))
@@ -187,6 +187,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Descriptor<Pk> {
             Descriptor::Wsh(ref wsh) => wsh.lift(),
             Descriptor::Sh(ref sh) => sh.lift(),
             Descriptor::Cov(ref _cov) => Err(Error::CovError(CovError::CovenantLift)),
+            Descriptor::Tr(ref tr) => tr.lift(),
         }
     }
 }
@@ -370,7 +371,7 @@ mod tests {
 
         let ms_str: Miniscript<bitcoin::PublicKey, Segwitv0> = format!(
             "andor(multi(1,{}),older(42),c:pk_k({}))",
-            key_a.key, key_b.key
+            key_a.inner, key_b.inner
         )
         .parse()
         .unwrap();
