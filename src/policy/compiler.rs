@@ -1189,7 +1189,6 @@ where
 mod tests {
     use super::*;
     use bitcoin;
-    use elements::SigHashType;
     use elements::{hashes, secp256k1_zkp};
     use elements::{opcodes, script};
     use std::collections::HashMap;
@@ -1206,7 +1205,7 @@ mod tests {
     type DummySegwitAstElemExt = policy::compiler::AstElemExt<String, Segwitv0>;
     type SegwitMiniScript = Miniscript<bitcoin::PublicKey, Segwitv0>;
 
-    fn pubkeys_and_a_sig(n: usize) -> (Vec<bitcoin::PublicKey>, secp256k1::ecdsa::Signature) {
+    fn pubkeys_and_a_sig(n: usize) -> (Vec<bitcoin::PublicKey>, secp256k1_zkp::ecdsa::Signature) {
         let mut ret = Vec::with_capacity(n);
         let secp = secp256k1_zkp::Secp256k1::new();
         let mut sk = [0; 32];
@@ -1395,11 +1394,9 @@ mod tests {
         assert_eq!(abs.n_keys(), 5);
         assert_eq!(abs.minimum_n_keys(), Some(3));
 
-        let bitcoinsig = bitcoin::EcdsaSig {
-            sig,
-            hash_ty: bitcoin::EcdsaSigHashType::All,
-        };
-        let sigvec = bitcoinsig.to_vec();
+        let elements_sig = (sig, elements::SigHashType::All);
+        let mut sigvec = elements_sig.0.serialize_der().to_vec();
+        sigvec.push(elements_sig.1 as u8);
 
         let no_sat = HashMap::<bitcoin::PublicKey, ElementsSig>::new();
         let mut left_sat = HashMap::<bitcoin::PublicKey, ElementsSig>::new();
@@ -1407,10 +1404,10 @@ mod tests {
             HashMap::<hashes::hash160::Hash, (bitcoin::PublicKey, ElementsSig)>::new();
 
         for i in 0..5 {
-            left_sat.insert(keys[i], bitcoinsig);
+            left_sat.insert(keys[i], elements_sig);
         }
         for i in 5..8 {
-            right_sat.insert(keys[i].to_pubkeyhash(), (keys[i], bitcoinsig));
+            right_sat.insert(keys[i].to_pubkeyhash(), (keys[i], elements_sig));
         }
 
         assert!(ms.satisfy(no_sat).is_err());

@@ -113,6 +113,8 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
             max_sat_size: Some((max_wit_sz, max_wit_sz)),
             max_dissat_size: Some((0, 0)), // all empty should dissatisfy
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(3), // sha2 context, byte slice, target hash
+            exec_stack_elem_count_dissat: Some(3),
         }
     }
 
@@ -268,7 +270,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
         }
         // Maximum number of suffix elements
         let max_elems = MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE + 1;
-        let hash_outputs = hash_outputs.as_push();
+        let hash_outputs = hash_outputs.try_push().unwrap(); // TODO: refactor this later to avoid unwrap
         if hash_outputs.len() == 32 {
             // We want to cat the last 6 elements(5 cats) in suffix
             if stack.len() < max_elems {

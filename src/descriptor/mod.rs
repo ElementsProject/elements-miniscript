@@ -250,6 +250,7 @@ impl fmt::Display for DescriptorType {
             DescriptorType::LegacyPegin => write!(f, "legacy_pegin"),
             DescriptorType::Pegin => write!(f, "pegin"),
             DescriptorType::Cov => write!(f, "elcovwsh"),
+            DescriptorType::Tr => write!(f, "tr"),
         }
     }
 }
@@ -605,13 +606,7 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Descriptor<P> {
     }
 }
 
-impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Descriptor<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Descriptor<Pk> {
     fn blind_addr(
         &self,
         blinder: Option<secp256k1_zkp::PublicKey>,
@@ -627,17 +622,12 @@ where
             Descriptor::Wsh(ref wsh) => wsh.blind_addr(blinder, params),
             Descriptor::Sh(ref sh) => sh.blind_addr(blinder, params),
             Descriptor::Cov(ref cov) => cov.blind_addr(blinder, params),
+            Descriptor::Tr(ref tr) => todo!(),
         }
     }
 }
 
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Descriptor<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Descriptor<Pk> {
     /// Whether the descriptor is safe
     /// Checks whether all the spend paths in the descriptor are possible
     /// on the bitcoin network under the current standardness and consensus rules
@@ -866,9 +856,9 @@ impl Descriptor<DescriptorPublicKey> {
     /// # Errors
     ///
     /// This function will return an error if hardened derivation is attempted.
-    pub fn derived_descriptor<C: secp256k1::Verification>(
+    pub fn derived_descriptor<C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
         index: u32,
     ) -> Result<Descriptor<bitcoin::PublicKey>, ConversionError> {
         let derived = self
@@ -1026,20 +1016,12 @@ mod tests {
     use descriptor::{
         DescriptorPublicKey, DescriptorSecretKey, DescriptorSinglePub, DescriptorXKey,
     };
-    use elements::hashes::hex::FromHex;
     use elements::hashes::hex::{FromHex, ToHex};
     use elements::hashes::{hash160, sha256};
     use elements::opcodes::all::{OP_CLTV, OP_CSV};
     use elements::script::Instruction;
     use elements::{opcodes, script};
 
-    use elements::opcodes::{
-        self,
-        all::{OP_CLTV, OP_CSV},
-    };
-    use elements::script::Instruction;
-    use elements::{self, secp256k1_zkp};
-    use elements::{script, Script};
     use hex_script;
     use miniscript::satisfy::ElementsSig;
     use std::cmp;
@@ -1597,8 +1579,10 @@ mod tests {
         let witness0 = &txin.witness.script_witness[0];
         let witness1 = &txin.witness.script_witness[1];
 
-        let sig0 = secp256k1_zkp::Signature::from_der(&witness0[..witness0.len() - 1]).unwrap();
-        let sig1 = secp256k1_zkp::Signature::from_der(&witness1[..witness1.len() - 1]).unwrap();
+        let sig0 =
+            secp256k1_zkp::ecdsa::Signature::from_der(&witness0[..witness0.len() - 1]).unwrap();
+        let sig1 =
+            secp256k1_zkp::ecdsa::Signature::from_der(&witness1[..witness1.len() - 1]).unwrap();
 
         // why are we asserting this way?
         // The witness stack is evaluated from top to bottom. Given an `and` instruction, the left arm of the and is going to evaluate first,

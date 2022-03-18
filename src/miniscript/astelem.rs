@@ -149,7 +149,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
         Ext: TranslatePk<Pk, Q>,
         <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
     {
-        let frag: Terminal<Q, CtxQ> = match *self {
+        let frag: Terminal<Q, CtxQ, _> = match *self {
             Terminal::PkK(ref p) => Terminal::PkK(translatefpk(p)?),
             Terminal::PkH(ref p) => Terminal::PkH(translatefpkh(p)?),
             Terminal::After(n) => Terminal::After(n),
@@ -560,13 +560,6 @@ where
             }),
             ("1", 0) => Ok(Terminal::True),
             ("0", 0) => Ok(Terminal::False),
-            ("ver_eq", 1) => {
-                let n = expression::terminal(&top.args[0], expression::parse_num)?;
-                Ok(Terminal::Version(n))
-            }
-            ("outputs_pref", 1) => expression::terminal(&top.args[0], |x| {
-                Vec::<u8>::from_hex(x).map(Terminal::OutputsPref)
-            }),
             ("and_v", 2) => expression::binary(top, Terminal::AndV),
             ("and_b", 2) => expression::binary(top, Terminal::AndB),
             ("and_n", 2) => Ok(Terminal::AndOr(
@@ -884,7 +877,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                 builder = builder.push_opcode(opcodes::all::OP_CHECKSIG);
                 for pk in keys.iter().skip(1) {
                     builder = builder.push_ms_key::<_, Ctx>(pk);
-                    builder = builder.push_opcode(opcodes::all::OP_CHECKSIGADD);
+                    builder = builder.push_opcode(opcodes::all::OP_RETURN_186);
                 }
                 builder
                     .push_int(k as i64)

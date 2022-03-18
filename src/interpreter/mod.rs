@@ -19,9 +19,11 @@
 //! assuming that the spent coin was descriptor controlled.
 //!
 
-use bitcoin::PublicKey;
+use std::fmt;
+use std::str::FromStr;
+
+use elements::sighash;
 use elements::{self, secp256k1_zkp, SigHash};
-use elements::{confidential, sighash};
 use elements::{
     hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine},
     SigHashType,
@@ -31,6 +33,7 @@ use miniscript::ScriptContext;
 use util;
 use Miniscript;
 use Terminal;
+use TranslatePk;
 use {Descriptor, ElementsSig, ToPublicKey};
 
 mod error;
@@ -39,15 +42,17 @@ mod stack;
 
 use MiniscriptKey;
 
+use crate::elementssig_from_rawsig;
+
 pub use self::error::Error;
 use self::error::PkEvalErrInner;
-use self::stack::Stack;
-use {CovenantExt, Extension};
+pub use self::stack::Stack;
+use {Extension, NoExt};
 
-pub use self::stack::{Element, Stack};
+pub use self::stack::Element;
 
 /// An iterable Miniscript-structured representation of the spending of a coin
-pub struct Interpreter<'txin, Ext: Extension<PublicKey>> {
+pub struct Interpreter<'txin, Ext: Extension<BitcoinKey>> {
     inner: inner::Inner<Ext>,
     stack: Stack<'txin>,
     /// For non-Taproot spends, the scriptCode; for Taproot script-spends, this
@@ -87,23 +92,26 @@ impl KeySigPair {
     }
 }
 
-// Internally used enum for different types of bitcoin keys
-// Even though we implement MiniscriptKey for BitcoinKey, we make sure that there
-// are little mis-use
-// - The only constructors for this are only called in from_txdata that take care
-//   using the correct enum variant
-// - This does not implement ToPublicKey to avoid context dependant encoding/decoding of 33/32
-//   byte keys. This allows us to keep a single NoChecks context instead of a context for
-//   for NoChecksSchnorr/NoChecksEcdsa.
+/// This type is exported in elements-miniscript because it also captures information
+/// about the type of Extension. For rust-miniscript, this is not an issue because there
+/// are no extensions.
+/// Internally used enum for different types of bitcoin keys
+/// Even though we implement MiniscriptKey for BitcoinKey, we make sure that there
+/// are little mis-use
+/// - The only constructors for this are only called in from_txdata that take care
+///   using the correct enum variant
+/// - This does not implement ToPublicKey to avoid context dependant encoding/decoding of 33/32
+///   byte keys. This allows us to keep a single NoChecks context instead of a context for
+///   for NoChecksSchnorr/NoChecksEcdsa.
 // Long term TODO: There really should be not be any need for Miniscript<Pk: MiniscriptKey> struct
 // to have the Pk: MiniscriptKey bound. The bound should be on all of it's methods. That would
 // require changing Miniscript struct to three generics Miniscript<Pk, Pkh, Ctx> and bound on
 // all of the methods of Miniscript to ensure that Pkh = Pk::Hash
 #[derive(Hash, Eq, Ord, PartialEq, PartialOrd, Clone, Copy, Debug)]
-enum BitcoinKey {
-    // Full key
+pub enum BitcoinKey {
+    /// Full key
     Fullkey(bitcoin::PublicKey),
-    // Xonly key
+    /// Xonly key
     XOnlyPublicKey(bitcoin::XOnlyPublicKey),
 }
 
@@ -129,10 +137,13 @@ impl From<bitcoin::XOnlyPublicKey> for BitcoinKey {
     }
 }
 
-// While parsing we need to remember how to the hash was parsed so that we can
+/// Output type typed hash for Interpreter extension type
+/// While parsing we need to remember how to the hash was parsed so that we can
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum TypedHash160 {
+pub enum TypedHash160 {
+    /// Hash to be checked against 32 byte keys
     XonlyKey(hash160::Hash),
+    /// Hash to be checked against 33/65 byte keys
     FullKey(hash160::Hash),
 }
 
@@ -163,7 +174,7 @@ impl MiniscriptKey for BitcoinKey {
     }
 }
 
-impl<'txin> Interpreter<'txin, CovenantExt> {
+impl<'txin> Interpreter<'txin, NoExt> {
     /// Constructs an interpreter from the data of a spending transaction
     ///
     /// Accepts a signature-validating function. If you are willing to trust
@@ -184,7 +195,16 @@ impl<'txin> Interpreter<'txin, CovenantExt> {
 
 impl<'txin, Ext> Interpreter<'txin, Ext>
 where
-    Ext: Extension<PublicKey>,
+    Ext: Extension<BitcoinKey>,
+    Ext: TranslatePk<BitcoinKey, bitcoin::PublicKey>,
+    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output: Extension<bitcoin::PublicKey>,
+    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output:
+        TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = Ext>,
+    Ext: TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>,
+    <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
+        Extension<bitcoin::XOnlyPublicKey>,
+    <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
+        TranslatePk<bitcoin::XOnlyPublicKey, BitcoinKey, Output = Ext>,
 {
     /// Constructs an interpreter from the data of a spending transaction
     ///
@@ -215,7 +235,7 @@ where
     pub fn iter_custom<'iter>(
         &'iter self,
         verify_sig: Box<dyn FnMut(&KeySigPair) -> bool + 'iter>,
-    ) -> Iter<'txin, 'iter> {
+    ) -> Iter<'txin, 'iter, Ext> {
         Iter {
             verify_sig: verify_sig,
             public_key: if let inner::Inner::PublicKey(ref pk, _) = self.inner {
@@ -259,18 +279,19 @@ where
     /// - Insufficient sighash information is present
     /// - sighash single without corresponding output
     // TODO: Create a good first isse to change this to error
-    pub fn verify_sig<C: secp256k1::Verification>(
+    pub fn verify_sig<C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1::Secp256k1<C>,
-        tx: &bitcoin::Transaction,
+        secp: &secp256k1_zkp::Secp256k1<C>,
+        tx: &elements::Transaction,
         input_idx: usize,
         prevouts: &sighash::Prevouts,
+        genesis_hash: elements::BlockHash,
         sig: &KeySigPair,
     ) -> bool {
         fn get_prevout<'u>(
             prevouts: &sighash::Prevouts<'u>,
             input_index: usize,
-        ) -> Option<&'u bitcoin::TxOut> {
+        ) -> Option<&'u elements::TxOut> {
             match prevouts {
                 sighash::Prevouts::One(index, prevout) => {
                     if input_index == *index {
@@ -282,53 +303,54 @@ where
                 sighash::Prevouts::All(prevouts) => prevouts.get(input_index),
             }
         }
-        let mut cache = bitcoin::util::sighash::SigHashCache::new(tx);
+        let mut cache = elements::sighash::SigHashCache::new(tx);
         match sig {
             KeySigPair::Ecdsa(key, ecdsa_sig) => {
                 let script_pubkey = self.script_code.as_ref().expect("Legacy have script code");
                 let sighash = if self.is_legacy() {
-                    let sighash_u32 = ecdsa_sig.hash_ty.as_u32();
-                    cache.legacy_signature_hash(input_idx, &script_pubkey, sighash_u32)
+                    cache.legacy_sighash(input_idx, &script_pubkey, ecdsa_sig.1)
                 } else if self.is_segwit_v0() {
                     let amt = match get_prevout(prevouts, input_idx) {
                         Some(txout) => txout.value,
                         None => return false,
                     };
-                    cache.segwit_signature_hash(input_idx, &script_pubkey, amt, ecdsa_sig.hash_ty)
+                    cache.segwitv0_sighash(input_idx, &script_pubkey, amt, ecdsa_sig.1)
                 } else {
                     // taproot(or future) signatures in segwitv0 context
                     return false;
                 };
-                let msg =
-                    sighash.map(|hash| secp256k1::Message::from_slice(&hash).expect("32 byte"));
-                let success =
-                    msg.map(|msg| secp.verify_ecdsa(&msg, &ecdsa_sig.sig, &key.inner).is_ok());
-                success.unwrap_or(false) // unwrap_or checks for errors, while success would have checksig results
+                let msg = secp256k1_zkp::Message::from_slice(sighash.as_ref()).expect("32 byte");
+                secp.verify_ecdsa(&msg, &ecdsa_sig.0, &key.inner).is_ok()
             }
             KeySigPair::Schnorr(xpk, schnorr_sig) => {
                 let sighash_msg = if self.is_taproot_v1_key_spend() {
-                    cache.taproot_key_spend_signature_hash(input_idx, prevouts, schnorr_sig.hash_ty)
+                    cache.taproot_sighash(
+                        input_idx,
+                        prevouts,
+                        None,
+                        None,
+                        schnorr_sig.hash_ty,
+                        genesis_hash,
+                    )
                 } else if self.is_taproot_v1_script_spend() {
                     let tap_script = self.script_code.as_ref().expect(
                         "Internal Hack: Saving leaf script instead\
                         of script code for script spend",
                     );
-                    let leaf_hash = taproot::TapLeafHash::from_script(
-                        &tap_script,
-                        taproot::LeafVersion::TapScript,
-                    );
-                    cache.taproot_script_spend_signature_hash(
+                    cache.taproot_sighash(
                         input_idx,
                         prevouts,
-                        leaf_hash,
+                        None,
+                        Some(elements::sighash::ScriptPath::with_defaults(&tap_script)),
                         schnorr_sig.hash_ty,
+                        genesis_hash,
                     )
                 } else {
                     // schnorr sigs in ecdsa descriptors
                     return false;
                 };
-                let msg =
-                    sighash_msg.map(|hash| secp256k1::Message::from_slice(&hash).expect("32 byte"));
+                let msg = sighash_msg
+                    .map(|hash| secp256k1_zkp::Message::from_slice(&hash).expect("32 byte"));
                 let success =
                     msg.map(|msg| secp.verify_schnorr(&schnorr_sig.sig, &msg, &xpk).is_ok());
                 success.unwrap_or(false) // unwrap_or_default checks for errors, while success would have checksig results
@@ -349,24 +371,25 @@ where
     ///
     /// Not all fields are used by legacy/segwitv0 descriptors; if you are sure this is a legacy
     /// spend (you can check with the `is_legacy\is_segwitv0` method) you can provide dummy data for
-    /// the amount/prevouts.
+    /// the amount/prevouts/genesis_hash.
     /// - For legacy outputs, no information about prevouts is required
     /// - For segwitv0 outputs, prevout at corresponding index with correct amount must be provided
-    /// - For taproot outputs, information about all prevouts must be supplied
-    pub fn iter<'iter, C: secp256k1::Verification>(
+    /// - For taproot outputs, information about all prevouts must be supplied and genesis_hash must be supplied
+    pub fn iter<'iter, C: secp256k1_zkp::Verification>(
         &'iter self,
-        secp: &'iter secp256k1::Secp256k1<C>,
-        tx: &'txin bitcoin::Transaction,
+        secp: &'iter secp256k1_zkp::Secp256k1<C>,
+        tx: &'txin elements::Transaction,
         input_idx: usize,
         prevouts: &'iter sighash::Prevouts, // actually a 'prevouts, but 'prevouts: 'iter
-    ) -> Iter<'txin, 'iter> {
+        genesis_hash: elements::BlockHash,  // required for sighash computation in BIP341
+    ) -> Iter<'txin, 'iter, Ext> {
         self.iter_custom(Box::new(move |sig| {
-            self.verify_sig(secp, tx, input_idx, prevouts, sig)
+            self.verify_sig(secp, tx, input_idx, prevouts, genesis_hash, sig)
         }))
     }
 
     /// Creates an iterator over the satisfied spending conditions without checking signatures
-    pub fn iter_assume_sigs<'iter>(&'iter self) -> Iter<'txin, 'iter> {
+    pub fn iter_assume_sigs<'iter>(&'iter self) -> Iter<'txin, 'iter, Ext> {
         self.iter_custom(Box::new(|_| true))
     }
 
@@ -507,7 +530,7 @@ pub enum HashLockType {
 /// A satisfied Miniscript condition (Signature, Hashlock, Timelock)
 /// 'intp represents the lifetime of descriptor and `stack represents
 /// the lifetime of witness
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SatisfiedConstraint<Ext: Extension<BitcoinKey>> {
     ///Public key and corresponding signature
     PublicKey {
@@ -568,7 +591,7 @@ pub enum SatisfiedConstraint<Ext: Extension<BitcoinKey>> {
 ///depending on evaluation of the children.
 struct NodeEvaluationState<'intp, Ext>
 where
-    Ext: 'intp + Extension<PublicKey>,
+    Ext: 'intp + Extension<BitcoinKey>,
 {
     ///The node which is being evaluated
     node: &'intp Miniscript<BitcoinKey, NoChecks, Ext>,
@@ -591,15 +614,15 @@ where
 /// before ultimately returning an error.
 pub struct Iter<'intp, 'txin: 'intp, Ext>
 where
-    Ext: 'intp + Extension<PublicKey>,
+    Ext: 'intp + Extension<BitcoinKey>,
 {
     verify_sig: Box<dyn FnMut(&KeySigPair) -> bool + 'intp>,
     public_key: Option<&'intp BitcoinKey>,
-    state: Vec<NodeEvaluationState<'intp>>,
+    state: Vec<NodeEvaluationState<'intp, Ext>>,
     stack: Stack<'txin>,
     age: u32,
     height: u32,
-    cov: Option<&'intp PublicKey>,
+    cov: Option<&'intp BitcoinKey>,
     has_errored: bool,
 }
 
@@ -724,9 +747,13 @@ where
                     }
                 }
                 Terminal::Ext(ref ext) => {
-                    let res = ext.evaluate(self.stack);
+                    let res = ext.evaluate(&mut self.stack);
                     match res {
-                        Some(Ok(())) => return Some(Ok(SatisfiedConstraint::Ext { ext: ext })),
+                        Some(Ok(())) => {
+                            return Some(Ok(SatisfiedConstraint::Ext {
+                                ext: Box::new(ext.clone()),
+                            }))
+                        }
                         Some(Err(e)) => return Some(Err(e)),
                         None => {}
                     }
@@ -1030,10 +1057,10 @@ where
             let mut ser_sig = Vec::new();
             // 1.29 errors
             {
-                let sighash_bytes = self.stack[1].as_push();
+                let sighash_bytes = self.stack[1].as_push().expect("Push checked above");
                 let sighash_u32 = util::slice_to_u32_le(sighash_bytes);
                 let sighash_ty = SigHashType::from_u32(sighash_u32);
-                let sig_vec = self.stack[0].as_push();
+                let sig_vec = self.stack[0].as_push().expect("Size checked above");
                 ser_sig.extend(sig_vec);
                 ser_sig.push(sighash_ty as u8);
             }
@@ -1046,7 +1073,7 @@ where
                 let sighash_msg: Vec<u8> = self.stack.0[1..]
                     .into_iter()
                     .rev()
-                    .map(|x| Vec::from(x.as_push()))
+                    .map(|x| Vec::from(x.as_push().expect("Push checked above")))
                     .flatten()
                     .collect();
                 let mut eng = SigHash::engine();
@@ -1054,18 +1081,23 @@ where
                 let sighash_u256 = SigHash::from_engine(eng);
                 let msg = elements::secp256k1_zkp::Message::from_slice(&sighash_u256[..]).unwrap();
 
-                // TODO: THIS SHOULD BE A SEPARATE PARAMETER TO THE FUNCTION, BUT SINCE
-                // IT MIGHT ELSEWHERE, CONSIDER MAKING IT A SEPARATE METHOD. RIGHT NOW,
-                // THIS IS CREATING A NEW CONTEXT WHICH IS EXPENSIVE
+                // Legacy Cov scripts only operate on Ecdsa key sig pairs
+                let (ec_pk, ecdsa_sig) = match sig {
+                    KeySigPair::Ecdsa(pk, sig) => (pk, sig.0),
+                    KeySigPair::Schnorr(_, _) => {
+                        unreachable!("Internal error: Legacy cov check in schnorr sigs")
+                    }
+                };
+                // Creating a context is no-longer expensive
                 let secp = secp256k1_zkp::Secp256k1::verification_only();
-                if secp.verify_ecdsa(&msg, &sig, &pk.inner).is_err() {
-                    return Some(Err(Error::PkEvaluationError(pk.clone().to_public_key())));
+                if secp.verify_ecdsa(&msg, &ecdsa_sig, &ec_pk.inner).is_err() {
+                    return Some(Err(Error::PkEvaluationError(PkEvalErrInner::from(*pk))));
                 }
                 self.stack.0.clear();
                 self.stack.push(stack::Element::Satisfied);
-                return Some(Ok(SatisfiedConstraint::PublicKey { key: pk, sig }));
+                return Some(Ok(SatisfiedConstraint::PublicKey { key_sig: sig }));
             } else {
-                return Some(Err(Error::PkEvaluationError(pk.clone().to_public_key())));
+                return Some(Err(Error::PkEvaluationError(PkEvalErrInner::from(*pk))));
             }
         }
         if let Some(pk) = self.public_key {
@@ -1102,7 +1134,7 @@ fn verify_sersig<'txin>(
 ) -> Result<KeySigPair, Error> {
     match pk {
         BitcoinKey::Fullkey(pk) => {
-            let ecdsa_sig = ElementsSig::from_slice(sigser)?;
+            let ecdsa_sig = elementssig_from_rawsig(sigser)?;
             let key_sig_pair = KeySigPair::Ecdsa(*pk, ecdsa_sig);
             if verify_sig(&key_sig_pair) {
                 Ok(key_sig_pair)
@@ -1131,10 +1163,10 @@ mod tests {
     use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
     use elements::secp256k1_zkp::{Secp256k1, VerifyOnly};
     use miniscript::context::NoChecks;
-    use CovenantExt;
     use ElementsSig;
     use Miniscript;
     use MiniscriptKey;
+    use NoExt;
     use ToPublicKey;
 
     fn setup_keys_sigs(
@@ -1165,10 +1197,7 @@ mod tests {
                 compressed: true,
             };
             let sig = secp_sign.sign_ecdsa(&msg, &sk);
-            ecdsa_sigs.push(ElementsSig {
-                sig,
-                hash_ty: ElementsSigHashType::All,
-            });
+            ecdsa_sigs.push((sig, elements::SigHashType::All));
             let mut sigser = sig.serialize_der().to_vec();
             sigser.push(0x01); // sighash_all
             pks.push(pk);
@@ -1183,7 +1212,7 @@ mod tests {
         let secp_ref = &secp;
         let vfyfn_ = |pksig: &KeySigPair| match pksig {
             KeySigPair::Ecdsa(pk, ecdsa_sig) => secp_ref
-                .verify_ecdsa(&sighash, &ecdsa_sig.sig, &pk.inner)
+                .verify_ecdsa(&sighash, &ecdsa_sig.0, &pk.inner)
                 .is_ok(),
             KeySigPair::Schnorr(_xpk, _schnorr_sig) => {
                 unreachable!("Schnorr sig not tested in this test")
@@ -1193,8 +1222,8 @@ mod tests {
         fn from_stack<'txin, 'elem>(
             verify_fn: Box<dyn FnMut(&KeySigPair) -> bool + 'elem>,
             stack: Stack<'txin>,
-            ms: &'elem Miniscript<BitcoinKey, NoChecks>,
-        ) -> Iter<'elem, 'txin> {
+            ms: &'elem Miniscript<BitcoinKey, NoChecks, NoExt>,
+        ) -> Iter<'elem, 'txin, NoExt> {
             Iter {
                 verify_sig: verify_fn,
                 stack: stack,
@@ -1233,8 +1262,7 @@ mod tests {
         let stack = Stack::from(vec![stack::Element::Push(&der_sigs[0])]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &pk);
-        let pk_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
-            constraints.collect();
+        let pk_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
 
         assert_eq!(
             pk_satisfied.unwrap(),
@@ -1248,7 +1276,7 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &pk);
 
-        let pk_err: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> = constraints.collect();
+        let pk_err: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert!(pk_err.is_err());
 
         //Check Pkh
@@ -1259,8 +1287,7 @@ mod tests {
         ]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &pkh);
-        let pkh_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
-            constraints.collect();
+        let pkh_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             pkh_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKeyHash {
@@ -1273,8 +1300,7 @@ mod tests {
         let stack = Stack::from(vec![]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &after);
-        let after_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
-            constraints.collect();
+        let after_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             after_satisfied.unwrap(),
             vec![SatisfiedConstraint::AbsoluteTimeLock { time: 1000 }]
@@ -1284,8 +1310,7 @@ mod tests {
         let stack = Stack::from(vec![]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &older);
-        let older_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
-            constraints.collect();
+        let older_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             older_satisfied.unwrap(),
             vec![SatisfiedConstraint::RelativeTimeLock { time: 1000 }]
@@ -1295,7 +1320,7 @@ mod tests {
         let stack = Stack::from(vec![stack::Element::Push(&preimage)]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &sha256);
-        let sah256_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+        let sah256_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
             constraints.collect();
         assert_eq!(
             sah256_satisfied.unwrap(),
@@ -1309,7 +1334,7 @@ mod tests {
         let stack = Stack::from(vec![stack::Element::Push(&preimage)]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &hash256);
-        let sha256d_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+        let sha256d_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
             constraints.collect();
         assert_eq!(
             sha256d_satisfied.unwrap(),
@@ -1323,7 +1348,7 @@ mod tests {
         let stack = Stack::from(vec![stack::Element::Push(&preimage)]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &hash160);
-        let hash160_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+        let hash160_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
             constraints.collect();
         assert_eq!(
             hash160_satisfied.unwrap(),
@@ -1337,7 +1362,7 @@ mod tests {
         let stack = Stack::from(vec![stack::Element::Push(&preimage)]);
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &ripemd160);
-        let ripemd160_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+        let ripemd160_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
             constraints.collect();
 
         assert_eq!(
@@ -1363,8 +1388,7 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let and_v_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
-            constraints.collect();
+        let and_v_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             and_v_satisfied.unwrap(),
             vec![
@@ -1390,8 +1414,7 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let and_b_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
-            constraints.collect();
+        let and_b_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             and_b_satisfied.unwrap(),
             vec![
@@ -1419,7 +1442,7 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let and_or_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+        let and_or_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
             constraints.collect();
         assert_eq!(
             and_or_satisfied.unwrap(),
@@ -1444,7 +1467,7 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let and_or_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+        let and_or_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
             constraints.collect();
         assert_eq!(
             and_or_satisfied.unwrap(),
@@ -1466,8 +1489,7 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let or_b_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
-            constraints.collect();
+        let or_b_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             or_b_satisfied.unwrap(),
             vec![SatisfiedConstraint::HashLock {
@@ -1485,8 +1507,7 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let or_d_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
-            constraints.collect();
+        let or_d_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             or_d_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKey {
@@ -1506,8 +1527,7 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let or_c_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
-            constraints.collect();
+        let or_c_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             or_c_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKey {
@@ -1527,8 +1547,7 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let or_i_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
-            constraints.collect();
+        let or_i_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             or_i_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKey {
@@ -1551,7 +1570,7 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let thresh_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
+        let thresh_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
             constraints.collect();
         assert_eq!(
             thresh_satisfied.unwrap(),
@@ -1582,8 +1601,7 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let multi_satisfied: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
-            constraints.collect();
+        let multi_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             multi_satisfied.unwrap(),
             vec![
@@ -1613,8 +1631,7 @@ mod tests {
         let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
-        let multi_error: Result<Vec<SatisfiedConstraint<CovenantExt>>, Error> =
-            constraints.collect();
+        let multi_error: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert!(multi_error.is_err());
     }
 

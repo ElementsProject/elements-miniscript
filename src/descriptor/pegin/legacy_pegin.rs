@@ -26,9 +26,7 @@ use bitcoin::blockdata::opcodes;
 use bitcoin::hashes::hash160;
 use bitcoin::hashes::Hash;
 use bitcoin::Script as BtcScript;
-use bitcoin::Script as BtcScript;
 use bitcoin::{self, blockdata::script, hashes};
-use bitcoin::{hashes::hash160, Address as BtcAddress};
 use elements::secp256k1_zkp;
 use expression::{self, FromTree};
 use policy::{semantic, Liftable};
@@ -214,9 +212,9 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         }
     }
 
-    fn explicit_script<C: secp256k1::Verification>(
+    fn explicit_script<C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> BtcScript
     where
         Pk: ToPublicKey + FromStr,
@@ -224,7 +222,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         <Pk as FromStr>::Err: ToString,
         <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
     {
-        let tweak_vec = self.desc.explicit_script().into_bytes();
+        let tweak_vec = self.desc.explicit_script().expect("Tr pegins").into_bytes();
         let tweak = hashes::sha256::Hash::hash(&tweak_vec);
         // Hopefully, we never have to use this and dynafed is deployed
         let mut builder = script::Builder::new()
@@ -453,7 +451,7 @@ where
         S: BtcSatisfier<bitcoin::PublicKey>,
         Pk: ToPublicKey,
     {
-        let tweak_vec = self.desc.explicit_script().into_bytes();
+        let tweak_vec = self.desc.explicit_script().expect("Tr pegins").into_bytes();
         let tweak = hashes::sha256::Hash::hash(&tweak_vec);
         let unsigned_script_sig = self.bitcoin_unsigned_script_sig(secp);
         let mut sigs = vec![];
@@ -498,7 +496,7 @@ where
             + self.ms.max_satisfaction_size()?)
     }
 
-    fn script_code<C: secp256k1::Verification>(
+    fn script_code<C: secp256k1_zkp::Verification>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> Result<BtcScript, Error>

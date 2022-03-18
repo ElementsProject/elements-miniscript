@@ -1,4 +1,3 @@
-use bitcoin;
 use elements::Script;
 use elements::{self, script};
 use miniscript::context;

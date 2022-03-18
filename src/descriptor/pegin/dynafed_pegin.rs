@@ -23,7 +23,6 @@
 use bitcoin::hashes::Hash;
 use bitcoin::Script as BtcScript;
 use bitcoin::{self, blockdata::script, hashes};
-use bitcoin::{hashes::hash160, Address as BtcAddress};
 use elements::secp256k1_zkp;
 use expression::{self, FromTree};
 use policy::{semantic, Liftable};
@@ -204,7 +203,11 @@ where
     where
         Pk: ToPublicKey,
     {
-        let tweak_vec = self.elem_desc.explicit_script().into_bytes();
+        let tweak_vec = self
+            .elem_desc
+            .explicit_script()
+            .expect("Tr pegins unknown yet")
+            .into_bytes();
         let tweak = hashes::sha256::Hash::hash(&tweak_vec);
         let tweaked_desc = self.fed_desc.translate_pk_infallible(
             |pk| tweak_key(pk, secp, tweak.as_inner()),
@@ -223,7 +226,11 @@ where
         S: BtcSatisfier<bitcoin::PublicKey>,
         Pk: ToPublicKey,
     {
-        let tweak_vec = self.elem_desc.explicit_script().into_bytes();
+        let tweak_vec = self
+            .elem_desc
+            .explicit_script()
+            .expect("Tr pegins unknown yet")
+            .into_bytes();
         let tweak = hashes::sha256::Hash::hash(&tweak_vec);
         let tweaked_desc = self.fed_desc.translate_pk_infallible(
             |pk| tweak_key(pk, secp, tweak.as_inner()),
@@ -239,7 +246,7 @@ where
         Ok(w)
     }
 
-    fn script_code<C: secp256k1::Verification>(
+    fn script_code<C: secp256k1_zkp::Verification>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> Result<BtcScript, Error>

@@ -13,22 +13,22 @@
 //
 
 use bitcoin;
+use bitcoin::util::taproot::TAPROOT_ANNEX_PREFIX;
 use elements::hashes::{hash160, sha256, Hash};
 use elements::{self, script};
+use TranslatePk;
 
 use super::{stack, BitcoinKey, Error, Stack, TypedHash160};
-use bitcoin::blockdata::witness::Witness;
 use Extension;
 
-use super::{stack, Error, Stack};
 use descriptor::{CovOperations, CovenantDescriptor};
 use elements::schnorr::TapTweak;
-use elements::taproot::{ControlBlock, TAPROOT_ANNEX_PREFIX};
+use elements::taproot::ControlBlock;
 use miniscript::context::NoChecks;
 
 use {BareCtx, Legacy, Segwitv0, Tap};
 
-use miniscript::context::{NoChecks, ScriptContext};
+use miniscript::context::ScriptContext;
 use {Miniscript, MiniscriptKey};
 
 /// Attempts to parse a slice as a Bitcoin public key, checking compressedness
@@ -59,7 +59,7 @@ fn pk_from_stackelem<'a>(
 
 // Parse the script with appropriate context to check for context errors like
 // correct usage of x-only keys or multi_a
-fn script_from_stackelem<'a, Ctx: ScriptContext, Ext: Extension<super::BitcoinKey>>(
+fn script_from_stackelem<'a, Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
     elem: &stack::Element<'a>,
 ) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
     match *elem {
@@ -75,18 +75,29 @@ fn script_from_stackelem<'a, Ctx: ScriptContext, Ext: Extension<super::BitcoinKe
 
 // Try to parse covenant components from witness script
 // stack element
-fn cov_components_from_stackelem<'a, Ext: Extension<bitcoin::PublicKey>>(
+fn cov_components_from_stackelem<'a, Ext>(
     elem: &stack::Element<'a>,
 ) -> Option<(
-    bitcoin::PublicKey,
-    Miniscript<bitcoin::PublicKey, NoChecks, Ext>,
-)> {
-    match *elem {
+    super::BitcoinKey,
+    Miniscript<super::BitcoinKey, NoChecks, Ext>,
+)>
+where
+    Ext: TranslatePk<BitcoinKey, bitcoin::PublicKey> + Extension<BitcoinKey>,
+    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output: Extension<bitcoin::PublicKey>,
+    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output:
+        TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = Ext>,
+{
+    let (pk, ms) = match *elem {
         stack::Element::Push(sl) => {
-            CovenantDescriptor::parse_cov_components(&elements::Script::from(sl.to_owned())).ok()
+            CovenantDescriptor::<
+                bitcoin::PublicKey,
+                <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
+            >::parse_cov_components(&elements::Script::from(sl.to_owned()))
+            .ok()?
         }
-        _ => None,
-    }
+        _ => return None,
+    };
+    Some((super::BitcoinKey::Fullkey(pk), ms.to_no_checks_ms()))
 }
 
 /// Helper type to indicate the origin of the bare pubkey that the interpereter uses
@@ -111,7 +122,7 @@ pub enum ScriptType {
 
 /// Structure representing a script under evaluation as a Miniscript
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Inner<Ext: Extension<bitcoin::PublicKey>> {
+pub enum Inner<Ext: Extension<super::BitcoinKey>> {
     /// The script being evaluated is a simple public key check (pay-to-pk,
     /// pay-to-pkhash or pay-to-witness-pkhash)
     // Technically, this allows representing a (XonlyKey, Sh) output but we make sure
@@ -122,8 +133,8 @@ pub enum Inner<Ext: Extension<bitcoin::PublicKey>> {
     /// The Covenant Miniscript
     /// Only Witnessv0 scripts are supported for now
     CovScript(
-        bitcoin::PublicKey,
-        Miniscript<bitcoin::PublicKey, NoChecks, Ext>,
+        super::BitcoinKey,
+        Miniscript<super::BitcoinKey, NoChecks, Ext>,
         // Add scriptType when we support additional things here
         // ScriptType,
     ),
@@ -137,11 +148,22 @@ pub enum Inner<Ext: Extension<bitcoin::PublicKey>> {
 /// Parses an `Inner` and appropriate `Stack` from completed transaction data,
 /// as well as the script that should be used as a scriptCode in a sighash
 /// Tr outputs don't have script code and return None.
-pub fn from_txdata<'txin, Ext: Extension<bitcoin::PublicKey>>(
+pub fn from_txdata<'txin, Ext: Extension<BitcoinKey>>(
     spk: &elements::Script,
     script_sig: &'txin elements::Script,
     witness: &'txin [Vec<u8>],
-) -> Result<(Inner<Ext>, Stack<'txin>, Option<elements::Script>), Error> {
+) -> Result<(Inner<Ext>, Stack<'txin>, Option<elements::Script>), Error>
+where
+    Ext: TranslatePk<BitcoinKey, bitcoin::PublicKey>,
+    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output: Extension<bitcoin::PublicKey>,
+    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output:
+        TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = Ext>,
+    Ext: TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>,
+    <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
+        Extension<bitcoin::XOnlyPublicKey>,
+    <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
+        TranslatePk<bitcoin::XOnlyPublicKey, BitcoinKey, Output = Ext>,
+{
     let mut ssig_stack: Stack = script_sig
         .instructions_minimal()
         .map(stack::Element::from_instruction)
@@ -219,11 +241,15 @@ pub fn from_txdata<'txin, Ext: Extension<bitcoin::PublicKey>>(
                     if let Some((pk, ms)) = cov_components_from_stackelem(&elem) {
                         let script_code =
                             script::Builder::new().post_codesep_script().into_script();
-                        return Ok((Inner::CovScript(pk, ms), wit_stack, script_code));
+                        return Ok((Inner::CovScript(pk, ms), wit_stack, Some(script_code)));
                     }
-                    let miniscript = script_from_stackelem::<Segwitv0>(&elem)?;
+                    let miniscript = script_from_stackelem::<
+                        Segwitv0,
+                        <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
+                    >(&elem)?;
                     let script = miniscript.encode();
-                    let miniscript = miniscript.to_no_checks_ms();
+                    let miniscript =
+                        <Miniscript<_, _, _> as ToNoChecks<_>>::to_no_checks_ms(&miniscript);
                     let scripthash = sha256::Hash::hash(&script[..]);
                     if *spk == elements::Script::new_v0_wsh(&scripthash.into()) {
                         Ok((
@@ -239,7 +265,9 @@ pub fn from_txdata<'txin, Ext: Extension<bitcoin::PublicKey>>(
             }
         }
     // ** pay to taproot **//
-    } else if spk.is_v1_p2tr() {
+    } else if false
+    /*spk.is_v1_p2tr(), implement this later*/
+    {
         if !ssig_stack.is_empty() {
             Err(Error::NonEmptyScriptSig)
         } else {
@@ -271,7 +299,10 @@ pub fn from_txdata<'txin, Ext: Extension<bitcoin::PublicKey>>(
                     let tap_script = wit_stack.pop().ok_or(Error::UnexpectedStackEnd)?;
                     let ctrl_blk = ControlBlock::from_slice(ctrl_blk)
                         .map_err(|e| Error::ControlBlockParse(e))?;
-                    let tap_script = script_from_stackelem::<Tap>(&tap_script)?;
+                    let tap_script = script_from_stackelem::<
+                        Tap,
+                        <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output,
+                    >(&tap_script)?;
                     let ms = tap_script.to_no_checks_ms();
                     // Creating new contexts is cheap
                     let secp = bitcoin::secp256k1::Secp256k1::verification_only();
@@ -344,7 +375,7 @@ pub fn from_txdata<'txin, Ext: Extension<bitcoin::PublicKey>>(
                                     Err(Error::NonEmptyScriptSig)
                                 } else {
                                     // parse wsh with Segwitv0 context
-                                    let miniscript = script_from_stackelem::<Segwitv0>(&elem)?;
+                                    let miniscript = script_from_stackelem::<Segwitv0,                         <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,>(&elem)?;
                                     let script = miniscript.encode();
                                     let miniscript = miniscript.to_no_checks_ms();
                                     let scripthash = sha256::Hash::hash(&script[..]);
@@ -366,7 +397,10 @@ pub fn from_txdata<'txin, Ext: Extension<bitcoin::PublicKey>>(
                     }
                 }
                 // normal p2sh parsed in Legacy context
-                let miniscript = script_from_stackelem::<Legacy>(&elem)?;
+                let miniscript = script_from_stackelem::<
+                    Legacy,
+                    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
+                >(&elem)?;
                 let script = miniscript.encode();
                 let miniscript = miniscript.to_no_checks_ms();
                 if wit_stack.is_empty() {
@@ -390,7 +424,11 @@ pub fn from_txdata<'txin, Ext: Extension<bitcoin::PublicKey>>(
     } else {
         if wit_stack.is_empty() {
             // Bare script parsed in BareCtx
-            let miniscript = Miniscript::<bitcoin::PublicKey, BareCtx>::parse_insane(spk)?;
+            let miniscript = Miniscript::<
+                bitcoin::PublicKey,
+                BareCtx,
+                <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
+            >::parse_insane(spk)?;
             let miniscript = miniscript.to_no_checks_ms();
             Ok((
                 Inner::Script(miniscript, ScriptType::Bare),
@@ -412,12 +450,16 @@ pub fn from_txdata<'txin, Ext: Extension<bitcoin::PublicKey>>(
 // While executing Pkh(<hash>) in NoChecks, we need to pop a public key from stack
 // However, NoChecks context does not know whether to parse the key as 33 bytes or 32 bytes
 // While converting into NoChecks we store explicitly in TypedHash160 enum.
-pub(super) trait ToNoChecks {
-    fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks>;
+pub(super) trait ToNoChecks<ExtQ: Extension<BitcoinKey>> {
+    fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks, ExtQ>;
 }
 
-impl<Ctx: ScriptContext> ToNoChecks for Miniscript<bitcoin::PublicKey, Ctx> {
-    fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks> {
+impl<Ctx: ScriptContext, Ext: Extension<bitcoin::PublicKey>, ExtQ: Extension<BitcoinKey>>
+    ToNoChecks<ExtQ> for Miniscript<bitcoin::PublicKey, Ctx, Ext>
+where
+    Ext: TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = ExtQ>,
+{
+    fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks, ExtQ> {
         // specify the () error type as this cannot error
         self.real_translate_pk::<_, _, _, (), _>(
             &mut |pk| Ok(BitcoinKey::Fullkey(*pk)),
@@ -427,11 +469,15 @@ impl<Ctx: ScriptContext> ToNoChecks for Miniscript<bitcoin::PublicKey, Ctx> {
     }
 }
 
-impl<Ctx: ScriptContext> ToNoChecks for Miniscript<bitcoin::XOnlyPublicKey, Ctx> {
-    fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks> {
+impl<Ctx: ScriptContext, Ext: Extension<bitcoin::XOnlyPublicKey>, ExtQ: Extension<BitcoinKey>>
+    ToNoChecks<ExtQ> for Miniscript<bitcoin::XOnlyPublicKey, Ctx, Ext>
+where
+    Ext: TranslatePk<bitcoin::XOnlyPublicKey, BitcoinKey, Output = ExtQ>,
+{
+    fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks, ExtQ> {
         // specify the () error type as this cannot error
         self.real_translate_pk::<_, _, _, (), _>(
-            &mut |xpk| Ok(BitcoinKey::XOnlyPublicKey(*xpk)),
+            &mut |pk| Ok(BitcoinKey::XOnlyPublicKey(*pk)),
             &mut |pkh| Ok(TypedHash160::XonlyKey(*pkh)),
         )
         .expect("Translation should succeed")
@@ -531,33 +577,44 @@ mod tests {
         let comp = KeyTestData::from_key(fixed.pk_comp);
         let uncomp = KeyTestData::from_key(fixed.pk_uncomp);
         let blank_script = elements::Script::new();
-        let empty_wit = vec![];
 
         // Compressed pk, empty scriptsig
         let (inner, stack, script_code) =
             from_txdata::<CovenantExt>(&comp.pk_spk, &blank_script, &[]).expect("parse txdata");
-        assert_eq!(inner, Inner::PublicKey(fixed.pk_comp, PubkeyType::Pk));
+        assert_eq!(
+            inner,
+            Inner::PublicKey(fixed.pk_comp.into(), PubkeyType::Pk)
+        );
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(comp.pk_spk.clone()));
 
         // Uncompressed pk, empty scriptsig
         let (inner, stack, script_code) =
             from_txdata::<CovenantExt>(&uncomp.pk_spk, &blank_script, &[]).expect("parse txdata");
-        assert_eq!(inner, Inner::PublicKey(fixed.pk_uncomp, PubkeyType::Pk));
+        assert_eq!(
+            inner,
+            Inner::PublicKey(fixed.pk_uncomp.into(), PubkeyType::Pk)
+        );
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(uncomp.pk_spk.clone()));
 
         // Compressed pk, correct scriptsig
         let (inner, stack, script_code) =
             from_txdata::<CovenantExt>(&comp.pk_spk, &comp.pk_sig, &[]).expect("parse txdata");
-        assert_eq!(inner, Inner::PublicKey(fixed.pk_comp, PubkeyType::Pk));
+        assert_eq!(
+            inner,
+            Inner::PublicKey(fixed.pk_comp.into(), PubkeyType::Pk)
+        );
         assert_eq!(stack, Stack::from(vec![comp.pk_sig[1..].into()]));
         assert_eq!(script_code, Some(comp.pk_spk.clone()));
 
         // Uncompressed pk, correct scriptsig
         let (inner, stack, script_code) =
             from_txdata::<CovenantExt>(&uncomp.pk_spk, &uncomp.pk_sig, &[]).expect("parse txdata");
-        assert_eq!(inner, Inner::PublicKey(fixed.pk_uncomp, PubkeyType::Pk));
+        assert_eq!(
+            inner,
+            Inner::PublicKey(fixed.pk_uncomp.into(), PubkeyType::Pk)
+        );
         assert_eq!(stack, Stack::from(vec![uncomp.pk_sig[1..].into()]));
         assert_eq!(script_code, Some(uncomp.pk_spk));
 
@@ -577,7 +634,6 @@ mod tests {
 
         // Witness is nonempty
 
-        let wit = vec![vec![]];
         let err = from_txdata::<CovenantExt>(&comp.pk_spk, &comp.pk_sig, &[vec![]]).unwrap_err();
 
         assert_eq!(err.to_string(), "legacy spend had nonempty witness");
@@ -588,7 +644,6 @@ mod tests {
         let fixed = fixed_test_data();
         let comp = KeyTestData::from_key(fixed.pk_comp);
         let uncomp = KeyTestData::from_key(fixed.pk_uncomp);
-        let empty_wit = vec![];
 
         // pkh, empty scriptsig; this time it errors out
         let err =
@@ -604,14 +659,20 @@ mod tests {
         let (inner, stack, script_code) =
             from_txdata::<CovenantExt>(&comp.pkh_spk, &comp.pkh_sig_justkey, &[])
                 .expect("parse txdata");
-        assert_eq!(inner, Inner::PublicKey(fixed.pk_comp, PubkeyType::Pkh));
+        assert_eq!(
+            inner,
+            Inner::PublicKey(fixed.pk_comp.into(), PubkeyType::Pkh)
+        );
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(comp.pkh_spk.clone()));
 
         let (inner, stack, script_code) =
             from_txdata::<CovenantExt>(&uncomp.pkh_spk, &uncomp.pkh_sig_justkey, &[])
                 .expect("parse txdata");
-        assert_eq!(inner, Inner::PublicKey(fixed.pk_uncomp, PubkeyType::Pkh));
+        assert_eq!(
+            inner,
+            Inner::PublicKey(fixed.pk_uncomp.into(), PubkeyType::Pkh)
+        );
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(uncomp.pkh_spk.clone()));
 
@@ -619,14 +680,20 @@ mod tests {
         let (inner, stack, script_code) =
             from_txdata::<CovenantExt>(&comp.pkh_spk, &comp.pkh_sig_justkey, &[])
                 .expect("parse txdata");
-        assert_eq!(inner, Inner::PublicKey(fixed.pk_comp, PubkeyType::Pkh));
+        assert_eq!(
+            inner,
+            Inner::PublicKey(fixed.pk_comp.into(), PubkeyType::Pkh)
+        );
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(comp.pkh_spk.clone()));
 
         let (inner, stack, script_code) =
             from_txdata::<CovenantExt>(&uncomp.pkh_spk, &uncomp.pkh_sig_justkey, &[])
                 .expect("parse txdata");
-        assert_eq!(inner, Inner::PublicKey(fixed.pk_uncomp, PubkeyType::Pkh));
+        assert_eq!(
+            inner,
+            Inner::PublicKey(fixed.pk_uncomp.into(), PubkeyType::Pkh)
+        );
         assert_eq!(stack, Stack::from(vec![]));
         assert_eq!(script_code, Some(uncomp.pkh_spk.clone()));
 
@@ -685,13 +752,16 @@ mod tests {
         );
         assert_eq!(
             stack,
-            Stack::from(vec![comp.wpkh_stack.second_to_last().unwrap().into()])
+            Stack::from(vec![comp.wpkh_stack[comp.wpkh_stack.len() - 2][..].into()])
         );
-        assert_eq!(script_code, Some(comp.pkh_spk));
+        assert_eq!(script_code, Some(comp.pkh_spk.clone()));
 
-        assert_eq!(inner, Inner::PublicKey(fixed.pk_comp, PubkeyType::Wpkh));
+        assert_eq!(
+            inner,
+            Inner::PublicKey(fixed.pk_comp.into(), PubkeyType::Wpkh)
+        );
         assert_eq!(stack, Stack::from(vec![comp.wpkh_stack[0][..].into()]));
-        assert_eq!(script_code, comp.pkh_spk);
+        assert_eq!(script_code, Some(comp.pkh_spk));
 
         // Scriptsig is nonempty
         let err =
@@ -773,13 +843,19 @@ mod tests {
         );
         assert_eq!(
             stack,
-            Stack::from(vec![comp.sh_wpkh_stack.second_to_last().unwrap().into()])
+            Stack::from(vec![comp.wpkh_stack[comp.wpkh_stack.len() - 2][..].into()])
         );
         assert_eq!(script_code, Some(comp.pkh_spk.clone()));
     }
 
-    fn ms_inner_script(ms: &str) -> (Miniscript<BitcoinKey, NoChecks>, bitcoin::Script) {
-        let ms = Miniscript::<bitcoin::PublicKey, Segwitv0>::from_str_insane(ms).unwrap();
+    fn ms_inner_script(
+        ms: &str,
+    ) -> (
+        Miniscript<BitcoinKey, NoChecks, CovenantExt>,
+        elements::Script,
+    ) {
+        let ms =
+            Miniscript::<bitcoin::PublicKey, Segwitv0, CovenantExt>::from_str_insane(ms).unwrap();
         let spk = ms.encode();
         let miniscript = ms.to_no_checks_ms();
         (miniscript, spk)
@@ -789,11 +865,9 @@ mod tests {
         let preimage = b"12345678----____12345678----____";
         let hash = hash160::Hash::hash(&preimage[..]);
 
-        let miniscript: ::Miniscript<bitcoin::PublicKey, NoChecks, CovenantExt> =
-            ::Miniscript::from_str_insane(&format!("hash160({})", hash)).unwrap();
+        let (miniscript, spk) = ms_inner_script(&format!("hash160({})", hash));
 
         let blank_script = elements::Script::new();
-        let empty_wit = vec![];
 
         // bare script has no validity requirements beyond being a sane script
         let (inner, stack, script_code) =
@@ -814,9 +888,6 @@ mod tests {
     fn script_sh() {
         let preimage = b"12345678----____12345678----____";
         let hash = hash160::Hash::hash(&preimage[..]);
-        let miniscript: ::Miniscript<bitcoin::PublicKey, NoChecks, CovenantExt> =
-            ::Miniscript::from_str_insane(&format!("hash160({})", hash)).unwrap();
-
         let (miniscript, redeem_script) = ms_inner_script(&format!("hash160({})", hash));
         let rs_hash = hash160::Hash::hash(&redeem_script[..]).into();
 
@@ -825,7 +896,6 @@ mod tests {
             .push_slice(&redeem_script[..])
             .into_script();
         let blank_script = elements::Script::new();
-        let empty_wit = vec![];
 
         // sh without scriptsig
 
@@ -853,10 +923,8 @@ mod tests {
         let preimage = b"12345678----____12345678----____";
         let hash = hash160::Hash::hash(&preimage[..]);
 
-        let miniscript: ::Miniscript<bitcoin::PublicKey, NoChecks, CovenantExt> =
-            ::Miniscript::from_str_insane(&format!("hash160({})", hash)).unwrap();
+        let (miniscript, witness_script) = ms_inner_script(&format!("hash160({})", hash));
 
-        let witness_script = miniscript.encode();
         let wit_hash = sha256::Hash::hash(&witness_script[..]).into();
         let wit_stack = vec![witness_script.to_bytes()];
 
@@ -891,14 +959,12 @@ mod tests {
         let preimage = b"12345678----____12345678----____";
         let hash = hash160::Hash::hash(&preimage[..]);
 
-        let miniscript: ::Miniscript<bitcoin::PublicKey, NoChecks, CovenantExt> =
-            ::Miniscript::from_str_insane(&format!("hash160({})", hash)).unwrap();
+        let (miniscript, witness_script) = ms_inner_script(&format!("hash160({})", hash));
 
-        let witness_script = miniscript.encode();
         let wit_hash = sha256::Hash::hash(&witness_script[..]).into();
         let wit_stack = vec![witness_script.to_bytes()];
 
-        let redeem_script = Script::new_v0_p2wsh(&wit_hash);
+        let redeem_script = Script::new_v0_wsh(&wit_hash);
         let script_sig = script::Builder::new()
             .push_slice(&redeem_script[..])
             .into_script();

@@ -75,7 +75,7 @@ fn next_expr(sl: &str, delim: char) -> Found {
                         key_lparan_count = 1;
                         key_ctx = true;
                     } else {
-                        found = Found::Lparen(n);
+                        found = Found::LBracket(n);
                         break;
                     }
                 }
@@ -92,7 +92,7 @@ fn next_expr(sl: &str, delim: char) -> Found {
                             key_ctx = false;
                         }
                     } else {
-                        found = Found::Rparen(n);
+                        found = Found::RBracket(n);
                         break;
                     }
                 }

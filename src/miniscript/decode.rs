@@ -18,6 +18,7 @@
 //!
 
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
+use miniscript::limits::MAX_BLOCK_WEIGHT;
 use std::marker::PhantomData;
 use std::{error, fmt};
 use {bitcoin, Miniscript};
@@ -33,8 +34,8 @@ use Error;
 use MiniscriptKey;
 
 use Extension;
+use NoExt;
 use ToPublicKey;
-use {Extension, NoExt};
 
 fn return_none<T>(_: usize) -> Option<T> {
     None
@@ -495,8 +496,8 @@ pub fn parse<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
                     // MultiA
                     Tk::NumEqual, Tk::Num(k) => {
                         // Check size before allocating keys
-                        if k > MAX_BLOCK_WEIGHT/32 {
-                            return Err(Error::MultiATooManyKeys(MAX_BLOCK_WEIGHT/32))
+                        if k > (MAX_BLOCK_WEIGHT/32) as u32 {
+                            return Err(Error::MultiATooManyKeys((MAX_BLOCK_WEIGHT/32) as u32))
                         }
                         let mut keys = Vec::with_capacity(k as usize); // atleast k capacity
                         while tokens.peek() == Some(&Tk::CheckSigAdd) {

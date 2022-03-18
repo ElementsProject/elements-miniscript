@@ -6,12 +6,13 @@ use util::{varint_len, witness_size};
 use {DescriptorTrait, ForEach, ForEachKey, Satisfier, ToPublicKey, TranslatePk};
 
 use super::checksum::{desc_checksum, verify_checksum};
-use bitcoin::blockdata::opcodes;
-use bitcoin::util::taproot::{
+use super::ElementsTrait;
+use elements::opcodes;
+use elements::taproot::{
     LeafVersion, TaprootBuilder, TaprootBuilderError, TaprootSpendInfo, TAPROOT_CONTROL_BASE_SIZE,
     TAPROOT_CONTROL_NODE_SIZE,
 };
-use bitcoin::{self, secp256k1, Script};
+use elements::{self, secp256k1_zkp, Script};
 use errstr;
 use expression::{self, FromTree};
 use miniscript::{limits::TAPROOT_MAX_NODE_COUNT, Miniscript};
@@ -230,7 +231,7 @@ impl<Pk: MiniscriptKey> Tr<Pk> {
 
         // Get a new secp context
         // This would be cheap operation after static context support from upstream
-        let secp = secp256k1::Secp256k1::verification_only();
+        let secp = secp256k1_zkp::Secp256k1::verification_only();
         // Key spend path with no merkle root
         let data = if self.tree.is_none() {
             TaprootSpendInfo::new_key_spend(&secp, self.internal_key.to_x_only_pubkey(), None)
@@ -278,20 +279,25 @@ impl<Pk: MiniscriptKey + ToPublicKey> Tr<Pk> {
     /// Same as[`DescriptorTrait::script_pubkey`] for this descriptor
     pub fn spk(&self) -> Script {
         let output_key = self.spend_info().output_key();
-        let builder = bitcoin::blockdata::script::Builder::new();
+        let builder = elements::script::Builder::new();
         builder
             .push_opcode(opcodes::all::OP_PUSHNUM_1)
-            .push_slice(&output_key.serialize())
+            .push_slice(&output_key.as_inner().serialize())
             .into_script()
     }
 
     /// Obtain the corresponding script pubkey for this descriptor
     /// Same as[`DescriptorTrait::address`] for this descriptor
-    pub fn addr(&self, network: bitcoin::Network) -> Result<bitcoin::Address, Error> {
+    pub fn addr(
+        &self,
+        blinder: Option<secp256k1_zkp::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error> {
         let spend_info = self.spend_info();
-        Ok(bitcoin::Address::p2tr_tweaked(
+        Ok(elements::Address::p2tr_tweaked(
             spend_info.output_key(),
-            network,
+            blinder,
+            params,
         ))
     }
 }
@@ -558,6 +564,19 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Tr<Pk> {
     }
 }
 
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Tr<Pk> {
+    fn blind_addr(
+        &self,
+        blinder: Option<elements::secp256k1_zkp::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        todo!()
+    }
+}
+
 impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Tr<Pk> {
     fn sanity_check(&self) -> Result<(), Error> {
         for (_depth, ms) in self.iter_scripts() {
@@ -566,11 +585,11 @@ impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Tr<Pk> {
         Ok(())
     }
 
-    fn address(&self, network: bitcoin::Network) -> Result<bitcoin::Address, Error>
+    fn address(&self, params: &'static elements::AddressParams) -> Result<elements::Address, Error>
     where
         Pk: ToPublicKey,
     {
-        self.addr(network)
+        self.addr(None, params)
     }
 
     fn script_pubkey(&self) -> Script
@@ -726,7 +745,7 @@ where
             if min_wit_len.is_some() && Some(wit_size) > min_wit_len {
                 continue;
             } else {
-                let leaf_script = (ms.encode(), LeafVersion::TapScript);
+                let leaf_script = (ms.encode(), LeafVersion::default());
                 let control_block = spend_info
                     .control_block(&leaf_script)
                     .expect("Control block must exist in script map for every known leaf");

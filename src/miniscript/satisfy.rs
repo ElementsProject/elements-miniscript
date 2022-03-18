@@ -56,7 +56,7 @@ pub fn elementssig_to_rawsig(sig: &ElementsSig) -> Vec<u8> {
 /// Helper function to create ElementsSig from Rawsig
 /// Useful for downstream when implementing Satisfier.
 /// Returns underlying secp if the Signature is not of correct format
-pub fn bitcoinsig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, ::interpreter::Error> {
+pub fn elementssig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, ::interpreter::Error> {
     let (flag, sig) = rawsig.split_last().unwrap();
     let flag = elements::SigHashType::from_u32(*flag as u32);
     let sig = secp256k1_zkp::ecdsa::Signature::from_der(sig)?;
@@ -831,7 +831,7 @@ impl Witness {
     ) -> Self {
         match Ctx::sig_type() {
             super::context::SigType::Ecdsa => match sat.lookup_ecdsa_sig(pk) {
-                Some(sig) => Witness::Stack(vec![sig.to_vec()]),
+                Some(sig) => Witness::Stack(vec![elementssig_to_rawsig(&sig)]),
                 // Signatures cannot be forged
                 None => Witness::Impossible,
             },
@@ -841,7 +841,6 @@ impl Witness {
                 // Signatures cannot be forged
                 None => Witness::Impossible,
             },
-            super::context::SigType::ExtensionError(_) => todo!(),
         }
     }
 
@@ -857,7 +856,7 @@ impl Witness {
 
     /// Turn a key/signature pair related to a pkh into (part of) a satisfaction
     pub fn pkh_signature<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &Pk::Hash) -> Self {
-        match sat.lookup_pkh_sig(pkh) {
+        match sat.lookup_pkh_ecdsa_sig(pkh) {
             Some((pk, (sig, hashtype))) => {
                 let mut ret = sig.serialize_der().to_vec();
                 ret.push(hashtype.as_u32() as u8);

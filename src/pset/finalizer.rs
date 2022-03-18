@@ -36,7 +36,7 @@ use {BareCtx, Legacy, MiniscriptKey, Segwitv0};
 // Get the scriptpubkey for the pset input
 fn get_scriptpubkey(pset: &Pset, index: usize) -> Result<&Script, InputError> {
     let script_pubkey;
-    let inp = &pset.inputs[index];
+    let inp = &pset.inputs()[index];
     if let Some(ref witness_utxo) = inp.witness_utxo {
         script_pubkey = &witness_utxo.script_pubkey;
     } else if let Some(ref non_witness_utxo) = inp.non_witness_utxo {
@@ -51,7 +51,7 @@ fn get_scriptpubkey(pset: &Pset, index: usize) -> Result<&Script, InputError> {
 // Get the amount being spent for the pset input
 fn get_amt(pset: &Pset, index: usize) -> Result<confidential::Value, InputError> {
     let amt;
-    let inp = &pset.inputs[index];
+    let inp = &pset.inputs()[index];
     if let Some(ref witness_utxo) = inp.witness_utxo {
         amt = witness_utxo.value;
     } else if let Some(ref non_witness_utxo) = inp.non_witness_utxo {
@@ -77,7 +77,7 @@ pub(super) fn get_descriptor(
 ) -> Result<Descriptor<PublicKey>, InputError> {
     // Figure out Scriptpubkey
     let script_pubkey = get_scriptpubkey(pset, index)?;
-    let inp = &pset.inputs[index];
+    let inp = &pset.inputs()[index];
     // 1. `PK`: creates a `Pk` descriptor(does not check if partial sig is given)
     if script_pubkey.is_p2pk() {
         let script_pubkey_len = script_pubkey.len();
@@ -214,7 +214,7 @@ pub fn _interpreter_inp_check<C: secp256k1_zkp::Verification>(
     let cltv = pset
         .locktime()
         .map_err(|_e| Error::LockTimeCombinationError)?;
-    let input = &pset.inputs[index];
+    let input = &pset.inputs()[index];
 
     let spk = get_scriptpubkey(pset, index).map_err(|e| Error::InputError(e, index))?;
     let empty_script_sig = Script::new();
@@ -228,17 +228,17 @@ pub fn _interpreter_inp_check<C: secp256k1_zkp::Verification>(
     // Now look at all the satisfied constraints. If everything is filled in
     // corrected, there should be no errors
 
-    let csv = pset.inputs[index].sequence.unwrap_or(0xffffffff);
-    let amt = get_amt(pset, index).map_err(|e| Error::InputError(e, index))?;
+    let csv = pset.inputs()[index].sequence.unwrap_or(0xffffffff);
+    let _amt = get_amt(pset, index).map_err(|e| Error::InputError(e, index))?;
 
-    let mut interpreter =
-        interpreter::Interpreter::from_txdata(spk, &script_sig, &witness, cltv, csv)
-            .map_err(|e| Error::InputError(InputError::Interpreter(e), index))?;
+    let _interpreter = interpreter::Interpreter::from_txdata(spk, &script_sig, &witness, cltv, csv)
+        .map_err(|e| Error::InputError(InputError::Interpreter(e), index))?;
 
-    let vfyfn = interpreter.sighash_verify(&secp, &tx, index, amt);
-    if let Some(error) = interpreter.iter(vfyfn).filter_map(Result::err).next() {
-        return Err(Error::InputError(InputError::Interpreter(error), index));
-    }
+    todo!();
+    // let vfyfn = interpreter.sighash_verify(&secp, &tx, index, amt);
+    // if let Some(error) = interpreter.iter(vfyfn).filter_map(Result::err).next() {
+    //     return Err(Error::InputError(InputError::Interpreter(error), index));
+    // }
     Ok(())
 }
 /// Interpreter check per pset input
@@ -261,7 +261,7 @@ pub fn interpreter_check<C: secp256k1_zkp::Verification>(
     secp: &Secp256k1<C>,
 ) -> Result<(), Error> {
     let tx = pset.extract_tx()?;
-    for index in 0..pset.inputs.len() {
+    for index in 0..pset.inputs().len() {
         _interpreter_inp_check(pset, &tx, secp, index)?;
     }
     Ok(())
@@ -269,7 +269,7 @@ pub fn interpreter_check<C: secp256k1_zkp::Verification>(
 
 // Helper function for input sanity checks and code-dedup
 fn input_sanity_checks(pset: &Pset, index: usize) -> Result<(), super::Error> {
-    let input = &pset.inputs[index];
+    let input = &pset.inputs()[index];
     let target = input.sighash_type.unwrap_or(elements::SigHashType::All);
     for (key, rawsig) in &input.partial_sigs {
         if rawsig.is_empty() {
@@ -293,7 +293,7 @@ fn input_sanity_checks(pset: &Pset, index: usize) -> Result<(), super::Error> {
                 index,
             ));
         }
-        match secp256k1_zkp::Signature::from_der(sig) {
+        match secp256k1_zkp::ecdsa::Signature::from_der(sig) {
             Err(..) => {
                 return Err(Error::InputError(
                     InputError::InvalidSignature {
@@ -327,7 +327,7 @@ fn _finalize_inp(
         // use the regular satisfier
         if let Descriptor::Cov(cov) = &desc {
             // For covenant descriptors create satisfier
-            let utxo = pset.inputs[index]
+            let utxo = pset.inputs()[index]
                 .witness_utxo
                 .as_ref()
                 .ok_or(super::Error::InputError(InputError::MissingUtxo, index))?;
@@ -338,7 +338,9 @@ fn _finalize_inp(
                 index as u32,
                 utxo.value,
                 &script_code,
-                pset.inputs[index].sighash_type.unwrap_or(SigHashType::All),
+                pset.inputs()[index]
+                    .sighash_type
+                    .unwrap_or(SigHashType::All),
             );
             desc.get_satisfaction((pset_sat, cov_sat))
                 .map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?
@@ -348,7 +350,7 @@ fn _finalize_inp(
                 .map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?
         }
     };
-    let input = &mut pset.inputs[index];
+    let input = &mut pset.inputs_mut()[index];
     //Fill in the satisfactions
     input.final_script_sig = if script_sig.is_empty() {
         None
@@ -400,13 +402,13 @@ pub fn finalize<C: secp256k1_zkp::Verification>(
     sanity_check(pset)?;
 
     // Check well-formedness of input data
-    for n in 0..pset.inputs.len() {
+    for n in 0..pset.inputs().len() {
         input_sanity_checks(pset, n)?;
     }
 
     // Actually construct the witnesses
     let extracted_tx = pset.extract_tx()?;
-    for index in 0..pset.inputs.len() {
+    for index in 0..pset.inputs().len() {
         _finalize_inp(pset, &extracted_tx, index)?;
     }
     // Double check everything with the interpreter

@@ -120,7 +120,7 @@ impl fmt::Display for InputError {
             InputError::InvalidSignature {
                 ref pubkey,
                 ref sig,
-            } => write!(f, "PSET: bad signature {} for key {:?}", pubkey.key, sig),
+            } => write!(f, "PSET: bad signature {} for key {:?}", pubkey, sig),
             InputError::KeyErr(ref e) => write!(f, "Key Err: {}", e),
             InputError::Interpreter(ref e) => write!(f, "Interpreter: {}", e),
             InputError::SecpErr(ref e) => write!(f, "Secp Err: {}", e),
@@ -161,9 +161,9 @@ impl fmt::Display for InputError {
                 pubkey,
             } => write!(
                 f,
-                "PSET: signature with key {:?} had \
+                "PSET: signature with key {} had \
                  sighashflag {:?} rather than required {:?}",
-                pubkey.key, got, required
+                pubkey, got, required
             ),
         }
     }
@@ -250,8 +250,8 @@ impl<'pset> PsetInputSatisfier<'pset> {
 }
 
 impl<'pset, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsetInputSatisfier<'pset> {
-    fn lookup_sig(&self, pk: &Pk) -> Option<ElementsSig> {
-        if let Some(rawsig) = self.pset.inputs[self.index]
+    fn lookup_ecdsa_sig(&self, pk: &Pk) -> Option<ElementsSig> {
+        if let Some(rawsig) = self.pset.inputs()[self.index]
             .partial_sigs
             .get(&pk.to_public_key())
         {
@@ -263,8 +263,8 @@ impl<'pset, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsetInputSatisfie
         }
     }
 
-    fn lookup_pkh_sig(&self, pkh: &Pk::Hash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
-        if let Some((pk, sig)) = self.pset.inputs[self.index]
+    fn lookup_pkh_ecdsa_sig(&self, pkh: &Pk::Hash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
+        if let Some((pk, sig)) = self.pset.inputs()[self.index]
             .partial_sigs
             .iter()
             .filter(|&(pubkey, _sig)| pubkey.to_pubkeyhash() == Pk::hash_to_hash160(pkh))
@@ -284,7 +284,9 @@ impl<'pset, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsetInputSatisfie
             Ok(locktime) => locktime,
             Err(..) => return false,
         };
-        let seq = self.pset.inputs[self.index].sequence.unwrap_or(0xffffffff);
+        let seq = self.pset.inputs()[self.index]
+            .sequence
+            .unwrap_or(0xffffffff);
 
         // https://github.com/bitcoin/bips/blob/master/bip-0065.mediawiki
         // fail if TxIn is finalized
@@ -296,7 +298,9 @@ impl<'pset, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsetInputSatisfie
     }
 
     fn check_older(&self, n: u32) -> bool {
-        let seq = self.pset.inputs[self.index].sequence.unwrap_or(0xffffffff);
+        let seq = self.pset.inputs()[self.index]
+            .sequence
+            .unwrap_or(0xffffffff);
         // https://github.com/bitcoin/bips/blob/master/bip-0112.mediawiki
         // Disable flag set. return true
         if n & SEQUENCE_LOCKTIME_DISABLE_FLAG != 0 {
@@ -312,28 +316,28 @@ impl<'pset, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsetInputSatisfie
     }
 
     fn lookup_hash160(&self, h: hash160::Hash) -> Option<Preimage32> {
-        self.pset.inputs[self.index]
+        self.pset.inputs()[self.index]
             .hash160_preimages
             .get(&h)
             .and_then(try_vec_as_preimage32)
     }
 
     fn lookup_sha256(&self, h: sha256::Hash) -> Option<Preimage32> {
-        self.pset.inputs[self.index]
+        self.pset.inputs()[self.index]
             .sha256_preimages
             .get(&h)
             .and_then(try_vec_as_preimage32)
     }
 
     fn lookup_hash256(&self, h: sha256d::Hash) -> Option<Preimage32> {
-        self.pset.inputs[self.index]
+        self.pset.inputs()[self.index]
             .hash256_preimages
             .get(&h)
             .and_then(try_vec_as_preimage32)
     }
 
     fn lookup_ripemd160(&self, h: ripemd160::Hash) -> Option<Preimage32> {
-        self.pset.inputs[self.index]
+        self.pset.inputs()[self.index]
             .ripemd160_preimages
             .get(&h)
             .and_then(try_vec_as_preimage32)
@@ -351,10 +355,10 @@ fn try_vec_as_preimage32(vec: &Vec<u8>) -> Option<Preimage32> {
 }
 
 fn sanity_check(pset: &Pset) -> Result<(), Error> {
-    if pset.global.n_inputs() != pset.inputs.len() {
+    if pset.global.n_inputs() != pset.inputs().len() {
         return Err(Error::WrongInputCount {
             in_tx: pset.global.n_inputs(),
-            in_map: pset.inputs.len(),
+            in_map: pset.inputs().len(),
         }
         .into());
     }

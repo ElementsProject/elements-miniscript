@@ -131,13 +131,7 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Blinded<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Blinded<Pk> {
     /// Overides the blinding key in descriptor with the one
     /// provided in the argument.
     fn blind_addr(
@@ -152,13 +146,7 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Blinded<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Blinded<Pk> {
     fn sanity_check(&self) -> Result<(), Error> {
         self.desc.sanity_check()?;
         Ok(())
@@ -186,7 +174,7 @@ where
         self.desc.unsigned_script_sig()
     }
 
-    fn explicit_script(&self) -> Script
+    fn explicit_script(&self) -> Result<Script, Error>
     where
         Pk: ToPublicKey,
     {
@@ -205,11 +193,19 @@ where
         self.desc.max_satisfaction_weight()
     }
 
-    fn script_code(&self) -> Script
+    fn script_code(&self) -> Result<Script, Error>
     where
         Pk: ToPublicKey,
     {
-        self.script_pubkey()
+        self.desc.script_code()
+    }
+
+    fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
+    where
+        Pk: ToPublicKey,
+        S: Satisfier<Pk>,
+    {
+        todo!()
     }
 }
 

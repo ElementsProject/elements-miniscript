@@ -274,7 +274,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
     /// length prefix (segwit) or push opcode (pre-segwit) and sighash
     /// postfix.
     pub fn max_satisfaction_size(&self) -> Result<usize, Error> {
-        Ctx::max_satisfaction_size::<Pk, Ctx, Ext>(self).ok_or(Error::ImpossibleSatisfaction)
+        Ctx::max_satisfaction_size::<Pk, Ext>(self).ok_or(Error::ImpossibleSatisfaction)
     }
 }
 
@@ -384,7 +384,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
         Pk: ToPublicKey,
     {
         // Only satisfactions for default versions (0xc0) are allowed.
-        let leaf_hash = TapLeafHash::from_script(&self.encode(), LeafVersion::TapScript);
+        let leaf_hash = TapLeafHash::from_script(&self.encode(), LeafVersion::default());
         match satisfy::Satisfaction::satisfy(&self.node, &satisfier, self.ty.mall.safe, &leaf_hash)
             .stack
         {
@@ -407,7 +407,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
     where
         Pk: ToPublicKey,
     {
-        let leaf_hash = TapLeafHash::from_script(&self.encode(), LeafVersion::TapScript);
+        let leaf_hash = TapLeafHash::from_script(&self.encode(), LeafVersion::default());
         match satisfy::Satisfaction::satisfy_mall(
             &self.node,
             &satisfier,
@@ -489,7 +489,7 @@ serde_string_impl_pk!(Miniscript, "a miniscript", Ctx; ScriptContext => Ext2 ; E
 #[cfg(test)]
 mod tests {
 
-    use bitcoin::util::taproot::TapLeafHash;
+    use elements::taproot::TapLeafHash;
     use {Satisfier, ToPublicKey};
 
     use super::{Miniscript, ScriptContext};
@@ -511,7 +511,7 @@ mod tests {
 
     use CovenantExt;
 
-    type Tapscript = Miniscript<bitcoin::secp256k1::XOnlyPublicKey, Tap, AllExt>;
+    type Tapscript = Miniscript<bitcoin::secp256k1::XOnlyPublicKey, Tap, CovenantExt>;
     type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt>;
 
     fn pubkeys(n: usize) -> Vec<bitcoin::PublicKey> {
@@ -1092,21 +1092,21 @@ mod tests {
 
         // Test encode/decode and translation tests
         let tap_ms = tap_multi_a_ms.translate_pk2_infallible(|_| {
-            XOnlyPublicKey::from_str(
+            bitcoin::XOnlyPublicKey::from_str(
                 "e948a0bbf8b15ee47cf0851afbce8835b5f06d3003b8e7ed6104e82a1d41d6f8",
             )
             .unwrap()
         });
         // script rtt test
         assert_eq!(
-            Miniscript::<XOnlyPublicKey, Tap>::parse_insane(&tap_ms.encode()).unwrap(),
+            Miniscript::<bitcoin::XOnlyPublicKey, Tap>::parse_insane(&tap_ms.encode()).unwrap(),
             tap_ms
         );
         assert_eq!(tap_ms.script_size(), 104);
         assert_eq!(tap_ms.encode().len(), tap_ms.script_size());
 
         // Test satisfaction code
-        struct SimpleSatisfier(secp256k1::schnorr::Signature);
+        struct SimpleSatisfier(secp256k1_zkp::schnorr::Signature);
 
         // a simple satisfier that always outputs the same signature
         impl<Pk: ToPublicKey> Satisfier<Pk> for SimpleSatisfier {
@@ -1114,15 +1114,15 @@ mod tests {
                 &self,
                 _pk: &Pk,
                 _h: &TapLeafHash,
-            ) -> Option<bitcoin::SchnorrSig> {
-                Some(bitcoin::SchnorrSig {
+            ) -> Option<elements::SchnorrSig> {
+                Some(elements::SchnorrSig {
                     sig: self.0,
-                    hash_ty: bitcoin::SchnorrSigHashType::Default,
+                    hash_ty: elements::SchnorrSigHashType::Default,
                 })
             }
         }
 
-        let schnorr_sig = secp256k1::schnorr::Signature::from_str("84526253c27c7aef56c7b71a5cd25bebb66dddda437826defc5b2568bde81f0784526253c27c7aef56c7b71a5cd25bebb66dddda437826defc5b2568bde81f07").unwrap();
+        let schnorr_sig = secp256k1_zkp::schnorr::Signature::from_str("84526253c27c7aef56c7b71a5cd25bebb66dddda437826defc5b2568bde81f0784526253c27c7aef56c7b71a5cd25bebb66dddda437826defc5b2568bde81f07").unwrap();
         let s = SimpleSatisfier(schnorr_sig);
 
         let wit = tap_ms.satisfy(s).unwrap();

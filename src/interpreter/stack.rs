@@ -16,18 +16,15 @@
 
 use std::ops::Index;
 
-use bitcoin::{self, PublicKey};
+use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use elements::{self, opcodes, script};
-
-use {ElementsSig, ToPublicKey};
 
 use super::error::PkEvalErrInner;
 use super::{
     verify_sersig, BitcoinKey, Error, HashLockType, KeySigPair, SatisfiedConstraint, TypedHash160,
 };
-use miniscript::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
-use util;
+
 use Extension;
 /// Definition of Stack Element of the Stack used for interpretation of Miniscript.
 /// All stack elements with vec![] go to Dissatisfied and vec![1] are marked to Satisfied.

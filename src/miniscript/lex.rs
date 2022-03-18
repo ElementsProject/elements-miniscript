@@ -95,7 +95,7 @@ impl<'s> fmt::Display for Token<'s> {
 // This really does not need to be an iterator because the way we are using it, we are
 // actually collecting lexed symbols into a vector. If that is the case, might as well
 // use the inner vector directly
-pub struct TokenIter(Vec<Token>);
+pub struct TokenIter<'s>(Vec<Token<'s>>);
 
 impl<'s> TokenIter<'s> {
     /// Create a new TokenIter
@@ -206,7 +206,8 @@ pub fn lex<'s>(script: &'s script::Script) -> Result<Vec<Token<'s>>, Error> {
                 ret.push(Token::Verify);
             }
             // Change once the opcode name is updated
-            script::Instruction::Op(opcodes::all::OP_CHECKSIGADD) => {
+            // TODO: UPDATE UPSTREAM OPCODES
+            script::Instruction::Op(opcodes::all::OP_RETURN_186) => {
                 ret.push(Token::CheckSigAdd);
             }
             script::Instruction::Op(opcodes::all::OP_CHECKMULTISIG) => {

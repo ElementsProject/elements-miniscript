@@ -6,9 +6,9 @@ use {MiniscriptKey, ToPublicKey};
 use elements::{
     hashes::hex::FromHex,
     hashes::Hash,
+    hashes::HashEngine,
     secp256k1_zkp::{self, Secp256k1, Signing},
 };
-use MiniscriptKey;
 
 /// Single public key without any origin or range information
 #[derive(Debug, Eq, PartialEq, Clone, Ord, PartialOrd, Hash)]
@@ -16,7 +16,7 @@ pub enum SinglePubKey {
     /// FullKey (compressed or uncompressed)
     FullKey(bitcoin::PublicKey),
     /// XOnlyPublicKey
-    XOnly(XOnlyPublicKey),
+    XOnly(bitcoin::XOnlyPublicKey),
 }
 
 /// The MiniscriptKey corresponding to Descriptors. This can
@@ -314,7 +314,7 @@ impl FromStr for DescriptorPublicKey {
         } else {
             let key = match key_part.len() {
                 64 => {
-                    let x_only_key = XOnlyPublicKey::from_str(key_part).map_err(|_| {
+                    let x_only_key = bitcoin::XOnlyPublicKey::from_str(key_part).map_err(|_| {
                         DescriptorKeyParseError("Error while parsing simple xonly key")
                     })?;
                     SinglePubKey::XOnly(x_only_key)

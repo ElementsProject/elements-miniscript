@@ -65,7 +65,7 @@ fn main() {
                 let (key, sig) = key_sig
                     .as_ecdsa()
                     .expect("Expected Ecdsa sig, found schnorr sig");
-                println!("Signed with {}: {}", key, sig);
+                println!("Signed with {}: {}, sighash type: {}", key, sig.0, sig.1);
             }
             _ => {}
         }
@@ -74,10 +74,6 @@ fn main() {
     // 2. Example two: verify the signatures to ensure that invalid
     //    signatures are not treated as having participated in the script
     let secp = secp256k1_zkp::Secp256k1::new();
-    // Sometimes it is necessary to have additional information to get the bitcoin::PublicKey
-    // from the MiniscriptKey which can supplied by `to_pk_ctx` parameter. For example,
-    // when calculating the script pubkey of a descriptor with xpubs, the secp context and
-    // child information maybe required.
     let interpreter = miniscript::Interpreter::from_txdata(
         &spk_input_1,
         &transaction.input[0].script_sig,
@@ -100,9 +96,12 @@ fn main() {
     let vfyfn = move |pk: &_, bitcoinsig: miniscript::ElementsSig| {
         bitcoinsig.1 == elements::SigHashType::All && vfyfn(pk, bitcoinsig)
     };
-    // We can set prevouts to be empty list because this is a legacy transaction
-    // and this information is not required for sighash computation.
-    let prevouts = sighash::Prevouts::All(&[]);
+    // We only need to set the amount in prevouts because segwit transactions only need the amount field
+    // For taproot transactions, this must contain all the required prevouts
+    let mut spent_utxo = elements::TxOut::default();
+    spent_utxo.value = amount;
+    // segwit spends don't require genesis hash
+    let genesis_hash = elements::BlockHash::default();
 
     println!("\nExample two");
     for elem in interpreter.iter(&secp, &transaction, 0, &prevouts) {

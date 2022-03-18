@@ -157,13 +157,7 @@ impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Bare<Pk> {
         Err(Error::BareDescriptorAddr)
     }
 }
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Bare<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Bare<Pk> {
     fn sanity_check(&self) -> Result<(), Error> {
         self.ms.sanity_check()?;
         Ok(())
@@ -292,14 +286,22 @@ impl<Pk: MiniscriptKey + ToPublicKey> Pkh<Pk> {
     /// Obtain the corresponding script pubkey for this descriptor
     /// Non failing verion of [`DescriptorTrait::script_pubkey`] for this descriptor
     pub fn spk(&self) -> Script {
-        let addr = bitcoin::Address::p2pkh(&self.pk.to_public_key(), bitcoin::Network::Bitcoin);
+        let addr = elements::Address::p2pkh(
+            &self.pk.to_public_key(),
+            None,
+            &elements::AddressParams::ELEMENTS,
+        );
         addr.script_pubkey()
     }
 
     /// Obtain the corresponding script pubkey for this descriptor
     /// Non failing verion of [`DescriptorTrait::address`] for this descriptor
-    pub fn addr(&self, network: bitcoin::Network) -> bitcoin::Address {
-        bitcoin::Address::p2pkh(&self.pk.to_public_key(), network)
+    pub fn addr(
+        &self,
+        blinder: Option<secp256k1_zkp::PublicKey>,
+        params: &'static elements::address::AddressParams,
+    ) -> elements::Address {
+        elements::Address::p2pkh(&self.pk.to_public_key(), blinder, params)
     }
 
     /// Obtain the underlying miniscript for this descriptor
@@ -438,7 +440,8 @@ impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Pkh<Pk> {
         S: Satisfier<Pk>,
     {
         if let Some(sig) = satisfier.lookup_ecdsa_sig(&self.pk) {
-            let sig_vec = sig.to_vec();
+            let mut sig_vec = sig.0.serialize_der().to_vec();
+            sig_vec.push(sig.1 as u8);
             let script_sig = script::Builder::new()
                 .push_slice(&sig_vec[..])
                 .push_key(&self.pk.to_public_key())

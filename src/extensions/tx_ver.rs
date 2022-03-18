@@ -94,6 +94,8 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
             max_sat_size: Some((0, 0)),
             max_dissat_size: Some((0, 0)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(2),
+            exec_stack_elem_count_dissat: Some(2),
         }
     }
 
@@ -191,7 +193,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         if let Err(e) = ver.try_push() {
             return Some(Err(e));
         }
-        let elem = ver.as_push();
+        let elem = ver.try_push().unwrap(); // TODO: refactor this later to avoid unwrap
         if elem.len() == 4 {
             let wit_ver = util::slice_to_u32_le(elem);
             if wit_ver == self.n {

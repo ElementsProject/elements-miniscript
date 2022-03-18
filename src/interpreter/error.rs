@@ -13,10 +13,11 @@
 //
 
 use bitcoin;
+use elements;
 use elements::hashes::hash160;
+use elements::hashes::hex::ToHex;
 use elements::secp256k1_zkp;
 use elements::taproot;
-use elements::{self, secp256k1_zkp};
 use std::{error, fmt};
 
 use super::BitcoinKey;
@@ -96,9 +97,9 @@ pub enum Error {
     /// Miniscript requires the entire top level script to be satisfied.
     ScriptSatisfactionError,
     /// Schnorr Signature error
-    SchnorrSig(bitcoin::SchnorrSigError),
+    SchnorrSig(elements::SchnorrSigError),
     /// Errors in signature hash calculations
-    SighashError(bitcoin::util::sighash::Error),
+    SighashError(elements::sighash::Error),
     /// Taproot Annex Unsupported
     TapAnnexUnsupported,
     /// An uncompressed public key was encountered in a context where it is
@@ -167,22 +168,15 @@ impl From<secp256k1_zkp::Error> for Error {
 }
 
 #[doc(hidden)]
-impl From<bitcoin::util::sighash::Error> for Error {
-    fn from(e: bitcoin::util::sighash::Error) -> Error {
+impl From<elements::sighash::Error> for Error {
+    fn from(e: elements::sighash::Error) -> Error {
         Error::SighashError(e)
     }
 }
 
 #[doc(hidden)]
-impl From<bitcoin::EcdsaSigError> for Error {
-    fn from(e: bitcoin::EcdsaSigError) -> Error {
-        Error::EcdsaSig(e)
-    }
-}
-
-#[doc(hidden)]
-impl From<bitcoin::SchnorrSigError> for Error {
-    fn from(e: bitcoin::SchnorrSigError) -> Error {
+impl From<elements::SchnorrSigError> for Error {
+    fn from(e: elements::SchnorrSigError) -> Error {
         Error::SchnorrSig(e)
     }
 }

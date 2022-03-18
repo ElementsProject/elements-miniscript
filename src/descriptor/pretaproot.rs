@@ -3,9 +3,9 @@ use std::{
     str::{self, FromStr},
 };
 
-use bitcoin::{self, Script};
+use elements::{self, Script};
 
-use super::{checksum::verify_checksum, Bare, Pkh, Sh, Wpkh, Wsh};
+use super::{checksum::verify_checksum, Bare, ElementsTrait, Pkh, Sh, Wpkh, Wsh};
 use {expression, DescriptorTrait, Error, MiniscriptKey, Satisfier, ToPublicKey};
 
 /// Script descriptor
@@ -21,6 +21,19 @@ pub enum PreTaprootDescriptor<Pk: MiniscriptKey> {
     Sh(Sh<Pk>),
     /// Pay-to-Witness-ScriptHash with Segwitv0 context
     Wsh(Wsh<Pk>),
+}
+
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for PreTaprootDescriptor<Pk> {
+    fn blind_addr(
+        &self,
+        blinder: Option<elements::secp256k1_zkp::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        todo!()
+    }
 }
 
 impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for PreTaprootDescriptor<Pk> {
@@ -39,19 +52,6 @@ impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for PreTaprootDescriptor<Pk> {
             PreTaprootDescriptor::Wpkh(ref wpkh) => wpkh.sanity_check(),
             PreTaprootDescriptor::Wsh(ref wsh) => wsh.sanity_check(),
             PreTaprootDescriptor::Sh(ref sh) => sh.sanity_check(),
-        }
-    }
-    /// Computes the Bitcoin address of the descriptor, if one exists
-    fn address(&self, network: bitcoin::Network) -> Result<bitcoin::Address, Error>
-    where
-        Pk: ToPublicKey,
-    {
-        match *self {
-            PreTaprootDescriptor::Bare(ref bare) => bare.address(network),
-            PreTaprootDescriptor::Pkh(ref pkh) => pkh.address(network),
-            PreTaprootDescriptor::Wpkh(ref wpkh) => wpkh.address(network),
-            PreTaprootDescriptor::Wsh(ref wsh) => wsh.address(network),
-            PreTaprootDescriptor::Sh(ref sh) => sh.address(network),
         }
     }
 
@@ -174,6 +174,19 @@ impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for PreTaprootDescriptor<Pk> {
             PreTaprootDescriptor::Sh(ref sh) => sh.script_code(),
         }
     }
+
+    fn address(&self, params: &'static elements::AddressParams) -> Result<elements::Address, Error>
+    where
+        Pk: ToPublicKey,
+    {
+        match *self {
+            PreTaprootDescriptor::Bare(ref bare) => bare.address(params),
+            PreTaprootDescriptor::Pkh(ref pkh) => pkh.address(params),
+            PreTaprootDescriptor::Wpkh(ref wpkh) => wpkh.address(params),
+            PreTaprootDescriptor::Wsh(ref wsh) => wsh.address(params),
+            PreTaprootDescriptor::Sh(ref sh) => sh.address(params),
+        }
+    }
 }
 
 impl<Pk> expression::FromTree for PreTaprootDescriptor<Pk>
@@ -239,7 +252,7 @@ serde_string_impl_pk!(PreTaprootDescriptor, "a pre-taproot script descriptor");
 
 // Have the trait in a separate module to avoid conflicts
 pub(crate) mod traits {
-    use bitcoin::Script;
+    use elements::Script;
 
     use {
         descriptor::{Pkh, Sh, Wpkh, Wsh},

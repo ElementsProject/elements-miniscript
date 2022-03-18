@@ -209,13 +209,7 @@ impl<Pk: MiniscriptKey> Sh<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Sh<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Sh<Pk> {
     fn blind_addr(
         &self,
         blinder: Option<secp256k1_zkp::PublicKey>,
@@ -257,20 +251,18 @@ impl<Pk: MiniscriptKey + ToPublicKey> Sh<Pk> {
 
     /// Obtain the corresponding script pubkey for this descriptor
     /// Non failing verion of [`DescriptorTrait::address`] for this descriptor
-    pub fn addr(&self, network: bitcoin::Network) -> bitcoin::Address {
+    pub fn addr(
+        &self,
+        blinder: Option<secp256k1_zkp::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> elements::Address {
         match self.inner {
-            ShInner::Wsh(ref wsh) => {
-                bitcoin::Address::p2sh(&wsh.spk(), network).expect("Size checked in Miniscript")
-            }
-            ShInner::Wpkh(ref wpkh) => {
-                bitcoin::Address::p2sh(&wpkh.spk(), network).expect("Size checked in Miniscript")
-            }
+            ShInner::Wsh(ref wsh) => elements::Address::p2sh(&wsh.spk(), blinder, params),
+            ShInner::Wpkh(ref wpkh) => elements::Address::p2sh(&wpkh.spk(), blinder, params),
             ShInner::SortedMulti(ref smv) => {
-                bitcoin::Address::p2sh(&smv.encode(), network).expect("Size checked in Miniscript")
+                elements::Address::p2sh(&smv.encode(), blinder, params)
             }
-            ShInner::Ms(ref ms) => {
-                bitcoin::Address::p2sh(&ms.encode(), network).expect("Size checked in Miniscript")
-            }
+            ShInner::Ms(ref ms) => elements::Address::p2sh(&ms.encode(), blinder, params),
         }
     }
 
@@ -300,13 +292,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Sh<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Sh<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Sh<Pk> {
     fn sanity_check(&self) -> Result<(), Error> {
         match self.inner {
             ShInner::Wsh(ref wsh) => wsh.sanity_check()?,

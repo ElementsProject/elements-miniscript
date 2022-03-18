@@ -700,8 +700,8 @@ mod tests {
                 vec![Policy::KeyHash("".to_owned()), Policy::Unsatisfiable,]
             )
         );
-        assert_eq!(policy.relative_timelocks(), vec![]);
-        assert_eq!(policy.absolute_timelocks(), vec![]);
+        assert_eq!(policy.relative_timelocks().len(), 0);
+        assert_eq!(policy.absolute_timelocks().len(), 0);
         assert_eq!(policy.n_keys(), 1);
         assert_eq!(policy.minimum_n_keys(), Some(1));
 
@@ -713,8 +713,8 @@ mod tests {
                 vec![Policy::KeyHash("".to_owned()), Policy::Unsatisfiable,]
             )
         );
-        assert_eq!(policy.relative_timelocks(), vec![]);
-        assert_eq!(policy.absolute_timelocks(), vec![]);
+        assert_eq!(policy.relative_timelocks().len(), 0);
+        assert_eq!(policy.absolute_timelocks().len(), 0);
         assert_eq!(policy.n_keys(), 1);
         assert_eq!(policy.minimum_n_keys(), None);
 

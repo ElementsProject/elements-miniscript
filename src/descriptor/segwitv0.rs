@@ -30,6 +30,8 @@ use {
     TranslatePk,
 };
 
+use crate::elementssig_to_rawsig;
+
 use super::{
     checksum::{desc_checksum, verify_checksum},
     DescriptorTrait, ElementsTrait, SortedMultiVec, ELMTS_STR,
@@ -117,10 +119,16 @@ impl<Pk: MiniscriptKey + ToPublicKey> Wsh<Pk> {
 
     /// Obtain the corresponding script pubkey for this descriptor
     /// Non failing verion of [`DescriptorTrait::address`] for this descriptor
-    pub fn addr(&self, network: bitcoin::Network) -> bitcoin::Address {
+    pub fn addr(
+        &self,
+        blinder: Option<secp256k1_zkp::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> elements::Address {
         match self.inner {
-            WshInner::SortedMulti(ref smv) => bitcoin::Address::p2wsh(&smv.encode(), network),
-            WshInner::Ms(ref ms) => bitcoin::Address::p2wsh(&ms.encode(), network),
+            WshInner::SortedMulti(ref smv) => {
+                elements::Address::p2wsh(&smv.encode(), blinder, params)
+            }
+            WshInner::Ms(ref ms) => elements::Address::p2wsh(&ms.encode(), blinder, params),
         }
     }
 
@@ -240,13 +248,7 @@ impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wsh<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wsh<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wsh<Pk> {
     fn sanity_check(&self) -> Result<(), Error> {
         match self.inner {
             WshInner::SortedMulti(ref smv) => smv.sanity_check()?,
@@ -444,16 +446,26 @@ impl<Pk: MiniscriptKey + ToPublicKey> Wpkh<Pk> {
     /// Obtain the corresponding script pubkey for this descriptor
     /// Non failing verion of [`DescriptorTrait::script_pubkey`] for this descriptor
     pub fn spk(&self) -> Script {
-        let addr = bitcoin::Address::p2wpkh(&self.pk.to_public_key(), bitcoin::Network::Bitcoin)
-            .expect("wpkh descriptors have compressed keys");
+        let addr = elements::Address::p2wpkh(
+            &self.pk.to_public_key(),
+            None,
+            &elements::AddressParams::ELEMENTS,
+        );
+        // Need this expect in future
+        // .expect("wpkh descriptors have compressed keys");
         addr.script_pubkey()
     }
 
     /// Obtain the corresponding script pubkey for this descriptor
     /// Non failing verion of [`DescriptorTrait::address`] for this descriptor
-    pub fn addr(&self, network: bitcoin::Network) -> bitcoin::Address {
-        bitcoin::Address::p2wpkh(&self.pk.to_public_key(), network)
-            .expect("Rust Miniscript types don't allow uncompressed pks in segwit descriptors")
+    pub fn addr(
+        &self,
+        blinder: Option<secp256k1_zkp::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> elements::Address {
+        elements::Address::p2wpkh(&self.pk.to_public_key(), blinder, params)
+        // Need this expect in future
+        // .expect("Rust Miniscript types don't allow uncompressed pks in segwit descriptors")
     }
 
     /// Obtain the underlying miniscript for this descriptor
@@ -469,7 +481,13 @@ impl<Pk: MiniscriptKey + ToPublicKey> Wpkh<Pk> {
         // the previous txo's scriptPubKey.
         // The item 5:
         //     - For P2WPKH witness program, the scriptCode is `0x1976a914{20-byte-pubkey-hash}88ac`.
-        let addr = bitcoin::Address::p2pkh(&self.pk.to_public_key(), bitcoin::Network::Bitcoin);
+        let addr = elements::Address::p2pkh(
+            &self.pk.to_public_key(),
+            None,
+            &elements::AddressParams::ELEMENTS,
+        );
+        // Need this expect in future
+        // .expect("wpkh descriptors have compressed keys");
         addr.script_pubkey()
     }
 }
@@ -549,13 +567,7 @@ impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wpkh<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wpkh<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wpkh<Pk> {
     fn sanity_check(&self) -> Result<(), Error> {
         if self.pk.is_uncompressed() {
             Err(Error::ContextError(ScriptContextError::CompressedOnly(
@@ -609,7 +621,7 @@ where
         S: Satisfier<Pk>,
     {
         if let Some(sig) = satisfier.lookup_ecdsa_sig(&self.pk) {
-            let sig_vec = sig.to_vec();
+            let sig_vec = elementssig_to_rawsig(&sig);
             let script_sig = Script::new();
             let witness = vec![sig_vec, self.pk.to_public_key().to_bytes()];
             Ok((witness, script_sig))
@@ -643,7 +655,7 @@ where
             None,
             &elements::AddressParams::ELEMENTS,
         );
-        addr.script_pubkey()
+        Ok(addr.script_pubkey())
     }
 }
 
