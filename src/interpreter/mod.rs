@@ -47,7 +47,7 @@ use crate::elementssig_from_rawsig;
 pub use self::error::Error;
 use self::error::PkEvalErrInner;
 pub use self::stack::Stack;
-use {Extension, NoExt};
+use {CovenantExt, Extension};
 
 pub use self::stack::Element;
 
@@ -174,7 +174,7 @@ impl MiniscriptKey for BitcoinKey {
     }
 }
 
-impl<'txin> Interpreter<'txin, NoExt> {
+impl<'txin> Interpreter<'txin, CovenantExt> {
     /// Constructs an interpreter from the data of a spending transaction
     ///
     /// Accepts a signature-validating function. If you are willing to trust
