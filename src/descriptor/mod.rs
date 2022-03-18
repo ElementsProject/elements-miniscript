@@ -1469,22 +1469,22 @@ mod tests {
 
     #[test]
     fn tr_roundtrip_key() {
-        let script = Tr::<DummyKey>::from_str("tr()").unwrap().to_string();
-        assert_eq!(script, format!("tr()#x4ml3kxd"))
+        let script = Tr::<DummyKey>::from_str("eltr()").unwrap().to_string();
+        assert_eq!(script, format!("eltr()#sux3r82e"))
     }
 
     #[test]
     fn tr_roundtrip_script() {
-        let descriptor = Tr::<DummyKey>::from_str("tr(,{pk(),pk()})")
+        let descriptor = Tr::<DummyKey>::from_str("eltr(,{pk(),pk()})")
             .unwrap()
             .to_string();
 
-        assert_eq!(descriptor, "tr(,{pk(),pk()})#7dqr6v8r");
+        assert_eq!(descriptor, "eltr(,{pk(),pk()})#lxgcxh02");
 
-        let descriptor = Descriptor::<String>::from_str("tr(A,{pk(B),pk(C)})")
+        let descriptor = Descriptor::<String>::from_str("eltr(A,{pk(B),pk(C)})")
             .unwrap()
             .to_string();
-        assert_eq!(descriptor, "tr(A,{pk(B),pk(C)})#y0uc9t6x");
+        assert_eq!(descriptor, "eltr(A,{pk(B),pk(C)})#cx98s50f");
     }
 
     #[test]
@@ -1495,7 +1495,7 @@ mod tests {
         let p4 = "020000000000000000000000000000000000000000000000000000000000000004";
         let p5 = "f54a5851e9372b87810a8e60cdd2e7cfd80b6e31";
         let descriptor = Tr::<PublicKey>::from_str(&format!(
-            "tr({},{{pk({}),{{pk({}),or_d(pk({}),pkh({}))}}}})",
+            "eltr({},{{pk({}),{{pk({}),or_d(pk({}),pkh({}))}}}})",
             p1, p2, p3, p4, p5
         ))
         .unwrap()
@@ -1504,7 +1504,7 @@ mod tests {
         assert_eq!(
             descriptor,
             format!(
-                "tr({},{{pk({}),{{pk({}),or_d(pk({}),pkh({}))}}}})#fdhmu4fj",
+                "eltr({},{{pk({}),{{pk({}),or_d(pk({}),pkh({}))}}}})#sze34nfs",
                 p1, p2, p3, p4, p5
             )
         )
@@ -1513,12 +1513,12 @@ mod tests {
     #[test]
     fn tr_script_pubkey() {
         let key = Descriptor::<bitcoin::PublicKey>::from_str(
-            "tr(02e20e746af365e86647826397ba1c0e0d5cb685752976fe2f326ab76bdc4d6ee9)",
+            "eltr(02e20e746af365e86647826397ba1c0e0d5cb685752976fe2f326ab76bdc4d6ee9)",
         )
         .unwrap();
         assert_eq!(
             key.script_pubkey().to_hex(),
-            "51209c19294f03757da3dc235a5960631e3c55751632f5889b06b7a053bdc0bcfbcb"
+            "51203f48e7c6203a75722733e3d9d06638da38d946066159c64684caf1622b2b0e33"
         )
     }
 

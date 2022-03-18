@@ -6,7 +6,7 @@ use util::{varint_len, witness_size};
 use {DescriptorTrait, ForEach, ForEachKey, Satisfier, ToPublicKey, TranslatePk};
 
 use super::checksum::{desc_checksum, verify_checksum};
-use super::ElementsTrait;
+use super::{ElementsTrait, ELMTS_STR};
 use elements::opcodes;
 use elements::taproot::{
     LeafVersion, TaprootBuilder, TaprootBuilderError, TaprootSpendInfo, TAPROOT_CONTROL_BASE_SIZE,
@@ -188,8 +188,8 @@ impl<Pk: MiniscriptKey> Tr<Pk> {
     fn to_string_no_checksum(&self) -> String {
         let key = &self.internal_key;
         match self.tree {
-            Some(ref s) => format!("tr({},{})", key, s),
-            None => format!("tr({})", key),
+            Some(ref s) => format!("{}tr({},{})", ELMTS_STR, key, s),
+            None => format!("{}tr({})", ELMTS_STR, key),
         }
     }
 
@@ -380,7 +380,7 @@ where
             }
         }
 
-        if top.name == "tr" {
+        if top.name == "eltr" {
             match top.args.len() {
                 1 => {
                     let key = &top.args[0];
@@ -471,15 +471,15 @@ fn parse_tr_tree(s: &str) -> Result<expression::Tree, Error> {
         }
     }
 
-    let ret = if s.len() > 3 && &s[..3] == "tr(" && s.as_bytes()[s.len() - 1] == b')' {
-        let rest = &s[3..s.len() - 1];
+    let ret = if s.len() > 5 && &s[..5] == "eltr(" && s.as_bytes()[s.len() - 1] == b')' {
+        let rest = &s[5..s.len() - 1];
         if !rest.contains(',') {
             let internal_key = expression::Tree {
                 name: rest,
                 args: vec![],
             };
             return Ok(expression::Tree {
-                name: "tr",
+                name: "eltr",
                 args: vec![internal_key],
             });
         }
@@ -493,14 +493,14 @@ fn parse_tr_tree(s: &str) -> Result<expression::Tree, Error> {
         };
         if script.is_empty() {
             return Ok(expression::Tree {
-                name: "tr",
+                name: "eltr",
                 args: vec![internal_key],
             });
         }
         let (tree, rest) = expression::Tree::from_slice_delim(script, 1, '{')?;
         if rest.is_empty() {
             Ok(expression::Tree {
-                name: "tr",
+                name: "eltr",
                 args: vec![internal_key, tree],
             })
         } else {
