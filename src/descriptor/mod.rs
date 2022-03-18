@@ -530,12 +530,12 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
     ///
     /// ```
     /// use std::str::FromStr;
-    /// use miniscript::descriptor::Descriptor;
-    /// use miniscript::{PreTaprootDescriptor, PreTaprootDescriptorTrait};
-    /// use miniscript::bitcoin;
+    /// use elements_miniscript::descriptor::Descriptor;
+    /// use elements_miniscript::{PreTaprootDescriptor, PreTaprootDescriptorTrait};
+    /// use elements_miniscript::bitcoin;
     ///
     /// // A descriptor with a string generic
-    /// let desc = Descriptor::<bitcoin::PublicKey>::from_str("wpkh(02e18f242c8b0b589bfffeac30e1baa80a60933a649c7fb0f1103e78fbf58aa0ed)")
+    /// let desc = Descriptor::<bitcoin::PublicKey>::from_str("elwpkh(02e18f242c8b0b589bfffeac30e1baa80a60933a649c7fb0f1103e78fbf58aa0ed)")
     ///     .expect("Valid segwitv0 descriptor");
     /// let pre_tap_desc = desc.into_pre_taproot_desc().expect("Wsh is pre taproot");
     ///
@@ -841,16 +841,16 @@ impl Descriptor<DescriptorPublicKey> {
     /// # Examples
     ///
     /// ```
-    /// use miniscript::descriptor::{Descriptor, DescriptorPublicKey};
-    /// use miniscript::bitcoin::secp256k1;
+    /// use elements_miniscript::descriptor::{Descriptor, DescriptorPublicKey};
+    /// use elements_miniscript::bitcoin::secp256k1;
     /// use std::str::FromStr;
     ///
     /// // test from bip 86
     /// let secp = secp256k1::Secp256k1::verification_only();
-    /// let descriptor = Descriptor::<DescriptorPublicKey>::from_str("tr(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*)")
+    /// let descriptor = Descriptor::<DescriptorPublicKey>::from_str("eltr(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*)")
     ///     .expect("Valid ranged descriptor");
     /// let result = descriptor.derived_descriptor(&secp, 0).expect("Non-hardened derivation");
-    /// assert_eq!(result.to_string(), "tr(03cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115)#6qm9h8ym");
+    /// assert_eq!(result.to_string(), "eltr(03cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115)#hr5pt2wj");
     /// ```
     ///
     /// # Errors
