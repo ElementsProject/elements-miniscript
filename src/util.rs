@@ -1,5 +1,5 @@
-use elements::Script;
 use elements::{self, script};
+use elements::{opcodes, Script};
 use miniscript::context;
 
 use {ScriptContext, ToPublicKey};
@@ -100,4 +100,12 @@ impl MsKeyBuilder for script::Builder {
             context::SigType::Schnorr => self.push_slice(&key.to_x_only_pubkey().serialize()),
         }
     }
+}
+
+/// Checks whether a script pubkey is a P2TR output.
+#[inline]
+pub fn is_v1_p2tr(script: &Script) -> bool {
+    script.len() == 34
+        && script[0] == opcodes::all::OP_PUSHNUM_1.into_u8()
+        && script[1] == opcodes::all::OP_PUSHBYTES_32.into_u8()
 }
