@@ -32,7 +32,13 @@ impl<Pk: MiniscriptKey> ElementsTrait<Pk> for PreTaprootDescriptor<Pk> {
     where
         Pk: ToPublicKey,
     {
-        todo!()
+        match self {
+            PreTaprootDescriptor::Bare(bare) => bare.blind_addr(blinder, params),
+            PreTaprootDescriptor::Pkh(pkh) => pkh.blind_addr(blinder, params),
+            PreTaprootDescriptor::Wpkh(wpkh) => wpkh.blind_addr(blinder, params),
+            PreTaprootDescriptor::Sh(sh) => sh.blind_addr(blinder, params),
+            PreTaprootDescriptor::Wsh(wsh) => wsh.blind_addr(blinder, params),
+        }
     }
 }
 

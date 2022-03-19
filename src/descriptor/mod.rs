@@ -558,7 +558,7 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
             Descriptor::Sh(sh) => Ok(pretaproot::PreTaprootDescriptor::Sh(sh)),
             Descriptor::Wsh(wsh) => Ok(pretaproot::PreTaprootDescriptor::Wsh(wsh)),
             Descriptor::Tr(tr) => Err(Descriptor::Tr(tr)),
-            Descriptor::Cov(cov) => todo!("Redo covenant descriptor"),
+            Descriptor::Cov(cov) => Err(Descriptor::Cov(cov)),
         }
     }
 }
@@ -622,7 +622,7 @@ impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Descriptor<Pk> {
             Descriptor::Wsh(ref wsh) => wsh.blind_addr(blinder, params),
             Descriptor::Sh(ref sh) => sh.blind_addr(blinder, params),
             Descriptor::Cov(ref cov) => cov.blind_addr(blinder, params),
-            Descriptor::Tr(ref tr) => todo!(),
+            Descriptor::Tr(ref tr) => tr.blind_addr(blinder, params),
         }
     }
 }

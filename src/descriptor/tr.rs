@@ -292,13 +292,9 @@ impl<Pk: MiniscriptKey + ToPublicKey> Tr<Pk> {
         &self,
         blinder: Option<secp256k1_zkp::PublicKey>,
         params: &'static elements::AddressParams,
-    ) -> Result<elements::Address, Error> {
+    ) -> elements::Address {
         let spend_info = self.spend_info();
-        Ok(elements::Address::p2tr_tweaked(
-            spend_info.output_key(),
-            blinder,
-            params,
-        ))
+        elements::Address::p2tr_tweaked(spend_info.output_key(), blinder, params)
     }
 }
 
@@ -573,7 +569,7 @@ impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Tr<Pk> {
     where
         Pk: ToPublicKey,
     {
-        todo!()
+        Ok(self.addr(blinder, params))
     }
 }
 
@@ -589,7 +585,7 @@ impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Tr<Pk> {
     where
         Pk: ToPublicKey,
     {
-        self.addr(None, params)
+        Ok(self.addr(None, params))
     }
 
     fn script_pubkey(&self) -> Script

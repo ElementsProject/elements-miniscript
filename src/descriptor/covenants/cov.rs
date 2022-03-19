@@ -147,7 +147,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
     }
 
     /// Create a satisfaction for the Covenant Descriptor
-    pub fn satisfy<S: Satisfier<Pk>>(&self, s: S) -> Result<Vec<Vec<u8>>, Error>
+    pub fn satisfy<S: Satisfier<Pk>>(&self, s: S, allow_mall: bool) -> Result<Vec<Vec<u8>>, Error>
     where
         Pk: ToPublicKey,
     {
@@ -191,7 +191,11 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
             ]
         };
 
-        let ms_wit = self.ms.satisfy(s)?;
+        let ms_wit = if !allow_mall {
+            self.ms.satisfy(s)?
+        } else {
+            self.ms.satisfy_malleable(s)?
+        };
         wit.extend(ms_wit);
         Ok(wit)
     }
@@ -423,7 +427,7 @@ where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        let mut witness = self.satisfy(satisfier)?;
+        let mut witness = self.satisfy(satisfier, /*allow_mall*/ false)?;
         witness.push(self.encode().into_bytes());
         let script_sig = Script::new();
         Ok((witness, script_sig))
@@ -453,12 +457,15 @@ where
         self.explicit_script()
     }
 
-    fn get_satisfaction_mall<S>(&self, _satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
+    fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        todo!()
+        let mut witness = self.satisfy(satisfier, /*allow_mall*/ true)?;
+        witness.push(self.encode().into_bytes());
+        let script_sig = Script::new();
+        Ok((witness, script_sig))
     }
 }
 

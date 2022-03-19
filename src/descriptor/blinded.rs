@@ -205,7 +205,7 @@ impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Blinded<Pk> {
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        todo!()
+        self.desc.get_satisfaction_mall(satisfier)
     }
 }
 
