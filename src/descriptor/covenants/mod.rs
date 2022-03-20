@@ -425,7 +425,7 @@ mod tests {
 
         let sighash_u256 = cov_sat.segwit_sighash().unwrap();
         let secp = secp256k1_zkp::Secp256k1::signing_only();
-        let sig = secp.sign(
+        let sig = secp.sign_ecdsa(
             &secp256k1_zkp::Message::from_slice(&sighash_u256[..]).unwrap(),
             &sks[0],
         );

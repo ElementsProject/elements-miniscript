@@ -20,7 +20,8 @@ extern crate elements_miniscript as miniscript;
 
 use elements::confidential;
 use elements::encode::Decodable;
-use elements::secp256k1_zkp; // secp256k1 re-exported from rust-bitcoin
+use elements::secp256k1_zkp;
+use miniscript::interpreter::KeySigPair; // secp256k1 re-exported from rust-bitcoin
 use std::str::FromStr;
 fn main() {
     // some random liquid tx from mempool(Dec 3rd 2020)
@@ -90,25 +91,22 @@ fn main() {
     .unwrap();
 
     let amount = confidential::Value::from_commitment(&conf_val).unwrap();
-    let vfyfn = interpreter.sighash_verify(&secp, &transaction, 0, amount);
-    // Restrict to sighash_all just to demonstrate how to add additional filters
-    // `&_` needed here because of https://github.com/rust-lang/rust/issues/79187
-    let vfyfn = move |pk: &_, bitcoinsig: miniscript::ElementsSig| {
-        bitcoinsig.1 == elements::SigHashType::All && vfyfn(pk, bitcoinsig)
-    };
     // We only need to set the amount in prevouts because segwit transactions only need the amount field
     // For taproot transactions, this must contain all the required prevouts
     let mut spent_utxo = elements::TxOut::default();
     spent_utxo.value = amount;
+    // Create a spend utxos, since it is a segwit spend we don't really need all prevouts. Fill dummy data for this example instead
+    let utxos = [spent_utxo, elements::TxOut::default()];
+    let prevouts = elements::sighash::Prevouts::All(&utxos);
     // segwit spends don't require genesis hash
     let genesis_hash = elements::BlockHash::default();
 
     println!("\nExample two");
-    for elem in interpreter.iter(&secp, &transaction, 0, &prevouts) {
+    for elem in interpreter.iter(&secp, &transaction, 0, &prevouts, genesis_hash) {
         match elem.expect("no evaluation error") {
             miniscript::interpreter::SatisfiedConstraint::PublicKey { key_sig } => {
                 let (key, sig) = key_sig.as_ecdsa().unwrap();
-                println!("Signed with {}: {}", key, sig);
+                println!("Signed with key {}: sig {} hash_ty: {}", key, sig.0, sig.1);
             }
             _ => {}
         }
@@ -129,10 +127,8 @@ fn main() {
 
     let iter = interpreter.iter_custom(Box::new(|key_sig: &KeySigPair| {
         let (pk, ecdsa_sig) = key_sig.as_ecdsa().expect("Ecdsa Sig");
-        ecdsa_sig.hash_ty == bitcoin::EcdsaSigHashType::All
-            && secp
-                .verify_ecdsa(&message, &ecdsa_sig.sig, &pk.inner)
-                .is_ok()
+        ecdsa_sig.1 == elements::SigHashType::All
+            && secp.verify_ecdsa(&message, &ecdsa_sig.0, &pk.inner).is_ok()
     }));
     println!("\nExample three");
     for elem in iter {
