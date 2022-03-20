@@ -92,6 +92,4 @@ jobs:
           toolchain: ${{ matrix.rust }}
           override: true
       - name: Running cargo
-        env:
-          BITCOINVERSION: 0.21.0
         run: ./contrib/test.sh
