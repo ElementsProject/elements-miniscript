@@ -1,4 +1,4 @@
-![Build](https://github.com/sanket1729/elements-miniscript/workflows/Continuous%20integration/badge.svg)
+![Build](https://github.com/ElementsProject/elements-miniscript/workflows/Continuous%20integration/badge.svg)
 
 **Minimum Supported Rust Version:** 1.29.0
 
@@ -27,8 +27,8 @@ completing an unsigned `elements::TxIn` with appropriate data
 * Determining the specific keys, hash preimages and timelocks used to spend
 coins in a given Bitcoin transaction
 
-More information can be found in [the documentation](https://docs.rs/elemnents-miniscript)
-or in [the `examples/` directory](https://github.com/sanket1729/elements-miniscript/tree/master/examples)
+More information can be found in [the documentation](https://docs.rs/elements-miniscript)
+or in [the `examples/` directory](https://github.com/ElementsProject/elements-miniscript/tree/master/examples)
 
 
 ## Minimum Supported Rust Version (MSRV)
