@@ -23,6 +23,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use elements::sighash;
+use bitcoin;
 use elements::{self, secp256k1_zkp, SigHash};
 use elements::{
     hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine},
@@ -42,7 +43,7 @@ mod stack;
 
 use MiniscriptKey;
 
-use crate::elementssig_from_rawsig;
+use elementssig_from_rawsig;
 
 pub use self::error::Error;
 use self::error::PkEvalErrInner;

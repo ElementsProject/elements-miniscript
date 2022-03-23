@@ -31,7 +31,7 @@ use std::{
 
 pub mod pegin;
 
-// use bitcoin;
+use bitcoin;
 use elements;
 use elements::secp256k1_zkp;
 use elements::Script;

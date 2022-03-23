@@ -503,7 +503,7 @@ mod tests {
 
     use bitcoin;
     use elements::hashes::{hash160, sha256, Hash};
-    use elements::secp256k1_zkp;
+    use elements::{self, secp256k1_zkp};
     use std::str;
     use std::str::FromStr;
     use std::sync::Arc;

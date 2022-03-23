@@ -1189,7 +1189,7 @@ where
 mod tests {
     use super::*;
     use bitcoin;
-    use elements::{hashes, secp256k1_zkp};
+    use elements::{self, hashes, secp256k1_zkp};
     use elements::{opcodes, script};
     use std::collections::HashMap;
     use std::str::FromStr;

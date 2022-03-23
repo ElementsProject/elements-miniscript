@@ -30,7 +30,7 @@ use {
     TranslatePk,
 };
 
-use crate::elementssig_to_rawsig;
+use elementssig_to_rawsig;
 
 use super::{
     checksum::{desc_checksum, verify_checksum},

@@ -30,7 +30,7 @@ use bitcoin::{self, blockdata::script, hashes};
 use elements::secp256k1_zkp;
 use expression::{self, FromTree};
 use policy::{semantic, Liftable};
-use std::{fmt, fmt::Debug, str::FromStr, sync::Arc};
+use std::{fmt, str::FromStr, sync::Arc};
 use Descriptor;
 use Error;
 use {

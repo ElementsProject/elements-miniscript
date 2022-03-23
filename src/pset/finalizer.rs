@@ -19,7 +19,7 @@
 //! `https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki`
 //!
 
-use crate::{util, Satisfier, Tap};
+use {util, Satisfier, Tap};
 
 use super::{sanity_check, Pset};
 use super::{Error, InputError, PsetInputSatisfier};
