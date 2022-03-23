@@ -16,7 +16,7 @@ rand = ["bitcoin/rand"]
 
 [dependencies]
 bitcoin = {git = "https://github.com/rust-bitcoin/rust-bitcoin", rev = "efa9555ebdc78130b01a8a5ecd554ab922708622"}
-elements = {git = "https://github.com/sanket1729/rust-elements", rev = "1cd21cb93880211fd90958f380890a36213aaab1"}
+elements = {git = "https://github.com/sanket1729/rust-elements", rev = "b4381a18d5eb90af289bc73e52bc6b8323688570"}
 miniscript = {git = "https://github.com/sanket1729/rust-miniscript", rev = "b47a89bc14ad5d17dcff9cee0828615b9daaec57"}
 
 [dev-dependencies]
