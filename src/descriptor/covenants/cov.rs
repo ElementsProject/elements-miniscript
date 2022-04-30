@@ -147,7 +147,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
     }
 
     /// Create a satisfaction for the Covenant Descriptor
-    pub fn satisfy<S: Satisfier<Pk>>(&self, s: S) -> Result<Vec<Vec<u8>>, Error>
+    pub fn satisfy<S: Satisfier<Pk>>(&self, s: S, allow_mall: bool) -> Result<Vec<Vec<u8>>, Error>
     where
         Pk: ToPublicKey,
     {
@@ -168,7 +168,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
             let sighash_ty = s.lookup_sighashu32().ok_or(MissingSighashItem(10))?;
 
             let (sig, hash_ty) = s
-                .lookup_sig(&self.pk)
+                .lookup_ecdsa_sig(&self.pk)
                 .ok_or(CovError::MissingCovSignature)?;
             // Hashtype must be the same
             if sighash_ty != hash_ty.as_u32() {
@@ -191,7 +191,11 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
             ]
         };
 
-        let ms_wit = self.ms.satisfy(s)?;
+        let ms_wit = if !allow_mall {
+            self.ms.satisfy(s)?
+        } else {
+            self.ms.satisfy_malleable(s)?
+        };
         wit.extend(ms_wit);
         Ok(wit)
     }
@@ -216,7 +220,7 @@ impl<Ext: Extension<bitcoin::PublicKey>> CovenantDescriptor<bitcoin::PublicKey, 
     fn check_cov_script(tokens: &mut TokenIter) -> Result<bitcoin::PublicKey, Error> {
         match_token!(tokens,
             Tk::CheckSigFromStack, Tk::Verify, Tk::CheckSig, Tk::CodeSep, Tk::Swap,
-            Tk::FromAltStack, Tk::Dup, Tk::Pubkey(pk), Tk::Sha256,
+            Tk::FromAltStack, Tk::Dup, Tk::Bytes33(pk), Tk::Sha256,
             Tk::Cat, Tk::Verify, Tk::Equal, Tk::Num(4), Tk::Size,   // item 10
             Tk::Swap, Tk::Cat, Tk::Verify, Tk::Equal, Tk::Num(4), Tk::Size,  // item 9
             Tk::Swap, Tk::Cat, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size, // item 8
@@ -233,7 +237,7 @@ impl<Ext: Extension<bitcoin::PublicKey>> CovenantDescriptor<bitcoin::PublicKey, 
             Tk::Swap, Tk::Verify, Tk::Equal, Tk::Num(4), Tk::Size,  // item 1
             Tk::ToAltStack, Tk::Cat, Tk::Left, Tk::Num(1),
             Tk::Pick, Tk::Num(11), Tk::Pick, Tk::Num(11), Tk::Verify => {
-                return Ok(pk);
+                return Ok(bitcoin::PublicKey::from_slice(pk)?);
             },
             _ => return Err(Error::CovError(CovError::BadCovDescriptor)),
         );
@@ -247,7 +251,7 @@ impl<Ext: Extension<bitcoin::PublicKey>> CovenantDescriptor<bitcoin::PublicKey, 
     // All code for covenants can thus be separated in a module
     // This parsing is parse_insane
     pub fn parse_insane(script: &script::Script) -> Result<Self, Error> {
-        let (pk, ms) = Self::parse_cov_components::<_>(script)?;
+        let (pk, ms) = Self::parse_cov_components(script)?;
         Self::new(pk, ms)
     }
 
@@ -255,11 +259,16 @@ impl<Ext: Extension<bitcoin::PublicKey>> CovenantDescriptor<bitcoin::PublicKey, 
     // descriptor. This allows us to parse Miniscript with
     // it's context so that it can be used with NoChecks
     // context while using the interpreter
-    pub(crate) fn parse_cov_components<Ctx>(
+    pub(crate) fn parse_cov_components(
         script: &script::Script,
-    ) -> Result<(bitcoin::PublicKey, Miniscript<bitcoin::PublicKey, Ctx, Ext>), Error>
+    ) -> Result<
+        (
+            bitcoin::PublicKey,
+            Miniscript<bitcoin::PublicKey, Segwitv0, Ext>,
+        ),
+        Error,
+    >
     where
-        Ctx: ScriptContext,
         Ext: Extension<bitcoin::PublicKey>,
     {
         let tokens = lex(script)?;
@@ -354,10 +363,6 @@ where
 
 impl<Pk, Ext> ElementsTrait<Pk> for CovenantDescriptor<Pk, Ext>
 where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
     Pk: MiniscriptKey,
     Ext: Extension<Pk>,
 {
@@ -369,20 +374,12 @@ where
     where
         Pk: ToPublicKey,
     {
-        Ok(elements::Address::p2wsh(
-            &self.explicit_script(),
-            blinder,
-            params,
-        ))
+        Ok(elements::Address::p2wsh(&self.encode(), blinder, params))
     }
 }
 
 impl<Pk, Ext> DescriptorTrait<Pk> for CovenantDescriptor<Pk, Ext>
 where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
     Pk: MiniscriptKey,
     Ext: Extension<Pk>,
 {
@@ -401,18 +398,14 @@ where
     where
         Pk: ToPublicKey,
     {
-        Ok(elements::Address::p2wsh(
-            &self.explicit_script(),
-            None,
-            params,
-        ))
+        Ok(elements::Address::p2wsh(&self.encode(), None, params))
     }
 
     fn script_pubkey(&self) -> Script
     where
         Pk: ToPublicKey,
     {
-        self.explicit_script().to_v0_p2wsh()
+        self.encode().to_v0_p2wsh()
     }
 
     fn unsigned_script_sig(&self) -> Script
@@ -422,11 +415,11 @@ where
         Script::new()
     }
 
-    fn explicit_script(&self) -> Script
+    fn explicit_script(&self) -> Result<Script, Error>
     where
         Pk: ToPublicKey,
     {
-        self.encode()
+        Ok(self.encode())
     }
 
     fn get_satisfaction<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
@@ -434,8 +427,8 @@ where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        let mut witness = self.satisfy(satisfier)?;
-        witness.push(self.explicit_script().into_bytes());
+        let mut witness = self.satisfy(satisfier, /*allow_mall*/ false)?;
+        witness.push(self.encode().into_bytes());
         let script_sig = Script::new();
         Ok((witness, script_sig))
     }
@@ -457,11 +450,22 @@ where
     /// You will need this script code when singing with pks that
     /// inside Miniscript. Use the [cov_script_code] method to
     /// get the script code for signing with covenant pk
-    fn script_code(&self) -> Script
+    fn script_code(&self) -> Result<Script, Error>
     where
         Pk: ToPublicKey,
     {
         self.explicit_script()
+    }
+
+    fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
+    where
+        Pk: ToPublicKey,
+        S: Satisfier<Pk>,
+    {
+        let mut witness = self.satisfy(satisfier, /*allow_mall*/ true)?;
+        witness.push(self.encode().into_bytes());
+        let script_sig = Script::new();
+        Ok((witness, script_sig))
     }
 }
 

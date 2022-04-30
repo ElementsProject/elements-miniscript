@@ -30,12 +30,14 @@ use {
     TranslatePk,
 };
 
+use elementssig_to_rawsig;
+
 use super::{
     checksum::{desc_checksum, verify_checksum},
     DescriptorTrait, ElementsTrait, SortedMultiVec, ELMTS_STR,
 };
 /// A Segwitv0 wsh descriptor
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct Wsh<Pk: MiniscriptKey> {
     /// underlying miniscript
     inner: WshInner<Pk>,
@@ -108,8 +110,46 @@ impl<Pk: MiniscriptKey> Wsh<Pk> {
     }
 }
 
+impl<Pk: MiniscriptKey + ToPublicKey> Wsh<Pk> {
+    /// Obtain the corresponding script pubkey for this descriptor
+    /// Non failing verion of [`DescriptorTrait::script_pubkey`] for this descriptor
+    pub fn spk(&self) -> Script {
+        self.inner_script().to_v0_p2wsh()
+    }
+
+    /// Obtain the corresponding script pubkey for this descriptor
+    /// Non failing verion of [`DescriptorTrait::address`] for this descriptor
+    pub fn addr(
+        &self,
+        blinder: Option<secp256k1_zkp::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> elements::Address {
+        match self.inner {
+            WshInner::SortedMulti(ref smv) => {
+                elements::Address::p2wsh(&smv.encode(), blinder, params)
+            }
+            WshInner::Ms(ref ms) => elements::Address::p2wsh(&ms.encode(), blinder, params),
+        }
+    }
+
+    /// Obtain the underlying miniscript for this descriptor
+    /// Non failing verion of [`DescriptorTrait::explicit_script`] for this descriptor
+    pub fn inner_script(&self) -> Script {
+        match self.inner {
+            WshInner::SortedMulti(ref smv) => smv.encode(),
+            WshInner::Ms(ref ms) => ms.encode(),
+        }
+    }
+
+    /// Obtain the pre bip-340 signature script code for this descriptor
+    /// Non failing verion of [`DescriptorTrait::script_code`] for this descriptor
+    pub fn ecdsa_sighash_script_code(&self) -> Script {
+        self.inner_script()
+    }
+}
+
 /// Wsh Inner
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum WshInner<Pk: MiniscriptKey> {
     /// Sorted Multi
     SortedMulti(SortedMultiVec<Pk, Segwitv0>),
@@ -208,13 +248,7 @@ impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wsh<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wsh<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wsh<Pk> {
     fn sanity_check(&self) -> Result<(), Error> {
         match self.inner {
             WshInner::SortedMulti(ref smv) => smv.sanity_check()?,
@@ -239,7 +273,7 @@ where
     where
         Pk: ToPublicKey,
     {
-        self.explicit_script().to_v0_p2wsh()
+        self.spk()
     }
 
     fn unsigned_script_sig(&self) -> Script
@@ -249,14 +283,11 @@ where
         Script::new()
     }
 
-    fn explicit_script(&self) -> Script
+    fn explicit_script(&self) -> Result<Script, Error>
     where
         Pk: ToPublicKey,
     {
-        match self.inner {
-            WshInner::SortedMulti(ref smv) => smv.encode(),
-            WshInner::Ms(ref ms) => ms.encode(),
-        }
+        Ok(self.inner_script())
     }
 
     fn get_satisfaction<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
@@ -268,7 +299,22 @@ where
             WshInner::SortedMulti(ref smv) => smv.satisfy(satisfier)?,
             WshInner::Ms(ref ms) => ms.satisfy(satisfier)?,
         };
-        witness.push(self.explicit_script().into_bytes());
+        let witness_script = self.inner_script();
+        witness.push(witness_script.into_bytes());
+        let script_sig = Script::new();
+        Ok((witness, script_sig))
+    }
+
+    fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
+    where
+        Pk: ToPublicKey,
+        S: Satisfier<Pk>,
+    {
+        let mut witness = match self.inner {
+            WshInner::SortedMulti(ref smv) => smv.satisfy(satisfier)?,
+            WshInner::Ms(ref ms) => ms.satisfy_malleable(satisfier)?,
+        };
+        witness.push(self.inner_script().into_bytes());
         let script_sig = Script::new();
         Ok((witness, script_sig))
     }
@@ -293,11 +339,11 @@ where
             max_sat_size)
     }
 
-    fn script_code(&self) -> Script
+    fn script_code(&self) -> Result<Script, Error>
     where
         Pk: ToPublicKey,
     {
-        self.explicit_script()
+        Ok(self.ecdsa_sighash_script_code())
     }
 }
 
@@ -340,7 +386,7 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Wsh<P> {
 }
 
 /// A bare Wpkh descriptor at top level
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct Wpkh<Pk: MiniscriptKey> {
     /// underlying publickey
     pk: Pk,
@@ -351,7 +397,9 @@ impl<Pk: MiniscriptKey> Wpkh<Pk> {
     pub fn new(pk: Pk) -> Result<Self, Error> {
         // do the top-level checks
         if pk.is_uncompressed() {
-            Err(Error::ContextError(ScriptContextError::CompressedOnly))
+            Err(Error::ContextError(ScriptContextError::CompressedOnly(
+                pk.to_string(),
+            )))
         } else {
             Ok(Self { pk: pk })
         }
@@ -391,6 +439,56 @@ impl<Pk: MiniscriptKey> Wpkh<Pk> {
                 top.args.len(),
             )))
         }
+    }
+}
+
+impl<Pk: MiniscriptKey + ToPublicKey> Wpkh<Pk> {
+    /// Obtain the corresponding script pubkey for this descriptor
+    /// Non failing verion of [`DescriptorTrait::script_pubkey`] for this descriptor
+    pub fn spk(&self) -> Script {
+        let addr = elements::Address::p2wpkh(
+            &self.pk.to_public_key(),
+            None,
+            &elements::AddressParams::ELEMENTS,
+        );
+        // Need this expect in future
+        // .expect("wpkh descriptors have compressed keys");
+        addr.script_pubkey()
+    }
+
+    /// Obtain the corresponding script pubkey for this descriptor
+    /// Non failing verion of [`DescriptorTrait::address`] for this descriptor
+    pub fn addr(
+        &self,
+        blinder: Option<secp256k1_zkp::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> elements::Address {
+        elements::Address::p2wpkh(&self.pk.to_public_key(), blinder, params)
+        // Need this expect in future
+        // .expect("Rust Miniscript types don't allow uncompressed pks in segwit descriptors")
+    }
+
+    /// Obtain the underlying miniscript for this descriptor
+    /// Non failing verion of [`DescriptorTrait::explicit_script`] for this descriptor
+    pub fn inner_script(&self) -> Script {
+        self.spk()
+    }
+
+    /// Obtain the pre bip-340 signature script code for this descriptor
+    /// Non failing verion of [`DescriptorTrait::script_code`] for this descriptor
+    pub fn ecdsa_sighash_script_code(&self) -> Script {
+        // For SegWit outputs, it is defined by bip-0143 (quoted below) and is different from
+        // the previous txo's scriptPubKey.
+        // The item 5:
+        //     - For P2WPKH witness program, the scriptCode is `0x1976a914{20-byte-pubkey-hash}88ac`.
+        let addr = elements::Address::p2pkh(
+            &self.pk.to_public_key(),
+            None,
+            &elements::AddressParams::ELEMENTS,
+        );
+        // Need this expect in future
+        // .expect("wpkh descriptors have compressed keys");
+        addr.script_pubkey()
     }
 }
 
@@ -469,16 +567,12 @@ impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Wpkh<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wpkh<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Wpkh<Pk> {
     fn sanity_check(&self) -> Result<(), Error> {
         if self.pk.is_uncompressed() {
-            Err(Error::ContextError(ScriptContextError::CompressedOnly))
+            Err(Error::ContextError(ScriptContextError::CompressedOnly(
+                self.pk.to_string(),
+            )))
         } else {
             Ok(())
         }
@@ -514,11 +608,11 @@ where
         Script::new()
     }
 
-    fn explicit_script(&self) -> Script
+    fn explicit_script(&self) -> Result<Script, Error>
     where
         Pk: ToPublicKey,
     {
-        self.script_pubkey()
+        Ok(self.inner_script())
     }
 
     fn get_satisfaction<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
@@ -526,9 +620,8 @@ where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        if let Some(sig) = satisfier.lookup_sig(&self.pk) {
-            let mut sig_vec = sig.0.serialize_der().to_vec();
-            sig_vec.push(sig.1.as_u32() as u8);
+        if let Some(sig) = satisfier.lookup_ecdsa_sig(&self.pk) {
+            let sig_vec = elementssig_to_rawsig(&sig);
             let script_sig = Script::new();
             let witness = vec![sig_vec, self.pk.to_public_key().to_bytes()];
             Ok((witness, script_sig))
@@ -537,11 +630,19 @@ where
         }
     }
 
-    fn max_satisfaction_weight(&self) -> Result<usize, Error> {
-        Ok(4 + 1 + 73 + self.pk.serialized_len())
+    fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
+    where
+        Pk: ToPublicKey,
+        S: Satisfier<Pk>,
+    {
+        self.get_satisfaction(satisfier)
     }
 
-    fn script_code(&self) -> Script
+    fn max_satisfaction_weight(&self) -> Result<usize, Error> {
+        Ok(4 + 1 + 73 + Segwitv0::pk_len(&self.pk))
+    }
+
+    fn script_code(&self) -> Result<Script, Error>
     where
         Pk: ToPublicKey,
     {
@@ -554,7 +655,7 @@ where
             None,
             &elements::AddressParams::ELEMENTS,
         );
-        addr.script_pubkey()
+        Ok(addr.script_pubkey())
     }
 }
 

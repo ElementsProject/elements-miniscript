@@ -70,7 +70,7 @@ fn main() {
     let bitcoin_sig = (
         // copied at random off the blockchain; this is not actually a valid
         // signature for this transaction; Miniscript does not verify
-        secp256k1_zkp::Signature::from_str(
+        secp256k1_zkp::ecdsa::Signature::from_str(
             "3045\
              0221\
              00f7c3648c390d87578cd79c8016940aa8e3511c4104cb78daa8fb8e429375efc1\
@@ -107,7 +107,12 @@ fn main() {
     );
 
     assert_eq!(
-        format!("{:x}", my_descriptor.explicit_script()),
+        format!(
+            "{:x}",
+            my_descriptor
+                .explicit_script()
+                .expect("wsh descriptors have unique inner script")
+        ),
         "52\
          21020202020202020202020202020202020202020202020202020202020202020202\
          21020102030405060708010203040506070801020304050607080000000000000000\

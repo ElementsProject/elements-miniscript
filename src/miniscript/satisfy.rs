@@ -18,21 +18,22 @@
 //! scriptpubkeys.
 //!
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::{cmp, i64, mem};
 
 use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d};
+use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, secp256k1_zkp};
 use elements::{confidential, OutPoint, Script};
 use {MiniscriptKey, ToPublicKey};
 
+use bitcoin::secp256k1::XOnlyPublicKey;
 use miniscript::limits::{
     HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
 use util::witness_size;
-use Error;
 use Miniscript;
 use ScriptContext;
 use Terminal;
@@ -40,7 +41,7 @@ use Terminal;
 use Extension;
 
 /// Type alias for a signature/hashtype pair
-pub type ElementsSig = (secp256k1_zkp::Signature, elements::SigHashType);
+pub type ElementsSig = (secp256k1_zkp::ecdsa::Signature, elements::SigHashType);
 /// Type alias for 32 byte Preimage.
 pub type Preimage32 = [u8; 32];
 
@@ -55,10 +56,10 @@ pub fn elementssig_to_rawsig(sig: &ElementsSig) -> Vec<u8> {
 /// Helper function to create ElementsSig from Rawsig
 /// Useful for downstream when implementing Satisfier.
 /// Returns underlying secp if the Signature is not of correct format
-pub fn elementssig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, Error> {
+pub fn elementssig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, ::interpreter::Error> {
     let (flag, sig) = rawsig.split_last().unwrap();
     let flag = elements::SigHashType::from_u32(*flag as u32);
-    let sig = secp256k1_zkp::Signature::from_der(sig)?;
+    let sig = secp256k1_zkp::ecdsa::Signature::from_der(sig)?;
     Ok((sig, flag))
 }
 /// Trait describing a lookup table for signatures, hash preimages, etc.
@@ -66,8 +67,25 @@ pub fn elementssig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, Error> {
 /// on every query. Users are expected to override the methods that they
 /// have data for.
 pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
-    /// Given a public key, look up a signature with that key
-    fn lookup_sig(&self, _: &Pk) -> Option<ElementsSig> {
+    /// Given a public key, look up an ECDSA signature with that key
+    fn lookup_ecdsa_sig(&self, _: &Pk) -> Option<ElementsSig> {
+        None
+    }
+
+    /// Lookup the tap key spend sig
+    fn lookup_tap_key_spend_sig(&self) -> Option<elements::SchnorrSig> {
+        None
+    }
+
+    /// Given a public key and a associated leaf hash, look up an schnorr signature with that key
+    fn lookup_tap_leaf_script_sig(&self, _: &Pk, _: &TapLeafHash) -> Option<elements::SchnorrSig> {
+        None
+    }
+
+    /// Obtain a reference to the control block for a ver and script
+    fn lookup_tap_control_block_map(
+        &self,
+    ) -> Option<&BTreeMap<ControlBlock, (elements::Script, LeafVersion)>> {
         None
     }
 
@@ -76,11 +94,22 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
         None
     }
 
-    /// Given a keyhash, look up the signature and the associated key
+    /// Given a keyhash, look up the EC signature and the associated key
     /// Even if signatures for public key Hashes are not available, the users
     /// can use this map to provide pkh -> pk mapping which can be useful
     /// for dissatisfying pkh.
-    fn lookup_pkh_sig(&self, _: &Pk::Hash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
+    fn lookup_pkh_ecdsa_sig(&self, _: &Pk::Hash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
+        None
+    }
+
+    /// Given a keyhash, look up the schnorr signature and the associated key
+    /// Even if signatures for public key Hashes are not available, the users
+    /// can use this map to provide pkh -> pk mapping which can be useful
+    /// for dissatisfying pkh.
+    fn lookup_pkh_tap_leaf_script_sig(
+        &self,
+        _: &(Pk::Hash, TapLeafHash),
+    ) -> Option<(bitcoin::XOnlyPublicKey, elements::SchnorrSig)> {
         None
     }
 
@@ -215,8 +244,24 @@ impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for After {
 }
 
 impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for HashMap<Pk, ElementsSig> {
-    fn lookup_sig(&self, key: &Pk) -> Option<ElementsSig> {
+    fn lookup_ecdsa_sig(&self, key: &Pk) -> Option<ElementsSig> {
         self.get(key).map(|x| *x)
+    }
+}
+
+impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk>
+    for HashMap<(Pk, TapLeafHash), elements::SchnorrSig>
+{
+    fn lookup_tap_leaf_script_sig(
+        &self,
+        key: &Pk,
+        h: &TapLeafHash,
+    ) -> Option<elements::SchnorrSig> {
+        // Unfortunately, there is no way to get a &(a, b) from &a and &b without allocating
+        // If we change the signature the of lookup_tap_leaf_script_sig to accept a tuple. We would
+        // face the same problem while satisfying PkK.
+        // We use this signature to optimize for the psbt common use case.
+        self.get(&(key.clone(), *h)).map(|x| *x)
     }
 }
 
@@ -224,7 +269,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for HashMap<Pk::Hash, (Pk, E
 where
     Pk: MiniscriptKey + ToPublicKey,
 {
-    fn lookup_sig(&self, key: &Pk) -> Option<ElementsSig> {
+    fn lookup_ecdsa_sig(&self, key: &Pk) -> Option<ElementsSig> {
         self.get(&key.to_pubkeyhash()).map(|x| x.1)
     }
 
@@ -232,23 +277,69 @@ where
         self.get(pk_hash).map(|x| x.0.clone())
     }
 
-    fn lookup_pkh_sig(&self, pk_hash: &Pk::Hash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
+    fn lookup_pkh_ecdsa_sig(
+        &self,
+        pk_hash: &Pk::Hash,
+    ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
         self.get(pk_hash)
             .map(|&(ref pk, sig)| (pk.to_public_key(), sig))
     }
 }
 
+impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk>
+    for HashMap<(Pk::Hash, TapLeafHash), (Pk, elements::SchnorrSig)>
+where
+    Pk: MiniscriptKey + ToPublicKey,
+{
+    fn lookup_tap_leaf_script_sig(
+        &self,
+        key: &Pk,
+        h: &TapLeafHash,
+    ) -> Option<elements::SchnorrSig> {
+        self.get(&(key.to_pubkeyhash(), *h)).map(|x| x.1)
+    }
+
+    fn lookup_pkh_tap_leaf_script_sig(
+        &self,
+        pk_hash: &(Pk::Hash, TapLeafHash),
+    ) -> Option<(XOnlyPublicKey, elements::SchnorrSig)> {
+        self.get(pk_hash)
+            .map(|&(ref pk, sig)| (pk.to_x_only_pubkey(), sig))
+    }
+}
+
 impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'a S {
-    fn lookup_sig(&self, p: &Pk) -> Option<ElementsSig> {
-        (**self).lookup_sig(p)
+    fn lookup_ecdsa_sig(&self, p: &Pk) -> Option<ElementsSig> {
+        (**self).lookup_ecdsa_sig(p)
+    }
+
+    fn lookup_tap_leaf_script_sig(&self, p: &Pk, h: &TapLeafHash) -> Option<elements::SchnorrSig> {
+        (**self).lookup_tap_leaf_script_sig(p, h)
     }
 
     fn lookup_pkh_pk(&self, pkh: &Pk::Hash) -> Option<Pk> {
         (**self).lookup_pkh_pk(pkh)
     }
 
-    fn lookup_pkh_sig(&self, pkh: &Pk::Hash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
-        (**self).lookup_pkh_sig(pkh)
+    fn lookup_pkh_ecdsa_sig(&self, pkh: &Pk::Hash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
+        (**self).lookup_pkh_ecdsa_sig(pkh)
+    }
+
+    fn lookup_tap_key_spend_sig(&self) -> Option<elements::SchnorrSig> {
+        (**self).lookup_tap_key_spend_sig()
+    }
+
+    fn lookup_pkh_tap_leaf_script_sig(
+        &self,
+        pkh: &(Pk::Hash, TapLeafHash),
+    ) -> Option<(XOnlyPublicKey, elements::SchnorrSig)> {
+        (**self).lookup_pkh_tap_leaf_script_sig(pkh)
+    }
+
+    fn lookup_tap_control_block_map(
+        &self,
+    ) -> Option<&BTreeMap<ControlBlock, (elements::Script, LeafVersion)>> {
+        (**self).lookup_tap_control_block_map()
     }
 
     fn lookup_sha256(&self, h: sha256::Hash) -> Option<Preimage32> {
@@ -321,16 +412,37 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
 }
 
 impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'a mut S {
-    fn lookup_sig(&self, p: &Pk) -> Option<ElementsSig> {
-        (**self).lookup_sig(p)
+    fn lookup_ecdsa_sig(&self, p: &Pk) -> Option<ElementsSig> {
+        (**self).lookup_ecdsa_sig(p)
+    }
+
+    fn lookup_tap_leaf_script_sig(&self, p: &Pk, h: &TapLeafHash) -> Option<elements::SchnorrSig> {
+        (**self).lookup_tap_leaf_script_sig(p, h)
+    }
+
+    fn lookup_tap_key_spend_sig(&self) -> Option<elements::SchnorrSig> {
+        (**self).lookup_tap_key_spend_sig()
     }
 
     fn lookup_pkh_pk(&self, pkh: &Pk::Hash) -> Option<Pk> {
         (**self).lookup_pkh_pk(pkh)
     }
 
-    fn lookup_pkh_sig(&self, pkh: &Pk::Hash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
-        (**self).lookup_pkh_sig(pkh)
+    fn lookup_pkh_ecdsa_sig(&self, pkh: &Pk::Hash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
+        (**self).lookup_pkh_ecdsa_sig(pkh)
+    }
+
+    fn lookup_pkh_tap_leaf_script_sig(
+        &self,
+        pkh: &(Pk::Hash, TapLeafHash),
+    ) -> Option<(XOnlyPublicKey, elements::SchnorrSig)> {
+        (**self).lookup_pkh_tap_leaf_script_sig(pkh)
+    }
+
+    fn lookup_tap_control_block_map(
+        &self,
+    ) -> Option<&BTreeMap<ControlBlock, (elements::Script, LeafVersion)>> {
+        (**self).lookup_tap_control_block_map()
     }
 
     fn lookup_sha256(&self, h: sha256::Hash) -> Option<Preimage32> {
@@ -410,23 +522,56 @@ macro_rules! impl_tuple_satisfier {
             Pk: MiniscriptKey + ToPublicKey,
             $($ty: Satisfier< Pk>,)*
         {
-            fn lookup_sig(&self, key: &Pk) -> Option<ElementsSig> {
+            fn lookup_ecdsa_sig(&self, key: &Pk) -> Option<ElementsSig> {
                 let &($(ref $ty,)*) = self;
                 $(
-                    if let Some(result) = $ty.lookup_sig(key) {
+                    if let Some(result) = $ty.lookup_ecdsa_sig(key) {
                         return Some(result);
                     }
                 )*
                 None
             }
 
-            fn lookup_pkh_sig(
+            fn lookup_tap_key_spend_sig(&self) -> Option<elements::SchnorrSig> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_tap_key_spend_sig() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_tap_leaf_script_sig(&self, key: &Pk, h: &TapLeafHash) -> Option<elements::SchnorrSig> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_tap_leaf_script_sig(key, h) {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_pkh_ecdsa_sig(
                 &self,
                 key_hash: &Pk::Hash,
             ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
                 let &($(ref $ty,)*) = self;
                 $(
-                    if let Some(result) = $ty.lookup_pkh_sig(key_hash) {
+                    if let Some(result) = $ty.lookup_pkh_ecdsa_sig(key_hash) {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_pkh_tap_leaf_script_sig(
+                &self,
+                key_hash: &(Pk::Hash, TapLeafHash),
+            ) -> Option<(XOnlyPublicKey, elements::SchnorrSig)> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_pkh_tap_leaf_script_sig(key_hash) {
                         return Some(result);
                     }
                 )*
@@ -440,6 +585,18 @@ macro_rules! impl_tuple_satisfier {
                 let &($(ref $ty,)*) = self;
                 $(
                     if let Some(result) = $ty.lookup_pkh_pk(key_hash) {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_tap_control_block_map(
+                &self,
+            ) -> Option<&BTreeMap<ControlBlock, (elements::Script, LeafVersion)>> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_tap_control_block_map() {
                         return Some(result);
                     }
                 )*
@@ -667,15 +824,23 @@ impl Ord for Witness {
 
 impl Witness {
     /// Turn a signature into (part of) a satisfaction
-    pub fn signature<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pk: &Pk) -> Self {
-        match sat.lookup_sig(pk) {
-            Some((sig, hashtype)) => {
-                let mut ret = sig.serialize_der().to_vec();
-                ret.push(hashtype.as_u32() as u8);
-                Witness::Stack(vec![ret])
-            }
-            // Signatures cannot be forged
-            None => Witness::Impossible,
+    fn signature<Pk: ToPublicKey, S: Satisfier<Pk>, Ctx: ScriptContext>(
+        sat: S,
+        pk: &Pk,
+        leaf_hash: &TapLeafHash,
+    ) -> Self {
+        match Ctx::sig_type() {
+            super::context::SigType::Ecdsa => match sat.lookup_ecdsa_sig(pk) {
+                Some(sig) => Witness::Stack(vec![elementssig_to_rawsig(&sig)]),
+                // Signatures cannot be forged
+                None => Witness::Impossible,
+            },
+            super::context::SigType::Schnorr => match sat.lookup_tap_leaf_script_sig(pk, leaf_hash)
+            {
+                Some(sig) => Witness::Stack(vec![sig.to_vec()]),
+                // Signatures cannot be forged
+                None => Witness::Impossible,
+            },
         }
     }
 
@@ -691,7 +856,7 @@ impl Witness {
 
     /// Turn a key/signature pair related to a pkh into (part of) a satisfaction
     pub fn pkh_signature<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &Pk::Hash) -> Self {
-        match sat.lookup_pkh_sig(pkh) {
+        match sat.lookup_pkh_ecdsa_sig(pkh) {
             Some((pk, (sig, hashtype))) => {
                 let mut ret = sig.serialize_der().to_vec();
                 ret.push(hashtype.as_u32() as u8);
@@ -792,6 +957,7 @@ impl Satisfaction {
         subs: &[Arc<Miniscript<Pk, Ctx, Ext>>],
         stfr: &Sat,
         root_has_sig: bool,
+        leaf_hash: &TapLeafHash,
         min_fn: &mut F,
     ) -> Self
     where
@@ -803,13 +969,29 @@ impl Satisfaction {
     {
         let mut sats = subs
             .iter()
-            .map(|s| Self::satisfy_helper(&s.node, stfr, root_has_sig, min_fn, &mut Self::thresh))
+            .map(|s| {
+                Self::satisfy_helper(
+                    &s.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    &mut Self::thresh,
+                )
+            })
             .collect::<Vec<_>>();
         // Start with the to-return stack set to all dissatisfactions
         let mut ret_stack = subs
             .iter()
             .map(|s| {
-                Self::dissatisfy_helper(&s.node, stfr, root_has_sig, min_fn, &mut Self::thresh)
+                Self::dissatisfy_helper(
+                    &s.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    &mut Self::thresh,
+                )
             })
             .collect::<Vec<_>>();
 
@@ -894,6 +1076,7 @@ impl Satisfaction {
         subs: &[Arc<Miniscript<Pk, Ctx, Ext>>],
         stfr: &Sat,
         root_has_sig: bool,
+        leaf_hash: &TapLeafHash,
         min_fn: &mut F,
     ) -> Self
     where
@@ -906,14 +1089,28 @@ impl Satisfaction {
         let mut sats = subs
             .iter()
             .map(|s| {
-                Self::satisfy_helper(&s.node, stfr, root_has_sig, min_fn, &mut Self::thresh_mall)
+                Self::satisfy_helper(
+                    &s.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    &mut Self::thresh_mall,
+                )
             })
             .collect::<Vec<_>>();
         // Start with the to-return stack set to all dissatisfactions
         let mut ret_stack = subs
             .iter()
             .map(|s| {
-                Self::dissatisfy_helper(&s.node, stfr, root_has_sig, min_fn, &mut Self::thresh_mall)
+                Self::dissatisfy_helper(
+                    &s.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    &mut Self::thresh_mall,
+                )
             })
             .collect::<Vec<_>>();
 
@@ -1008,6 +1205,7 @@ impl Satisfaction {
         term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,
         root_has_sig: bool,
+        leaf_hash: &TapLeafHash,
         min_fn: &mut F,
         thresh_fn: &mut G,
     ) -> Self
@@ -1017,11 +1215,18 @@ impl Satisfaction {
         Sat: Satisfier<Pk>,
         Ext: Extension<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
-        G: FnMut(usize, &[Arc<Miniscript<Pk, Ctx, Ext>>], &Sat, bool, &mut F) -> Satisfaction,
+        G: FnMut(
+            usize,
+            &[Arc<Miniscript<Pk, Ctx, Ext>>],
+            &Sat,
+            bool,
+            &TapLeafHash,
+            &mut F,
+        ) -> Satisfaction,
     {
         match *term {
             Terminal::PkK(ref pk) => Satisfaction {
-                stack: Witness::signature(stfr, pk),
+                stack: Witness::signature::<_, _, Ctx>(stfr, pk, leaf_hash),
                 has_sig: true,
             },
             Terminal::PkH(ref pkh) => Satisfaction {
@@ -1089,29 +1294,47 @@ impl Satisfaction {
             | Terminal::Verify(ref sub)
             | Terminal::NonZero(ref sub)
             | Terminal::ZeroNotEqual(ref sub) => {
-                Self::satisfy_helper(&sub.node, stfr, root_has_sig, min_fn, thresh_fn)
+                Self::satisfy_helper(&sub.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn)
             }
             Terminal::DupIf(ref sub) => {
-                let sat = Self::satisfy_helper(&sub.node, stfr, root_has_sig, min_fn, thresh_fn);
+                let sat = Self::satisfy_helper(
+                    &sub.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    thresh_fn,
+                );
                 Satisfaction {
                     stack: Witness::combine(sat.stack, Witness::push_1()),
                     has_sig: sat.has_sig,
                 }
             }
             Terminal::AndV(ref l, ref r) | Terminal::AndB(ref l, ref r) => {
-                let l_sat = Self::satisfy_helper(&l.node, stfr, root_has_sig, min_fn, thresh_fn);
-                let r_sat = Self::satisfy_helper(&r.node, stfr, root_has_sig, min_fn, thresh_fn);
+                let l_sat =
+                    Self::satisfy_helper(&l.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn);
+                let r_sat =
+                    Self::satisfy_helper(&r.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn);
                 Satisfaction {
                     stack: Witness::combine(r_sat.stack, l_sat.stack),
                     has_sig: l_sat.has_sig || r_sat.has_sig,
                 }
             }
             Terminal::AndOr(ref a, ref b, ref c) => {
-                let a_sat = Self::satisfy_helper(&a.node, stfr, root_has_sig, min_fn, thresh_fn);
-                let a_nsat =
-                    Self::dissatisfy_helper(&a.node, stfr, root_has_sig, min_fn, thresh_fn);
-                let b_sat = Self::satisfy_helper(&b.node, stfr, root_has_sig, min_fn, thresh_fn);
-                let c_sat = Self::satisfy_helper(&c.node, stfr, root_has_sig, min_fn, thresh_fn);
+                let a_sat =
+                    Self::satisfy_helper(&a.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn);
+                let a_nsat = Self::dissatisfy_helper(
+                    &a.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    thresh_fn,
+                );
+                let b_sat =
+                    Self::satisfy_helper(&b.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn);
+                let c_sat =
+                    Self::satisfy_helper(&c.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn);
 
                 min_fn(
                     Satisfaction {
@@ -1125,12 +1348,26 @@ impl Satisfaction {
                 )
             }
             Terminal::OrB(ref l, ref r) => {
-                let l_sat = Self::satisfy_helper(&l.node, stfr, root_has_sig, min_fn, thresh_fn);
-                let r_sat = Self::satisfy_helper(&r.node, stfr, root_has_sig, min_fn, thresh_fn);
-                let l_nsat =
-                    Self::dissatisfy_helper(&l.node, stfr, root_has_sig, min_fn, thresh_fn);
-                let r_nsat =
-                    Self::dissatisfy_helper(&r.node, stfr, root_has_sig, min_fn, thresh_fn);
+                let l_sat =
+                    Self::satisfy_helper(&l.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn);
+                let r_sat =
+                    Self::satisfy_helper(&r.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn);
+                let l_nsat = Self::dissatisfy_helper(
+                    &l.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    thresh_fn,
+                );
+                let r_nsat = Self::dissatisfy_helper(
+                    &r.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    thresh_fn,
+                );
 
                 assert!(!l_nsat.has_sig);
                 assert!(!r_nsat.has_sig);
@@ -1147,10 +1384,18 @@ impl Satisfaction {
                 )
             }
             Terminal::OrD(ref l, ref r) | Terminal::OrC(ref l, ref r) => {
-                let l_sat = Self::satisfy_helper(&l.node, stfr, root_has_sig, min_fn, thresh_fn);
-                let r_sat = Self::satisfy_helper(&r.node, stfr, root_has_sig, min_fn, thresh_fn);
-                let l_nsat =
-                    Self::dissatisfy_helper(&l.node, stfr, root_has_sig, min_fn, thresh_fn);
+                let l_sat =
+                    Self::satisfy_helper(&l.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn);
+                let r_sat =
+                    Self::satisfy_helper(&r.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn);
+                let l_nsat = Self::dissatisfy_helper(
+                    &l.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    thresh_fn,
+                );
 
                 assert!(!l_nsat.has_sig);
 
@@ -1163,8 +1408,10 @@ impl Satisfaction {
                 )
             }
             Terminal::OrI(ref l, ref r) => {
-                let l_sat = Self::satisfy_helper(&l.node, stfr, root_has_sig, min_fn, thresh_fn);
-                let r_sat = Self::satisfy_helper(&r.node, stfr, root_has_sig, min_fn, thresh_fn);
+                let l_sat =
+                    Self::satisfy_helper(&l.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn);
+                let r_sat =
+                    Self::satisfy_helper(&r.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn);
                 min_fn(
                     Satisfaction {
                         stack: Witness::combine(l_sat.stack, Witness::push_1()),
@@ -1176,13 +1423,15 @@ impl Satisfaction {
                     },
                 )
             }
-            Terminal::Thresh(k, ref subs) => thresh_fn(k, subs, stfr, root_has_sig, min_fn),
+            Terminal::Thresh(k, ref subs) => {
+                thresh_fn(k, subs, stfr, root_has_sig, leaf_hash, min_fn)
+            }
             Terminal::Multi(k, ref keys) => {
                 // Collect all available signatures
                 let mut sig_count = 0;
                 let mut sigs = Vec::with_capacity(k);
                 for pk in keys {
-                    match Witness::signature(stfr, pk) {
+                    match Witness::signature::<_, _, Ctx>(stfr, pk, leaf_hash) {
                         Witness::Stack(sig) => {
                             sigs.push(sig);
                             sig_count += 1;
@@ -1219,6 +1468,44 @@ impl Satisfaction {
                     }
                 }
             }
+            Terminal::MultiA(k, ref keys) => {
+                // Collect all available signatures
+                let mut sig_count = 0;
+                let mut sigs = vec![vec![vec![]]; keys.len()];
+                for (i, pk) in keys.iter().rev().enumerate() {
+                    match Witness::signature::<_, _, Ctx>(stfr, pk, leaf_hash) {
+                        Witness::Stack(sig) => {
+                            sigs[i] = sig;
+                            sig_count += 1;
+                            // This a privacy issue, we are only selecting the first available
+                            // sigs. Incase pk at pos 1 is not selected, we know we did not have access to it
+                            // bitcoin core also implements the same logic for MULTISIG, so I am not bothering
+                            // permuting the sigs for now
+                            if sig_count == k {
+                                break;
+                            }
+                        }
+                        Witness::Impossible => {}
+                        Witness::Unavailable => unreachable!(
+                            "Signature satisfaction without witness must be impossible"
+                        ),
+                    }
+                }
+
+                if sig_count < k {
+                    Satisfaction {
+                        stack: Witness::Impossible,
+                        has_sig: false,
+                    }
+                } else {
+                    Satisfaction {
+                        stack: sigs.into_iter().fold(Witness::empty(), |acc, sig| {
+                            Witness::combine(acc, Witness::Stack(sig))
+                        }),
+                        has_sig: true,
+                    }
+                }
+            }
             Terminal::Ext(ref e) => e.satisfy(stfr),
         }
     }
@@ -1228,6 +1515,7 @@ impl Satisfaction {
         term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,
         root_has_sig: bool,
+        leaf_hash: &TapLeafHash,
         min_fn: &mut F,
         thresh_fn: &mut G,
     ) -> Self
@@ -1237,7 +1525,14 @@ impl Satisfaction {
         Sat: Satisfier<Pk>,
         Ext: Extension<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
-        G: FnMut(usize, &[Arc<Miniscript<Pk, Ctx, Ext>>], &Sat, bool, &mut F) -> Satisfaction,
+        G: FnMut(
+            usize,
+            &[Arc<Miniscript<Pk, Ctx, Ext>>],
+            &Sat,
+            bool,
+            &TapLeafHash,
+            &mut F,
+        ) -> Satisfaction,
     {
         match *term {
             Terminal::PkK(..) => Satisfaction {
@@ -1275,7 +1570,7 @@ impl Satisfaction {
             | Terminal::Swap(ref sub)
             | Terminal::Check(ref sub)
             | Terminal::ZeroNotEqual(ref sub) => {
-                Self::dissatisfy_helper(&sub.node, stfr, root_has_sig, min_fn, thresh_fn)
+                Self::dissatisfy_helper(&sub.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn)
             }
             Terminal::DupIf(_) | Terminal::NonZero(_) => Satisfaction {
                 stack: Witness::push_0(),
@@ -1286,9 +1581,16 @@ impl Satisfaction {
                 has_sig: false,
             },
             Terminal::AndV(ref v, ref other) => {
-                let vsat = Self::satisfy_helper(&v.node, stfr, root_has_sig, min_fn, thresh_fn);
-                let odissat =
-                    Self::dissatisfy_helper(&other.node, stfr, root_has_sig, min_fn, thresh_fn);
+                let vsat =
+                    Self::satisfy_helper(&v.node, stfr, root_has_sig, leaf_hash, min_fn, thresh_fn);
+                let odissat = Self::dissatisfy_helper(
+                    &other.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    thresh_fn,
+                );
                 Satisfaction {
                     stack: Witness::combine(odissat.stack, vsat.stack),
                     has_sig: vsat.has_sig || odissat.has_sig,
@@ -1298,8 +1600,22 @@ impl Satisfaction {
             | Terminal::OrB(ref l, ref r)
             | Terminal::OrD(ref l, ref r)
             | Terminal::AndOr(ref l, _, ref r) => {
-                let lnsat = Self::dissatisfy_helper(&l.node, stfr, root_has_sig, min_fn, thresh_fn);
-                let rnsat = Self::dissatisfy_helper(&r.node, stfr, root_has_sig, min_fn, thresh_fn);
+                let lnsat = Self::dissatisfy_helper(
+                    &l.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    thresh_fn,
+                );
+                let rnsat = Self::dissatisfy_helper(
+                    &r.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    thresh_fn,
+                );
                 Satisfaction {
                     stack: Witness::combine(rnsat.stack, lnsat.stack),
                     has_sig: rnsat.has_sig || lnsat.has_sig,
@@ -1310,24 +1626,45 @@ impl Satisfaction {
                 has_sig: false,
             },
             Terminal::OrI(ref l, ref r) => {
-                let lnsat = Self::dissatisfy_helper(&l.node, stfr, root_has_sig, min_fn, thresh_fn);
+                let lnsat = Self::dissatisfy_helper(
+                    &l.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    thresh_fn,
+                );
                 let dissat_1 = Satisfaction {
                     stack: Witness::combine(lnsat.stack, Witness::push_1()),
                     has_sig: lnsat.has_sig,
                 };
 
-                let rnsat = Self::dissatisfy_helper(&r.node, stfr, root_has_sig, min_fn, thresh_fn);
+                let rnsat = Self::dissatisfy_helper(
+                    &r.node,
+                    stfr,
+                    root_has_sig,
+                    leaf_hash,
+                    min_fn,
+                    thresh_fn,
+                );
                 let dissat_2 = Satisfaction {
                     stack: Witness::combine(rnsat.stack, Witness::push_0()),
                     has_sig: rnsat.has_sig,
                 };
 
-                min_fn(dissat_1, dissat_2)
+                // Dissatisfactions don't need to non-malleable. Use minimum_mall always
+                Satisfaction::minimum_mall(dissat_1, dissat_2)
             }
             Terminal::Thresh(_, ref subs) => Satisfaction {
                 stack: subs.iter().fold(Witness::empty(), |acc, sub| {
-                    let nsat =
-                        Self::dissatisfy_helper(&sub.node, stfr, root_has_sig, min_fn, thresh_fn);
+                    let nsat = Self::dissatisfy_helper(
+                        &sub.node,
+                        stfr,
+                        root_has_sig,
+                        leaf_hash,
+                        min_fn,
+                        thresh_fn,
+                    );
                     assert!(!nsat.has_sig);
                     Witness::combine(nsat.stack, acc)
                 }),
@@ -1335,6 +1672,10 @@ impl Satisfaction {
             },
             Terminal::Multi(k, _) => Satisfaction {
                 stack: Witness::Stack(vec![vec![]; k + 1]),
+                has_sig: false,
+            },
+            Terminal::MultiA(_, ref pks) => Satisfaction {
+                stack: Witness::Stack(vec![vec![]; pks.len()]),
                 has_sig: false,
             },
             Terminal::Ext(ref e) => e.dissatisfy(stfr),
@@ -1346,6 +1687,7 @@ impl Satisfaction {
         term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,
         root_has_sig: bool,
+        leaf_hash: &TapLeafHash,
     ) -> Self
     where
         Pk: MiniscriptKey + ToPublicKey,
@@ -1357,6 +1699,7 @@ impl Satisfaction {
             term,
             stfr,
             root_has_sig,
+            leaf_hash,
             &mut Satisfaction::minimum,
             &mut Satisfaction::thresh,
         )
@@ -1372,11 +1715,13 @@ impl Satisfaction {
         term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,
         root_has_sig: bool,
+        leaf_hash: &TapLeafHash,
     ) -> Self {
         Self::satisfy_helper(
             term,
             stfr,
             root_has_sig,
+            leaf_hash,
             &mut Satisfaction::minimum_mall,
             &mut Satisfaction::thresh_mall,
         )

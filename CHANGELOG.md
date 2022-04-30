@@ -1,3 +1,15 @@
+# Taproot updates
+- Changed the ToPublicKey trait to support x-only keys.
+# 6.0.1 - Aug 5, 2021
+
+- The `lift` method on a Miniscript node was fixed. It would previously mix up
+  the `X` and `Y` argument of an `andor` fragment.
+
+# 6.0.0 - Jul 29, 2021
+
+- bump `rust-bitcoin` to 0.27
+- several bugfixes
+
 # 5.0.0 - Jan 14, 2021
 
 - Remove `PkCtx` from the API

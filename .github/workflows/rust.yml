@@ -9,7 +9,7 @@ jobs:
     strategy:
       matrix:
         rust:
-          - stable
+          - 1.58.0
     steps:
       - name: Checkout Crate
         uses: actions/checkout@v2
@@ -48,14 +48,32 @@ jobs:
           DO_BENCH: true
         run: ./contrib/test.sh
 
-  Tests:
+  UnitTests:
     name: Tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
         rust:
-          - 1.29.0
+          - 1.41.1
           - beta
+    steps:
+      - name: Checkout Crate
+        uses: actions/checkout@v2
+      - name: Checkout Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.rust }}
+          override: true
+      - name: Running cargo
+        run: ./contrib/test.sh
+
+  AllTests:
+    name: Unit + Int tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
           - stable
     steps:
       - name: Checkout Crate
@@ -66,8 +84,5 @@ jobs:
           profile: minimal
           toolchain: ${{ matrix.rust }}
           override: true
-      - name: Pin cc if rust 1.29
-        if: matrix.rust == '1.29.0'
-        run: cargo generate-lockfile --verbose && cargo update -p cc --precise "1.0.41" --verbose
       - name: Running cargo
         run: ./contrib/test.sh

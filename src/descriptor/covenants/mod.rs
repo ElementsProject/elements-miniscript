@@ -55,6 +55,7 @@ pub use self::script_internals::CovOperations;
 #[allow(unused_imports)]
 mod tests {
 
+    use interpreter;
     use CovenantExt;
 
     use super::cov::*;
@@ -101,7 +102,7 @@ mod tests {
     fn script_rtt(desc_str: &str) {
         let desc = Descriptor::<bitcoin::PublicKey>::from_str(desc_str).unwrap();
         assert_eq!(desc.desc_type(), DescriptorType::Cov);
-        let script = desc.explicit_script();
+        let script = desc.as_cov().expect("Parsed as cov").encode();
 
         let cov_desc =
             CovenantDescriptor::<bitcoin::PublicKey, CovenantExt>::parse_insane(&script).unwrap();
@@ -148,7 +149,7 @@ mod tests {
             sk[2] = (i >> 16) as u8;
             let sk = secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("secret key");
             let pk = bitcoin::PublicKey {
-                key: secp256k1_zkp::PublicKey::from_secret_key(&secp_sign, &sk),
+                inner: secp256k1_zkp::PublicKey::from_secret_key(&secp_sign, &sk),
                 compressed: true,
             };
             sks.push(sk);
@@ -231,7 +232,7 @@ mod tests {
 
         let sighash_u256 = cov_sat.segwit_sighash().unwrap();
         let secp = secp256k1_zkp::Secp256k1::signing_only();
-        let sig = secp.sign(
+        let sig = secp.sign_ecdsa(
             &secp256k1_zkp::Message::from_slice(&sighash_u256[..]).unwrap(),
             &cov_sk,
         );
@@ -244,7 +245,7 @@ mod tests {
         }
 
         impl Satisfier<bitcoin::PublicKey> for SimpleSat {
-            fn lookup_sig(&self, pk: &bitcoin::PublicKey) -> Option<ElementsSig> {
+            fn lookup_ecdsa_sig(&self, pk: &bitcoin::PublicKey) -> Option<ElementsSig> {
                 if *pk == self.pk {
                     Some(self.sig)
                 } else {
@@ -260,8 +261,7 @@ mod tests {
 
         // A pair of satisfiers is also a satisfier
         let (wit, ss) = desc.get_satisfaction((cov_sat, pk_sat))?;
-        let mut interpreter =
-            Interpreter::from_txdata(&desc.script_pubkey(), &ss, &wit, 0, 0).unwrap();
+        let interpreter = Interpreter::from_txdata(&desc.script_pubkey(), &ss, &wit, 0, 0).unwrap();
 
         assert!(wit[0].len() <= 73);
         assert!(wit[1].len() == 4); // version
@@ -269,7 +269,7 @@ mod tests {
         // Check that everything is executed correctly with correct sigs inside
         // miniscript
         let constraints = interpreter
-            .iter(|_, _| true)
+            .iter_assume_sigs()
             .collect::<Result<Vec<_>, _>>()
             .expect("If satisfy succeeds, interpret must succeed");
 
@@ -277,8 +277,7 @@ mod tests {
         assert_eq!(
             constraints.last().unwrap(),
             &SatisfiedConstraint::PublicKey {
-                key: &desc.pk,
-                sig: sig,
+                key_sig: interpreter::KeySigPair::Ecdsa(desc.pk, (sig, SigHashType::All))
             }
         );
         Ok(())
@@ -426,7 +425,7 @@ mod tests {
 
         let sighash_u256 = cov_sat.segwit_sighash().unwrap();
         let secp = secp256k1_zkp::Secp256k1::signing_only();
-        let sig = secp.sign(
+        let sig = secp.sign_ecdsa(
             &secp256k1_zkp::Message::from_slice(&sighash_u256[..]).unwrap(),
             &sks[0],
         );
@@ -439,7 +438,7 @@ mod tests {
         }
 
         impl Satisfier<bitcoin::PublicKey> for SimpleSat {
-            fn lookup_sig(&self, pk: &bitcoin::PublicKey) -> Option<ElementsSig> {
+            fn lookup_ecdsa_sig(&self, pk: &bitcoin::PublicKey) -> Option<ElementsSig> {
                 if *pk == self.pk {
                     Some(self.sig)
                 } else {
@@ -452,10 +451,9 @@ mod tests {
 
         // A pair of satisfiers is also a satisfier
         let (wit, ss) = desc.get_satisfaction((cov_sat, pk_sat)).unwrap();
-        let mut interpreter =
-            Interpreter::from_txdata(&desc.script_pubkey(), &ss, &wit, 0, 0).unwrap();
+        let interpreter = Interpreter::from_txdata(&desc.script_pubkey(), &ss, &wit, 0, 0).unwrap();
         // Check that everything is executed correctly with dummysigs
-        let constraints: Result<Vec<_>, _> = interpreter.iter(|_, _| true).collect();
+        let constraints: Result<Vec<_>, _> = interpreter.iter_assume_sigs().collect();
         constraints.expect("Covenant incorrect satisfaction");
         // Commented Demo test code:
         // 1) Send 0.002 btc to above address
@@ -480,7 +478,7 @@ mod tests {
             has_issuance: false,
             // perhaps make this an option in elements upstream?
             asset_issuance: AssetIssuance {
-                asset_blinding_nonce: ZERO_TWEAK,
+                asset_blinding_nonce: secp256k1_zkp::ZERO_TWEAK,
                 asset_entropy: [0; 32],
                 amount: confidential::Value::Null,
                 inflation_keys: confidential::Value::Null,

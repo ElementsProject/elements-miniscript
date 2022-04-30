@@ -22,6 +22,7 @@ use std::convert::From;
 use std::marker::PhantomData;
 use std::{cmp, error, f64, fmt, mem};
 
+use miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
 use miniscript::limits::MAX_SCRIPT_ELEMENT_SIZE;
 use miniscript::types::{self, ErrorKind, ExtData, Property, Type};
 use miniscript::ScriptContext;
@@ -1021,7 +1022,7 @@ where
                 })
                 .collect();
 
-            if key_vec.len() == subs.len() && subs.len() <= 20 {
+            if key_vec.len() == subs.len() && subs.len() <= MAX_PUBKEYS_PER_MULTISIG {
                 insert_wrap!(AstElemExt::terminal(Terminal::Multi(k, key_vec)));
             }
             // Not a threshold, it's always more optimal to translate it to and()s as we save the
@@ -1188,8 +1189,7 @@ where
 mod tests {
     use super::*;
     use bitcoin;
-    use elements::SigHashType;
-    use elements::{hashes, secp256k1_zkp};
+    use elements::{self, hashes, secp256k1_zkp};
     use elements::{opcodes, script};
     use std::collections::HashMap;
     use std::str::FromStr;
@@ -1205,7 +1205,7 @@ mod tests {
     type DummySegwitAstElemExt = policy::compiler::AstElemExt<String, Segwitv0>;
     type SegwitMiniScript = Miniscript<bitcoin::PublicKey, Segwitv0>;
 
-    fn pubkeys_and_a_sig(n: usize) -> (Vec<bitcoin::PublicKey>, secp256k1_zkp::Signature) {
+    fn pubkeys_and_a_sig(n: usize) -> (Vec<bitcoin::PublicKey>, secp256k1_zkp::ecdsa::Signature) {
         let mut ret = Vec::with_capacity(n);
         let secp = secp256k1_zkp::Secp256k1::new();
         let mut sk = [0; 32];
@@ -1215,7 +1215,7 @@ mod tests {
             sk[2] = (i >> 16) as u8;
 
             let pk = bitcoin::PublicKey {
-                key: secp256k1_zkp::PublicKey::from_secret_key(
+                inner: secp256k1_zkp::PublicKey::from_secret_key(
                     &secp,
                     &secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("sk"),
                 ),
@@ -1223,7 +1223,7 @@ mod tests {
             };
             ret.push(pk);
         }
-        let sig = secp.sign(
+        let sig = secp.sign_ecdsa(
             &secp256k1_zkp::Message::from_slice(&sk[..]).expect("secret key"),
             &secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("secret key"),
         );
@@ -1276,6 +1276,7 @@ mod tests {
         assert!(policy_compile_lift_check("and(pk(A),pk(B))").is_ok());
         assert!(policy_compile_lift_check("or(pk(A),pk(B))").is_ok());
         assert!(policy_compile_lift_check("thresh(2,pk(A),pk(B),pk(C))").is_ok());
+        assert!(policy_compile_lift_check("or(thresh(1,pk(A),pk(B)),pk(C))").is_ok());
 
         assert_eq!(
             policy_compile_lift_check("thresh(2,after(9),after(9),pk(A))"),
@@ -1382,20 +1383,20 @@ mod tests {
 
         let mut abs = policy.lift().unwrap();
         assert_eq!(abs.n_keys(), 8);
-        assert_eq!(abs.minimum_n_keys(), 2);
+        assert_eq!(abs.minimum_n_keys(), Some(2));
         abs = abs.at_age(10000);
         assert_eq!(abs.n_keys(), 8);
-        assert_eq!(abs.minimum_n_keys(), 2);
+        assert_eq!(abs.minimum_n_keys(), Some(2));
         abs = abs.at_age(9999);
         assert_eq!(abs.n_keys(), 5);
-        assert_eq!(abs.minimum_n_keys(), 3);
+        assert_eq!(abs.minimum_n_keys(), Some(3));
         abs = abs.at_age(0);
         assert_eq!(abs.n_keys(), 5);
-        assert_eq!(abs.minimum_n_keys(), 3);
+        assert_eq!(abs.minimum_n_keys(), Some(3));
 
-        let bitcoinsig = (sig, SigHashType::All);
-        let mut sigvec = sig.serialize_der().to_vec();
-        sigvec.push(1); // sighash all
+        let elements_sig = (sig, elements::SigHashType::All);
+        let mut sigvec = elements_sig.0.serialize_der().to_vec();
+        sigvec.push(elements_sig.1 as u8);
 
         let no_sat = HashMap::<bitcoin::PublicKey, ElementsSig>::new();
         let mut left_sat = HashMap::<bitcoin::PublicKey, ElementsSig>::new();
@@ -1403,10 +1404,10 @@ mod tests {
             HashMap::<hashes::hash160::Hash, (bitcoin::PublicKey, ElementsSig)>::new();
 
         for i in 0..5 {
-            left_sat.insert(keys[i], bitcoinsig);
+            left_sat.insert(keys[i], elements_sig);
         }
         for i in 5..8 {
-            right_sat.insert(keys[i].to_pubkeyhash(), (keys[i], bitcoinsig));
+            right_sat.insert(keys[i].to_pubkeyhash(), (keys[i], elements_sig));
         }
 
         assert!(ms.satisfy(no_sat).is_err());

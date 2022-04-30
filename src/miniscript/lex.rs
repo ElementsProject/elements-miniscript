@@ -17,7 +17,6 @@
 //! Translates a script into a reversed sequence of tokens
 //!
 
-use bitcoin::PublicKey;
 use elements::{opcodes, script};
 
 use std::fmt;
@@ -27,14 +26,16 @@ use util::{build_scriptint, slice_to_u32_le};
 /// Atom of a tokenized version of a script
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
-pub enum Token {
+pub enum Token<'s> {
     BoolAnd,
     BoolOr,
     Add,
     Sub,
     Equal,
+    NumEqual,
     CheckSig,
     CheckSigFromStack,
+    CheckSigAdd,
     CheckSigFromStackVerify,
     CheckMultiSig,
     CheckSequenceVerify,
@@ -63,32 +64,26 @@ pub enum Token {
     Sha256,
     Hash256,
     Num(u32),
-    Hash20([u8; 20]),
-    Hash32([u8; 32]),
-    Pubkey(PublicKey),
+    Hash20(&'s [u8]),
+    Bytes32(&'s [u8]),
+    Bytes33(&'s [u8]),
+    Bytes65(&'s [u8]),
     Push(Vec<u8>),        // Num or a
     PickPush4(u32),       // Pick followed by a 4 byte push
     PickPush32([u8; 32]), // Pick followed by a 32 byte push
     PickPush(Vec<u8>),    // Pick followed by a push
 }
 
-impl fmt::Display for Token {
+impl<'s> fmt::Display for Token<'s> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Token::Num(n) => write!(f, "#{}", n),
-            Token::Hash20(hash) => {
-                for ch in &hash[..] {
+            Token::Hash20(b) | Token::Bytes33(b) | Token::Bytes32(b) | Token::Bytes65(b) => {
+                for ch in &b[..] {
                     write!(f, "{:02x}", *ch)?;
                 }
                 Ok(())
             }
-            Token::Hash32(hash) => {
-                for ch in &hash[..] {
-                    write!(f, "{:02x}", *ch)?;
-                }
-                Ok(())
-            }
-            Token::Pubkey(pk) => write!(f, "{}", pk),
             x => write!(f, "{:?}", x),
         }
     }
@@ -100,16 +95,16 @@ impl fmt::Display for Token {
 // This really does not need to be an iterator because the way we are using it, we are
 // actually collecting lexed symbols into a vector. If that is the case, might as well
 // use the inner vector directly
-pub struct TokenIter(Vec<Token>);
+pub struct TokenIter<'s>(Vec<Token<'s>>);
 
-impl TokenIter {
+impl<'s> TokenIter<'s> {
     /// Create a new TokenIter
-    pub fn new(v: Vec<Token>) -> TokenIter {
+    pub fn new(v: Vec<Token<'s>>) -> TokenIter<'s> {
         TokenIter(v)
     }
 
     /// Look at the top at Iterator
-    pub fn peek(&self) -> Option<&Token> {
+    pub fn peek(&self) -> Option<&'s Token> {
         self.0.last()
     }
 
@@ -137,7 +132,7 @@ impl TokenIter {
 
     /// Push a value to the iterator
     /// This will be first value consumed by popun_
-    pub fn un_next(&mut self, tok: Token) {
+    pub fn un_next(&mut self, tok: Token<'s>) {
         self.0.push(tok)
     }
 
@@ -147,16 +142,16 @@ impl TokenIter {
     }
 }
 
-impl Iterator for TokenIter {
-    type Item = Token;
+impl<'s> Iterator for TokenIter<'s> {
+    type Item = Token<'s>;
 
-    fn next(&mut self) -> Option<Token> {
+    fn next(&mut self) -> Option<Token<'s>> {
         self.0.pop()
     }
 }
 
 /// Tokenize a script
-pub fn lex(script: &script::Script) -> Result<Vec<Token>, Error> {
+pub fn lex<'s>(script: &'s script::Script) -> Result<Vec<Token<'s>>, Error> {
     let mut ret = Vec::with_capacity(script.len());
 
     fn process_candidate_push(ret: &mut Vec<Token>) -> Result<(), Error> {
@@ -167,8 +162,7 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token>, Error> {
         }
         let token = match &ret[ret_len - 2] {
             Token::Hash20(x) => Token::Push(x.to_vec()),
-            Token::Hash32(x) => Token::Push(x.to_vec()),
-            Token::Pubkey(pk) => Token::Push(pk.to_bytes()),
+            Token::Bytes32(x) | Token::Bytes33(x) | Token::Bytes65(x) => Token::Push(x.to_vec()),
             Token::Num(k) => Token::Push(build_scriptint(*k as i64)),
             _x => return Ok(()), // no change required
         };
@@ -191,6 +185,13 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token>, Error> {
                 ret.push(Token::Equal);
                 ret.push(Token::Verify);
             }
+            script::Instruction::Op(opcodes::all::OP_NUMEQUAL) => {
+                ret.push(Token::NumEqual);
+            }
+            script::Instruction::Op(opcodes::all::OP_NUMEQUALVERIFY) => {
+                ret.push(Token::NumEqual);
+                ret.push(Token::Verify);
+            }
             script::Instruction::Op(opcodes::all::OP_CHECKSIG) => {
                 ret.push(Token::CheckSig);
             }
@@ -203,6 +204,11 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token>, Error> {
             script::Instruction::Op(opcodes::all::OP_CHECKSIGVERIFY) => {
                 ret.push(Token::CheckSig);
                 ret.push(Token::Verify);
+            }
+            // Change once the opcode name is updated
+            // TODO: UPDATE UPSTREAM OPCODES
+            script::Instruction::Op(opcodes::all::OP_RETURN_186) => {
+                ret.push(Token::CheckSigAdd);
             }
             script::Instruction::Op(opcodes::all::OP_CHECKMULTISIG) => {
                 ret.push(Token::CheckMultiSig);
@@ -283,7 +289,7 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token>, Error> {
                     Some(op @ &Token::Equal)
                     | Some(op @ &Token::CheckSig)
                     | Some(op @ &Token::CheckMultiSig) => {
-                        return Err(Error::NonMinimalVerify(op.clone()))
+                        return Err(Error::NonMinimalVerify(String::from(format!("{:?}", op))))
                     }
                     _ => {}
                 }
@@ -328,21 +334,10 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token>, Error> {
                     // reconvert these to pushes.
                     // See [process_candidate_push]
                     match bytes.len() {
-                        20 => {
-                            let mut x = [0; 20];
-                            x.copy_from_slice(bytes);
-                            ret.push(Token::Hash20(x));
-                        }
-                        32 => {
-                            let mut x = [0; 32];
-                            x.copy_from_slice(bytes);
-                            ret.push(Token::Hash32(x));
-                        }
-                        33 | 65 => {
-                            ret.push(Token::Pubkey(
-                                PublicKey::from_slice(bytes).map_err(Error::BadPubkey)?,
-                            ));
-                        }
+                        20 => ret.push(Token::Hash20(&bytes)),
+                        32 => ret.push(Token::Bytes32(&bytes)),
+                        33 => ret.push(Token::Bytes33(&bytes)),
+                        65 => ret.push(Token::Bytes65(&bytes)),
                         _ => {
                             match script::read_scriptint(bytes) {
                                 Ok(v) if v >= 0 => {

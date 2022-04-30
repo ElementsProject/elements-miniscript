@@ -1,5 +1,8 @@
-use elements::Script;
 use elements::{self, script};
+use elements::{opcodes, Script};
+use miniscript::context;
+
+use {ScriptContext, ToPublicKey};
 pub(crate) fn varint_len(n: usize) -> usize {
     elements::VarInt(n as u64).len()
 }
@@ -76,4 +79,33 @@ pub(crate) fn count_non_push_opcodes(script: &Script) -> Result<usize, elements:
         }
     }
     Ok(count)
+}
+// trait for pushing key that depend on context
+pub(crate) trait MsKeyBuilder {
+    /// Serialize the key as bytes based on script context. Used when encoding miniscript into bitcoin script
+    fn push_ms_key<Pk, Ctx>(self, key: &Pk) -> Self
+    where
+        Pk: ToPublicKey,
+        Ctx: ScriptContext;
+}
+
+impl MsKeyBuilder for script::Builder {
+    fn push_ms_key<Pk, Ctx>(self, key: &Pk) -> Self
+    where
+        Pk: ToPublicKey,
+        Ctx: ScriptContext,
+    {
+        match Ctx::sig_type() {
+            context::SigType::Ecdsa => self.push_key(&key.to_public_key()),
+            context::SigType::Schnorr => self.push_slice(&key.to_x_only_pubkey().serialize()),
+        }
+    }
+}
+
+/// Checks whether a script pubkey is a P2TR output.
+#[inline]
+pub fn is_v1_p2tr(script: &Script) -> bool {
+    script.len() == 34
+        && script[0] == opcodes::all::OP_PUSHNUM_1.into_u8()
+        && script[1] == opcodes::all::OP_PUSHBYTES_32.into_u8()
 }

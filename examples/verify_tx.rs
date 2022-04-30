@@ -20,7 +20,8 @@ extern crate elements_miniscript as miniscript;
 
 use elements::confidential;
 use elements::encode::Decodable;
-use elements::secp256k1_zkp; // secp256k1 re-exported from rust-bitcoin
+use elements::secp256k1_zkp;
+use miniscript::interpreter::KeySigPair; // secp256k1 re-exported from rust-bitcoin
 use std::str::FromStr;
 fn main() {
     // some random liquid tx from mempool(Dec 3rd 2020)
@@ -35,8 +36,7 @@ fn main() {
         0xa9, 0x14, 0x10, 0xc4, 0x65, 0x2c, 0x0d, 0x2d, 0xf7, 0xaf, 0xaa, 0xaf, 0x82, 0x0e, 0x48,
         0x9c, 0xb2, 0x7f, 0xae, 0x60, 0xd4, 0x86, 0x87,
     ]);
-
-    let mut interpreter = miniscript::Interpreter::from_txdata(
+    let interpreter = miniscript::Interpreter::from_txdata(
         &spk_input_1,
         &transaction.input[0].script_sig,
         &transaction.input[0].witness.script_witness,
@@ -58,11 +58,15 @@ fn main() {
     //    the blockchain, standardness would've required they be
     //    either valid or 0-length.
     println!("\nExample one");
-    for elem in interpreter.iter(|_, _| true) {
+    for elem in interpreter.iter_assume_sigs() {
         // Don't bother checking signatures
         match elem.expect("no evaluation error") {
-            miniscript::interpreter::SatisfiedConstraint::PublicKey { key, sig } => {
-                println!("Signed with {}: {}", key, sig);
+            miniscript::interpreter::SatisfiedConstraint::PublicKey { key_sig } => {
+                // Check that the signature is ecdsa sig
+                let (key, sig) = key_sig
+                    .as_ecdsa()
+                    .expect("Expected Ecdsa sig, found schnorr sig");
+                println!("Signed with {}: {}, sighash type: {}", key, sig.0, sig.1);
             }
             _ => {}
         }
@@ -71,11 +75,7 @@ fn main() {
     // 2. Example two: verify the signatures to ensure that invalid
     //    signatures are not treated as having participated in the script
     let secp = secp256k1_zkp::Secp256k1::new();
-    // Sometimes it is necessary to have additional information to get the bitcoin::PublicKey
-    // from the MiniscriptKey which can supplied by `to_pk_ctx` parameter. For example,
-    // when calculating the script pubkey of a descriptor with xpubs, the secp context and
-    // child information maybe required.
-    let mut interpreter = miniscript::Interpreter::from_txdata(
+    let interpreter = miniscript::Interpreter::from_txdata(
         &spk_input_1,
         &transaction.input[0].script_sig,
         &transaction.input[0].witness.script_witness,
@@ -91,18 +91,22 @@ fn main() {
     .unwrap();
 
     let amount = confidential::Value::from_commitment(&conf_val).unwrap();
-    let vfyfn = interpreter.sighash_verify(&secp, &transaction, 0, amount);
-    // Restrict to sighash_all just to demonstrate how to add additional filters
-    // `&_` needed here because of https://github.com/rust-lang/rust/issues/79187
-    let vfyfn = move |pk: &_, bitcoinsig: miniscript::ElementsSig| {
-        bitcoinsig.1 == elements::SigHashType::All && vfyfn(pk, bitcoinsig)
-    };
+    // We only need to set the amount in prevouts because segwit transactions only need the amount field
+    // For taproot transactions, this must contain all the required prevouts
+    let mut spent_utxo = elements::TxOut::default();
+    spent_utxo.value = amount;
+    // Create a spend utxos, since it is a segwit spend we don't really need all prevouts. Fill dummy data for this example instead
+    let utxos = [spent_utxo, elements::TxOut::default()];
+    let prevouts = elements::sighash::Prevouts::All(&utxos);
+    // segwit spends don't require genesis hash
+    let genesis_hash = elements::BlockHash::default();
 
     println!("\nExample two");
-    for elem in interpreter.iter(vfyfn) {
+    for elem in interpreter.iter(&secp, &transaction, 0, &prevouts, genesis_hash) {
         match elem.expect("no evaluation error") {
-            miniscript::interpreter::SatisfiedConstraint::PublicKey { key, sig } => {
-                println!("Signed with {}: {}", key, sig);
+            miniscript::interpreter::SatisfiedConstraint::PublicKey { key_sig } => {
+                let (key, sig) = key_sig.as_ecdsa().unwrap();
+                println!("Signed with key {}: sig {} hash_ty: {}", key, sig.0, sig.1);
             }
             _ => {}
         }
@@ -112,8 +116,7 @@ fn main() {
     //    what happens given an apparently invalid script
     let secp = secp256k1_zkp::Secp256k1::new();
     let message = secp256k1_zkp::Message::from_slice(&[0x01; 32][..]).expect("32-byte hash");
-
-    let mut interpreter = miniscript::Interpreter::from_txdata(
+    let interpreter = miniscript::Interpreter::from_txdata(
         &spk_input_1,
         &transaction.input[0].script_sig,
         &transaction.input[0].witness.script_witness,
@@ -122,9 +125,11 @@ fn main() {
     )
     .unwrap();
 
-    let iter = interpreter.iter(|pk, (sig, sighashtype)| {
-        sighashtype == elements::SigHashType::All && secp.verify(&message, &sig, &pk.key).is_ok()
-    });
+    let iter = interpreter.iter_custom(Box::new(|key_sig: &KeySigPair| {
+        let (pk, ecdsa_sig) = key_sig.as_ecdsa().expect("Ecdsa Sig");
+        ecdsa_sig.1 == elements::SigHashType::All
+            && secp.verify_ecdsa(&message, &ecdsa_sig.0, &pk.inner).is_ok()
+    }));
     println!("\nExample three");
     for elem in iter {
         let error = elem.expect_err("evaluation error");

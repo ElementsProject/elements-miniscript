@@ -43,3 +43,16 @@ pub const MAX_SCRIPTSIG_SIZE: usize = 1650;
 /// Maximum Initial witness size allowed
 /// https://github.com/bitcoin/bitcoin/blob/283a73d7eaea2907a6f7f800f529a0d6db53d7a6/src/policy/policy.h#L42
 pub const MAX_STANDARD_P2WSH_STACK_ITEM_SIZE: usize = 80;
+/// Maximum items during stack execution
+// This limits also applies for initial stack satisfaction
+// https://github.com/bitcoin/bitcoin/blob/3af495d6972379b07530a5fcc2665aa626d01621/src/script/script.h#L35
+pub const MAX_STACK_SIZE: usize = 1000;
+/** The maximum allowed weight for a block, see BIP 141 (network rule) */
+pub const MAX_BLOCK_WEIGHT: usize = 4000000;
+
+/// Maximum pubkeys as arguments to CHECKMULTISIG
+// https://github.com/bitcoin/bitcoin/blob/6acda4b00b3fc1bfac02f5de590e1a5386cbc779/src/script/script.h#L30
+pub const MAX_PUBKEYS_PER_MULTISIG: usize = 20;
+/// Maximum number of scripts allowed by standardness rules in TapTree format
+// https://github.com/bitcoin/bitcoin/blob/81f4a3e84d6f30e7b12a9605dabc3359f614da93/src/script/interpreter.h#L229
+pub const TAPROOT_MAX_NODE_COUNT: usize = 128;

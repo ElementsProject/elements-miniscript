@@ -95,8 +95,6 @@
 //!
 //!
 #![allow(bare_trait_objects)]
-// Required for rustc 1.29
-#![recursion_limit = "128"]
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
 // Coding conventions
 #![deny(unsafe_code)]
@@ -154,20 +152,49 @@ mod util;
 
 use std::{error, fmt, str};
 
-// Find a better home
-#[allow(deprecated)]
-use bitcoin::util::contracthash;
 use elements::hashes::sha256;
 use elements::{opcodes, script, secp256k1_zkp, secp256k1_zkp::Secp256k1};
 
+pub use descriptor::pretaproot::{traits::PreTaprootDescriptorTrait, PreTaprootDescriptor};
 pub use descriptor::{Descriptor, DescriptorPublicKey, DescriptorTrait};
 pub use extensions::{CovenantExt, Extension, NoExt};
 pub use interpreter::Interpreter;
-pub use miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0};
+pub use miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0, Tap};
 pub use miniscript::decode::Terminal;
 pub use miniscript::satisfy::{elementssig_from_rawsig, elementssig_to_rawsig};
 pub use miniscript::satisfy::{ElementsSig, Preimage32, Satisfier};
 pub use miniscript::Miniscript;
+
+// minimal implementation of contract hash module
+mod contracthash {
+    use bitcoin::PublicKey;
+    use elements::hashes::{sha256, Hash, HashEngine, Hmac, HmacEngine};
+    use elements::secp256k1_zkp::{self, Secp256k1};
+
+    /// Tweak a single key using some arbitrary data
+    pub(super) fn tweak_key<C: secp256k1_zkp::Verification>(
+        secp: &Secp256k1<C>,
+        mut key: PublicKey,
+        contract: &[u8],
+    ) -> PublicKey {
+        let hmac_result = compute_tweak(&key, contract);
+        key.inner
+            .add_exp_assign(secp, &hmac_result[..])
+            .expect("HMAC cannot produce invalid tweak");
+        key
+    }
+
+    /// Compute a tweak from some given data for the given public key
+    fn compute_tweak(pk: &PublicKey, contract: &[u8]) -> Hmac<sha256::Hash> {
+        let mut hmac_engine: HmacEngine<sha256::Hash> = if pk.compressed {
+            HmacEngine::new(&pk.inner.serialize())
+        } else {
+            HmacEngine::new(&pk.inner.serialize_uncompressed())
+        };
+        hmac_engine.input(contract);
+        Hmac::from_engine(hmac_engine)
+    }
+}
 
 /// Same as upstream [`TranslatePk`] but with support for extensions
 pub trait TranslatePkExt<P: MiniscriptKey, Q: MiniscriptKey, QExt: Extension<Q>> {
@@ -214,7 +241,6 @@ where
     Pk: MiniscriptKey + ToPublicKey,
 {
     let pk = pk.to_public_key();
-    #[allow(deprecated)]
     contracthash::tweak_key(secp, pk, contract)
 }
 /// Miniscript
@@ -224,13 +250,17 @@ pub enum Error {
     InvalidOpcode(opcodes::All),
     /// Some opcode occurred followed by `OP_VERIFY` when it had
     /// a `VERIFY` version that should have been used instead
-    NonMinimalVerify(miniscript::lex::Token),
+    NonMinimalVerify(String),
     /// Push was illegal in some context
     InvalidPush(Vec<u8>),
     /// rust-bitcoin script error
     Script(script::Error),
+    /// rust-bitcoin address error
+    AddrError(bitcoin::util::address::Error),
     /// A `CHECKMULTISIG` opcode was preceded by a number > 20
     CmsTooManyKeys(u32),
+    /// A tapscript multi_a cannot support more than MAX_BLOCK_WEIGHT/32 keys
+    MultiATooManyKeys(u32),
     /// Encountered unprintable character in descriptor
     Unprintable(u8),
     /// expected character while parsing descriptor; didn't find one
@@ -245,10 +275,6 @@ pub enum Error {
     MultiAt(String),
     /// Name of a fragment contained `@` but we were not parsing an OR
     AtOutsideOr(String),
-    /// Fragment was an `and_v(_, true)` which should be written as `t:`
-    NonCanonicalTrue,
-    /// Fragment was an `or_i(_, false)` or `or_i(false,_)` which should be written as `u:` or `l:`
-    NonCanonicalFalse,
     /// Encountered a `l:0` which is syntactically equal to `u:0` except stupid
     LikelyFalse,
     /// Encountered a wrapping character that we don't recognize
@@ -301,6 +327,14 @@ pub enum Error {
     BtcError(bitcoin_miniscript::Error),
     /// Covenant Error
     CovError(descriptor::CovError),
+    /// PubKey invalid under current context
+    PubKeyCtxError(miniscript::decode::KeyParseError, &'static str),
+    /// Attempted to call function that requires PreComputed taproot info
+    TaprootSpendInfoUnavialable,
+    /// No script code for Tr descriptors
+    TrNoScriptCode,
+    /// No explicit script for Tr descriptors
+    TrNoExplicitScript,
 }
 
 #[doc(hidden)]
@@ -364,12 +398,18 @@ impl From<bitcoin::util::key::Error> for Error {
     }
 }
 
+impl From<bitcoin::util::address::Error> for Error {
+    fn from(e: bitcoin::util::address::Error) -> Error {
+        Error::AddrError(e)
+    }
+}
+
 fn errstr(s: &str) -> Error {
     Error::Unexpected(s.to_owned())
 }
 
 impl error::Error for Error {
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&dyn error::Error> {
         match *self {
             Error::BadPubkey(ref e) => Some(e),
             _ => None,
@@ -389,6 +429,7 @@ impl fmt::Display for Error {
             Error::NonMinimalVerify(ref tok) => write!(f, "{} VERIFY", tok),
             Error::InvalidPush(ref push) => write!(f, "invalid push {:?}", push), // TODO hexify this
             Error::Script(ref e) => fmt::Display::fmt(e, f),
+            Error::AddrError(ref e) => fmt::Display::fmt(e, f),
             Error::CmsTooManyKeys(n) => write!(f, "checkmultisig with {} keys", n),
             Error::Unprintable(x) => write!(f, "unprintable character 0x{:02x}", x),
             Error::ExpectedChar(c) => write!(f, "expected {}", c),
@@ -397,10 +438,6 @@ impl fmt::Display for Error {
             Error::MultiColon(ref s) => write!(f, "«{}» has multiple instances of «:»", s),
             Error::MultiAt(ref s) => write!(f, "«{}» has multiple instances of «@»", s),
             Error::AtOutsideOr(ref s) => write!(f, "«{}» contains «@» in non-or() context", s),
-            Error::NonCanonicalTrue => f.write_str("Use «t:X» rather than «and_v(X,true())»"),
-            Error::NonCanonicalFalse => {
-                f.write_str("Use «u:X» «l:X» rather than «or_i(X,false)» «or_i(false,X)»")
-            }
             Error::LikelyFalse => write!(f, "0 is not very likely (use «u:0»)"),
             Error::UnknownWrapper(ch) => write!(f, "unknown wrapper «{}:»", ch),
             Error::NonTopLevel(ref s) => write!(f, "non-T miniscript: {}", s),
@@ -446,6 +483,21 @@ impl fmt::Display for Error {
             Error::BareDescriptorAddr => write!(f, "Bare descriptors don't have address"),
             Error::BtcError(ref e) => write!(f, " Bitcoin Miniscript Error {}", e),
             Error::CovError(ref e) => write!(f, "Covenant Error: {}", e),
+            Error::PubKeyCtxError(ref pk, ref ctx) => {
+                write!(f, "Pubkey error: {} under {} scriptcontext", pk, ctx)
+            }
+            Error::MultiATooManyKeys(k) => {
+                write!(f, "MultiA too many keys {}", k)
+            }
+            Error::TaprootSpendInfoUnavialable => {
+                write!(f, "Taproot Spend Info not computed. Hint: Did you call `compute_spend_info` before calling methods from DescriptorTrait")
+            }
+            Error::TrNoScriptCode => {
+                write!(f, "No script code for Tr descriptors")
+            }
+            Error::TrNoExplicitScript => {
+                write!(f, "No script code for Tr descriptors")
+            }
         }
     }
 }

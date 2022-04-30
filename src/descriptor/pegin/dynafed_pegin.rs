@@ -23,30 +23,20 @@
 use bitcoin::hashes::Hash;
 use bitcoin::Script as BtcScript;
 use bitcoin::{self, blockdata::script, hashes};
-#[allow(deprecated)]
-use bitcoin::{blockdata::opcodes, util::contracthash};
-use bitcoin::{hashes::hash160, Address as BtcAddress};
 use elements::secp256k1_zkp;
 use expression::{self, FromTree};
 use policy::{semantic, Liftable};
-use std::{
-    fmt::Debug,
-    fmt::{self, Display},
-    marker::PhantomData,
-    str::FromStr,
-    sync::Arc,
-};
+use std::{fmt, str::FromStr};
 use Descriptor;
 use Error;
-use Miniscript;
 use {
-    BtcDescriptor, BtcDescriptorTrait, BtcError, BtcFromTree, BtcLiftable, BtcMiniscript,
-    BtcPolicy, BtcSatisfier, BtcSegwitv0, BtcTerminal, BtcTree,
+    BtcDescriptor, BtcDescriptorTrait, BtcError, BtcFromTree, BtcLiftable, BtcPolicy, BtcSatisfier,
+    BtcTree,
 };
 
-use {DescriptorTrait, Segwitv0, TranslatePk};
+use {DescriptorTrait, TranslatePk};
 
-use {tweak_key, util::varint_len};
+use tweak_key;
 
 use descriptor::checksum::{desc_checksum, verify_checksum};
 
@@ -170,8 +160,11 @@ where
     where
         Pk: ToPublicKey,
     {
+        // TODO
         Ok(bitcoin::Address::p2shwsh(
-            &self.bitcoin_witness_script(secp),
+            &self
+                .bitcoin_witness_script(secp)
+                .expect("DO this cleanly after TR. Pay to taproot pegins unspecified till now"),
             network,
         ))
     }
@@ -195,7 +188,9 @@ where
     where
         Pk: ToPublicKey,
     {
-        let witness_script = self.bitcoin_witness_script(secp);
+        let witness_script = self
+            .bitcoin_witness_script(secp)
+            .expect("TODO after taproot");
         script::Builder::new()
             .push_slice(&witness_script.to_v0_p2wsh()[..])
             .into_script()
@@ -204,18 +199,22 @@ where
     fn bitcoin_witness_script<C: secp256k1_zkp::Verification>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
-    ) -> BtcScript
+    ) -> Result<BtcScript, Error>
     where
         Pk: ToPublicKey,
     {
-        let tweak_vec = self.elem_desc.explicit_script().into_bytes();
+        let tweak_vec = self
+            .elem_desc
+            .explicit_script()
+            .expect("Tr pegins unknown yet")
+            .into_bytes();
         let tweak = hashes::sha256::Hash::hash(&tweak_vec);
         let tweaked_desc = self.fed_desc.translate_pk_infallible(
             |pk| tweak_key(pk, secp, tweak.as_inner()),
             |_| unreachable!("No keyhashes in elements descriptors"),
         );
         // Hopefully, we never have to use this and dynafed is deployed
-        tweaked_desc.explicit_script()
+        Ok(tweaked_desc.explicit_script()?)
     }
 
     fn get_bitcoin_satisfaction<S, C: secp256k1_zkp::Verification>(
@@ -227,7 +226,11 @@ where
         S: BtcSatisfier<bitcoin::PublicKey>,
         Pk: ToPublicKey,
     {
-        let tweak_vec = self.elem_desc.explicit_script().into_bytes();
+        let tweak_vec = self
+            .elem_desc
+            .explicit_script()
+            .expect("Tr pegins unknown yet")
+            .into_bytes();
         let tweak = hashes::sha256::Hash::hash(&tweak_vec);
         let tweaked_desc = self.fed_desc.translate_pk_infallible(
             |pk| tweak_key(pk, secp, tweak.as_inner()),
@@ -246,7 +249,7 @@ where
     fn script_code<C: secp256k1_zkp::Verification>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
-    ) -> BtcScript
+    ) -> Result<BtcScript, Error>
     where
         Pk: ToPublicKey,
     {

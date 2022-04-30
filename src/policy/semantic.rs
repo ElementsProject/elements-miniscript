@@ -80,7 +80,34 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Policy<Pk> {
 impl<Pk: MiniscriptKey> Policy<Pk> {
     /// Convert a policy using one kind of public key to another
     /// type of public key
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use elements_miniscript::{bitcoin::{hashes::hash160, PublicKey}, policy::semantic::Policy};
+    /// use std::str::FromStr;
+    /// let alice_pkh = "236ada020df3208d2517f4b0db03e16f92cd8cf1";
+    /// let bob_pkh = "3e89b972416ae33870b4634d03b8cdc773200cac";
+    /// let placeholder_policy = Policy::<String>::from_str("and(pkh(alice_pkh),pkh(bob_pkh))").unwrap();
+    ///
+    /// let real_policy = placeholder_policy.translate_pkh(|placeholder| match placeholder.as_str() {
+    ///     "alice_pkh" => hash160::Hash::from_str(alice_pkh),
+    ///     "bob_pkh"   => hash160::Hash::from_str(bob_pkh),
+    ///     _ => panic!("unknown key hash!")
+    /// }).unwrap();
+    ///
+    /// let expected_policy = Policy::<PublicKey>::from_str(&format!("and(pkh({}),pkh({}))", alice_pkh, bob_pkh)).unwrap();
+    /// assert_eq!(real_policy, expected_policy);
+    /// ```
     pub fn translate_pkh<Fpkh, Q, E>(&self, mut translatefpkh: Fpkh) -> Result<Policy<Q>, E>
+    where
+        Fpkh: FnMut(&Pk::Hash) -> Result<Q::Hash, E>,
+        Q: MiniscriptKey,
+    {
+        self._translate_pkh(&mut translatefpkh)
+    }
+
+    fn _translate_pkh<Fpkh, Q, E>(&self, translatefpkh: &mut Fpkh) -> Result<Policy<Q>, E>
     where
         Fpkh: FnMut(&Pk::Hash) -> Result<Q::Hash, E>,
         Q: MiniscriptKey,
@@ -98,7 +125,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             Policy::Threshold(k, ref subs) => {
                 let new_subs: Result<Vec<Policy<Q>>, _> = subs
                     .iter()
-                    .map(|sub| sub.translate_pkh(&mut translatefpkh))
+                    .map(|sub| sub._translate_pkh(translatefpkh))
                     .collect();
                 new_subs.map(|ok| Policy::Threshold(k, ok))
             }
@@ -208,7 +235,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Policy<Pk> {
                 } else if k == 1 {
                     write!(f, "or(")?;
                 } else {
-                    write!(f, "thresh({}", k)?;
+                    write!(f, "thresh({},", k)?;
                 }
                 for (i, sub) in subs.into_iter().enumerate() {
                     if i == 0 {
@@ -386,18 +413,15 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                 for sub in subs {
                     match sub {
                         Policy::Trivial | Policy::Unsatisfiable => {}
-                        Policy::Threshold(1, or_subs) => {
-                            if is_or {
-                                ret_subs.extend(or_subs);
-                            } else {
-                                ret_subs.push(Policy::Threshold(1, or_subs));
-                            }
-                        }
-                        Policy::Threshold(k, and_subs) => {
-                            if k == and_subs.len() && is_and {
-                                ret_subs.extend(and_subs)
-                            } else {
-                                ret_subs.push(Policy::Threshold(k, and_subs));
+                        Policy::Threshold(k, subs) => {
+                            match (is_and, is_or) {
+                                (true, true) => {
+                                    // means m = n = 1, thresh(1,X) type thing.
+                                    ret_subs.push(Policy::Threshold(k, subs));
+                                }
+                                (true, false) if k == subs.len() => ret_subs.extend(subs), // and case
+                                (false, true) if k == 1 => ret_subs.extend(subs), // or case
+                                _ => ret_subs.push(Policy::Threshold(k, subs)),
                             }
                         }
                         x => ret_subs.push(x),
@@ -472,6 +496,34 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
         ret
     }
 
+    /// Helper function for recursion in `absolute timelocks`
+    fn real_absolute_timelocks(&self) -> Vec<u32> {
+        match *self {
+            Policy::Unsatisfiable
+            | Policy::Trivial
+            | Policy::KeyHash(..)
+            | Policy::Sha256(..)
+            | Policy::Hash256(..)
+            | Policy::Ripemd160(..)
+            | Policy::Hash160(..) => vec![],
+            Policy::Older(..) => vec![],
+            Policy::After(t) => vec![t],
+            Policy::Threshold(_, ref subs) => subs.iter().fold(vec![], |mut acc, x| {
+                acc.extend(x.real_absolute_timelocks());
+                acc
+            }),
+        }
+    }
+
+    /// Returns a list of all absolute timelocks, not including 0,
+    /// which appear in the policy
+    pub fn absolute_timelocks(&self) -> Vec<u32> {
+        let mut ret = self.real_absolute_timelocks();
+        ret.sort();
+        ret.dedup();
+        ret
+    }
+
     /// Filter a policy by eliminating relative timelock constraints
     /// that are not satisfied at the given age.
     pub fn at_age(mut self, time: u32) -> Policy<Pk> {
@@ -485,6 +537,25 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             }
             Policy::Threshold(k, subs) => {
                 Policy::Threshold(k, subs.into_iter().map(|sub| sub.at_age(time)).collect())
+            }
+            x => x,
+        };
+        self.normalized()
+    }
+
+    /// Filter a policy by eliminating absolute timelock constraints
+    /// that are not satisfied at the given age.
+    pub fn at_height(mut self, time: u32) -> Policy<Pk> {
+        self = match self {
+            Policy::After(t) => {
+                if t > time {
+                    Policy::Unsatisfiable
+                } else {
+                    Policy::After(t)
+                }
+            }
+            Policy::Threshold(k, subs) => {
+                Policy::Threshold(k, subs.into_iter().map(|sub| sub.at_height(time)).collect())
             }
             x => x,
         };
@@ -509,20 +580,28 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 
     /// Count the minimum number of public keys for which signatures
     /// could be used to satisfy the policy.
-    pub fn minimum_n_keys(&self) -> usize {
+    /// Returns `None` if the policy is not satisfiable.
+    pub fn minimum_n_keys(&self) -> Option<usize> {
         match *self {
-            Policy::Unsatisfiable | Policy::Trivial => 0,
-            Policy::KeyHash(..) => 1,
+            Policy::Unsatisfiable => None,
+            Policy::Trivial => Some(0),
+            Policy::KeyHash(..) => Some(1),
             Policy::After(..)
             | Policy::Older(..)
             | Policy::Sha256(..)
             | Policy::Hash256(..)
             | Policy::Ripemd160(..)
-            | Policy::Hash160(..) => 0,
+            | Policy::Hash160(..) => Some(0),
             Policy::Threshold(k, ref subs) => {
-                let mut sublens: Vec<usize> = subs.iter().map(Policy::minimum_n_keys).collect();
-                sublens.sort();
-                sublens[0..k].iter().cloned().sum::<usize>()
+                let mut sublens: Vec<usize> =
+                    subs.iter().filter_map(Policy::minimum_n_keys).collect();
+                if sublens.len() < k {
+                    // Not enough branches are satisfiable
+                    None
+                } else {
+                    sublens.sort();
+                    Some(sublens[0..k].iter().cloned().sum::<usize>())
+                }
             }
         }
     }
@@ -576,21 +655,25 @@ mod tests {
     fn semantic_analysis() {
         let policy = StringPolicy::from_str("pkh()").unwrap();
         assert_eq!(policy, Policy::KeyHash("".to_owned()));
-        assert_eq!(policy.relative_timelocks().len(), 0);
+        // For some reason rust looks for impl for PartialEq for u32 when comparing vectors
+        // and finds multiple implementations. Check is_empty as a simple workaround
+        assert!(policy.relative_timelocks().is_empty());
+        assert!(policy.absolute_timelocks().is_empty());
         assert_eq!(policy.clone().at_age(0), policy.clone());
         assert_eq!(policy.clone().at_age(10000), policy.clone());
         assert_eq!(policy.n_keys(), 1);
-        assert_eq!(policy.minimum_n_keys(), 1);
+        assert_eq!(policy.minimum_n_keys(), Some(1));
 
         let policy = StringPolicy::from_str("older(1000)").unwrap();
         assert_eq!(policy, Policy::Older(1000));
+        assert!(policy.absolute_timelocks().is_empty());
         assert_eq!(policy.relative_timelocks(), vec![1000]);
         assert_eq!(policy.clone().at_age(0), Policy::Unsatisfiable);
         assert_eq!(policy.clone().at_age(999), Policy::Unsatisfiable);
         assert_eq!(policy.clone().at_age(1000), policy.clone());
         assert_eq!(policy.clone().at_age(10000), policy.clone());
         assert_eq!(policy.n_keys(), 0);
-        assert_eq!(policy.minimum_n_keys(), 0);
+        assert_eq!(policy.minimum_n_keys(), Some(0));
 
         let policy = StringPolicy::from_str("or(pkh(),older(1000))").unwrap();
         assert_eq!(
@@ -601,12 +684,39 @@ mod tests {
             )
         );
         assert_eq!(policy.relative_timelocks(), vec![1000]);
+        assert!(policy.absolute_timelocks().is_empty());
         assert_eq!(policy.clone().at_age(0), Policy::KeyHash("".to_owned()));
         assert_eq!(policy.clone().at_age(999), Policy::KeyHash("".to_owned()));
         assert_eq!(policy.clone().at_age(1000), policy.clone().normalized());
         assert_eq!(policy.clone().at_age(10000), policy.clone().normalized());
         assert_eq!(policy.n_keys(), 1);
-        assert_eq!(policy.minimum_n_keys(), 0);
+        assert_eq!(policy.minimum_n_keys(), Some(0));
+
+        let policy = StringPolicy::from_str("or(pkh(),UNSATISFIABLE)").unwrap();
+        assert_eq!(
+            policy,
+            Policy::Threshold(
+                1,
+                vec![Policy::KeyHash("".to_owned()), Policy::Unsatisfiable,]
+            )
+        );
+        assert_eq!(policy.relative_timelocks().len(), 0);
+        assert_eq!(policy.absolute_timelocks().len(), 0);
+        assert_eq!(policy.n_keys(), 1);
+        assert_eq!(policy.minimum_n_keys(), Some(1));
+
+        let policy = StringPolicy::from_str("and(pkh(),UNSATISFIABLE)").unwrap();
+        assert_eq!(
+            policy,
+            Policy::Threshold(
+                2,
+                vec![Policy::KeyHash("".to_owned()), Policy::Unsatisfiable,]
+            )
+        );
+        assert_eq!(policy.relative_timelocks().len(), 0);
+        assert_eq!(policy.absolute_timelocks().len(), 0);
+        assert_eq!(policy.n_keys(), 1);
+        assert_eq!(policy.minimum_n_keys(), None);
 
         let policy = StringPolicy::from_str(
             "thresh(\
@@ -631,6 +741,43 @@ mod tests {
             policy.relative_timelocks(),
             vec![1000, 2000, 10000] //sorted and dedup'd
         );
+
+        let policy = StringPolicy::from_str(
+            "thresh(\
+             2,older(1000),older(10000),older(1000),UNSATISFIABLE,UNSATISFIABLE\
+             )",
+        )
+        .unwrap();
+        assert_eq!(
+            policy,
+            Policy::Threshold(
+                2,
+                vec![
+                    Policy::Older(1000),
+                    Policy::Older(10000),
+                    Policy::Older(1000),
+                    Policy::Unsatisfiable,
+                    Policy::Unsatisfiable,
+                ]
+            )
+        );
+        assert_eq!(
+            policy.relative_timelocks(),
+            vec![1000, 10000] //sorted and dedup'd
+        );
+        assert_eq!(policy.n_keys(), 0);
+        assert_eq!(policy.minimum_n_keys(), Some(0));
+
+        let policy = StringPolicy::from_str("after(1000)").unwrap();
+        assert_eq!(policy, Policy::After(1000));
+        assert_eq!(policy.absolute_timelocks(), vec![1000]);
+        assert!(policy.relative_timelocks().is_empty());
+        assert_eq!(policy.clone().at_height(0), Policy::Unsatisfiable);
+        assert_eq!(policy.clone().at_height(999), Policy::Unsatisfiable);
+        assert_eq!(policy.clone().at_height(1000), policy.clone());
+        assert_eq!(policy.clone().at_height(10000), policy.clone());
+        assert_eq!(policy.n_keys(), 0);
+        assert_eq!(policy.minimum_n_keys(), Some(0));
     }
 
     #[test]

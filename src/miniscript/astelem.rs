@@ -29,9 +29,12 @@ use elements::{opcodes, script};
 
 use errstr;
 use expression;
+use miniscript::context::SigType;
 use miniscript::types::{self, Property};
 use miniscript::ScriptContext;
 use script_num_size;
+
+use util::MsKeyBuilder;
 use {Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslatePk};
 
 use Extension;
@@ -127,23 +130,26 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                     && c.real_for_each_key(pred)
             }
             Terminal::Thresh(_, ref subs) => subs.iter().all(|sub| sub.real_for_each_key(pred)),
-            Terminal::Multi(_, ref keys) => keys.iter().all(|key| pred(ForEach::Key(key))),
+            Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => {
+                keys.iter().all(|key| pred(ForEach::Key(key)))
+            }
             Terminal::Ext(ref e) => e.real_for_each_key(pred),
         }
     }
-    pub(super) fn real_translate_pk<FPk, FPkh, Q, Error>(
+    pub(super) fn real_translate_pk<FPk, FPkh, Q, Error, CtxQ>(
         &self,
         translatefpk: &mut FPk,
         translatefpkh: &mut FPkh,
-    ) -> Result<Terminal<Q, Ctx, <Ext as TranslatePk<Pk, Q>>::Output>, Error>
+    ) -> Result<Terminal<Q, CtxQ, <Ext as TranslatePk<Pk, Q>>::Output>, Error>
     where
         FPk: FnMut(&Pk) -> Result<Q, Error>,
         FPkh: FnMut(&Pk::Hash) -> Result<Q::Hash, Error>,
         Q: MiniscriptKey,
+        CtxQ: ScriptContext,
         Ext: TranslatePk<Pk, Q>,
         <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
     {
-        let frag = match *self {
+        let frag: Terminal<Q, CtxQ, _> = match *self {
             Terminal::PkK(ref p) => Terminal::PkK(translatefpk(p)?),
             Terminal::PkH(ref p) => Terminal::PkH(translatefpkh(p)?),
             Terminal::After(n) => Terminal::After(n),
@@ -219,6 +225,10 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
             Terminal::Multi(k, ref keys) => {
                 let keys: Result<Vec<Q>, _> = keys.iter().map(&mut *translatefpk).collect();
                 Terminal::Multi(k, keys?)
+            }
+            Terminal::MultiA(k, ref keys) => {
+                let keys: Result<Vec<Q>, _> = keys.iter().map(&mut *translatefpk).collect();
+                Terminal::MultiA(k, keys?)
             }
             Terminal::Ext(ref e) => Terminal::Ext(e.translate_pk(translatefpk, translatefpkh)?),
         };
@@ -335,6 +345,13 @@ where
                     }
                     f.write_str(")")
                 }
+                Terminal::MultiA(k, ref keys) => {
+                    write!(f, "multi_a({}", k)?;
+                    for k in keys {
+                        write!(f, ",{}", k)?;
+                    }
+                    f.write_str(")")
+                }
                 _ => unreachable!(),
             }
         }
@@ -392,6 +409,13 @@ where
             }
             Terminal::Multi(k, ref keys) => {
                 write!(f, "multi({}", k)?;
+                for k in keys {
+                    write!(f, ",{}", k)?;
+                }
+                f.write_str(")")
+            }
+            Terminal::MultiA(k, ref keys) => {
+                write!(f, "multi_a({}", k)?;
                 for k in keys {
                     write!(f, ",{}", k)?;
                 }
@@ -536,15 +560,7 @@ where
             }),
             ("1", 0) => Ok(Terminal::True),
             ("0", 0) => Ok(Terminal::False),
-            ("and_v", 2) => {
-                let expr = expression::binary(top, Terminal::AndV)?;
-                if let Terminal::AndV(_, ref right) = expr {
-                    if let Terminal::True = right.node {
-                        return Err(Error::NonCanonicalTrue);
-                    }
-                }
-                Ok(expr)
-            }
+            ("and_v", 2) => expression::binary(top, Terminal::AndV),
             ("and_b", 2) => expression::binary(top, Terminal::AndB),
             ("and_n", 2) => Ok(Terminal::AndOr(
                 expression::FromTree::from_tree(&top.args[0])?,
@@ -559,15 +575,7 @@ where
             ("or_b", 2) => expression::binary(top, Terminal::OrB),
             ("or_d", 2) => expression::binary(top, Terminal::OrD),
             ("or_c", 2) => expression::binary(top, Terminal::OrC),
-            ("or_i", 2) => {
-                let expr = expression::binary(top, Terminal::OrI)?;
-                if let Terminal::OrI(ref left, ref right) = expr {
-                    if left.node == Terminal::False || right.node == Terminal::False {
-                        return Err(Error::NonCanonicalFalse);
-                    }
-                }
-                Ok(expr)
-            }
+            ("or_i", 2) => expression::binary(top, Terminal::OrI),
             ("thresh", n) => {
                 if n == 0 {
                     return Err(errstr("no arguments given"));
@@ -587,7 +595,7 @@ where
 
                 Ok(Terminal::Thresh(k, subs?))
             }
-            ("multi", n) => {
+            ("multi", n) | ("multi_a", n) => {
                 if n == 0 {
                     return Err(errstr("no arguments given"));
                 }
@@ -601,7 +609,12 @@ where
                     .map(|sub| expression::terminal(sub, Pk::from_str))
                     .collect();
 
-                pks.map(|pks| Terminal::Multi(k, pks))
+                if frag_name == "multi" {
+                    pks.map(|pks| Terminal::Multi(k, pks))
+                } else {
+                    // must be multi_a
+                    pks.map(|pks| Terminal::MultiA(k, pks))
+                }
             }
             (name, _num_child) => {
                 // If nothing matches try to parse as extension
@@ -742,7 +755,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
         Pk: ToPublicKey,
     {
         match *self {
-            Terminal::PkK(ref pk) => builder.push_key(&pk.to_public_key()),
+            Terminal::PkK(ref pk) => builder.push_ms_key::<_, Ctx>(pk),
             Terminal::PkH(ref hash) => builder
                 .push_opcode(opcodes::all::OP_DUP)
                 .push_opcode(opcodes::all::OP_HASH160)
@@ -848,6 +861,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                     .push_opcode(opcodes::all::OP_EQUAL)
             }
             Terminal::Multi(k, ref keys) => {
+                debug_assert!(Ctx::sig_type() == SigType::Ecdsa);
                 builder = builder.push_int(k as i64);
                 for pk in keys {
                     builder = builder.push_key(&pk.to_public_key());
@@ -855,6 +869,19 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                 builder
                     .push_int(keys.len() as i64)
                     .push_opcode(opcodes::all::OP_CHECKMULTISIG)
+            }
+            Terminal::MultiA(k, ref keys) => {
+                debug_assert!(Ctx::sig_type() == SigType::Schnorr);
+                // keys must be atleast len 1 here, guaranteed by typing rules
+                builder = builder.push_ms_key::<_, Ctx>(&keys[0]);
+                builder = builder.push_opcode(opcodes::all::OP_CHECKSIG);
+                for pk in keys.iter().skip(1) {
+                    builder = builder.push_ms_key::<_, Ctx>(pk);
+                    builder = builder.push_opcode(opcodes::all::OP_RETURN_186);
+                }
+                builder
+                    .push_int(k as i64)
+                    .push_opcode(opcodes::all::OP_NUMEQUAL)
             }
             Terminal::Ext(ref e) => e.push_to_builder(builder),
         }
@@ -869,7 +896,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
     /// will handle the segwit/non-segwit technicalities for you.
     pub fn script_size(&self) -> usize {
         match *self {
-            Terminal::PkK(ref pk) => pk.serialized_len(),
+            Terminal::PkK(ref pk) => Ctx::pk_len(pk),
             Terminal::PkH(..) => 24,
             Terminal::After(n) => script_num_size(n as usize) + 1,
             Terminal::Older(n) => script_num_size(n as usize) + 1,
@@ -909,7 +936,13 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                 script_num_size(k)
                     + 1
                     + script_num_size(pks.len())
-                    + pks.iter().map(|pk| pk.serialized_len()).sum::<usize>()
+                    + pks.iter().map(|pk| Ctx::pk_len(pk)).sum::<usize>()
+            }
+            Terminal::MultiA(k, ref pks) => {
+                script_num_size(k)
+                    + 1 // NUMEQUAL
+                    + pks.iter().map(|pk| Ctx::pk_len(pk)).sum::<usize>() // n keys
+                    + pks.len() // n times CHECKSIGADD
             }
             Terminal::Ext(ref e) => e.script_size(),
         }

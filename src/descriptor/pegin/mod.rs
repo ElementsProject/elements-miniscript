@@ -22,33 +22,13 @@
 //! Thus, as a simple solution we implement these as a separate
 //! struct with it's own API.
 
-use bitcoin::blockdata::opcodes;
-use bitcoin::hashes::Hash;
+use bitcoin;
 use bitcoin::Script as BtcScript;
-use bitcoin::{self, blockdata::script, hashes};
-use bitcoin::{hashes::hash160, Address as BtcAddress};
 use elements::secp256k1_zkp;
-use expression::{self, FromTree};
-use policy::{semantic, Liftable};
-use std::{
-    fmt::Debug,
-    fmt::{self, Display},
-    marker::PhantomData,
-    str::FromStr,
-    sync::Arc,
-};
+use BtcSatisfier;
 use Descriptor;
 use Error;
-use Miniscript;
-use {
-    BtcDescriptor, BtcDescriptorTrait, BtcError, BtcFromTree, BtcLiftable, BtcMiniscript,
-    BtcPolicy, BtcSatisfier, BtcSegwitv0, BtcTerminal, BtcTree,
-};
-use {DescriptorTrait, Segwitv0, TranslatePk};
 
-use {tweak_key, util::varint_len};
-
-use super::checksum::{desc_checksum, verify_checksum};
 use {MiniscriptKey, ToPublicKey};
 
 mod dynafed_pegin;
@@ -121,7 +101,7 @@ pub trait PeginTrait<Pk: MiniscriptKey> {
     fn bitcoin_witness_script<C: secp256k1_zkp::Verification>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
-    ) -> BtcScript
+    ) -> Result<BtcScript, Error>
     where
         Pk: ToPublicKey;
 
@@ -158,7 +138,7 @@ pub trait PeginTrait<Pk: MiniscriptKey> {
     {
         // easy default implementation
         let (witness, script_sig) = self.get_bitcoin_satisfaction(secp, satisfier)?;
-        txin.witness = witness;
+        txin.witness = bitcoin::Witness::from_vec(witness);
         txin.script_sig = script_sig;
         Ok(())
     }
@@ -182,7 +162,7 @@ pub trait PeginTrait<Pk: MiniscriptKey> {
     fn script_code<C: secp256k1_zkp::Verification>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
-    ) -> BtcScript
+    ) -> Result<BtcScript, Error>
     where
         Pk: ToPublicKey;
 
