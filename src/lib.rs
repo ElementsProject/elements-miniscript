@@ -146,7 +146,7 @@ pub mod extensions;
 pub mod interpreter;
 pub mod miniscript;
 pub mod policy;
-pub mod pset;
+pub mod psbt;
 
 mod util;
 

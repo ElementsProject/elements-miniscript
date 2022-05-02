@@ -210,7 +210,7 @@ impl<'a> Tree<'a> {
     /// Parses a tree from a string
     pub fn from_str(s: &'a str) -> Result<Tree<'a>, Error> {
         // Filter out non-ASCII because we byte-index strings all over the
-        // place and Rust gets very upset when you splinch a string.
+        // place and Rust gets very upsbt when you splinch a string.
         for ch in s.bytes() {
             if !ch.is_ascii() {
                 return Err(Error::Unprintable(ch));
