@@ -246,8 +246,13 @@ pub(super) fn get_descriptor(
                         .partial_sigs
                         .iter()
                         .filter(|&(&pk, _sig)| {
-                            *script_pubkey
-                                == elements::Script::new_v0_wpkh(&pk.to_pubkeyhash().into())
+                            // The network does not matter, we just need spk
+                            let addr = elements::Address::p2wpkh(
+                                &pk,
+                                None,
+                                &elements::AddressParams::ELEMENTS,
+                            );
+                            *redeem_script == addr.script_pubkey()
                         })
                         .next();
                     match partial_sig_contains_pk {
