@@ -962,12 +962,14 @@ where
                 "Not an Elements Descriptor",
             )));
         }
-        let desc_str = verify_checksum(&s)?;
         // tr tree parsing has special code
-        if desc_str.starts_with(&format!("{}tr", ELMTS_STR)) {
-            let tr = Tr::from_str(desc_str)?;
+        // Tr::from_str will check the checksum
+        // match "tr(" to handle more extensibly
+        if s.starts_with(&format!("{}tr", ELMTS_STR)) {
+            let tr = Tr::from_str(s)?;
             Ok(Descriptor::Tr(tr))
         } else {
+            let desc_str = verify_checksum(s)?;
             let top = expression::Tree::from_str(desc_str)?;
             expression::FromTree::from_tree(&top)
         }
