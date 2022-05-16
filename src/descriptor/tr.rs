@@ -10,12 +10,12 @@ use super::{ElementsTrait, ELMTS_STR};
 use elements::opcodes;
 use elements::taproot::{
     LeafVersion, TaprootBuilder, TaprootBuilderError, TaprootSpendInfo, TAPROOT_CONTROL_BASE_SIZE,
-    TAPROOT_CONTROL_NODE_SIZE,
+    TAPROOT_CONTROL_MAX_NODE_COUNT, TAPROOT_CONTROL_NODE_SIZE,
 };
 use elements::{self, secp256k1_zkp, Script};
 use errstr;
 use expression::{self, FromTree};
-use miniscript::{limits::TAPROOT_MAX_NODE_COUNT, Miniscript};
+use miniscript::Miniscript;
 use std::cmp::{self, max};
 use std::hash;
 use std::sync::{Arc, Mutex};
@@ -174,7 +174,7 @@ impl<Pk: MiniscriptKey> Tr<Pk> {
     pub fn new(internal_key: Pk, tree: Option<TapTree<Pk>>) -> Result<Self, Error> {
         let nodes = tree.as_ref().map(|t| t.taptree_height()).unwrap_or(0);
 
-        if nodes <= TAPROOT_MAX_NODE_COUNT {
+        if nodes <= TAPROOT_CONTROL_MAX_NODE_COUNT {
             Ok(Self {
                 internal_key,
                 tree,
