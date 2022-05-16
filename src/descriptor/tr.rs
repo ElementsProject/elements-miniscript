@@ -768,7 +768,7 @@ mod tests {
 
     #[test]
     fn test_for_each() {
-        let desc = "tr(acc0, {
+        let desc = "eltr(acc0, {
             multi_a(3, acc10, acc11, acc12), {
               and_v(
                 v:multi_a(2, acc10, acc11, acc12),

@@ -378,6 +378,55 @@ pub enum Descriptor<Pk: MiniscriptKey> {
     Cov(CovenantDescriptor<Pk, CovenantExt>),
 }
 
+impl<Pk: MiniscriptKey> From<Bare<Pk>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: Bare<Pk>) -> Self {
+        Descriptor::Bare(inner)
+    }
+}
+
+impl<Pk: MiniscriptKey> From<Pkh<Pk>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: Pkh<Pk>) -> Self {
+        Descriptor::Pkh(inner)
+    }
+}
+
+impl<Pk: MiniscriptKey> From<Wpkh<Pk>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: Wpkh<Pk>) -> Self {
+        Descriptor::Wpkh(inner)
+    }
+}
+
+impl<Pk: MiniscriptKey> From<Sh<Pk>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: Sh<Pk>) -> Self {
+        Descriptor::Sh(inner)
+    }
+}
+
+impl<Pk: MiniscriptKey> From<Wsh<Pk>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: Wsh<Pk>) -> Self {
+        Descriptor::Wsh(inner)
+    }
+}
+
+impl<Pk: MiniscriptKey> From<Tr<Pk>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: Tr<Pk>) -> Self {
+        Descriptor::Tr(inner)
+    }
+}
+
+impl<Pk: MiniscriptKey> From<CovenantDescriptor<Pk, CovenantExt>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: CovenantDescriptor<Pk, CovenantExt>) -> Self {
+        Descriptor::Cov(inner)
+    }
+}
+
 impl<Pk: MiniscriptKey> Descriptor<Pk> {
     // Keys
 
