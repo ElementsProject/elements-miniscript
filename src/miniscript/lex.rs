@@ -207,7 +207,7 @@ pub fn lex<'s>(script: &'s script::Script) -> Result<Vec<Token<'s>>, Error> {
             }
             // Change once the opcode name is updated
             // TODO: UPDATE UPSTREAM OPCODES
-            script::Instruction::Op(opcodes::all::OP_RETURN_186) => {
+            script::Instruction::Op(opcodes::all::OP_CHECKSIGADD) => {
                 ret.push(Token::CheckSigAdd);
             }
             script::Instruction::Op(opcodes::all::OP_CHECKMULTISIG) => {

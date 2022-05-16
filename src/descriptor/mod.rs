@@ -1339,7 +1339,7 @@ mod tests {
         impl Satisfier<bitcoin::PublicKey> for SimpleSat {
             fn lookup_ecdsa_sig(&self, pk: &bitcoin::PublicKey) -> Option<ElementsSig> {
                 if *pk == self.pk {
-                    Some((self.sig, elements::SigHashType::All))
+                    Some((self.sig, elements::EcdsaSigHashType::All))
                 } else {
                     None
                 }
@@ -1568,8 +1568,8 @@ mod tests {
         let satisfier = {
             let mut satisfier = HashMap::with_capacity(2);
 
-            satisfier.insert(a, (sig_a.clone(), ::elements::SigHashType::All));
-            satisfier.insert(b, (sig_b.clone(), ::elements::SigHashType::All));
+            satisfier.insert(a, (sig_a.clone(), ::elements::EcdsaSigHashType::All));
+            satisfier.insert(b, (sig_b.clone(), ::elements::EcdsaSigHashType::All));
 
             satisfier
         };

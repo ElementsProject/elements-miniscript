@@ -30,7 +30,7 @@ use elements::taproot::LeafVersion;
 use elements::{self, confidential, Script};
 use elements::{
     secp256k1_zkp::{self, Secp256k1},
-    SigHashType, Transaction,
+    Transaction,
 };
 use interpreter;
 use Descriptor;
@@ -360,7 +360,9 @@ pub fn interpreter_check<C: secp256k1_zkp::Verification>(
 // Helper function for input sanity checks and code-dedup
 fn input_sanity_checks(psbt: &Psbt, index: usize) -> Result<(), super::Error> {
     let input = &psbt.inputs()[index];
-    let target = input.sighash_type.unwrap_or(elements::SigHashType::All);
+    let target = input
+        .ecdsa_hash_ty()
+        .ok_or(Error::InputError(InputError::NonStandardSigHashType, index))?;
     for (key, rawsig) in &input.partial_sigs {
         if rawsig.is_empty() {
             return Err(Error::InputError(
@@ -372,7 +374,7 @@ fn input_sanity_checks(psbt: &Psbt, index: usize) -> Result<(), super::Error> {
             ));
         }
         let (flag, sig) = rawsig.split_last().unwrap();
-        let flag = elements::SigHashType::from_u32(*flag as u32);
+        let flag = elements::EcdsaSigHashType::from_u32(*flag as u32);
         if target != flag {
             return Err(Error::InputError(
                 InputError::WrongSigHashFlag {
@@ -438,8 +440,8 @@ fn _finalize_inp(
                     utxo.value,
                     &script_code,
                     psbt.inputs()[index]
-                        .sighash_type
-                        .unwrap_or(SigHashType::All),
+                        .ecdsa_hash_ty()
+                        .ok_or(Error::InputError(InputError::NonStandardSigHashType, index))?,
                 );
                 desc.get_satisfaction((psbt_sat, cov_sat))
                     .map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?

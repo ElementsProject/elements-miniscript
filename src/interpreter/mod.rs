@@ -27,7 +27,7 @@ use elements::sighash;
 use elements::{self, secp256k1_zkp, SigHash};
 use elements::{
     hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine},
-    SigHashType,
+    EcdsaSigHashType,
 };
 use miniscript::context::NoChecks;
 use miniscript::ScriptContext;
@@ -325,11 +325,9 @@ where
             }
             KeySigPair::Schnorr(xpk, schnorr_sig) => {
                 let sighash_msg = if self.is_taproot_v1_key_spend() {
-                    cache.taproot_sighash(
+                    cache.taproot_key_spend_signature_hash(
                         input_idx,
                         prevouts,
-                        None,
-                        None,
                         schnorr_sig.hash_ty,
                         genesis_hash,
                     )
@@ -338,11 +336,12 @@ where
                         "Internal Hack: Saving leaf script instead\
                         of script code for script spend",
                     );
-                    cache.taproot_sighash(
+                    let leaf_hash =
+                        elements::sighash::ScriptPath::with_defaults(&tap_script).leaf_hash();
+                    cache.taproot_script_spend_signature_hash(
                         input_idx,
                         prevouts,
-                        None,
-                        Some(elements::sighash::ScriptPath::with_defaults(&tap_script)),
+                        leaf_hash,
                         schnorr_sig.hash_ty,
                         genesis_hash,
                     )
@@ -1101,7 +1100,7 @@ where
             {
                 let sighash_bytes = self.stack[1].as_push().expect("Push checked above");
                 let sighash_u32 = util::slice_to_u32_le(sighash_bytes);
-                let sighash_ty = SigHashType::from_u32(sighash_u32);
+                let sighash_ty = EcdsaSigHashType::from_u32(sighash_u32);
                 let sig_vec = self.stack[0].as_push().expect("Size checked above");
                 ser_sig.extend(sig_vec);
                 ser_sig.push(sighash_ty as u8);
@@ -1245,7 +1244,7 @@ mod tests {
                 compressed: true,
             };
             let sig = secp.sign_ecdsa(&msg, &sk);
-            ecdsa_sigs.push((sig, elements::SigHashType::All));
+            ecdsa_sigs.push((sig, elements::EcdsaSigHashType::All));
             let mut sigser = sig.serialize_der().to_vec();
             sigser.push(0x01); // sighash_all
             pks.push(pk);

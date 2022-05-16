@@ -877,7 +877,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                 builder = builder.push_opcode(opcodes::all::OP_CHECKSIG);
                 for pk in keys.iter().skip(1) {
                     builder = builder.push_ms_key::<_, Ctx>(pk);
-                    builder = builder.push_opcode(opcodes::all::OP_RETURN_186);
+                    builder = builder.push_opcode(opcodes::all::OP_CHECKSIGADD);
                 }
                 builder
                     .push_int(k as i64)

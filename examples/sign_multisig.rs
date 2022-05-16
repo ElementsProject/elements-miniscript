@@ -78,7 +78,7 @@ fn main() {
              531d75c136272f127a5dc14acc0722301cbddc222262934151f140da345af177",
         )
         .unwrap(),
-        elements::SigHashType::All,
+        elements::EcdsaSigHashType::All,
     );
 
     let descriptor_str = format!(

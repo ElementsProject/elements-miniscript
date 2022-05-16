@@ -15,9 +15,9 @@ use-serde = ["bitcoin/use-serde", "serde"]
 rand = ["bitcoin/rand"]
 
 [dependencies]
-bitcoin = {git = "https://github.com/rust-bitcoin/rust-bitcoin", rev = "efa9555ebdc78130b01a8a5ecd554ab922708622"}
-elements = {git = "https://github.com/sanket1729/rust-elements", rev = "b4381a18d5eb90af289bc73e52bc6b8323688570"}
-miniscript = {git = "https://github.com/sanket1729/rust-miniscript", rev = "b47a89bc14ad5d17dcff9cee0828615b9daaec57"}
+bitcoin = "0.28.1"
+elements = {git = "https://github.com/sanket1729/rust-elements", rev = "35110f6b5371319100913e6a6abed15f4637fe13"}
+miniscript = "7.0.0"
 
 [dev-dependencies]
 serde_json = "<=1.0.44"

@@ -68,7 +68,7 @@ mod tests {
     use elements::{confidential, opcodes::all::OP_PUSHNUM_1};
     use elements::{encode::serialize, opcodes, script};
     use elements::{
-        AssetId, AssetIssuance, OutPoint, Script, SigHashType, Transaction, TxIn, TxInWitness,
+        AssetId, AssetIssuance, EcdsaSigHashType, OutPoint, Script, Transaction, TxIn, TxInWitness,
         TxOut, Txid,
     };
     use interpreter::SatisfiedConstraint;
@@ -225,7 +225,7 @@ mod tests {
             0,
             confidential::Value::Explicit(200_000),
             &script_code,
-            SigHashType::All,
+            EcdsaSigHashType::All,
         );
 
         // Create a signature to sign the input
@@ -236,7 +236,7 @@ mod tests {
             &secp256k1_zkp::Message::from_slice(&sighash_u256[..]).unwrap(),
             &cov_sk,
         );
-        let el_sig = (sig, SigHashType::All);
+        let el_sig = (sig, EcdsaSigHashType::All);
 
         // For satisfying the Pk part of the covenant
         struct SimpleSat {
@@ -277,7 +277,7 @@ mod tests {
         assert_eq!(
             constraints.last().unwrap(),
             &SatisfiedConstraint::PublicKey {
-                key_sig: interpreter::KeySigPair::Ecdsa(desc.pk, (sig, SigHashType::All))
+                key_sig: interpreter::KeySigPair::Ecdsa(desc.pk, (sig, EcdsaSigHashType::All))
             }
         );
         Ok(())
@@ -418,7 +418,7 @@ mod tests {
             0,
             confidential::Value::Explicit(200_000),
             &script_code,
-            SigHashType::All,
+            EcdsaSigHashType::All,
         );
 
         // Create a signature to sign the input
@@ -429,7 +429,7 @@ mod tests {
             &secp256k1_zkp::Message::from_slice(&sighash_u256[..]).unwrap(),
             &sks[0],
         );
-        let sig = (sig, SigHashType::All);
+        let sig = (sig, EcdsaSigHashType::All);
 
         // For satisfying the Pk part of the covenant
         struct SimpleSat {
