@@ -153,7 +153,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         4 + 1 + 1 + 4 // opcodes + push opcodes + target size
     }
 
-    fn from_token_iter(tokens: &mut TokenIter) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
         let ver = {
             let sl = tokens.peek_slice(5).ok_or(())?;
             if let Tk::PickPush4(ver) = sl[3] {
@@ -174,7 +174,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         Ok(ver)
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree]) -> Result<Self, ()> {
+    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
         if children.len() == 1 && name == "ver_eq" {
             let n = expression::terminal(&children[0], expression::parse_num).map_err(|_| ())?;
             Ok(Self { n })

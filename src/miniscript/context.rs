@@ -91,7 +91,7 @@ pub enum SigType {
 }
 
 impl fmt::Display for ScriptContextError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             ScriptContextError::MalleablePkH => write!(f, "PkH is malleable under Legacy rules"),
             ScriptContextError::MalleableOrI => write!(f, "OrI is malleable under Legacy rules"),

@@ -285,7 +285,7 @@ where
         secp: &secp256k1_zkp::Secp256k1<C>,
         tx: &elements::Transaction,
         input_idx: usize,
-        prevouts: &sighash::Prevouts,
+        prevouts: &sighash::Prevouts<'_>,
         genesis_hash: elements::BlockHash,
         sig: &KeySigPair,
     ) -> bool {
@@ -380,8 +380,8 @@ where
         secp: &'iter secp256k1_zkp::Secp256k1<C>,
         tx: &'txin elements::Transaction,
         input_idx: usize,
-        prevouts: &'iter sighash::Prevouts, // actually a 'prevouts, but 'prevouts: 'iter
-        genesis_hash: elements::BlockHash,  // required for sighash computation in BIP341
+        prevouts: &'iter sighash::Prevouts<'_>, // actually a 'prevouts, but 'prevouts: 'iter
+        genesis_hash: elements::BlockHash,      // required for sighash computation in BIP341
     ) -> Iter<'txin, 'iter, Ext> {
         self.iter_custom(Box::new(move |sig| {
             self.verify_sig(secp, tx, input_idx, prevouts, genesis_hash, sig)

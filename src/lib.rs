@@ -424,7 +424,7 @@ const MAX_RECURSION_DEPTH: u32 = 402;
 const MAX_SCRIPT_SIZE: u32 = 10000;
 
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Error::InvalidOpcode(op) => write!(f, "invalid opcode {}", op),
             Error::NonMinimalVerify(ref tok) => write!(f, "{} VERIFY", tok),

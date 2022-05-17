@@ -14,7 +14,6 @@
 
 //! Example: Parsing a xpub and getting address
 
-
 use elements;
 extern crate elements_miniscript as miniscript;
 

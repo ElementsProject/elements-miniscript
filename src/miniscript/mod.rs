@@ -109,7 +109,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Eq for Miniscrip
 impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> fmt::Debug
     for Miniscript<Pk, Ctx, Ext>
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.node)
     }
 }
@@ -131,7 +131,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
 impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> fmt::Display
     for Miniscript<Pk, Ctx, Ext>
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.node)
     }
 }
@@ -436,7 +436,7 @@ where
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Arc<Miniscript<Pk, Ctx, Ext>>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Arc<Miniscript<Pk, Ctx, Ext>>, Error> {
         Ok(Arc::new(expression::FromTree::from_tree(top)?))
     }
 }
@@ -452,7 +452,7 @@ where
 {
     /// Parse an expression tree into a Miniscript. As a general rule, this
     /// should not be called directly; rather go through the descriptor API.
-    fn from_tree(top: &expression::Tree) -> Result<Miniscript<Pk, Ctx, Ext>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Miniscript<Pk, Ctx, Ext>, Error> {
         let inner: Terminal<Pk, Ctx, Ext> = expression::FromTree::from_tree(top)?;
         Ok(Miniscript {
             ty: Type::type_check(&inner, |_| None)?,

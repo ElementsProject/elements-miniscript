@@ -203,7 +203,7 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     /// Parse an expression tree into a descriptor
-    fn from_tree(top: &expression::Tree) -> Result<PreTaprootDescriptor<Pk>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<PreTaprootDescriptor<Pk>, Error> {
         Ok(match (top.name, top.args.len() as u32) {
             ("pkh", 1) => PreTaprootDescriptor::Pkh(Pkh::from_tree(top)?),
             ("wpkh", 1) => PreTaprootDescriptor::Wpkh(Wpkh::from_tree(top)?),
@@ -231,7 +231,7 @@ where
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for PreTaprootDescriptor<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             PreTaprootDescriptor::Bare(ref sub) => write!(f, "{:?}", sub),
             PreTaprootDescriptor::Pkh(ref pkh) => write!(f, "{:?}", pkh),
@@ -243,7 +243,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for PreTaprootDescriptor<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for PreTaprootDescriptor<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             PreTaprootDescriptor::Bare(ref sub) => write!(f, "{}", sub),
             PreTaprootDescriptor::Pkh(ref pkh) => write!(f, "{}", pkh),

@@ -42,7 +42,7 @@ pub enum CovError {
 }
 
 impl fmt::Display for CovError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             CovError::MissingScriptCode => write!(f, "Missing Script code"),
             CovError::MissingValue => write!(f, "Missing value"),

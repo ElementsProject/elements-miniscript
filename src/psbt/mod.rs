@@ -138,7 +138,7 @@ pub enum Error {
 }
 
 impl fmt::Display for InputError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             InputError::InvalidSignature {
                 ref pubkey,
@@ -218,7 +218,7 @@ impl From<bitcoin::util::key::Error> for InputError {
 impl error::Error for Error {}
 
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Error::InputError(ref inp_err, index) => write!(f, "{} at index {}", inp_err, index),
             Error::WrongInputCount { in_tx, in_map } => write!(

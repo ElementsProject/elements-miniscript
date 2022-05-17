@@ -70,7 +70,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         })
     }
     /// Parse an expression tree into a SortedMultiVec
-    pub fn from_tree(tree: &expression::Tree) -> Result<Self, Error>
+    pub fn from_tree(tree: &expression::Tree<'_>) -> Result<Self, Error>
     where
         Pk: FromStr,
         <Pk as FromStr>::Err: ToString,
@@ -227,13 +227,13 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> policy::Liftable<Pk> for SortedMulti
 }
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Debug for SortedMultiVec<Pk, Ctx> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(self, f)
     }
 }
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for SortedMultiVec<Pk, Ctx> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "sortedmulti({}", self.k)?;
         for k in &self.pks {
             write!(f, ",{}", k)?;

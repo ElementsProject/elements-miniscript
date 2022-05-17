@@ -259,7 +259,7 @@ where
     Ctx: ScriptContext,
     Ext: Extension<Pk>,
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("[")?;
         if let Ok(type_map) = types::Type::type_check(self, |_| None) {
             f.write_str(match type_map.corr.base {
@@ -366,7 +366,7 @@ where
     Ctx: ScriptContext,
     Ext: Extension<Pk>,
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Terminal::PkK(ref pk) => write!(f, "pk_k({})", pk),
             Terminal::PkH(ref pkh) => write!(f, "pk_h({})", pkh),
@@ -470,7 +470,7 @@ where
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Arc<Terminal<Pk, Ctx, Ext>>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Arc<Terminal<Pk, Ctx, Ext>>, Error> {
         Ok(Arc::new(expression::FromTree::from_tree(top)?))
     }
 }
@@ -484,7 +484,7 @@ where
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Terminal<Pk, Ctx, Ext>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Terminal<Pk, Ctx, Ext>, Error> {
         let mut aliased_wrap;
         let frag_name;
         let frag_wrap;

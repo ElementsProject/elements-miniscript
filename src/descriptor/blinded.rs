@@ -67,13 +67,13 @@ impl<Pk: MiniscriptKey> Blinded<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Blinded<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "blinded({:?},{:?})", self.blinder, self.desc)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Blinded<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // strip thec checksum from display
         let desc = format!("{}", self.desc);
         let desc = format!("blinded({},{})", self.blinder, strip_checksum(&desc));
@@ -95,7 +95,7 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "blinded" && top.args.len() == 2 {
             let blinder = expression::terminal(&top.args[0], |pk| Pk::from_str(pk))?;
             let desc = Descriptor::<Pk>::from_tree(&top.args[1])?;

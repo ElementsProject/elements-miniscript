@@ -91,7 +91,7 @@ pub enum PolicyError {
 impl error::Error for PolicyError {}
 
 impl fmt::Display for PolicyError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             PolicyError::NonBinaryArgAnd => {
                 f.write_str("And policy fragment must take 2 arguments")
@@ -419,7 +419,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Policy<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Policy::Unsatisfiable => f.write_str("UNSATISFIABLE()"),
             Policy::Trivial => f.write_str("TRIVIAL()"),
@@ -462,7 +462,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Policy<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Policy<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Policy::Unsatisfiable => f.write_str("UNSATISFIABLE"),
             Policy::Trivial => f.write_str("TRIVIAL"),
@@ -538,7 +538,7 @@ where
     /// Helper function for `from_tree` to parse subexpressions with
     /// names of the form x@y
     fn from_tree_prob(
-        top: &expression::Tree,
+        top: &expression::Tree<'_>,
         allow_prob: bool,
     ) -> Result<(usize, Policy<Pk>), Error> {
         let frag_prob;
@@ -646,7 +646,7 @@ where
     Pk::Hash: str::FromStr,
     <Pk as str::FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Policy<Pk>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Policy<Pk>, Error> {
         Policy::from_tree_prob(top, false).map(|(_, result)| result)
     }
 }

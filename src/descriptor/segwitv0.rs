@@ -81,7 +81,7 @@ impl<Pk: MiniscriptKey> Wsh<Pk> {
     }
 
     // Constructor for creating inner wsh for the sh fragment
-    pub(super) fn from_inner_tree(top: &expression::Tree) -> Result<Self, Error>
+    pub(super) fn from_inner_tree(top: &expression::Tree<'_>) -> Result<Self, Error>
     where
         Pk: FromStr,
         Pk::Hash: FromStr,
@@ -175,7 +175,7 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "elwsh" && top.args.len() == 1 {
             let top = &top.args[0];
             if top.name == "sortedmulti" {
@@ -198,7 +198,7 @@ where
     }
 }
 impl<Pk: MiniscriptKey> fmt::Debug for Wsh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.inner {
             WshInner::SortedMulti(ref smv) => write!(f, "{}wsh({:?})", ELMTS_STR, smv),
             WshInner::Ms(ref ms) => write!(f, "{}wsh({:?})", ELMTS_STR, ms),
@@ -207,7 +207,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Wsh<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Wsh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = format!("{}{}", ELMTS_STR, self.to_string_no_checksum());
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
@@ -421,7 +421,7 @@ impl<Pk: MiniscriptKey> Wpkh<Pk> {
     }
 
     // Parse a bitcoin style wpkh tree. Useful when parsing nested trees
-    pub(super) fn from_inner_tree(top: &expression::Tree) -> Result<Self, Error>
+    pub(super) fn from_inner_tree(top: &expression::Tree<'_>) -> Result<Self, Error>
     where
         Pk: FromStr,
         Pk::Hash: FromStr,
@@ -493,13 +493,13 @@ impl<Pk: MiniscriptKey + ToPublicKey> Wpkh<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Wpkh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}wpkh({:?})", ELMTS_STR, self.pk)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Wpkh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = format!("{}{}", ELMTS_STR, self.to_string_no_checksum());
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
@@ -519,7 +519,7 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "elwpkh" && top.args.len() == 1 {
             Ok(Wpkh::new(expression::terminal(&top.args[0], |pk| {
                 Pk::from_str(pk)

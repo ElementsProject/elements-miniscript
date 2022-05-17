@@ -219,7 +219,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
                 + 6 /* line 2 */
     }
 
-    fn from_token_iter(tokens: &mut TokenIter) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
         let outputs_pref = {
             let sl = tokens.peek_slice(15).ok_or(())?;
             if let Tk::Push(pref) = &sl[6] {
@@ -249,7 +249,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
         Ok(outputs_pref)
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree]) -> Result<Self, ()> {
+    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
         if children.len() == 1 && name == "outputs_pref" {
             let pref = expression::terminal(&children[0], Vec::<u8>::from_hex).map_err(|_| ())?;
             Ok(Self { pref })

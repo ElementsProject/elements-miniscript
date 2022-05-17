@@ -68,7 +68,7 @@ pub enum CompilerError {
 impl error::Error for CompilerError {}
 
 impl fmt::Display for CompilerError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             CompilerError::TopLevelNonSafe => {
                 f.write_str("Top Level script is not safe on some spendpath")

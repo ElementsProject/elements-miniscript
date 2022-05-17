@@ -166,15 +166,15 @@ where
     <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
         TranslatePk<bitcoin::XOnlyPublicKey, BitcoinKey, Output = Ext>,
 {
-    let mut ssig_stack: Stack = script_sig
+    let mut ssig_stack: Stack<'_> = script_sig
         .instructions_minimal()
         .map(stack::Element::from_instruction)
-        .collect::<Result<Vec<stack::Element>, Error>>()?
+        .collect::<Result<Vec<stack::Element<'_>>, Error>>()?
         .into();
-    let mut wit_stack: Stack = witness
+    let mut wit_stack: Stack<'_> = witness
         .iter()
         .map(stack::Element::from)
-        .collect::<Vec<stack::Element>>()
+        .collect::<Vec<stack::Element<'_>>>()
         .into();
 
     // ** pay to pubkey **

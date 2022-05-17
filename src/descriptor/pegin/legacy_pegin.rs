@@ -91,7 +91,7 @@ impl FromStr for LegacyPeginKey {
 }
 
 impl fmt::Display for LegacyPeginKey {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             LegacyPeginKey::Functionary(ref pk) => write!(f, "f{}", pk),
             LegacyPeginKey::NonFunctionary(ref pk) => write!(f, "u{}", pk),
@@ -307,13 +307,13 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for LegacyPegin<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "legacy_pegin({:?},{:?})", self.ms, self.desc)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for LegacyPegin<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = format!("legacy_pegin({},{})", self.ms, self.desc);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
@@ -340,7 +340,7 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "legacy_pegin" && top.args.len() == 2 {
             // a roundtrip hack to use FromTree from bitcoin::Miniscript from
             // expression::Tree in elements.

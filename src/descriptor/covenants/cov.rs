@@ -217,7 +217,7 @@ impl<Ext: Extension<bitcoin::PublicKey>> CovenantDescriptor<bitcoin::PublicKey, 
     /// Consumes the iterator so that only remaining miniscript
     /// needs to be parsed from the iterator
     #[allow(unreachable_patterns)]
-    fn check_cov_script(tokens: &mut TokenIter) -> Result<bitcoin::PublicKey, Error> {
+    fn check_cov_script(tokens: &mut TokenIter<'_>) -> Result<bitcoin::PublicKey, Error> {
         match_token!(tokens,
             Tk::CheckSigFromStack, Tk::Verify, Tk::CheckSig, Tk::CodeSep, Tk::Swap,
             Tk::FromAltStack, Tk::Dup, Tk::Bytes33(pk), Tk::Sha256,
@@ -305,7 +305,7 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "elcovwsh" && top.args.len() == 2 {
             let pk = expression::terminal(&top.args[0], |pk| Pk::from_str(pk))?;
             let top = &top.args[1];
@@ -326,7 +326,7 @@ where
     Pk: MiniscriptKey,
     Ext: Extension<Pk>,
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}covwsh({},{})", ELMTS_STR, self.pk, self.ms)
     }
 }
@@ -336,7 +336,7 @@ where
     Pk: MiniscriptKey,
     Ext: Extension<Pk>,
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = format!("{}covwsh({},{})", ELMTS_STR, self.pk, self.ms);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)

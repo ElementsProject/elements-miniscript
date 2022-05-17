@@ -28,28 +28,28 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
     /// Creates a new [Iter] iterator that will iterate over all [Miniscript] items within
     /// AST by traversing its branches. For the specific algorithm please see
     /// [Iter::next] function.
-    pub fn iter(&self) -> Iter<Pk, Ctx, Ext> {
+    pub fn iter(&self) -> Iter<'_, Pk, Ctx, Ext> {
         Iter::new(self)
     }
 
     /// Creates a new [PkIter] iterator that will iterate over all plain public keys (and not
     /// key hash values) present in [Miniscript] items within AST by traversing all its branches.
     /// For the specific algorithm please see [PkIter::next] function.
-    pub fn iter_pk(&self) -> PkIter<Pk, Ctx, Ext> {
+    pub fn iter_pk(&self) -> PkIter<'_, Pk, Ctx, Ext> {
         PkIter::new(self)
     }
 
     /// Creates a new [PkhIter] iterator that will iterate over all public keys hashes (and not
     /// plain public keys) present in Miniscript items within AST by traversing all its branches.
     /// For the specific algorithm please see [PkhIter::next] function.
-    pub fn iter_pkh(&self) -> PkhIter<Pk, Ctx, Ext> {
+    pub fn iter_pkh(&self) -> PkhIter<'_, Pk, Ctx, Ext> {
         PkhIter::new(self)
     }
 
     /// Creates a new [PkPkhIter] iterator that will iterate over all plain public keys and
     /// key hash values present in Miniscript items within AST by traversing all its branches.
     /// For the specific algorithm please see [PkPkhIter::next] function.
-    pub fn iter_pk_pkh(&self) -> PkPkhIter<Pk, Ctx, Ext> {
+    pub fn iter_pk_pkh(&self) -> PkPkhIter<'_, Pk, Ctx, Ext> {
         PkPkhIter::new(self)
     }
 

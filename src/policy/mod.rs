@@ -85,7 +85,7 @@ impl error::Error for LiftError {
 }
 
 impl fmt::Display for LiftError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             LiftError::HeightTimeLockCombination => {
                 f.write_str("Cannot lift policies that have a heightlock and timelock combination")

@@ -237,7 +237,7 @@ pub enum DescriptorType {
 }
 
 impl fmt::Display for DescriptorType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             DescriptorType::Bare => write!(f, "bare"),
             DescriptorType::Sh => write!(f, "sh"),
@@ -1030,7 +1030,7 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     /// Parse an expression tree into a descriptor
-    fn from_tree(top: &expression::Tree) -> Result<Descriptor<Pk>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Descriptor<Pk>, Error> {
         Ok(match (top.name, top.args.len() as u32) {
             ("elpkh", 1) => Descriptor::Pkh(Pkh::from_tree(top)?),
             ("elwpkh", 1) => Descriptor::Wpkh(Wpkh::from_tree(top)?),
@@ -1073,7 +1073,7 @@ where
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Descriptor<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Descriptor::Bare(ref sub) => write!(f, "{:?}", sub),
             Descriptor::Pkh(ref pkh) => write!(f, "{:?}", pkh),
@@ -1087,7 +1087,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Descriptor<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Descriptor<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Descriptor::Bare(ref sub) => write!(f, "{}", sub),
             Descriptor::Pkh(ref pkh) => write!(f, "{}", pkh),

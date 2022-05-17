@@ -121,7 +121,7 @@ impl<Pk: MiniscriptKey> TapTree<Pk> {
     }
 
     /// Iterate over all miniscripts
-    pub fn iter(&self) -> TapTreeIter<Pk> {
+    pub fn iter(&self) -> TapTreeIter<'_, Pk> {
         TapTreeIter {
             stack: vec![(0, self)],
         }
@@ -205,7 +205,7 @@ impl<Pk: MiniscriptKey> Tr<Pk> {
 
     /// Iterate over all scripts in merkle tree. If there is no script path, the iterator
     /// yields [`None`]
-    pub fn iter_scripts(&self) -> TapTreeIter<Pk> {
+    pub fn iter_scripts(&self) -> TapTreeIter<'_, Pk> {
         match self.tree {
             Some(ref t) => t.iter(),
             None => TapTreeIter { stack: vec![] },
@@ -311,8 +311,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Tr<Pk> {
 /// would yield (2, A), (2, B), (2,C), (3, D), (3, E).
 ///
 #[derive(Debug, Clone)]
-pub struct TapTreeIter<'a, Pk: MiniscriptKey>
-{
+pub struct TapTreeIter<'a, Pk: MiniscriptKey> {
     stack: Vec<(usize, &'a TapTree<Pk>)>,
 }
 
@@ -344,10 +343,10 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         // Helper function to parse taproot script path
         fn parse_tr_script_spend<Pk: MiniscriptKey>(
-            tree: &expression::Tree,
+            tree: &expression::Tree<'_>,
         ) -> Result<TapTree<Pk>, Error>
         where
             Pk: MiniscriptKey + FromStr,
@@ -441,7 +440,7 @@ where
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Tr<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.tree {
             Some(ref s) => write!(f, "tr({:?},{:?})", self.internal_key, s),
             None => write!(f, "tr({:?})", self.internal_key),
@@ -450,7 +449,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Tr<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Tr<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = self.to_string_no_checksum();
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
@@ -458,7 +457,7 @@ impl<Pk: MiniscriptKey> fmt::Display for Tr<Pk> {
 }
 
 // Helper function to parse string into miniscript tree form
-fn parse_tr_tree(s: &str) -> Result<expression::Tree, Error> {
+fn parse_tr_tree(s: &str) -> Result<expression::Tree<'_>, Error> {
     for ch in s.bytes() {
         if !ch.is_ascii() {
             return Err(Error::Unprintable(ch));

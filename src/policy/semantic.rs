@@ -218,7 +218,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Policy<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Policy::Unsatisfiable => f.write_str("UNSATISFIABLE()"),
             Policy::Trivial => f.write_str("TRIVIAL()"),
@@ -251,7 +251,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Policy<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Policy<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Policy::Unsatisfiable => f.write_str("UNSATISFIABLE"),
             Policy::Trivial => f.write_str("TRIVIAL"),
@@ -313,7 +313,7 @@ where
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Policy<Pk>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Policy<Pk>, Error> {
         match (top.name, top.args.len()) {
             ("UNSATISFIABLE", 0) => Ok(Policy::Unsatisfiable),
             ("TRIVIAL", 0) => Ok(Policy::Trivial),

@@ -34,11 +34,11 @@ pub struct Tree<'a> {
 /// A trait for extracting a structure from a Tree representation in token form
 pub trait FromTree: Sized {
     /// Extract a structure from Tree representation
-    fn from_tree(top: &Tree) -> Result<Self, Error>;
+    fn from_tree(top: &Tree<'_>) -> Result<Self, Error>;
 }
 
 impl<'a> fmt::Display for Tree<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({}", self.name)?;
         for arg in &self.args {
             write!(f, ",{}", arg)?;
@@ -240,7 +240,7 @@ pub fn parse_num(s: &str) -> Result<u32, Error> {
 }
 
 /// Attempts to parse a terminal expression
-pub fn terminal<T, F, Err>(term: &Tree, convert: F) -> Result<T, Error>
+pub fn terminal<T, F, Err>(term: &Tree<'_>, convert: F) -> Result<T, Error>
 where
     F: FnOnce(&str) -> Result<T, Err>,
     Err: ToString,
@@ -253,7 +253,7 @@ where
 }
 
 /// Attempts to parse an expression with exactly one child
-pub fn unary<L, T, F>(term: &Tree, convert: F) -> Result<T, Error>
+pub fn unary<L, T, F>(term: &Tree<'_>, convert: F) -> Result<T, Error>
 where
     L: FromTree,
     F: FnOnce(L) -> T,
@@ -267,7 +267,7 @@ where
 }
 
 /// Attempts to parse an expression with exactly two children
-pub fn binary<L, R, T, F>(term: &Tree, convert: F) -> Result<T, Error>
+pub fn binary<L, R, T, F>(term: &Tree<'_>, convert: F) -> Result<T, Error>
 where
     L: FromTree,
     R: FromTree,

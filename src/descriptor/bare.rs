@@ -85,13 +85,13 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bare<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Bare<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}{:?}", ELMTS_STR, self.ms)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Bare<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = format!("{}{}", ELMTS_STR, self.ms);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
@@ -111,7 +111,7 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         // extra allocations to use the existing code as is.
         if top.name.starts_with("el") {
             let new_tree = expression::Tree {
@@ -318,13 +318,13 @@ impl<Pk: MiniscriptKey + ToPublicKey> Pkh<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Pkh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}pkh({:?})", ELMTS_STR, self.pk)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Pkh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = format!("{}pkh({})", ELMTS_STR, self.pk);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
@@ -344,7 +344,7 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "elpkh" && top.args.len() == 1 {
             Ok(Pkh::new(expression::terminal(&top.args[0], |pk| {
                 Pk::from_str(pk)

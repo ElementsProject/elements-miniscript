@@ -75,7 +75,7 @@ pub enum Token<'s> {
 }
 
 impl<'s> fmt::Display for Token<'s> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Token::Num(n) => write!(f, "#{}", n),
             Token::Hash20(b) | Token::Bytes33(b) | Token::Bytes32(b) | Token::Bytes65(b) => {
@@ -104,12 +104,12 @@ impl<'s> TokenIter<'s> {
     }
 
     /// Look at the top at Iterator
-    pub fn peek(&self) -> Option<&'s Token> {
+    pub fn peek(&self) -> Option<&'s Token<'_>> {
         self.0.last()
     }
 
     /// Look at the slice with the last n elements
-    pub fn peek_slice(&self, n: usize) -> Option<&[Token]> {
+    pub fn peek_slice(&self, n: usize) -> Option<&[Token<'_>]> {
         if n <= self.len() {
             Some(self.0[self.len() - n..].as_ref())
         } else {
@@ -154,7 +154,7 @@ impl<'s> Iterator for TokenIter<'s> {
 pub fn lex<'s>(script: &'s script::Script) -> Result<Vec<Token<'s>>, Error> {
     let mut ret = Vec::with_capacity(script.len());
 
-    fn process_candidate_push(ret: &mut Vec<Token>) -> Result<(), Error> {
+    fn process_candidate_push(ret: &mut Vec<Token<'_>>) -> Result<(), Error> {
         let ret_len = ret.len();
 
         if ret_len < 2 || ret[ret_len - 1] != Token::Swap {

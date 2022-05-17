@@ -48,7 +48,7 @@ pub enum AnalysisError {
 }
 
 impl fmt::Display for AnalysisError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             AnalysisError::SiglessBranch => {
                 f.write_str("All spend paths must require a signature")

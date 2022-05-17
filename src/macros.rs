@@ -53,7 +53,7 @@ macro_rules! serde_string_impl_pk {
                 {
                     type Value = $name<Pk $(, $gen)* $(, $ext)*>;
 
-                    fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                    fn expecting(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
                         formatter.write_str($expecting)
                     }
 

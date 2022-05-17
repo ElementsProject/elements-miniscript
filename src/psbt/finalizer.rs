@@ -58,21 +58,21 @@ fn get_amt(psbt: &Psbt, index: usize) -> Result<confidential::Value, InputError>
 // inferring a descriptor is not possible
 fn construct_tap_witness(
     spk: &Script,
-    sat: &PsbtInputSatisfier,
+    sat: &PsbtInputSatisfier<'_>,
     allow_mall: bool,
 ) -> Result<Vec<Vec<u8>>, InputError> {
     assert!(util::is_v1_p2tr(&spk));
 
     // try the key spend path first
     if let Some(sig) =
-        <PsbtInputSatisfier as Satisfier<XOnlyPublicKey>>::lookup_tap_key_spend_sig(sat)
+        <PsbtInputSatisfier<'_> as Satisfier<XOnlyPublicKey>>::lookup_tap_key_spend_sig(sat)
     {
         return Ok(vec![sig.to_vec()]);
     }
     // Next script spends
     let (mut min_wit, mut min_wit_len) = (None, None);
     if let Some(block_map) =
-        <PsbtInputSatisfier as Satisfier<XOnlyPublicKey>>::lookup_tap_control_block_map(sat)
+        <PsbtInputSatisfier<'_> as Satisfier<XOnlyPublicKey>>::lookup_tap_control_block_map(sat)
     {
         for (control_block, (script, ver)) in block_map {
             if *ver != LeafVersion::default() {

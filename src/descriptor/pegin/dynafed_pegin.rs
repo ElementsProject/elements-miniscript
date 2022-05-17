@@ -64,13 +64,13 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Pegin<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "pegin({:?},{:?})", self.fed_desc, self.elem_desc)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Pegin<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = format!("pegin({},{})", self.fed_desc, self.elem_desc);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
@@ -97,7 +97,7 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "pegin" && top.args.len() == 2 {
             // a roundtrip hack to use FromTree from bitcoin::Miniscript from
             // expression::Tree in elements.

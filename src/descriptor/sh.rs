@@ -71,7 +71,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Sh<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Sh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.inner {
             ShInner::Wsh(ref wsh_inner) => write!(f, "{}sh({:?})", ELMTS_STR, wsh_inner),
             ShInner::Wpkh(ref pk) => write!(f, "{}sh({:?})", ELMTS_STR, pk),
@@ -82,7 +82,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Sh<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Sh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = match self.inner {
             ShInner::Wsh(ref wsh) => format!("{}sh({})", ELMTS_STR, wsh.to_string_no_checksum()),
             ShInner::Wpkh(ref pk) => format!("{}sh({})", ELMTS_STR, pk.to_string_no_checksum()),
@@ -101,7 +101,7 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "elsh" && top.args.len() == 1 {
             let top = &top.args[0];
             let inner = match top.name {

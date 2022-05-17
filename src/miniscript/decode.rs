@@ -274,7 +274,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> TerminalStack<Pk
 /// Parse a script fragment into an `Miniscript`
 #[allow(unreachable_patterns)]
 pub fn parse<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
-    tokens: &mut TokenIter,
+    tokens: &mut TokenIter<'_>,
 ) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
     let mut non_term = Vec::with_capacity(tokens.len());
     let mut term = TerminalStack(Vec::with_capacity(tokens.len()));
@@ -657,7 +657,7 @@ pub fn parse<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
     Ok(term.pop().unwrap())
 }
 
-fn is_and_v(tokens: &mut TokenIter) -> bool {
+fn is_and_v(tokens: &mut TokenIter<'_>) -> bool {
     match tokens.peek() {
         None
         | Some(&Tk::If)

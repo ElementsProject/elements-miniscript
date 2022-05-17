@@ -70,7 +70,7 @@ pub struct DescriptorXKey<K: InnerXKey> {
 }
 
 impl fmt::Display for DescriptorSecretKey {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             &DescriptorSecretKey::Single(ref sk) => {
                 maybe_fmt_master_id(f, &sk.origin)?;
@@ -207,7 +207,7 @@ impl DescriptorXKey<bip32::ExtendedPrivKey> {
 pub struct DescriptorKeyParseError(&'static str);
 
 impl fmt::Display for DescriptorKeyParseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.0)
     }
 }
@@ -215,7 +215,7 @@ impl fmt::Display for DescriptorKeyParseError {
 impl error::Error for DescriptorKeyParseError {}
 
 impl fmt::Display for DescriptorPublicKey {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             DescriptorPublicKey::Single(ref pk) => {
                 maybe_fmt_master_id(f, &pk.origin)?;
@@ -265,7 +265,7 @@ impl DescriptorSecretKey {
 
 /// Writes the fingerprint of the origin, if there is one.
 fn maybe_fmt_master_id(
-    f: &mut fmt::Formatter,
+    f: &mut fmt::Formatter<'_>,
     origin: &Option<(bip32::Fingerprint, bip32::DerivationPath)>,
 ) -> fmt::Result {
     if let Some((ref master_id, ref master_deriv)) = *origin {
@@ -281,7 +281,7 @@ fn maybe_fmt_master_id(
 }
 
 /// Writes a derivation path to the formatter, no leading 'm'
-fn fmt_derivation_path(f: &mut fmt::Formatter, path: &bip32::DerivationPath) -> fmt::Result {
+fn fmt_derivation_path(f: &mut fmt::Formatter<'_>, path: &bip32::DerivationPath) -> fmt::Result {
     for child in path {
         write!(f, "/{}", child)?;
     }
@@ -356,7 +356,7 @@ pub enum ConversionError {
 }
 
 impl fmt::Display for ConversionError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match *self {
             ConversionError::Wildcard => "uninstantiated wildcard in bip32 path",
             ConversionError::HardenedChild => "hardened child step in bip32 path",
