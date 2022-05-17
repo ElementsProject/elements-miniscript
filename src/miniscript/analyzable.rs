@@ -17,13 +17,13 @@
 //! Tools for determining whether the guarantees offered by the library
 //! actually hold.
 
-use error;
-use miniscript::iter::PkPkh;
+use crate::error;
+use crate::miniscript::iter::PkPkh;
 use std::collections::HashSet;
 use std::fmt;
 
-use Extension;
-use {Miniscript, MiniscriptKey, ScriptContext};
+use crate::Extension;
+use crate::{Miniscript, MiniscriptKey, ScriptContext};
 /// Possible reasons Miniscript guarantees can fail
 /// We currently mark Miniscript as Non-Analyzable if
 /// 1. It is unsafe(does not require a digital signature to spend it)

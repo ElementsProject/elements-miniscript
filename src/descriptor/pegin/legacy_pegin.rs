@@ -22,30 +22,30 @@
 //! Thus, as a simple solution we implement these as a separate
 //! struct with it's own API.
 
+use crate::expression::{self, FromTree};
+use crate::policy::{semantic, Liftable};
+use crate::Descriptor;
+use crate::Error;
+use crate::{
+    BtcError, BtcFromTree, BtcLiftable, BtcMiniscript, BtcPolicy, BtcSatisfier, BtcSegwitv0,
+    BtcTerminal, BtcTree,
+};
 use bitcoin::blockdata::opcodes;
 use bitcoin::hashes::hash160;
 use bitcoin::hashes::Hash;
 use bitcoin::Script as BtcScript;
 use bitcoin::{self, blockdata::script, hashes};
 use elements::secp256k1_zkp;
-use expression::{self, FromTree};
-use policy::{semantic, Liftable};
 use std::{fmt, str::FromStr, sync::Arc};
-use Descriptor;
-use Error;
-use {
-    BtcError, BtcFromTree, BtcLiftable, BtcMiniscript, BtcPolicy, BtcSatisfier, BtcSegwitv0,
-    BtcTerminal, BtcTree,
-};
 
-use {DescriptorTrait, TranslatePk};
+use crate::{DescriptorTrait, TranslatePk};
 
-use {tweak_key, util::varint_len};
+use crate::{tweak_key, util::varint_len};
 
-use descriptor::checksum::{desc_checksum, verify_checksum};
+use crate::descriptor::checksum::{desc_checksum, verify_checksum};
 
 use super::PeginTrait;
-use {MiniscriptKey, ToPublicKey};
+use crate::{MiniscriptKey, ToPublicKey};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// MiniscriptKey used for Pegins

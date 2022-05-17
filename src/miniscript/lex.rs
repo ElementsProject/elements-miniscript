@@ -22,7 +22,7 @@ use elements::{opcodes, script};
 use std::fmt;
 
 use super::Error;
-use util::{build_scriptint, slice_to_u32_le};
+use crate::util::{build_scriptint, slice_to_u32_le};
 /// Atom of a tokenized version of a script
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]

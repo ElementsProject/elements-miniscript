@@ -13,7 +13,7 @@ macro_rules! ms_str {
 /// `policy_str!("elwsh(c:or_i(pk({}),pk({})))", pk1, pk2)`
 #[cfg(all(feature = "compiler", test))]
 macro_rules! policy_str {
-    ($($arg:tt)*) => (::policy::Concrete::from_str(&format!($($arg)*)).unwrap())
+    ($($arg:tt)*) => ($crate::policy::Concrete::from_str(&format!($($arg)*)).unwrap())
 }
 
 /// A macro that implements serde serialization and deserialization using the
@@ -21,33 +21,33 @@ macro_rules! policy_str {
 macro_rules! serde_string_impl_pk {
     ($name:ident, $expecting:expr $(, $gen:ident; $gen_con:ident)* $(=> $ext:ident ; $ext_bound:ident)*) => {
         #[cfg(feature = "serde")]
-        impl<'de, Pk $(, $gen)* $(, $ext)*> $crate::serde::Deserialize<'de> for $name<Pk $(, $gen)* $(, $ext)* >
+        impl<'de, Pk $(, $gen)* $(, $ext)*> serde::Deserialize<'de> for $name<Pk $(, $gen)* $(, $ext)* >
         where
-            Pk: $crate::MiniscriptKey + $crate::std::str::FromStr,
-            Pk::Hash: $crate::std::str::FromStr,
-            <Pk as $crate::std::str::FromStr>::Err: $crate::std::fmt::Display,
-            <<Pk as $crate::MiniscriptKey>::Hash as $crate::std::str::FromStr>::Err:
-                $crate::std::fmt::Display,
+            Pk: MiniscriptKey + std::str::FromStr,
+            Pk::Hash: std::str::FromStr,
+            <Pk as std::str::FromStr>::Err: std::fmt::Display,
+            <<Pk as MiniscriptKey>::Hash as std::str::FromStr>::Err:
+                std::fmt::Display,
             $($gen : $gen_con,)*
             $($ext : $ext_bound<Pk>,)*
         {
             fn deserialize<D>(deserializer: D) -> Result<$name<Pk $(, $gen)* $(, $ext)*>, D::Error>
             where
-                D: $crate::serde::de::Deserializer<'de>,
+                D: serde::de::Deserializer<'de>,
             {
-                use $crate::std::fmt::{self, Formatter};
-                use $crate::std::marker::PhantomData;
-                use $crate::std::str::FromStr;
+                use std::fmt::{self, Formatter};
+                use std::marker::PhantomData;
+                use std::str::FromStr;
 
                 #[allow(unused_parens)]
                 struct Visitor<Pk $(, $gen)* $(, $ext)*>(PhantomData<(Pk $(, $gen)* $(, $ext)*)>);
-                impl<'de, Pk $(, $gen)* $(, $ext)*> $crate::serde::de::Visitor<'de> for Visitor<Pk $(, $gen)* $(, $ext)*>
+                impl<'de, Pk $(, $gen)* $(, $ext)*> serde::de::Visitor<'de> for Visitor<Pk $(, $gen)* $(, $ext)*>
                 where
-                    Pk: $crate::MiniscriptKey + $crate::std::str::FromStr,
-                    Pk::Hash: $crate::std::str::FromStr,
-                    <Pk as $crate::std::str::FromStr>::Err: $crate::std::fmt::Display,
-                    <<Pk as $crate::MiniscriptKey>::Hash as $crate::std::str::FromStr>::Err:
-                        $crate::std::fmt::Display,
+                    Pk: MiniscriptKey + std::str::FromStr,
+                    Pk::Hash: std::str::FromStr,
+                    <Pk as std::str::FromStr>::Err: std::fmt::Display,
+                    <<Pk as MiniscriptKey>::Hash as std::str::FromStr>::Err:
+                        std::fmt::Display,
                     $($gen: $gen_con,)*
                     $($ext : $ext_bound<Pk>,)*
                 {
@@ -59,21 +59,21 @@ macro_rules! serde_string_impl_pk {
 
                     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
                     where
-                        E: $crate::serde::de::Error,
+                        E: serde::de::Error,
                     {
                         $name::from_str(v).map_err(E::custom)
                     }
 
                     fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
                     where
-                        E: $crate::serde::de::Error,
+                        E: serde::de::Error,
                     {
                         self.visit_str(v)
                     }
 
                     fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
                     where
-                        E: $crate::serde::de::Error,
+                        E: serde::de::Error,
                     {
                         self.visit_str(&v)
                     }
@@ -84,15 +84,15 @@ macro_rules! serde_string_impl_pk {
         }
 
         #[cfg(feature = "serde")]
-        impl<'de, Pk $(, $gen)* $(, $ext)*> $crate::serde::Serialize for $name<Pk $(, $gen)* $(, $ext)*>
+        impl<'de, Pk $(, $gen)* $(, $ext)*> serde::Serialize for $name<Pk $(, $gen)* $(, $ext)*>
         where
-            Pk: $crate::MiniscriptKey,
+            Pk: MiniscriptKey,
             $($gen: $gen_con,)*
             $($ext : $ext_bound<Pk>,)*
         {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
-                S: $crate::serde::Serializer,
+                S: serde::Serializer,
             {
                 serializer.collect_str(&self)
             }

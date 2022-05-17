@@ -4,23 +4,23 @@
 
 use std::{fmt, hash};
 
+use crate::policy;
+use crate::Error;
+use crate::MiniscriptKey;
+use crate::ToPublicKey;
+use crate::{ForEach, TranslatePk};
 use elements::script::Builder;
-use policy;
-use Error;
-use MiniscriptKey;
-use ToPublicKey;
-use {ForEach, TranslatePk};
 
-use {expression::Tree, policy::Liftable, Satisfier};
+use crate::{expression::Tree, policy::Liftable, Satisfier};
 
-use miniscript::{
+use crate::miniscript::{
     context::ScriptContextError,
     lex::TokenIter,
     satisfy::Satisfaction,
     types::{Correctness, ExtData, Malleability},
 };
 
-use interpreter::{self, Stack};
+use crate::interpreter::{self, Stack};
 mod outputs_pref;
 mod tx_ver;
 pub use self::outputs_pref::OutputsPref;

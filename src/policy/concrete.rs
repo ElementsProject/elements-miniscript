@@ -21,13 +21,15 @@ use std::collections::HashSet;
 use std::{error, fmt, str};
 
 use super::ENTAILMENT_MAX_TERMINALS;
-use errstr;
-use expression::{self, FromTree};
-use miniscript::limits::{HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_TYPE_FLAG};
-use miniscript::types::extra_props::TimeLockInfo;
+use crate::errstr;
+use crate::expression::{self, FromTree};
+use crate::miniscript::limits::{HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_TYPE_FLAG};
+use crate::miniscript::types::extra_props::TimeLockInfo;
 #[cfg(feature = "compiler")]
-use {miniscript::ScriptContext, policy::compiler, policy::compiler::CompilerError, Miniscript};
-use {Error, ForEach, ForEachKey, MiniscriptKey};
+use crate::{
+    miniscript::ScriptContext, policy::compiler, policy::compiler::CompilerError, Miniscript,
+};
+use crate::{Error, ForEach, ForEachKey, MiniscriptKey};
 /// Concrete policy which corresponds directly to a Miniscript structure,
 /// and whose disjunctions are annotated with satisfaction probabilities
 /// to assist the compiler

@@ -16,7 +16,7 @@
 //!
 //! Iterators for Miniscript with special functions for iterating
 //! over Public Keys, Public Key Hashes or both.
-use Extension;
+use crate::Extension;
 
 use super::decode::Terminal;
 use super::{Miniscript, MiniscriptKey, ScriptContext};
@@ -450,11 +450,11 @@ impl<'a, Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Iterator
 #[cfg(test)]
 pub mod test {
     use super::{Miniscript, PkPkh};
+    use crate::miniscript::context::Segwitv0;
+    use crate::CovenantExt;
     use bitcoin;
     use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
     use elements::secp256k1_zkp;
-    use miniscript::context::Segwitv0;
-    use CovenantExt;
 
     pub type TestData = (
         Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt>,

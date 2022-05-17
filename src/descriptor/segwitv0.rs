@@ -21,16 +21,16 @@ use std::{fmt, str::FromStr};
 use elements::secp256k1_zkp;
 use elements::{self, Script};
 
-use expression::{self, FromTree};
-use miniscript::context::{ScriptContext, ScriptContextError};
-use policy::{semantic, Liftable};
-use util::varint_len;
-use {
+use crate::expression::{self, FromTree};
+use crate::miniscript::context::{ScriptContext, ScriptContextError};
+use crate::policy::{semantic, Liftable};
+use crate::util::varint_len;
+use crate::{
     Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, Segwitv0, ToPublicKey,
     TranslatePk,
 };
 
-use elementssig_to_rawsig;
+use crate::elementssig_to_rawsig;
 
 use super::{
     checksum::{desc_checksum, verify_checksum},

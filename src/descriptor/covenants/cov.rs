@@ -42,6 +42,7 @@
 //! which we verify using CHECKSIGFROMSTACK
 use std::{fmt, str::FromStr};
 
+use crate::miniscript::limits::{MAX_SCRIPT_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE};
 use bitcoin;
 use elements::hashes::{sha256d, Hash};
 use elements::script;
@@ -51,9 +52,8 @@ use elements::{
     encode::{serialize, Encodable},
     Script,
 };
-use miniscript::limits::{MAX_SCRIPT_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE};
 
-use {
+use crate::{
     expression::{self, FromTree},
     miniscript::{
         decode,
@@ -65,14 +65,14 @@ use {
     ForEach, ForEachKey, Miniscript, ScriptContext, Segwitv0, TranslatePk,
 };
 
-use Extension;
+use crate::Extension;
 
 use super::super::{
     checksum::{desc_checksum, verify_checksum},
     ElementsTrait, ELMTS_STR,
 };
 use super::{CovError, CovOperations};
-use {DescriptorTrait, Error, MiniscriptKey, Satisfier, ToPublicKey};
+use crate::{DescriptorTrait, Error, MiniscriptKey, Satisfier, ToPublicKey};
 
 // A simple utility function to serialize an array
 // of elements and compute double sha2 on it
@@ -152,7 +152,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
         Pk: ToPublicKey,
     {
         let mut wit = {
-            use descriptor::CovError::MissingSighashItem;
+            use crate::descriptor::CovError::MissingSighashItem;
             let n_version = s.lookup_nversion().ok_or(MissingSighashItem(1))?;
             let hash_prevouts = s.lookup_hashprevouts().ok_or(MissingSighashItem(1))?;
             let hash_sequence = s.lookup_hashsequence().ok_or(MissingSighashItem(3))?;

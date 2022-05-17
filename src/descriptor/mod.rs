@@ -37,14 +37,14 @@ use elements;
 use elements::secp256k1_zkp;
 use elements::Script;
 
+use crate::CovenantExt;
 use bitcoin::util::address::WitnessVersion;
-use CovenantExt;
 
 use self::checksum::verify_checksum;
-use expression;
-use miniscript;
-use miniscript::{Legacy, Miniscript, Segwitv0};
-use {
+use crate::expression;
+use crate::miniscript;
+use crate::miniscript::{Legacy, Miniscript, Segwitv0};
+use crate::{
     BareCtx, Error, ForEach, ForEachKey, MiniscriptKey, Satisfier, ToPublicKey, TranslatePk,
     TranslatePk2,
 };
@@ -1107,26 +1107,26 @@ mod tests {
     use super::checksum::desc_checksum;
     use super::tr::Tr;
     use super::*;
+    use crate::descriptor::key::Wildcard;
+    use crate::descriptor::{DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey};
     use bitcoin;
     use bitcoin::util::bip32;
     use bitcoin::PublicKey;
-    use descriptor::key::Wildcard;
-    use descriptor::{DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey};
     use elements::hashes::hex::{FromHex, ToHex};
     use elements::hashes::{hash160, sha256};
     use elements::opcodes::all::{OP_CLTV, OP_CSV};
     use elements::script::Instruction;
     use elements::{opcodes, script};
 
-    use hex_script;
-    use miniscript::satisfy::ElementsSig;
+    use crate::hex_script;
+    use crate::miniscript::satisfy::ElementsSig;
+    use crate::{Descriptor, DummyKey, Error, Miniscript, Satisfier, TranslatePk2};
     use std::cmp;
     use std::collections::HashMap;
     use std::str::FromStr;
-    use {Descriptor, DummyKey, Error, Miniscript, Satisfier, TranslatePk2};
 
     #[cfg(feature = "compiler")]
-    use policy;
+    use crate::policy;
 
     type StdDescriptor = Descriptor<PublicKey>;
     const TEST_PK: &'static str =

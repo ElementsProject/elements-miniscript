@@ -31,20 +31,20 @@ use elements::sighash::SigHashCache;
 use elements::taproot::{self, LeafVersion, TapLeafHash};
 use elements::{self, EcdsaSigHashType, SchnorrSigHashType, Script};
 
-use interpreter;
-use miniscript::iter::PkPkh;
-use miniscript::limits::SEQUENCE_LOCKTIME_DISABLE_FLAG;
-use miniscript::satisfy::{elementssig_from_rawsig, After, Older};
-use Satisfier;
-use {ElementsSig, Preimage32};
-use {MiniscriptKey, ToPublicKey};
-use {TranslatePk, TranslatePk2};
+use crate::interpreter;
+use crate::miniscript::iter::PkPkh;
+use crate::miniscript::limits::SEQUENCE_LOCKTIME_DISABLE_FLAG;
+use crate::miniscript::satisfy::{elementssig_from_rawsig, After, Older};
+use crate::Satisfier;
+use crate::{ElementsSig, Preimage32};
+use crate::{MiniscriptKey, ToPublicKey};
+use crate::{TranslatePk, TranslatePk2};
 
 mod finalizer;
-use descriptor::CovSatisfier;
-use Descriptor;
+use crate::descriptor::CovSatisfier;
+use crate::Descriptor;
 
-use {descriptor, util, DescriptorPublicKey};
+use crate::{descriptor, util, DescriptorPublicKey};
 
 use crate::DescriptorTrait;
 
@@ -1165,13 +1165,13 @@ impl PsbtSigHashMsg {
 mod tests {
     use super::*;
 
+    use crate::Miniscript;
     use bitcoin::util::bip32::{DerivationPath, ExtendedPubKey};
     use elements::encode::deserialize;
     use elements::hashes::hex::FromHex;
     use elements::secp256k1_zkp::XOnlyPublicKey;
     use elements::{AssetIssuance, OutPoint, TxIn, TxInWitness, TxOut};
     use std::str::FromStr;
-    use Miniscript;
 
     #[test]
     fn test_extract_psbt() {
@@ -1225,7 +1225,7 @@ mod tests {
 
     #[test]
     fn test_update_input_tr_with_tapscript() {
-        use Tap;
+        use crate::Tap;
         // keys taken from: https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki#Specifications
         let root_xpub = ExtendedPubKey::from_str("xpub661MyMwAqRbcFkPHucMnrGNzDwb6teAX1RbKQmqtEF8kK3Z7LZ59qafCjB9eCRLiTVG3uxBxgKvRgbubRhqSKXnGGb1aoaqLrpMBDrVxga8").unwrap();
         let fingerprint = root_xpub.fingerprint();

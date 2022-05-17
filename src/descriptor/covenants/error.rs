@@ -14,8 +14,8 @@
 //
 //! Covenant Descriptor Errors
 
+use crate::Error;
 use std::{error, fmt};
-use Error;
 /// Covenant related Errors
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CovError {

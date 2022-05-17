@@ -15,7 +15,7 @@
 //! Malleability-related Type properties
 
 use super::{ErrorKind, Property};
-use {Extension, MiniscriptKey};
+use crate::{Extension, MiniscriptKey};
 
 /// Whether the fragment has a dissatisfaction, and if so, whether
 /// it is unique. Affects both correctness and malleability-freeness,

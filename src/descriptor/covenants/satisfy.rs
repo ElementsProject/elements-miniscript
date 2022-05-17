@@ -15,12 +15,12 @@
 //! Covenant Descriptor Satisfaction
 
 use super::CovError;
+use crate::{MiniscriptKey, Satisfier, ToPublicKey};
 use elements::encode::Encodable;
 use elements::hashes::{sha256d, Hash};
 use elements::sighash::SigHashCache;
 use elements::{self, confidential};
 use elements::{EcdsaSigHashType, OutPoint, Script, SigHash, Transaction, TxOut};
-use {MiniscriptKey, Satisfier, ToPublicKey};
 
 /// A satisfier for Covenant descriptors
 /// that can do transaction introspection

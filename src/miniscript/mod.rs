@@ -44,16 +44,16 @@ pub mod types;
 
 use self::lex::{lex, TokenIter};
 use self::types::Property;
-pub use miniscript::context::ScriptContext;
-use miniscript::decode::Terminal;
-use miniscript::types::extra_props::ExtData;
-use miniscript::types::Type;
-use {Extension, NoExt};
+pub use crate::miniscript::context::ScriptContext;
+use crate::miniscript::decode::Terminal;
+use crate::miniscript::types::extra_props::ExtData;
+use crate::miniscript::types::Type;
+use crate::{Extension, NoExt};
 
+use crate::MiniscriptKey;
+use crate::{expression, Error, ForEach, ForEachKey, ToPublicKey, TranslatePk};
 use std::cmp;
 use std::sync::Arc;
-use MiniscriptKey;
-use {expression, Error, ForEach, ForEachKey, ToPublicKey, TranslatePk};
 
 #[cfg(test)]
 mod ms_tests;
@@ -489,27 +489,27 @@ serde_string_impl_pk!(Miniscript, "a miniscript", Ctx; ScriptContext => Ext2 ; E
 #[cfg(test)]
 mod tests {
 
+    use crate::{Satisfier, ToPublicKey};
     use elements::taproot::TapLeafHash;
-    use {Satisfier, ToPublicKey};
 
     use super::{Miniscript, ScriptContext};
     use super::{Segwitv0, Tap};
-    use hex_script;
-    use miniscript::types::{self, ExtData, Property, Type};
-    use miniscript::Terminal;
-    use policy::Liftable;
+    use crate::hex_script;
+    use crate::miniscript::types::{self, ExtData, Property, Type};
+    use crate::miniscript::Terminal;
+    use crate::policy::Liftable;
+    use crate::{DummyKey, DummyKeyHash, MiniscriptKey, TranslatePk, TranslatePk1};
     use std::marker::PhantomData;
-    use {DummyKey, DummyKeyHash, MiniscriptKey, TranslatePk, TranslatePk1};
 
+    use crate::TranslatePk2;
     use bitcoin;
     use elements::hashes::{hash160, sha256, Hash};
     use elements::{self, secp256k1_zkp};
     use std::str;
     use std::str::FromStr;
     use std::sync::Arc;
-    use TranslatePk2;
 
-    use CovenantExt;
+    use crate::CovenantExt;
 
     type Tapscript = Miniscript<bitcoin::secp256k1::XOnlyPublicKey, Tap, CovenantExt>;
     type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt>;

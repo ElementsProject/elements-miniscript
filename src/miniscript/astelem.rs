@@ -27,17 +27,19 @@ use elements::hashes::hex::FromHex;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use elements::{opcodes, script};
 
-use errstr;
-use expression;
-use miniscript::context::SigType;
-use miniscript::types::{self, Property};
-use miniscript::ScriptContext;
-use script_num_size;
+use crate::errstr;
+use crate::expression;
+use crate::miniscript::context::SigType;
+use crate::miniscript::types::{self, Property};
+use crate::miniscript::ScriptContext;
+use crate::script_num_size;
 
-use util::MsKeyBuilder;
-use {Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslatePk};
+use crate::util::MsKeyBuilder;
+use crate::{
+    Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslatePk,
+};
 
-use Extension;
+use crate::Extension;
 
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 

@@ -18,8 +18,8 @@ extern crate bitcoin;
 extern crate elements;
 extern crate elements_miniscript as miniscript;
 
+use crate::miniscript::DescriptorTrait;
 use elements::secp256k1_zkp;
-use miniscript::DescriptorTrait;
 use std::collections::HashMap;
 use std::str::FromStr;
 

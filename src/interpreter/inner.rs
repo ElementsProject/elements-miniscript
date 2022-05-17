@@ -12,24 +12,24 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
+use crate::TranslatePk;
 use bitcoin;
 use bitcoin::util::taproot::TAPROOT_ANNEX_PREFIX;
 use elements::hashes::{hash160, sha256, Hash};
 use elements::{self, script};
-use TranslatePk;
 
 use super::{stack, BitcoinKey, Error, Stack, TypedHash160};
-use Extension;
+use crate::Extension;
 
-use descriptor::{CovOperations, CovenantDescriptor};
+use crate::descriptor::{CovOperations, CovenantDescriptor};
+use crate::miniscript::context::NoChecks;
 use elements::schnorr::TapTweak;
 use elements::taproot::ControlBlock;
-use miniscript::context::NoChecks;
 
-use {BareCtx, Legacy, Segwitv0, Tap};
+use crate::{BareCtx, Legacy, Segwitv0, Tap};
 
-use miniscript::context::ScriptContext;
-use {Miniscript, MiniscriptKey};
+use crate::miniscript::context::ScriptContext;
+use crate::{Miniscript, MiniscriptKey};
 
 /// Attempts to parse a slice as a Bitcoin public key, checking compressedness
 /// if asked to, but otherwise dropping it
@@ -66,9 +66,11 @@ fn script_from_stackelem<'a, Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
         stack::Element::Push(sl) => {
             Miniscript::parse_insane(&elements::Script::from(sl.to_owned())).map_err(Error::from)
         }
-        stack::Element::Satisfied => Miniscript::from_ast(::Terminal::True).map_err(Error::from),
+        stack::Element::Satisfied => {
+            Miniscript::from_ast(crate::Terminal::True).map_err(Error::from)
+        }
         stack::Element::Dissatisfied => {
-            Miniscript::from_ast(::Terminal::False).map_err(Error::from)
+            Miniscript::from_ast(crate::Terminal::False).map_err(Error::from)
         }
     }
 }
@@ -488,12 +490,12 @@ where
 mod tests {
 
     use super::*;
+    use crate::CovenantExt;
     use elements::hashes::hex::FromHex;
     use elements::hashes::{hash160, sha256, Hash};
     use elements::script;
     use elements::{self, Script};
     use std::str::FromStr;
-    use CovenantExt;
 
     struct KeyTestData {
         pk_spk: elements::Script,

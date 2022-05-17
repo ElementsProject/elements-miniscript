@@ -55,13 +55,17 @@ pub use self::script_internals::CovOperations;
 #[allow(unused_imports)]
 mod tests {
 
-    use interpreter;
-    use CovenantExt;
+    use crate::interpreter;
+    use crate::CovenantExt;
 
     use super::cov::*;
     use super::*;
+    use crate::descriptor::DescriptorTrait;
+    use crate::interpreter::SatisfiedConstraint;
+    use crate::util::{count_non_push_opcodes, witness_size};
+    use crate::Interpreter;
+    use crate::{descriptor::DescriptorType, Descriptor, ElementsSig, Error, Satisfier};
     use bitcoin;
-    use descriptor::DescriptorTrait;
     use elements::hashes::hex::ToHex;
     use elements::secp256k1_zkp;
     use elements::{self, secp256k1_zkp::ZERO_TWEAK};
@@ -71,11 +75,7 @@ mod tests {
         AssetId, AssetIssuance, EcdsaSigHashType, OutPoint, Script, Transaction, TxIn, TxInWitness,
         TxOut, Txid,
     };
-    use interpreter::SatisfiedConstraint;
     use std::str::FromStr;
-    use util::{count_non_push_opcodes, witness_size};
-    use Interpreter;
-    use {descriptor::DescriptorType, Descriptor, ElementsSig, Error, Satisfier};
 
     const BTC_ASSET: [u8; 32] = [
         0x23, 0x0f, 0x4f, 0x5d, 0x4b, 0x7c, 0x6f, 0xa8, 0x45, 0x80, 0x6e, 0xe4, 0xf6, 0x77, 0x13,

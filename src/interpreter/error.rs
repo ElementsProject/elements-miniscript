@@ -63,7 +63,7 @@ pub enum Error {
     /// Last byte of this signature isn't a standard sighash type
     NonStandardSigHash(Vec<u8>),
     /// Miniscript error
-    Miniscript(::Error),
+    Miniscript(crate::Error),
     /// MultiSig requires 1 extra zero element apart from the `k` signatures
     MissingExtraZeroMultiSig,
     /// Script abortion because of incorrect dissatisfaction for multisig.
@@ -188,8 +188,8 @@ impl From<elements::secp256k1_zkp::UpstreamError> for Error {
 }
 
 #[doc(hidden)]
-impl From<::Error> for Error {
-    fn from(e: ::Error) -> Error {
+impl From<crate::Error> for Error {
+    fn from(e: crate::Error) -> Error {
         Error::Miniscript(e)
     }
 }

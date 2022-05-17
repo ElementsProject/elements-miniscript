@@ -23,9 +23,9 @@ use std::{fmt, str::FromStr};
 use elements::secp256k1_zkp;
 use elements::{self, Script};
 
-use expression::{self, FromTree};
-use policy::{semantic, Liftable};
-use {Error, MiniscriptKey, Satisfier, ToPublicKey};
+use crate::expression::{self, FromTree};
+use crate::policy::{semantic, Liftable};
+use crate::{Error, MiniscriptKey, Satisfier, ToPublicKey};
 
 use super::{
     checksum::{desc_checksum, strip_checksum, verify_checksum},

@@ -22,17 +22,17 @@ use std::convert::From;
 use std::marker::PhantomData;
 use std::{cmp, error, f64, fmt, mem};
 
-use miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
-use miniscript::limits::MAX_SCRIPT_ELEMENT_SIZE;
-use miniscript::types::{self, ErrorKind, ExtData, Property, Type};
-use miniscript::ScriptContext;
-use policy::Concrete;
+use crate::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
+use crate::miniscript::limits::MAX_SCRIPT_ELEMENT_SIZE;
+use crate::miniscript::types::{self, ErrorKind, ExtData, Property, Type};
+use crate::miniscript::ScriptContext;
+use crate::policy::Concrete;
+use crate::Extension;
+use crate::{policy, Terminal};
+use crate::{Miniscript, MiniscriptKey};
 use std::collections::vec_deque::VecDeque;
 use std::hash;
 use std::sync::Arc;
-use Extension;
-use {policy, Terminal};
-use {Miniscript, MiniscriptKey};
 
 type PolicyCache<Pk, Ctx> =
     BTreeMap<(Concrete<Pk>, OrdF64, Option<OrdF64>), BTreeMap<CompilationKey, AstElemExt<Pk, Ctx>>>;
@@ -1195,10 +1195,10 @@ mod tests {
     use std::str::FromStr;
     use std::string::String;
 
-    use miniscript::{satisfy, Legacy, Segwitv0, Tap};
-    use policy::Liftable;
-    use script_num_size;
-    use ElementsSig;
+    use crate::miniscript::{satisfy, Legacy, Segwitv0, Tap};
+    use crate::policy::Liftable;
+    use crate::script_num_size;
+    use crate::ElementsSig;
 
     type SPolicy = Concrete<String>;
     type BPolicy = Concrete<bitcoin::PublicKey>;

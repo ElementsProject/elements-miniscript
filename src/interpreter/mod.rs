@@ -22,6 +22,13 @@
 use std::fmt;
 use std::str::FromStr;
 
+use crate::miniscript::context::NoChecks;
+use crate::miniscript::ScriptContext;
+use crate::util;
+use crate::Miniscript;
+use crate::Terminal;
+use crate::TranslatePk;
+use crate::{Descriptor, ElementsSig, ToPublicKey};
 use bitcoin;
 use elements::sighash;
 use elements::{self, secp256k1_zkp, SigHash};
@@ -29,26 +36,19 @@ use elements::{
     hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine},
     EcdsaSigHashType,
 };
-use miniscript::context::NoChecks;
-use miniscript::ScriptContext;
-use util;
-use Miniscript;
-use Terminal;
-use TranslatePk;
-use {Descriptor, ElementsSig, ToPublicKey};
 
 mod error;
 mod inner;
 mod stack;
 
-use MiniscriptKey;
+use crate::MiniscriptKey;
 
-use elementssig_from_rawsig;
+use crate::elementssig_from_rawsig;
 
 pub use self::error::Error;
 use self::error::PkEvalErrInner;
 pub use self::stack::Stack;
-use {CovenantExt, Extension};
+use crate::{CovenantExt, Extension};
 
 pub use self::stack::Element;
 
@@ -509,7 +509,7 @@ where
     /// since it cannot distinguish between sorted and unsorted multisigs (and anyway
     /// it can only see the final keys, keyorigin info is lost in serializing to Bitcoin).
     /// x-only keys are translated to [`bitcoin::PublicKey`] with 0x02 prefix.
-    pub fn inferred_descriptor(&self) -> Result<Descriptor<bitcoin::PublicKey>, ::Error> {
+    pub fn inferred_descriptor(&self) -> Result<Descriptor<bitcoin::PublicKey>, crate::Error> {
         Descriptor::from_str(&self.inferred_descriptor_string())
     }
 }
@@ -1200,15 +1200,15 @@ mod tests {
 
     use super::inner::ToNoChecks;
     use super::*;
+    use crate::miniscript::context::NoChecks;
+    use crate::ElementsSig;
+    use crate::Miniscript;
+    use crate::MiniscriptKey;
+    use crate::NoExt;
+    use crate::ToPublicKey;
     use bitcoin;
     use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
     use elements::secp256k1_zkp::{self, Secp256k1};
-    use miniscript::context::NoChecks;
-    use ElementsSig;
-    use Miniscript;
-    use MiniscriptKey;
-    use NoExt;
-    use ToPublicKey;
 
     fn setup_keys_sigs(
         n: usize,

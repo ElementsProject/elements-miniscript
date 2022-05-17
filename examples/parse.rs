@@ -17,7 +17,7 @@
 extern crate bitcoin;
 extern crate elements_miniscript as miniscript;
 
-use miniscript::{descriptor::DescriptorType, Descriptor, DescriptorTrait};
+use crate::miniscript::{descriptor::DescriptorType, Descriptor, DescriptorTrait};
 use std::str::FromStr;
 
 fn main() {

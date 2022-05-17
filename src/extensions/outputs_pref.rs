@@ -4,20 +4,20 @@
 
 use std::fmt;
 
-use MiniscriptKey;
+use crate::MiniscriptKey;
 
+use crate::Extension;
+use crate::ForEach;
 use elements::hashes::hex::FromHex;
 use elements::hashes::hex::ToHex;
 use elements::hashes::sha256d;
 use elements::hashes::Hash;
 use elements::{self, encode::serialize};
-use Extension;
-use ForEach;
 
-use miniscript::context::ScriptContextError;
-use ToPublicKey;
-use TranslatePk;
-use {
+use crate::miniscript::context::ScriptContextError;
+use crate::ToPublicKey;
+use crate::TranslatePk;
+use crate::{
     descriptor::CovError,
     expression, interpreter,
     miniscript::{
@@ -325,8 +325,8 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for OutputsPref {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Miniscript, Segwitv0};
     use bitcoin::PublicKey;
-    use {Miniscript, Segwitv0};
 
     #[test]
     fn test_outputs_pref() {

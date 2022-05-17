@@ -6,7 +6,7 @@ use std::{
 use elements::{self, Script};
 
 use super::{checksum::verify_checksum, Bare, ElementsTrait, Pkh, Sh, Wpkh, Wsh};
-use {expression, DescriptorTrait, Error, MiniscriptKey, Satisfier, ToPublicKey};
+use crate::{expression, DescriptorTrait, Error, MiniscriptKey, Satisfier, ToPublicKey};
 
 /// Script descriptor
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -260,7 +260,7 @@ serde_string_impl_pk!(PreTaprootDescriptor, "a pre-taproot script descriptor");
 pub(crate) mod traits {
     use elements::Script;
 
-    use {
+    use crate::{
         descriptor::{Pkh, Sh, Wpkh, Wsh},
         DescriptorTrait, MiniscriptKey, ToPublicKey,
     };

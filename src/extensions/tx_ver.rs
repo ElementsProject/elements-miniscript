@@ -4,19 +4,19 @@
 
 use std::fmt;
 
-use MiniscriptKey;
+use crate::MiniscriptKey;
 
+use crate::miniscript;
+use crate::Extension;
+use crate::ForEach;
+use crate::TranslatePk;
 use elements::{self, encode::serialize};
-use miniscript;
-use Extension;
-use ForEach;
-use TranslatePk;
 
-use ToPublicKey;
+use crate::ToPublicKey;
 
-use util;
+use crate::util;
 
-use {
+use crate::{
     descriptor::CovError,
     expression, interpreter,
     miniscript::{
@@ -232,8 +232,8 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for VerEq {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Miniscript, Segwitv0};
     use bitcoin::PublicKey;
-    use {Miniscript, Segwitv0};
 
     #[test]
     fn test_ver_eq() {

@@ -17,25 +17,25 @@
 //! Functionality to parse a Bitcoin Script into a `Miniscript`
 //!
 
+use crate::miniscript::limits::MAX_BLOCK_WEIGHT;
+use crate::{bitcoin, Miniscript};
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
-use miniscript::limits::MAX_BLOCK_WEIGHT;
 use std::marker::PhantomData;
 use std::{error, fmt};
-use {bitcoin, Miniscript};
 
-use miniscript::lex::{Token as Tk, TokenIter};
-use miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
-use miniscript::types::extra_props::ExtData;
-use miniscript::types::Property;
-use miniscript::types::Type;
-use miniscript::ScriptContext;
+use crate::miniscript::lex::{Token as Tk, TokenIter};
+use crate::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
+use crate::miniscript::types::extra_props::ExtData;
+use crate::miniscript::types::Property;
+use crate::miniscript::types::Type;
+use crate::miniscript::ScriptContext;
+use crate::Error;
+use crate::MiniscriptKey;
 use std::sync::Arc;
-use Error;
-use MiniscriptKey;
 
-use Extension;
-use NoExt;
-use ToPublicKey;
+use crate::Extension;
+use crate::NoExt;
+use crate::ToPublicKey;
 
 fn return_none<T>(_: usize) -> Option<T> {
     None

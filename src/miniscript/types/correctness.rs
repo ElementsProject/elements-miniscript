@@ -15,7 +15,7 @@
 //! Correctness/Soundness type properties
 
 use super::{ErrorKind, Property};
-use {Extension, MiniscriptKey};
+use crate::{Extension, MiniscriptKey};
 
 /// Basic type representing where the fragment can go
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]

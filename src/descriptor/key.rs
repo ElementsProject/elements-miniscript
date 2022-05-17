@@ -1,7 +1,7 @@
 use std::{error, fmt, str::FromStr};
 
+use crate::{MiniscriptKey, ToPublicKey};
 use bitcoin::{self, util::bip32, XpubIdentifier};
-use {MiniscriptKey, ToPublicKey};
 
 use elements::{
     hashes::hex::FromHex,

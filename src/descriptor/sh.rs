@@ -23,12 +23,12 @@ use std::{fmt, str::FromStr};
 use elements::secp256k1_zkp;
 use elements::{self, script, Script};
 
-use expression::{self, FromTree};
-use miniscript::context::ScriptContext;
-use policy::{semantic, Liftable};
-use push_opcode_size;
-use util::{varint_len, witness_to_scriptsig};
-use {
+use crate::expression::{self, FromTree};
+use crate::miniscript::context::ScriptContext;
+use crate::policy::{semantic, Liftable};
+use crate::push_opcode_size;
+use crate::util::{varint_len, witness_to_scriptsig};
+use crate::{
     Error, ForEach, ForEachKey, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0,
     ToPublicKey, TranslatePk,
 };

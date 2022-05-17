@@ -18,9 +18,9 @@ extern crate bitcoin;
 extern crate elements;
 extern crate elements_miniscript as miniscript;
 
-use miniscript::descriptor::Wsh;
-use miniscript::policy::{Concrete, Liftable};
-use miniscript::DescriptorTrait;
+use crate::miniscript::descriptor::Wsh;
+use crate::miniscript::policy::{Concrete, Liftable};
+use crate::miniscript::DescriptorTrait;
 use std::str::FromStr;
 
 fn main() {

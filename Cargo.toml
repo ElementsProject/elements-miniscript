@@ -5,6 +5,7 @@ authors = ["Andrew Poelstra <apoelstra@wpsoftware.net>, Sanket Kanjalkar <sanket
 repository = "https://github.com/ElementsProject/elements-miniscript"
 description = "Elements Miniscript: Miniscript, but for elements"
 license = "CC0-1.0"
+edition = "2018"
 
 [features]
 compiler = []

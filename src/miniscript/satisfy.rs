@@ -22,23 +22,23 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::{cmp, i64, mem};
 
+use crate::{MiniscriptKey, ToPublicKey};
 use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d};
 use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, secp256k1_zkp};
 use elements::{confidential, OutPoint, Script};
-use {MiniscriptKey, ToPublicKey};
 
-use bitcoin::secp256k1::XOnlyPublicKey;
-use miniscript::limits::{
+use crate::miniscript::limits::{
     HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
-use util::witness_size;
-use Miniscript;
-use ScriptContext;
-use Terminal;
+use crate::util::witness_size;
+use crate::Miniscript;
+use crate::ScriptContext;
+use crate::Terminal;
+use bitcoin::secp256k1::XOnlyPublicKey;
 
-use Extension;
+use crate::Extension;
 
 /// Type alias for a signature/hashtype pair
 pub type ElementsSig = (secp256k1_zkp::ecdsa::Signature, elements::EcdsaSigHashType);
@@ -56,7 +56,7 @@ pub fn elementssig_to_rawsig(sig: &ElementsSig) -> Vec<u8> {
 /// Helper function to create ElementsSig from Rawsig
 /// Useful for downstream when implementing Satisfier.
 /// Returns underlying secp if the Signature is not of correct format
-pub fn elementssig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, ::interpreter::Error> {
+pub fn elementssig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, crate::interpreter::Error> {
     let (flag, sig) = rawsig.split_last().unwrap();
     let flag = elements::EcdsaSigHashType::from_u32(*flag as u32);
     let sig = secp256k1_zkp::ecdsa::Signature::from_der(sig)?;

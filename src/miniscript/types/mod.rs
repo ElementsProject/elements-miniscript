@@ -22,14 +22,14 @@ pub mod malleability;
 
 use std::{error, fmt};
 
-use {Extension, NoExt};
+use crate::{Extension, NoExt};
 
 pub use self::correctness::{Base, Correctness, Input};
 pub use self::extra_props::ExtData;
 pub use self::malleability::{Dissat, Malleability};
 use super::{limits::SEQUENCE_LOCKTIME_DISABLE_FLAG, ScriptContext};
-use MiniscriptKey;
-use Terminal;
+use crate::MiniscriptKey;
+use crate::Terminal;
 
 /// None-returning function to help type inference when we need a
 /// closure that simply returns `None`
