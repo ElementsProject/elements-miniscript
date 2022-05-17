@@ -244,7 +244,8 @@ where
     contracthash::tweak_key(secp, pk, contract)
 }
 /// Miniscript
-#[derive(Debug)]
+
+#[derive(Debug, PartialEq)]
 pub enum Error {
     /// Opcode appeared which is not part of the script subset
     InvalidOpcode(opcodes::All),
