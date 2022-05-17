@@ -106,8 +106,8 @@
 #![deny(unused_imports)]
 #![deny(missing_docs)]
 
-pub extern crate bitcoin;
-pub extern crate elements;
+pub use bitcoin;
+pub use elements;
 #[cfg(feature = "serde")]
 pub extern crate serde;
 #[cfg(all(test, feature = "unstable"))]

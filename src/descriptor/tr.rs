@@ -312,8 +312,6 @@ impl<Pk: MiniscriptKey + ToPublicKey> Tr<Pk> {
 ///
 #[derive(Debug, Clone)]
 pub struct TapTreeIter<'a, Pk: MiniscriptKey>
-where
-    Pk: 'a,
 {
     stack: Vec<(usize, &'a TapTree<Pk>)>,
 }

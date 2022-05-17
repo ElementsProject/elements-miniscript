@@ -591,7 +591,7 @@ pub enum SatisfiedConstraint<Ext: Extension<BitcoinKey>> {
 ///depending on evaluation of the children.
 struct NodeEvaluationState<'intp, Ext>
 where
-    Ext: 'intp + Extension<BitcoinKey>,
+    Ext: Extension<BitcoinKey>,
 {
     ///The node which is being evaluated
     node: &'intp Miniscript<BitcoinKey, NoChecks, Ext>,
@@ -614,7 +614,7 @@ where
 /// before ultimately returning an error.
 pub struct Iter<'intp, 'txin: 'intp, Ext>
 where
-    Ext: 'intp + Extension<BitcoinKey>,
+    Ext: Extension<BitcoinKey>,
 {
     verify_sig: Box<dyn FnMut(&KeySigPair) -> bool + 'intp>,
     public_key: Option<&'intp BitcoinKey>,

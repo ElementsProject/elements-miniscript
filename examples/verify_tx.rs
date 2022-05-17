@@ -14,8 +14,8 @@
 
 //! Example: Verifying a signed transaction
 
-extern crate bitcoin;
-extern crate elements;
+use bitcoin;
+use elements;
 extern crate elements_miniscript as miniscript;
 
 use crate::miniscript::interpreter::KeySigPair; // secp256k1 re-exported from rust-bitcoin

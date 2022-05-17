@@ -14,8 +14,8 @@
 
 //! Example: Parsing a xpub and getting address
 
-extern crate bitcoin;
-extern crate elements;
+
+use elements;
 extern crate elements_miniscript as miniscript;
 
 use crate::miniscript::elements::secp256k1_zkp;
