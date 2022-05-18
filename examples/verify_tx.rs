@@ -12,7 +12,7 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
-//! Example: Verifying a signed transaction
+//! Example: Verifying a signed transaction.
 
 use bitcoin;
 use elements;
