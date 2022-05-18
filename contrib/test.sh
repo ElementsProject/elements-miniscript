@@ -51,7 +51,6 @@ then
     cargo run --example parse
     cargo run --example sign_multisig
     cargo run --example verify_tx > /dev/null
-    cargo run --example psbt
     cargo run --example xpub_descriptors
 fi
 
