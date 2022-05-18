@@ -14,8 +14,8 @@
 
 //! Example: Signing a 2-of-3 multisignature
 
-use bitcoin;
-use elements;
+
+
 extern crate elements_miniscript as miniscript;
 
 use crate::miniscript::DescriptorTrait;

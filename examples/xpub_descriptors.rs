@@ -14,7 +14,7 @@
 
 //! Example: Parsing a xpub and getting an address.
 
-use elements;
+
 extern crate elements_miniscript as miniscript;
 
 use crate::miniscript::elements::secp256k1_zkp::{Secp256k1, Verification};
@@ -67,7 +67,7 @@ fn p2sh_p2wsh<C: Verification>(secp: &Secp256k1<C>) -> Address {
 
     let address = Descriptor::<DescriptorPublicKey>::from_str(&s)
         .unwrap()
-        .derived_descriptor(&secp, 5)
+        .derived_descriptor(secp, 5)
         .unwrap()
         .address(&elements::AddressParams::ELEMENTS)
         .unwrap();

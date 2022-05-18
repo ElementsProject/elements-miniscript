@@ -14,7 +14,7 @@
 
 //! Example: Parsing a descriptor from a string.
 
-use bitcoin;
+
 extern crate elements_miniscript as miniscript;
 
 use crate::miniscript::{descriptor::DescriptorType, Descriptor, DescriptorTrait};
