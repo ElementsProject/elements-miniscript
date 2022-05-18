@@ -6,6 +6,7 @@ use std::fmt;
 
 use crate::MiniscriptKey;
 
+use crate::miniscript::types::extra_props::OpLimits;
 use crate::Extension;
 use crate::ForEach;
 use elements::hashes::hex::FromHex;
@@ -105,9 +106,6 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
         ExtData {
             pk_cost: 8 + self.pref.len() + 1 + 6, // See script_size() in astelem.rs
             has_free_verify: true,
-            ops_count_static: 13,
-            ops_count_sat: Some(13),
-            ops_count_nsat: Some(13),
             stack_elem_count_sat: Some(7),
             stack_elem_count_dissat: Some(7),
             max_sat_size: Some((max_wit_sz, max_wit_sz)),
@@ -115,6 +113,11 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
             timelock_info: TimeLockInfo::default(),
             exec_stack_elem_count_sat: Some(3), // sha2 context, byte slice, target hash
             exec_stack_elem_count_dissat: Some(3),
+            ops: OpLimits {
+                count: 13,
+                sat: Some(0),
+                nsat: Some(0),
+            },
         }
     }
 

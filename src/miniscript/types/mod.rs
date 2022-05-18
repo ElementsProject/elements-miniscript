@@ -329,24 +329,6 @@ pub trait Property: Sized {
         Self::from_time(t)
     }
 
-    /// Type property for a general global sighash item lookup
-    fn from_item_eq() -> Self;
-
-    /// Type property for the ver_eq fragment
-    fn from_ver_eq() -> Self {
-        Self::from_item_eq()
-    }
-
-    /// Type property for a general global sighash item lookup
-    /// with prefix that must be concatted with user input
-    /// to obtain a specified hash value
-    fn from_item_pref(_pref: &[u8]) -> Self;
-
-    /// Type property for hashoutput_pref
-    fn from_output_pref(pref: &[u8]) -> Self {
-        Self::from_item_pref(pref)
-    }
-
     /// Cast using the `Alt` wrapper
     fn cast_alt(self) -> Result<Self, ErrorKind>;
 
@@ -369,7 +351,9 @@ pub trait Property: Sized {
     fn cast_zeronotequal(self) -> Result<Self, ErrorKind>;
 
     /// Cast by changing `[X]` to `AndV([X], True)`
-    fn cast_true(self) -> Result<Self, ErrorKind>;
+    fn cast_true(self) -> Result<Self, ErrorKind> {
+        Self::and_v(self, Self::from_true())
+    }
 
     /// Cast by changing `[X]` to `or_i([X], 0)` or `or_i(0, [X])`
     fn cast_or_i_false(self) -> Result<Self, ErrorKind>;
@@ -377,13 +361,13 @@ pub trait Property: Sized {
     /// Cast by changing `[X]` to `or_i([X], 0)`. Default implementation
     /// simply passes through to `cast_or_i_false`
     fn cast_unlikely(self) -> Result<Self, ErrorKind> {
-        self.cast_or_i_false()
+        Self::or_i(self, Self::from_false())
     }
 
     /// Cast by changing `[X]` to `or_i(0, [X])`. Default implementation
     /// simply passes through to `cast_or_i_false`
     fn cast_likely(self) -> Result<Self, ErrorKind> {
-        self.cast_or_i_false()
+        Self::or_i(Self::from_false(), self)
     }
 
     /// Computes the type of an `AndB` fragment
@@ -674,20 +658,6 @@ impl Property for Type {
         Type {
             corr: Property::from_older(t),
             mall: Property::from_older(t),
-        }
-    }
-
-    fn from_item_eq() -> Self {
-        Type {
-            corr: Property::from_item_eq(),
-            mall: Property::from_item_eq(),
-        }
-    }
-
-    fn from_item_pref(pref: &[u8]) -> Self {
-        Type {
-            corr: Property::from_item_pref(pref),
-            mall: Property::from_item_pref(pref),
         }
     }
 

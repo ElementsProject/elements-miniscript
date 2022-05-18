@@ -7,6 +7,7 @@ use std::fmt;
 use crate::MiniscriptKey;
 
 use crate::miniscript;
+use crate::miniscript::types::extra_props::OpLimits;
 use crate::Extension;
 use crate::ForEach;
 use crate::TranslatePk;
@@ -86,9 +87,6 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         ExtData {
             pk_cost: 4 + 1 + 1 + 4, // 4 opcodes, 1 push, (5) 4 byte push
             has_free_verify: true,
-            ops_count_static: 4,
-            ops_count_sat: Some(4),
-            ops_count_nsat: Some(4),
             stack_elem_count_sat: Some(0),
             stack_elem_count_dissat: Some(0),
             max_sat_size: Some((0, 0)),
@@ -96,6 +94,11 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
             timelock_info: TimeLockInfo::default(),
             exec_stack_elem_count_sat: Some(2),
             exec_stack_elem_count_dissat: Some(2),
+            ops: OpLimits {
+                count: 4,
+                sat: Some(0),
+                nsat: Some(0),
+            },
         }
     }
 

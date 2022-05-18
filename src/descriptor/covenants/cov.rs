@@ -116,7 +116,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
     /// Create a new Self from components
     pub fn new(pk: Pk, ms: Miniscript<Pk, Segwitv0, Ext>) -> Result<Self, Error> {
         // // 1) Check the 201 opcode count here
-        let ms_op_count = ms.ext.ops_count_sat;
+        let ms_op_count = ms.ext.ops.op_count();
         // statically computed
         // see cov_test_limits test for the test assert
         let cov_script_ops = COV_SCRIPT_OPCODE_COST;

@@ -23,7 +23,6 @@ use std::marker::PhantomData;
 use std::{cmp, error, f64, fmt, mem};
 
 use crate::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
-use crate::miniscript::limits::MAX_SCRIPT_ELEMENT_SIZE;
 use crate::miniscript::types::{self, ErrorKind, ExtData, Property, Type};
 use crate::miniscript::ScriptContext;
 use crate::policy::Concrete;
@@ -206,28 +205,6 @@ impl Property for CompilerExtData {
             branch_prob: None,
             sat_cost: 0.0,
             dissat_cost: None,
-        }
-    }
-
-    fn from_item_eq() -> Self {
-        // both sat and dissat costs are zero
-        // because witness is already calculated in
-        // stack
-        CompilerExtData {
-            branch_prob: None,
-            sat_cost: 0.0,
-            dissat_cost: Some(0.0),
-        }
-    }
-
-    fn from_item_pref(pref: &[u8]) -> Self {
-        // both sat and dissat costs are zero
-        // because witness is already calculated in
-        // stack
-        CompilerExtData {
-            branch_prob: None,
-            sat_cost: (MAX_SCRIPT_ELEMENT_SIZE - pref.len()) as f64,
-            dissat_cost: Some(0.0),
         }
     }
 
@@ -1545,7 +1522,7 @@ mod tests {
             keys.iter().map(|pubkey| Concrete::Key(*pubkey)).collect();
         let thresh_res: Result<SegwitMiniScript, _> =
             Concrete::Threshold(keys.len() - 1, keys).compile();
-        let ops_count = thresh_res.clone().and_then(|m| Ok(m.ext.ops_count_sat));
+        let ops_count = thresh_res.clone().and_then(|m| Ok(m.ext.ops.op_count()));
         assert_eq!(
             thresh_res,
             Err(CompilerError::LimitsExceeded),
@@ -1557,7 +1534,7 @@ mod tests {
         let keys: Vec<Concrete<bitcoin::PublicKey>> =
             keys.iter().map(|pubkey| Concrete::Key(*pubkey)).collect();
         let thresh_res = Concrete::Threshold(keys.len() - 1, keys).compile::<Legacy>();
-        let ops_count = thresh_res.clone().and_then(|m| Ok(m.ext.ops_count_sat));
+        let ops_count = thresh_res.clone().and_then(|m| Ok(m.ext.ops.op_count()));
         assert_eq!(
             thresh_res,
             Err(CompilerError::LimitsExceeded),
