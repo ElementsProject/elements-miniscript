@@ -28,7 +28,7 @@ jobs:
         run: ./contrib/test.sh
 
   Nightly:
-    name: Bench + Docs
+    name: Nightly - Bench + Docs + Fmt
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Crate
@@ -48,14 +48,12 @@ jobs:
           DO_DOCS: true
         run: ./contrib/test.sh
 
-  UnitTests:
+  Tests:
     name: Tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust:
-          - 1.41.1
-          - beta
+        rust: [stable, beta, nightly, 1.41.1]
     steps:
       - name: Checkout Crate
         uses: actions/checkout@v2
@@ -66,15 +64,13 @@ jobs:
           toolchain: ${{ matrix.rust }}
           override: true
       - name: Running cargo
+        env:
+          DO_FEATURE_MATRIX: true
         run: ./contrib/test.sh
 
-  AllTests:
-    name: Unit + Int tests
+  IntTests:
+    name: Integration tests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust:
-          - stable
     steps:
       - name: Checkout Crate
         uses: actions/checkout@v2
@@ -82,7 +78,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: ${{ matrix.rust }}
+          toolchain: stable
           override: true
       - name: Running cargo
         run: ./contrib/test.sh
