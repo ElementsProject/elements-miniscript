@@ -210,7 +210,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
             ),
             Terminal::OrI(ref left, ref right) => Terminal::OrI(
                 Arc::new(
-                    left.real_translate_pk(&mut *&mut *translatefpk, &mut *&mut *translatefpkh)?,
+                    left.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)?,
                 ),
                 Arc::new(right.real_translate_pk(translatefpk, translatefpkh)?),
             ),
@@ -219,7 +219,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                     .iter()
                     .map(|s| {
                         s.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)
-                            .and_then(|x| Ok(Arc::new(x)))
+                            .map(Arc::new)
                     })
                     .collect();
                 Terminal::Thresh(k, subs?)
@@ -513,12 +513,12 @@ where
                 if name == "pk" {
                     frag_name = "pk_k";
                     aliased_wrap = wrap.to_owned();
-                    aliased_wrap.push_str("c");
+                    aliased_wrap.push('c');
                     frag_wrap = &aliased_wrap;
                 } else if name == "pkh" {
                     frag_name = "pk_h";
                     aliased_wrap = wrap.to_owned();
-                    aliased_wrap.push_str("c");
+                    aliased_wrap.push('c');
                     frag_wrap = &aliased_wrap;
                 } else {
                     frag_name = name;
@@ -592,7 +592,7 @@ where
 
                 let subs: Result<Vec<Arc<Miniscript<Pk, Ctx, Ext>>>, _> = top.args[1..]
                     .iter()
-                    .map(|sub| expression::FromTree::from_tree(sub))
+                    .map(expression::FromTree::from_tree)
                     .collect();
 
                 Ok(Terminal::Thresh(k, subs?))
@@ -620,7 +620,7 @@ where
             }
             (name, _num_child) => {
                 // If nothing matches try to parse as extension
-                match Ext::from_name_tree(&name, &top.args) {
+                match Ext::from_name_tree(name, &top.args) {
                     Ok(e) => Ok(Terminal::Ext(e)),
                     Err(..) => Err(Error::Unexpected(format!(
                         "{}({} args) while parsing Miniscript",
@@ -761,7 +761,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
             Terminal::PkH(ref hash) => builder
                 .push_opcode(opcodes::all::OP_DUP)
                 .push_opcode(opcodes::all::OP_HASH160)
-                .push_slice(&Pk::hash_to_hash160(&hash)[..])
+                .push_slice(&Pk::hash_to_hash160(hash)[..])
                 .push_opcode(opcodes::all::OP_EQUALVERIFY),
             Terminal::After(t) => builder
                 .push_int(t as i64)

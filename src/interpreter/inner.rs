@@ -45,8 +45,8 @@ fn pk_from_slice(slice: &[u8], require_compressed: bool) -> Result<bitcoin::Publ
     }
 }
 
-fn pk_from_stackelem<'a>(
-    elem: &stack::Element<'a>,
+fn pk_from_stackelem(
+    elem: &stack::Element<'_>,
     require_compressed: bool,
 ) -> Result<bitcoin::PublicKey, Error> {
     let slice = if let stack::Element::Push(slice) = *elem {
@@ -59,8 +59,8 @@ fn pk_from_stackelem<'a>(
 
 // Parse the script with appropriate context to check for context errors like
 // correct usage of x-only keys or multi_a
-fn script_from_stackelem<'a, Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
-    elem: &stack::Element<'a>,
+fn script_from_stackelem<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
+    elem: &stack::Element,
 ) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
     match *elem {
         stack::Element::Push(sl) => {
@@ -77,8 +77,8 @@ fn script_from_stackelem<'a, Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
 
 // Try to parse covenant components from witness script
 // stack element
-fn cov_components_from_stackelem<'a, Ext>(
-    elem: &stack::Element<'a>,
+fn cov_components_from_stackelem<Ext>(
+    elem: &stack::Element<'_>,
 ) -> Option<(
     super::BitcoinKey,
     Miniscript<super::BitcoinKey, NoChecks, Ext>,
@@ -278,7 +278,7 @@ where
             let has_annex = wit_stack
                 .last()
                 .and_then(|x| x.as_push().ok())
-                .map(|x| x.len() > 0 && x[0] == TAPROOT_ANNEX_PREFIX)
+                .map(|x| !x.is_empty() && x[0] == TAPROOT_ANNEX_PREFIX)
                 .unwrap_or(false);
             let has_annex = has_annex && (wit_stack.len() >= 2);
             if has_annex {
@@ -300,7 +300,7 @@ where
                     let ctrl_blk = ctrl_blk.as_push()?;
                     let tap_script = wit_stack.pop().ok_or(Error::UnexpectedStackEnd)?;
                     let ctrl_blk = ControlBlock::from_slice(ctrl_blk)
-                        .map_err(|e| Error::ControlBlockParse(e))?;
+                        .map_err(Error::ControlBlockParse)?;
                     let tap_script = script_from_stackelem::<
                         Tap,
                         <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output,
@@ -328,7 +328,7 @@ where
                             Some(tap_script),
                         ))
                     } else {
-                        return Err(Error::ControlBlockVerificationError);
+                        Err(Error::ControlBlockVerificationError)
                     }
                 }
             }
@@ -423,8 +423,7 @@ where
             None => Err(Error::UnexpectedStackEnd),
         }
     // ** bare script **
-    } else {
-        if wit_stack.is_empty() {
+    } else if wit_stack.is_empty() {
             // Bare script parsed in BareCtx
             let miniscript = Miniscript::<
                 bitcoin::PublicKey,
@@ -440,7 +439,6 @@ where
         } else {
             Err(Error::NonEmptyWitness)
         }
-    }
 }
 
 // Convert a miniscript from a well-defined context to a no checks context.

@@ -145,10 +145,10 @@ where
     fn sanity_check(&self) -> Result<(), Error> {
         self.fed_desc
             .sanity_check()
-            .map_err(|_| Error::Unexpected(format!("Federation script sanity check failed")))?;
+            .map_err(|_| Error::Unexpected("Federation script sanity check failed".to_string()))?;
         self.elem_desc
             .sanity_check()
-            .map_err(|_| Error::Unexpected(format!("Federation script sanity check failed")))?;
+            .map_err(|_| Error::Unexpected("Federation script sanity check failed".to_string()))?;
         Ok(())
     }
 

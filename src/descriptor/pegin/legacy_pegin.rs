@@ -73,7 +73,7 @@ impl FromStr for LegacyPeginKey {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.is_empty() {
-            Err(Error::BadDescriptor(format!("Empty Legacy pegin")))
+            Err(Error::BadDescriptor("Empty Legacy pegin".to_string()))
         } else if &s[0..1] == "f" && s.len() == 67 {
             Ok(LegacyPeginKey::Functionary(bitcoin::PublicKey::from_str(
                 &s[1..],
@@ -83,9 +83,9 @@ impl FromStr for LegacyPeginKey {
                 bitcoin::PublicKey::from_str(&s[1..])?,
             ))
         } else {
-            Err(Error::BadDescriptor(format!(
-                "Invalid Legacy Pegin descriptor"
-            )))
+            Err(Error::BadDescriptor(
+                "Invalid Legacy Pegin descriptor".to_string()
+            ))
         }
     }
 }
@@ -249,7 +249,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
             unreachable!("Only valid pegin descriptors should be created inside LegacyPegin")
         };
         let right = right.translate_pk_infallible(
-            |pk| pk.as_untweaked().clone(),
+            |pk| *pk.as_untweaked(),
             |_| unreachable!("No Keyhashes in legacy pegins"),
         );
         let mut rser = right.encode().into_bytes();
@@ -289,7 +289,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
                     03d3bde5d63bdb3a6379b461be64dad45eabff42f758543a9645afd42f6d424828,
                     03ed1e8d5109c9ed66f7941bc53cc71137baa76d50d274bda8d5e8ffbd6e61fe9a";
         let fed_pks: Vec<LegacyPeginKey> = pks
-            .split(",")
+            .split(',')
             .map(|pk| LegacyPeginKey::Functionary(bitcoin::PublicKey::from_str(pk).unwrap()))
             .collect();
 
@@ -298,7 +298,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
                     0291b7d0b1b692f8f524516ed950872e5da10fb1b808b5a526dedc6fed1cf29807,
                     0386aa9372fbab374593466bc5451dc59954e90787f08060964d95c87ef34ca5bb";
         let emer_pks: Vec<LegacyPeginKey> = emer_pks
-            .split(",")
+            .split(',')
             .map(|pk| LegacyPeginKey::Functionary(bitcoin::PublicKey::from_str(pk).unwrap()))
             .collect();
 
@@ -386,10 +386,10 @@ where
     fn sanity_check(&self) -> Result<(), Error> {
         self.ms
             .sanity_check()
-            .map_err(|_| Error::Unexpected(format!("Federation script sanity check failed")))?;
+            .map_err(|_| Error::Unexpected("Federation script sanity check failed".to_string()))?;
         self.desc
             .sanity_check()
-            .map_err(|_| Error::Unexpected(format!("Federation script sanity check failed")))?;
+            .map_err(|_| Error::Unexpected("Federation script sanity check failed".to_string()))?;
         Ok(())
     }
 
@@ -462,7 +462,7 @@ where
                 None => {}
             }
         }
-        sigs.sort_by(|a, b| a.len().cmp(&b.len()));
+        sigs.sort_by_key(|a| a.len());
         if sigs.len() >= self.fed_k {
             // Prefer using federation keys over emergency paths
             let mut sigs: Vec<Vec<u8>> = sigs.into_iter().take(self.fed_k).collect();
@@ -476,7 +476,7 @@ where
                     None => {}
                 }
             }
-            emer_sigs.sort_by(|a, b| a.len().cmp(&b.len()));
+            emer_sigs.sort_by_key(|a| a.len());
             if emer_sigs.len() >= self.emer_k {
                 let mut sigs: Vec<Vec<u8>> = emer_sigs.into_iter().take(self.emer_k).collect();
                 sigs.push(vec![0]); // CMS extra value

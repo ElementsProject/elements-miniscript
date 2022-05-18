@@ -116,10 +116,10 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             Policy::Unsatisfiable => Ok(Policy::Unsatisfiable),
             Policy::Trivial => Ok(Policy::Trivial),
             Policy::KeyHash(ref pkh) => translatefpkh(pkh).map(Policy::KeyHash),
-            Policy::Sha256(ref h) => Ok(Policy::Sha256(h.clone())),
-            Policy::Hash256(ref h) => Ok(Policy::Hash256(h.clone())),
-            Policy::Ripemd160(ref h) => Ok(Policy::Ripemd160(h.clone())),
-            Policy::Hash160(ref h) => Ok(Policy::Hash160(h.clone())),
+            Policy::Sha256(ref h) => Ok(Policy::Sha256(*h)),
+            Policy::Hash256(ref h) => Ok(Policy::Hash256(*h)),
+            Policy::Ripemd160(ref h) => Ok(Policy::Ripemd160(*h)),
+            Policy::Hash160(ref h) => Ok(Policy::Hash160(*h)),
             Policy::After(n) => Ok(Policy::After(n)),
             Policy::Older(n) => Ok(Policy::Older(n)),
             Policy::Threshold(k, ref subs) => {
@@ -190,12 +190,11 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     // Witness is currently encoded as policy. Only accepts leaf fragment and
     // a normalized policy
     fn satisfy_constraint(self, witness: &Policy<Pk>, available: bool) -> Policy<Pk> {
-        debug_assert!(self.clone().normalized() == self.clone());
-        match *witness {
-            // only for internal purposes, safe to use unreachable!
-            Policy::Threshold(..) => unreachable!(),
-            _ => {}
-        };
+        debug_assert!(self.clone().normalized() == self);
+        // only for internal purposes, safe to use unreachable!
+        if let Policy::Threshold(..) = *witness {
+            unreachable!()
+        }
         let ret = match self {
             Policy::Threshold(k, subs) => {
                 let mut ret_subs = vec![];
@@ -237,7 +236,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Policy<Pk> {
                 } else {
                     write!(f, "thresh({},", k)?;
                 }
-                for (i, sub) in subs.into_iter().enumerate() {
+                for (i, sub) in subs.iter().enumerate() {
                     if i == 0 {
                         write!(f, "{}", sub)?;
                     } else {
@@ -270,7 +269,7 @@ impl<Pk: MiniscriptKey> fmt::Display for Policy<Pk> {
                 } else {
                     write!(f, "thresh({},", k)?;
                 }
-                for (i, sub) in subs.into_iter().enumerate() {
+                for (i, sub) in subs.iter().enumerate() {
                     if i == 0 {
                         write!(f, "{}", sub)?;
                     } else {
@@ -491,7 +490,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// which appear in the policy
     pub fn relative_timelocks(&self) -> Vec<u32> {
         let mut ret = self.real_relative_timelocks();
-        ret.sort();
+        ret.sort_unstable();
         ret.dedup();
         ret
     }
@@ -519,7 +518,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// which appear in the policy
     pub fn absolute_timelocks(&self) -> Vec<u32> {
         let mut ret = self.real_absolute_timelocks();
-        ret.sort();
+        ret.sort_unstable();
         ret.dedup();
         ret
     }
@@ -599,7 +598,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                     // Not enough branches are satisfiable
                     None
                 } else {
-                    sublens.sort();
+                    sublens.sort_unstable();
                     Some(sublens[0..k].iter().cloned().sum::<usize>())
                 }
             }

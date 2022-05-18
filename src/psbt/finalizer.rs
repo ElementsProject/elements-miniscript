@@ -61,7 +61,7 @@ fn construct_tap_witness(
     sat: &PsbtInputSatisfier<'_>,
     allow_mall: bool,
 ) -> Result<Vec<Vec<u8>>, InputError> {
-    assert!(util::is_v1_p2tr(&spk));
+    assert!(util::is_v1_p2tr(spk));
 
     // try the key spend path first
     if let Some(sig) =
@@ -121,7 +121,7 @@ pub(super) fn get_scriptpubkey(psbt: &Psbt, index: usize) -> Result<&Script, Inp
 pub(super) fn get_utxo(psbt: &Psbt, index: usize) -> Result<&elements::TxOut, InputError> {
     let inp = &psbt.inputs()[index];
     let utxo = if let Some(ref witness_utxo) = inp.witness_utxo {
-        &witness_utxo
+        witness_utxo
     } else if let Some(ref non_witness_utxo) = inp.non_witness_utxo {
         let vout = inp.previous_output_index;
         &non_witness_utxo.output[vout as usize]
@@ -132,7 +132,7 @@ pub(super) fn get_utxo(psbt: &Psbt, index: usize) -> Result<&elements::TxOut, In
 }
 
 /// Get the Prevouts for the psbt
-pub(super) fn prevouts<'a>(psbt: &'a Psbt) -> Result<Vec<elements::TxOut>, super::Error> {
+pub(super) fn prevouts(psbt: &Psbt) -> Result<Vec<elements::TxOut>, super::Error> {
     let mut utxos = vec![];
     for i in 0..psbt.inputs().len() {
         let utxo_ref = get_utxo(psbt, i).map_err(|e| Error::InputError(e, i))?;
@@ -166,26 +166,18 @@ pub(super) fn get_descriptor(
         }
     } else if script_pubkey.is_p2pkh() {
         // 2. `Pkh`: creates a `PkH` descriptor if partial_sigs has the corresponding pk
-        let partial_sig_contains_pk = inp
-            .partial_sigs
-            .iter()
-            .filter(|&(&pk, _sig)| {
-                *script_pubkey == elements::Script::new_p2pkh(&pk.to_pubkeyhash().into())
-            })
-            .next();
+        let partial_sig_contains_pk = inp.partial_sigs.iter().find(|&(&pk, _sig)| {
+            *script_pubkey == elements::Script::new_p2pkh(&pk.to_pubkeyhash().into())
+        });
         match partial_sig_contains_pk {
             Some((pk, _sig)) => Ok(Descriptor::new_pkh(pk.to_owned())),
             None => Err(InputError::MissingPubkey),
         }
     } else if script_pubkey.is_v0_p2wpkh() {
         // 3. `Wpkh`: creates a `wpkh` descriptor if the partial sig has corresponding pk.
-        let partial_sig_contains_pk = inp
-            .partial_sigs
-            .iter()
-            .filter(|&(&pk, _sig)| {
-                *script_pubkey == elements::Script::new_v0_wpkh(&pk.to_pubkeyhash().into())
-            })
-            .next();
+        let partial_sig_contains_pk = inp.partial_sigs.iter().find(|&(&pk, _sig)| {
+            *script_pubkey == elements::Script::new_v0_wpkh(&pk.to_pubkeyhash().into())
+        });
         match partial_sig_contains_pk {
             Some((pk, _sig)) => Ok(Descriptor::new_wpkh(pk.to_owned())?),
             None => Err(InputError::MissingPubkey),
@@ -215,9 +207,9 @@ pub(super) fn get_descriptor(
             Err(InputError::MissingWitnessScript)
         }
     } else if script_pubkey.is_p2sh() {
-        match &inp.redeem_script {
-            &None => return Err(InputError::MissingRedeemScript),
-            &Some(ref redeem_script) => {
+        match inp.redeem_script {
+            None => Err(InputError::MissingRedeemScript),
+            Some(ref redeem_script) => {
                 if redeem_script.to_p2sh() != *script_pubkey {
                     return Err(InputError::InvalidRedeemScript {
                         redeem: redeem_script.clone(),
@@ -242,19 +234,15 @@ pub(super) fn get_descriptor(
                     }
                 } else if redeem_script.is_v0_p2wpkh() {
                     // 6. `ShWpkh` case
-                    let partial_sig_contains_pk = inp
-                        .partial_sigs
-                        .iter()
-                        .filter(|&(&pk, _sig)| {
-                            // The network does not matter, we just need spk
-                            let addr = elements::Address::p2wpkh(
-                                &pk,
-                                None,
-                                &elements::AddressParams::ELEMENTS,
-                            );
-                            *redeem_script == addr.script_pubkey()
-                        })
-                        .next();
+                    let partial_sig_contains_pk = inp.partial_sigs.iter().find(|&(&pk, _sig)| {
+                        // The network does not matter, we just need spk
+                        let addr = elements::Address::p2wpkh(
+                            &pk,
+                            None,
+                            &elements::AddressParams::ELEMENTS,
+                        );
+                        *redeem_script == addr.script_pubkey()
+                    });
                     match partial_sig_contains_pk {
                         Some((pk, _sig)) => Ok(Descriptor::new_sh_wpkh(pk.to_owned())?),
                         None => Err(InputError::MissingPubkey),
@@ -315,10 +303,10 @@ pub fn _interpreter_inp_check<C: secp256k1_zkp::Verification>(
     let csv = psbt.inputs()[index].sequence.unwrap_or(0xffffffff);
     let _amt = get_amt(psbt, index).map_err(|e| Error::InputError(e, index))?;
 
-    let interpreter = interpreter::Interpreter::from_txdata(spk, &script_sig, &witness, cltv, csv)
+    let interpreter = interpreter::Interpreter::from_txdata(spk, script_sig, witness, cltv, csv)
         .map_err(|e| Error::InputError(InputError::Interpreter(e), index))?;
 
-    let prevouts = prevouts(&psbt)?;
+    let prevouts = prevouts(psbt)?;
     let prevouts = elements::sighash::Prevouts::All(&prevouts);
     if let Some(error) = interpreter
         .iter(secp, tx, index, &prevouts, genesis_hash)
@@ -413,16 +401,16 @@ fn _finalize_inp(
     // rust 1.29 burrowchecker
     let (witness, script_sig) = {
         let spk = get_scriptpubkey(psbt, index).map_err(|e| Error::InputError(e, index))?;
-        let psbt_sat = PsbtInputSatisfier::new(&psbt, index);
+        let psbt_sat = PsbtInputSatisfier::new(psbt, index);
 
-        if util::is_v1_p2tr(&spk) {
+        if util::is_v1_p2tr(spk) {
             // Deal with tr case separately, unfortunately we cannot infer the full descriptor for Tr
             let wit = construct_tap_witness(spk, &psbt_sat, allow_mall)
                 .map_err(|e| Error::InputError(e, index))?;
             (wit, Script::new())
         } else {
             // Get a descriptor for this input
-            let desc = get_descriptor(&psbt, index).map_err(|e| Error::InputError(e, index))?;
+            let desc = get_descriptor(psbt, index).map_err(|e| Error::InputError(e, index))?;
 
             // If the descriptor is covenant one, create a covenant satisfier. Otherwise
             // use the regular satisfier
@@ -435,7 +423,7 @@ fn _finalize_inp(
                 // Codesepartor calculation
                 let script_code = cov.cov_script_code();
                 let cov_sat = CovSatisfier::new_segwitv0(
-                    &extracted_tx,
+                    extracted_tx,
                     index as u32,
                     utxo.value,
                     &script_code,
@@ -520,7 +508,7 @@ pub fn finalize<C: secp256k1_zkp::Verification>(
     // This only checks whether the script will be executed
     // correctly by the bitcoin interpreter under the current
     // psbt context.
-    interpreter_check(&psbt, secp, genesis_hash)?;
+    interpreter_check(psbt, secp, genesis_hash)?;
     Ok(())
 }
 

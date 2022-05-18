@@ -14,7 +14,6 @@
 
 //! Example: Parsing a xpub and getting an address.
 
-
 extern crate elements_miniscript as miniscript;
 
 use crate::miniscript::elements::secp256k1_zkp::{Secp256k1, Verification};

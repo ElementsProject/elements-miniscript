@@ -140,6 +140,11 @@ impl<'s> TokenIter<'s> {
     pub fn len(&self) -> usize {
         self.0.len()
     }
+
+    /// Check if the iterator is empty
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl<'s> Iterator for TokenIter<'s> {
@@ -151,10 +156,10 @@ impl<'s> Iterator for TokenIter<'s> {
 }
 
 /// Tokenize a script
-pub fn lex<'s>(script: &'s script::Script) -> Result<Vec<Token<'s>>, Error> {
+pub fn lex(script: &script::Script) -> Result<Vec<Token<'_>>, Error> {
     let mut ret = Vec::with_capacity(script.len());
 
-    fn process_candidate_push(ret: &mut Vec<Token<'_>>) -> Result<(), Error> {
+    fn process_candidate_push(ret: &mut [Token<'_>]) -> Result<(), Error> {
         let ret_len = ret.len();
 
         if ret_len < 2 || ret[ret_len - 1] != Token::Swap {
@@ -289,7 +294,7 @@ pub fn lex<'s>(script: &'s script::Script) -> Result<Vec<Token<'s>>, Error> {
                     Some(op @ &Token::Equal)
                     | Some(op @ &Token::CheckSig)
                     | Some(op @ &Token::CheckMultiSig) => {
-                        return Err(Error::NonMinimalVerify(String::from(format!("{:?}", op))))
+                        return Err(Error::NonMinimalVerify(format!("{:?}", op)))
                     }
                     _ => {}
                 }
@@ -334,10 +339,10 @@ pub fn lex<'s>(script: &'s script::Script) -> Result<Vec<Token<'s>>, Error> {
                     // reconvert these to pushes.
                     // See [process_candidate_push]
                     match bytes.len() {
-                        20 => ret.push(Token::Hash20(&bytes)),
-                        32 => ret.push(Token::Bytes32(&bytes)),
-                        33 => ret.push(Token::Bytes33(&bytes)),
-                        65 => ret.push(Token::Bytes65(&bytes)),
+                        20 => ret.push(Token::Hash20(bytes)),
+                        32 => ret.push(Token::Bytes32(bytes)),
+                        33 => ret.push(Token::Bytes33(bytes)),
+                        65 => ret.push(Token::Bytes65(bytes)),
                         _ => {
                             match script::read_scriptint(bytes) {
                                 Ok(v) if v >= 0 => {

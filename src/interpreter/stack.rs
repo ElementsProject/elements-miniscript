@@ -87,7 +87,7 @@ impl<'txin> Element<'txin> {
         match self {
             Element::Satisfied => &[1],
             Element::Dissatisfied => &[],
-            Element::Push(ref v) => v,
+            Element::Push(v) => v,
         }
     }
 
@@ -103,18 +103,12 @@ impl<'txin> Element<'txin> {
 
 /// Stack Data structure representing the stack input to Miniscript. This Stack
 /// is created from the combination of ScriptSig and Witness stack.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 pub struct Stack<'txin>(pub(super) Vec<Element<'txin>>);
 
 impl<'txin> From<Vec<Element<'txin>>> for Stack<'txin> {
     fn from(v: Vec<Element<'txin>>) -> Self {
         Stack(v)
-    }
-}
-
-impl<'txin> Default for Stack<'txin> {
-    fn default() -> Self {
-        Stack(vec![])
     }
 }
 
@@ -133,7 +127,7 @@ impl<'txin> Stack<'txin> {
     }
 
     /// Number of elements on the stack
-    pub fn len(&mut self) -> usize {
+    pub fn len(&self) -> usize {
         self.0.len()
     }
 
@@ -143,7 +137,7 @@ impl<'txin> Stack<'txin> {
     }
 
     /// Pushes an element onto the top of the stack
-    pub fn push(&mut self, elem: Element<'txin>) -> () {
+    pub fn push(&mut self, elem: Element<'txin>) {
         self.0.push(elem);
     }
 
@@ -182,11 +176,11 @@ impl<'txin> Stack<'txin> {
                             self.push(Element::Satisfied);
                             Some(Ok(SatisfiedConstraint::PublicKey { key_sig }))
                         }
-                        Err(e) => return Some(Err(e)),
+                        Err(e) => Some(Err(e))
                     }
                 }
                 Element::Satisfied => {
-                    return Some(Err(Error::PkEvaluationError(PkEvalErrInner::from(*pk))));
+                    Some(Err(Error::PkEvaluationError(PkEvalErrInner::from(*pk))))
                 }
             }
         } else {
@@ -237,14 +231,14 @@ impl<'txin> Stack<'txin> {
                                         self.push(Element::Satisfied);
                                         Some(Ok(SatisfiedConstraint::PublicKeyHash {
                                             keyhash: pkh.hash160(),
-                                            key_sig: key_sig,
+                                            key_sig,
                                         }))
                                     }
-                                    Err(e) => return Some(Err(e)),
+                                    Err(e) => Some(Err(e)),
                                 }
                             }
                             Element::Satisfied => {
-                                return Some(Err(Error::PkEvaluationError(pk.into())))
+                                Some(Err(Error::PkEvaluationError(pk.into())))
                             }
                         }
                     } else {
@@ -264,9 +258,9 @@ impl<'txin> Stack<'txin> {
     /// The reason we don't need to copy the Script semantics is that
     /// Miniscript never evaluates integers and it is safe to treat them as
     /// booleans
-    pub(super) fn evaluate_after<'intp, Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_after<Ext: Extension<BitcoinKey>>(
         &mut self,
-        n: &'intp u32,
+        n: &u32,
         age: u32,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         if age >= *n {
@@ -283,9 +277,9 @@ impl<'txin> Stack<'txin> {
     /// The reason we don't need to copy the Script semantics is that
     /// Miniscript never evaluates integers and it is safe to treat them as
     /// booleans
-    pub(super) fn evaluate_older<'intp, Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_older<Ext: Extension<BitcoinKey>>(
         &mut self,
-        n: &'intp u32,
+        n: &u32,
         height: u32,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         if height >= *n {
@@ -298,9 +292,9 @@ impl<'txin> Stack<'txin> {
 
     /// Helper function to evaluate a Sha256 Node.
     /// `SIZE 32 EQUALVERIFY SHA256 h EQUAL`
-    pub(super) fn evaluate_sha256<'intp, Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_sha256<Ext: Extension<BitcoinKey>>(
         &mut self,
-        hash: &'intp sha256::Hash,
+        hash: &sha256::Hash,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         if let Some(Element::Push(preimage)) = self.pop() {
             if preimage.len() != 32 {
@@ -323,9 +317,9 @@ impl<'txin> Stack<'txin> {
 
     /// Helper function to evaluate a Hash256 Node.
     /// `SIZE 32 EQUALVERIFY HASH256 h EQUAL`
-    pub(super) fn evaluate_hash256<'intp, Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_hash256<Ext: Extension<BitcoinKey>>(
         &mut self,
-        hash: &'intp sha256d::Hash,
+        hash: &sha256d::Hash,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         if let Some(Element::Push(preimage)) = self.pop() {
             if preimage.len() != 32 {
@@ -348,9 +342,9 @@ impl<'txin> Stack<'txin> {
 
     /// Helper function to evaluate a Hash160 Node.
     /// `SIZE 32 EQUALVERIFY HASH160 h EQUAL`
-    pub(super) fn evaluate_hash160<'intp, Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_hash160<Ext: Extension<BitcoinKey>>(
         &mut self,
-        hash: &'intp hash160::Hash,
+        hash: &hash160::Hash,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         if let Some(Element::Push(preimage)) = self.pop() {
             if preimage.len() != 32 {
@@ -373,9 +367,9 @@ impl<'txin> Stack<'txin> {
 
     /// Helper function to evaluate a RipeMd160 Node.
     /// `SIZE 32 EQUALVERIFY RIPEMD160 h EQUAL`
-    pub(super) fn evaluate_ripemd160<'intp, Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_ripemd160<Ext: Extension<BitcoinKey>>(
         &mut self,
-        hash: &'intp ripemd160::Hash,
+        hash: &ripemd160::Hash,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         if let Some(Element::Push(preimage)) = self.pop() {
             if preimage.len() != 32 {
@@ -411,10 +405,10 @@ impl<'txin> Stack<'txin> {
             if let Element::Push(sigser) = witness_sig {
                 let key_sig = verify_sersig(verify_sig, pk, sigser);
                 match key_sig {
-                    Ok(key_sig) => return Some(Ok(SatisfiedConstraint::PublicKey { key_sig })),
+                    Ok(key_sig) => Some(Ok(SatisfiedConstraint::PublicKey { key_sig })),
                     Err(..) => {
                         self.push(witness_sig);
-                        return None;
+                        None
                     }
                 }
             } else {

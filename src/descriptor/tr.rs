@@ -326,8 +326,8 @@ where
             let (depth, last) = self.stack.pop().expect("Size checked above");
             match &*last {
                 TapTree::Tree(l, r) => {
-                    self.stack.push((depth + 1, &r));
-                    self.stack.push((depth + 1, &l));
+                    self.stack.push((depth + 1, r));
+                    self.stack.push((depth + 1, l));
                 }
                 TapTree::Leaf(ref ms) => return Some((depth, ms)),
             }
@@ -365,10 +365,10 @@ where
                     Ok(TapTree::Tree(Arc::new(left), Arc::new(right)))
                 }
                 _ => {
-                    return Err(Error::Unexpected(
+                    Err(Error::Unexpected(
                         "unknown format for script spending paths while parsing taproot descriptor"
                             .to_string(),
-                    ));
+                    ))
                 }
             }
         }
@@ -390,14 +390,14 @@ where
                     })
                 }
                 2 => {
-                    let ref key = top.args[0];
+                    let key = &top.args[0];
                     if !key.args.is_empty() {
                         return Err(Error::Unexpected(format!(
                             "#{} script associated with `key-path` while parsing taproot descriptor",
                             key.args.len()
                         )));
                     }
-                    let ref tree = top.args[1];
+                    let tree = &top.args[1];
                     let ret = parse_tr_script_spend(tree)?;
                     Ok(Tr {
                         internal_key: expression::terminal(key, Pk::from_str)?,
@@ -502,7 +502,7 @@ fn parse_tr_tree(s: &str) -> Result<expression::Tree<'_>, Error> {
     } else {
         Err(Error::Unexpected("invalid taproot descriptor".to_string()))
     };
-    return ret;
+    ret
 }
 
 fn split_once(inp: &str, delim: char) -> Option<(&str, &str)> {
@@ -518,12 +518,12 @@ fn split_once(inp: &str, delim: char) -> Option<(&str, &str)> {
         }
         // No comma or trailing comma found
         if found >= inp.len() - 1 {
-            Some((&inp[..], ""))
+            Some((inp, ""))
         } else {
             Some((&inp[..found], &inp[found + 1..]))
         }
     };
-    return ret;
+    ret
 }
 
 impl<Pk: MiniscriptKey> Liftable<Pk> for TapTree<Pk> {
@@ -537,7 +537,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for TapTree<Pk> {
             }
         }
 
-        let pol = lift_helper(&self)?;
+        let pol = lift_helper(self)?;
         Ok(pol.normalized())
     }
 }
@@ -611,7 +611,7 @@ impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Tr<Pk> {
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        best_tap_spend(&self, satisfier, false /* allow_mall */)
+        best_tap_spend(self, satisfier, false /* allow_mall */)
     }
 
     fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
@@ -619,7 +619,7 @@ impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Tr<Pk> {
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        best_tap_spend(&self, satisfier, true /* allow_mall */)
+        best_tap_spend(self, satisfier, true /* allow_mall */)
     }
 
     fn max_satisfaction_weight(&self) -> Result<usize, Error> {

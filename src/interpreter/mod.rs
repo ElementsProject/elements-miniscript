@@ -238,7 +238,7 @@ where
         verify_sig: Box<dyn FnMut(&KeySigPair) -> bool + 'iter>,
     ) -> Iter<'txin, 'iter, Ext> {
         Iter {
-            verify_sig: verify_sig,
+            verify_sig,
             public_key: if let inner::Inner::PublicKey(ref pk, _) = self.inner {
                 Some(pk)
             } else {
@@ -309,13 +309,13 @@ where
             KeySigPair::Ecdsa(key, ecdsa_sig) => {
                 let script_pubkey = self.script_code.as_ref().expect("Legacy have script code");
                 let sighash = if self.is_legacy() {
-                    cache.legacy_sighash(input_idx, &script_pubkey, ecdsa_sig.1)
+                    cache.legacy_sighash(input_idx, script_pubkey, ecdsa_sig.1)
                 } else if self.is_segwit_v0() {
                     let amt = match get_prevout(prevouts, input_idx) {
                         Some(txout) => txout.value,
                         None => return false,
                     };
-                    cache.segwitv0_sighash(input_idx, &script_pubkey, amt, ecdsa_sig.1)
+                    cache.segwitv0_sighash(input_idx, script_pubkey, amt, ecdsa_sig.1)
                 } else {
                     // taproot(or future) signatures in segwitv0 context
                     return false;
@@ -337,7 +337,7 @@ where
                         of script code for script spend",
                     );
                     let leaf_hash =
-                        elements::sighash::ScriptPath::with_defaults(&tap_script).leaf_hash();
+                        elements::sighash::ScriptPath::with_defaults(tap_script).leaf_hash();
                     cache.taproot_script_spend_signature_hash(
                         input_idx,
                         prevouts,
@@ -352,7 +352,7 @@ where
                 let msg = sighash_msg
                     .map(|hash| secp256k1_zkp::Message::from_slice(&hash).expect("32 byte"));
                 let success =
-                    msg.map(|msg| secp.verify_schnorr(&schnorr_sig.sig, &msg, &xpk).is_ok());
+                    msg.map(|msg| secp.verify_schnorr(&schnorr_sig.sig, &msg, xpk).is_ok());
                 success.unwrap_or(false) // unwrap_or_default checks for errors, while success would have checksig results
             }
         }
@@ -659,7 +659,7 @@ where
         node: &'intp Miniscript<BitcoinKey, NoChecks, Ext>,
         n_evaluated: usize,
         n_satisfied: usize,
-    ) -> () {
+    ) {
         self.state.push(NodeEvaluationState {
             node,
             n_evaluated,
@@ -1106,16 +1106,15 @@ where
                 ser_sig.push(sighash_ty as u8);
             }
 
-            if let Ok(sig) = verify_sersig(&mut self.verify_sig, &pk, &ser_sig) {
+            if let Ok(sig) = verify_sersig(&mut self.verify_sig, pk, &ser_sig) {
                 //Signature check successful, set cov to None to
                 //terminate the next() function in the subsequent call
                 self.cov = None;
                 // Do the checkSigFromStackCheck
                 let sighash_msg: Vec<u8> = self.stack.0[1..]
-                    .into_iter()
+                    .iter()
                     .rev()
-                    .map(|x| Vec::from(x.as_push().expect("Push checked above")))
-                    .flatten()
+                    .flat_map(|x| Vec::from(x.as_push().expect("Push checked above")))
                     .collect();
                 let mut eng = SigHash::engine();
                 eng.input(&sighash_msg);
@@ -1143,25 +1142,25 @@ where
         }
         if let Some(pk) = self.public_key {
             if let Some(stack::Element::Push(sig)) = self.stack.pop() {
-                if let Ok(key_sig) = verify_sersig(&mut self.verify_sig, &pk, &sig) {
+                if let Ok(key_sig) = verify_sersig(&mut self.verify_sig, pk, sig) {
                     //Signature check successful, set public_key to None to
                     //terminate the next() function in the subsequent call
                     self.public_key = None;
                     self.stack.push(stack::Element::Satisfied);
-                    return Some(Ok(SatisfiedConstraint::PublicKey { key_sig }));
+                    Some(Ok(SatisfiedConstraint::PublicKey { key_sig }))
                 } else {
-                    return Some(Err(Error::PkEvaluationError(PkEvalErrInner::from(*pk))));
+                    Some(Err(Error::PkEvaluationError(PkEvalErrInner::from(*pk))))
                 }
             } else {
-                return Some(Err(Error::UnexpectedStackEnd));
+                Some(Err(Error::UnexpectedStackEnd))
             }
         } else {
             //All the script has been executed.
             //Check that the stack must contain exactly 1 satisfied element
             if self.stack.pop() == Some(stack::Element::Satisfied) && self.stack.is_empty() {
-                return None;
+                None
             } else {
-                return Some(Err(Error::ScriptSatisfactionError));
+                Some(Err(Error::ScriptSatisfactionError))
             }
         }
     }

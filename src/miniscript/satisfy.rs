@@ -245,7 +245,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for After {
 
 impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for HashMap<Pk, ElementsSig> {
     fn lookup_ecdsa_sig(&self, key: &Pk) -> Option<ElementsSig> {
-        self.get(key).map(|x| *x)
+        self.get(key).copied()
     }
 }
 
@@ -261,7 +261,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk>
         // If we change the signature the of lookup_tap_leaf_script_sig to accept a tuple. We would
         // face the same problem while satisfying PkK.
         // We use this signature to optimize for the psbt common use case.
-        self.get(&(key.clone(), *h)).map(|x| *x)
+        self.get(&(key.clone(), *h)).copied()
     }
 }
 
@@ -1119,16 +1119,15 @@ impl Satisfaction {
         // signatures
         let mut sat_indices = (0..subs.len()).collect::<Vec<_>>();
         sat_indices.sort_by_key(|&i| {
-            let stack_weight = match (&sats[i].stack, &ret_stack[i].stack) {
+            // For malleable satifactions, directly choose smallest weights
+            match (&sats[i].stack, &ret_stack[i].stack) {
                 (&Witness::Unavailable, _) | (&Witness::Impossible, _) => i64::MAX,
                 // This is only possible when one of the branches has PkH
                 (_, &Witness::Unavailable) | (_, &Witness::Impossible) => i64::MIN,
                 (&Witness::Stack(ref s), &Witness::Stack(ref d)) => {
                     witness_size(s) as i64 - witness_size(d) as i64
                 }
-            };
-            // For malleable satifactions, directly choose smallest weights
-            stack_weight
+            }
         });
 
         // swap the satisfactions
@@ -1454,7 +1453,7 @@ impl Satisfaction {
                         let max_idx = sigs
                             .iter()
                             .enumerate()
-                            .max_by_key(|&(_, ref v)| v.len())
+                            .max_by_key(|&(_, v)| v.len())
                             .unwrap()
                             .0;
                         sigs[max_idx] = vec![];

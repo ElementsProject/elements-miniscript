@@ -237,10 +237,10 @@ impl<Ext: Extension<bitcoin::PublicKey>> CovenantDescriptor<bitcoin::PublicKey, 
             Tk::Swap, Tk::Verify, Tk::Equal, Tk::Num(4), Tk::Size,  // item 1
             Tk::ToAltStack, Tk::Cat, Tk::Left, Tk::Num(1),
             Tk::Pick, Tk::Num(11), Tk::Pick, Tk::Num(11), Tk::Verify => {
-                return Ok(bitcoin::PublicKey::from_slice(pk)?);
+                Ok(bitcoin::PublicKey::from_slice(pk)?)
             },
-            _ => return Err(Error::CovError(CovError::BadCovDescriptor)),
-        );
+            _ => Err(Error::CovError(CovError::BadCovDescriptor)),
+        )
     }
 
     /// Parse a descriptor from script. While parsing
@@ -309,9 +309,9 @@ where
         if top.name == "elcovwsh" && top.args.len() == 2 {
             let pk = expression::terminal(&top.args[0], |pk| Pk::from_str(pk))?;
             let top = &top.args[1];
-            let sub = Miniscript::from_tree(&top)?;
+            let sub = Miniscript::from_tree(top)?;
             Segwitv0::top_level_checks(&sub)?;
-            Ok(CovenantDescriptor { pk: pk, ms: sub })
+            Ok(CovenantDescriptor { pk, ms: sub })
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing elcovwsh descriptor",

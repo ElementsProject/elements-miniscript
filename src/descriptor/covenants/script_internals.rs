@@ -58,13 +58,12 @@ impl CovOperations for script::Builder {
             .push_int(9)
             .push_opcode(all::OP_EQUALVERIFY);
         // Else assert that commitment size is 33
-        let builder = builder
+        builder
             .push_opcode(all::OP_ELSE)
             .push_opcode(all::OP_SIZE)
             .push_int(33)
             .push_opcode(all::OP_EQUALVERIFY)
-            .push_opcode(all::OP_ENDIF);
-        builder
+            .push_opcode(all::OP_ENDIF)
     }
 
     fn verify_cov(self, key: &bitcoin::PublicKey) -> Self {

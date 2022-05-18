@@ -92,10 +92,10 @@ impl<Pk: MiniscriptKey> Wsh<Pk> {
             let top = &top.args[0];
             if top.name == "sortedmulti" {
                 return Ok(Wsh {
-                    inner: WshInner::SortedMulti(SortedMultiVec::from_tree(&top)?),
+                    inner: WshInner::SortedMulti(SortedMultiVec::from_tree(top)?),
                 });
             }
-            let sub = Miniscript::from_tree(&top)?;
+            let sub = Miniscript::from_tree(top)?;
             Segwitv0::top_level_checks(&sub)?;
             Ok(Wsh {
                 inner: WshInner::Ms(sub),
@@ -180,10 +180,10 @@ where
             let top = &top.args[0];
             if top.name == "sortedmulti" {
                 return Ok(Wsh {
-                    inner: WshInner::SortedMulti(SortedMultiVec::from_tree(&top)?),
+                    inner: WshInner::SortedMulti(SortedMultiVec::from_tree(top)?),
                 });
             }
-            let sub = Miniscript::from_tree(&top)?;
+            let sub = Miniscript::from_tree(top)?;
             Segwitv0::top_level_checks(&sub)?;
             Ok(Wsh {
                 inner: WshInner::Ms(sub),
@@ -381,7 +381,7 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Wsh<P> {
                 WshInner::Ms(ms.translate_pk(&mut translatefpk, &mut translatefpkh)?)
             }
         };
-        Ok(Wsh { inner: inner })
+        Ok(Wsh { inner })
     }
 }
 
@@ -401,7 +401,7 @@ impl<Pk: MiniscriptKey> Wpkh<Pk> {
                 pk.to_string(),
             )))
         } else {
-            Ok(Self { pk: pk })
+            Ok(Self { pk })
         }
     }
 

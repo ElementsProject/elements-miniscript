@@ -14,8 +14,6 @@
 
 //! Example: Signing a 2-of-3 multisignature
 
-
-
 extern crate elements_miniscript as miniscript;
 
 use crate::miniscript::DescriptorTrait;

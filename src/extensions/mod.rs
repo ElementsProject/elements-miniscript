@@ -298,9 +298,9 @@ where
         try_from_arms!(from_name_tree, name, children,)
     }
 
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        stack: &mut Stack<'txin>,
+    fn evaluate(
+        &self,
+        stack: &mut Stack,
     ) -> Option<Result<(), interpreter::Error>> {
         all_arms_fn!(self, evaluate, stack,)
     }

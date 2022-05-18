@@ -100,9 +100,9 @@ where
             let blinder = expression::terminal(&top.args[0], |pk| Pk::from_str(pk))?;
             let desc = Descriptor::<Pk>::from_tree(&top.args[1])?;
             if top.args[1].name == "blinded" {
-                return Err(Error::BadDescriptor(format!(
-                    "Blinding only permitted at root level"
-                )));
+                return Err(Error::BadDescriptor(
+                    "Blinding only permitted at root level".to_string()
+                ));
             }
             Ok(Blinded { blinder, desc })
         } else {

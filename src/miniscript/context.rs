@@ -536,7 +536,7 @@ impl ScriptContext for Segwitv0 {
                 Ok(())
             }
             Terminal::MultiA(..) => {
-                return Err(ScriptContextError::MultiANotAllowed);
+                Err(ScriptContextError::MultiANotAllowed)
             }
             _ => Ok(()),
         }
@@ -649,7 +649,7 @@ impl ScriptContext for Tap {
                 Ok(())
             }
             Terminal::Multi(..) => {
-                return Err(ScriptContextError::TaprootMultiDisabled);
+                Err(ScriptContextError::TaprootMultiDisabled)
             }
             _ => Ok(()),
         }
@@ -766,7 +766,7 @@ impl ScriptContext for BareCtx {
                 }
                 Ok(())
             }
-            Terminal::MultiA(..) => return Err(ScriptContextError::MultiANotAllowed),
+            Terminal::MultiA(..) => Err(ScriptContextError::MultiANotAllowed),
             _ => Ok(()),
         }
     }

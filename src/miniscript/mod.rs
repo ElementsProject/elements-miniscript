@@ -58,7 +58,7 @@ use std::sync::Arc;
 #[cfg(test)]
 mod ms_tests;
 /// Top-level script AST type
-#[derive(Clone, Hash)]
+#[derive(Clone)]
 pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk> = NoExt> {
     ///A node in the Abstract Syntax Tree(
     pub node: Terminal<Pk, Ctx, Ext>,
@@ -98,6 +98,14 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> PartialEq
 {
     fn eq(&self, other: &Miniscript<Pk, Ctx, Ext>) -> bool {
         self.node.eq(&other.node)
+    }
+}
+
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> ::std::hash::Hash
+    for Miniscript<Pk, Ctx, Ext>
+{
+    fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
+        self.node.hash(state);
     }
 }
 

@@ -226,10 +226,10 @@ impl fmt::Display for Error {
                 "PSET had {} inputs in transaction but {} inputs in map",
                 in_tx, in_map
             ),
-            Error::LockTimeCombinationError => write!(
+            Error::LockTimeCombinationError => writeln!(
                 f,
                 "Cannot combine hieghtlocks and \
-                timelocks\n"
+                timelocks"
             ),
             Error::PsbtError(ref e) => write!(f, "Psbt Error {}", e),
             Error::InputIdxOutofBounds { psbt_inp, index } => write!(
@@ -273,8 +273,8 @@ impl<'psbt> PsbtInputSatisfier<'psbt> {
     /// psbt and index
     pub fn new(psbt: &'psbt Psbt, index: usize) -> Self {
         Self {
-            psbt: psbt,
-            index: index,
+            psbt,
+            index,
         }
     }
 }
@@ -297,8 +297,7 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
         if let Some((pk, sig)) = self.psbt.inputs()[self.index]
             .partial_sigs
             .iter()
-            .filter(|&(pubkey, _sig)| pubkey.to_pubkeyhash() == Pk::hash_to_hash160(pkh))
-            .next()
+            .find(|&(pubkey, _sig)| pubkey.to_pubkeyhash() == Pk::hash_to_hash160(pkh))
         {
             // If the mapping is incorrect, return None
             elementssig_from_rawsig(sig)
@@ -377,7 +376,7 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
 fn try_vec_as_preimage32(vec: &Vec<u8>) -> Option<Preimage32> {
     if vec.len() == 32 {
         let mut arr = [0u8; 32];
-        arr.copy_from_slice(&vec);
+        arr.copy_from_slice(vec);
         Some(arr)
     } else {
         None
@@ -389,8 +388,7 @@ fn sanity_check(psbt: &Psbt) -> Result<(), Error> {
         return Err(Error::WrongInputCount {
             in_tx: psbt.global.n_inputs(),
             in_map: psbt.inputs().len(),
-        }
-        .into());
+        });
     }
 
     Ok(())
@@ -640,7 +638,7 @@ impl PsbtExt for Psbt {
         if index >= self.inputs().len() {
             return Err(Error::InputIdxOutofBounds {
                 psbt_inp: self.inputs().len(),
-                index: index,
+                index,
             });
         }
         finalizer::finalize_input(self, secp, index, /*allow_mall*/ false, genesis_hash)
@@ -667,7 +665,7 @@ impl PsbtExt for Psbt {
         if index >= self.inputs().len() {
             return Err(Error::InputIdxOutofBounds {
                 psbt_inp: self.inputs().len(),
-                index: index,
+                index,
             });
         }
         finalizer::finalize_input(self, secp, index, /*allow_mall*/ false, genesis_hash)
@@ -762,7 +760,7 @@ impl PsbtExt for Psbt {
             .get_mut(input_index)
             .ok_or(UtxoUpdateError::IndexOutOfBounds(input_index, n_inputs))?;
         let (_, spk_check_passed) =
-            update_input_with_descriptor_helper(input, &desc, Some(expected_spk))
+            update_input_with_descriptor_helper(input, desc, Some(expected_spk))
                 .map_err(UtxoUpdateError::DerivationError)?;
 
         if !spk_check_passed {
@@ -840,7 +838,7 @@ impl PsbtExt for Psbt {
                     .unwrap_or(false);
             if inp_spk.is_v0_p2wpkh() || inp_spk.is_v0_p2wsh() || is_nested_wpkh || is_nested_wsh {
                 let msg = if inp_spk.is_v0_p2wpkh() {
-                    let script_code = script_code_wpkh(&inp_spk);
+                    let script_code = script_code_wpkh(inp_spk);
                     cache.segwitv0_sighash(idx, &script_code, amt, hash_ty)
                 } else if is_nested_wpkh {
                     let script_code = script_code_wpkh(
@@ -861,7 +859,7 @@ impl PsbtExt for Psbt {
             } else {
                 // legacy sighash case
                 let script_code = if inp_spk.is_p2sh() {
-                    &inp.redeem_script
+                    inp.redeem_script
                         .as_ref()
                         .ok_or(SigHashError::MissingRedeemScript)?
                 } else {
@@ -969,10 +967,9 @@ fn update_input_with_descriptor_helper(
                             (pk.to_x_only_pubkey(), xpk)
                         }
                         (PkPkh::HashedPubkey(hash), PkPkh::HashedPubkey(xpk)) => (
-                            hash_lookup
+                            *hash_lookup
                                 .get(&hash)
-                                .expect("translate_pk inserted an entry for every hash")
-                                .clone(),
+                                .expect("translate_pk inserted an entry for every hash"),
                             xpk,
                         ),
                         _ => unreachable!("the iterators work in the same order"),

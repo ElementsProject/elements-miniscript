@@ -100,14 +100,10 @@ impl Correctness {
     /// in the given `Type`. This returns `true` on same arguments
     /// `a.is_subtype(a)` is `true`.
     pub fn is_subtype(&self, other: Self) -> bool {
-        if self.base == other.base
+        self.base == other.base
             && self.input.is_subtype(other.input)
             && self.dissatisfiable >= other.dissatisfiable
             && self.unit >= other.unit
-        {
-            return true;
-        }
-        return false;
     }
 }
 
@@ -495,10 +491,8 @@ impl Property for Correctness {
                 if subtype.base != Base::B {
                     return Err(ErrorKind::ThresholdBase(i, subtype.base));
                 }
-            } else {
-                if subtype.base != Base::W {
+            } else if subtype.base != Base::W {
                     return Err(ErrorKind::ThresholdBase(i, subtype.base));
-                }
             }
             if !subtype.unit {
                 return Err(ErrorKind::ThresholdNonUnit(i));

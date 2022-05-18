@@ -43,7 +43,7 @@ pub fn desc_checksum(desc: &str) -> Result<String, Error> {
     let mut clscount = 0;
 
     for ch in desc.chars() {
-        let pos = INPUT_CHARSET.find(ch).ok_or(Error::BadDescriptor(format!(
+        let pos = INPUT_CHARSET.find(ch).ok_or_else(|| Error::BadDescriptor(format!(
             "Invalid character in checksum: '{}'",
             ch
         )))? as u64;

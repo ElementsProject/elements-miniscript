@@ -214,8 +214,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> TerminalStack<Pk
         let ext = ExtData::type_check(&ms, return_none)?;
         let ms = Miniscript {
             node: ms,
-            ty: ty,
-            ext: ext,
+            ty,
+            ext,
             phantom: PhantomData,
         };
         Ctx::check_global_validity(&ms)?;
@@ -235,8 +235,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> TerminalStack<Pk
         let ext = ExtData::type_check(&wrapped_ms, return_none)?;
         let ms = Miniscript {
             node: wrapped_ms,
-            ty: ty,
-            ext: ext,
+            ty,
+            ext,
             phantom: PhantomData,
         };
         Ctx::check_global_validity(&ms)?;
@@ -261,8 +261,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> TerminalStack<Pk
         let ext = ExtData::type_check(&wrapped_ms, return_none)?;
         let ms = Miniscript {
             node: wrapped_ms,
-            ty: ty,
-            ext: ext,
+            ty,
+            ext,
             phantom: PhantomData,
         };
         Ctx::check_global_validity(&ms)?;
@@ -285,14 +285,11 @@ pub fn parse<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
     loop {
         // Parse extensions as expressions
         if let Some(NonTerm::Expression) = non_term.last() {
-            match Ext::from_token_iter(tokens) {
-                Ok(ext) => {
-                    // Since we successfully parsed the expression, pop it
-                    non_term.pop();
-                    term.reduce0(Terminal::Ext(ext))?;
-                    continue;
-                }
-                Err(..) => {}
+            if let Ok(ext) = Ext::from_token_iter(tokens) {
+                // Since we successfully parsed the expression, pop it
+                non_term.pop();
+                term.reduce0(Terminal::Ext(ext))?;
+                continue;
             }
         }
         match non_term.pop() {
@@ -569,8 +566,8 @@ pub fn parse<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
 
                 term.0.push(Miniscript {
                     node: wrapped_ms,
-                    ty: ty,
-                    ext: ext,
+                    ty,
+                    ext,
                     phantom: PhantomData,
                 });
             }
