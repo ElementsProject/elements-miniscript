@@ -16,11 +16,12 @@
 
 extern crate elements_miniscript as miniscript;
 
-use crate::miniscript::interpreter::KeySigPair; // secp256k1 re-exported from rust-bitcoin
-use elements::confidential;
-use elements::encode::Decodable;
-use elements::secp256k1_zkp;
 use std::str::FromStr;
+
+use elements::encode::Decodable;
+use elements::{confidential, secp256k1_zkp};
+
+use crate::miniscript::interpreter::KeySigPair; // secp256k1 re-exported from rust-bitcoin
 fn main() {
     // some random liquid tx from mempool(Dec 3rd 2020)
     // txid: f23c8973027aa8c1e86580a729833914f5b1fa710367db07f1f5515aa3729f16

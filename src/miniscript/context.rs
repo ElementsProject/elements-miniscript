@@ -14,6 +14,10 @@
 
 use std::{fmt, hash};
 
+use bitcoin;
+use bitcoin::blockdata::constants::MAX_BLOCK_WEIGHT;
+
+use super::decode::ParseableKey;
 use crate::miniscript::limits::{
     MAX_OPS_PER_SCRIPT, MAX_PUBKEYS_PER_MULTISIG, MAX_SCRIPTSIG_SIZE, MAX_SCRIPT_ELEMENT_SIZE,
     MAX_SCRIPT_SIZE, MAX_STACK_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE,
@@ -21,14 +25,7 @@ use crate::miniscript::limits::{
 };
 use crate::miniscript::types;
 use crate::util::witness_to_scriptsig;
-use crate::Error;
-use bitcoin;
-use bitcoin::blockdata::constants::MAX_BLOCK_WEIGHT;
-
-use super::decode::ParseableKey;
-
-use crate::Extension;
-use crate::{Miniscript, MiniscriptKey, Terminal};
+use crate::{Error, Extension, Miniscript, MiniscriptKey, Terminal};
 
 /// Error for Script Context
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -535,9 +532,7 @@ impl ScriptContext for Segwitv0 {
                 e.segwit_ctx_checks()?;
                 Ok(())
             }
-            Terminal::MultiA(..) => {
-                Err(ScriptContextError::MultiANotAllowed)
-            }
+            Terminal::MultiA(..) => Err(ScriptContextError::MultiANotAllowed),
             _ => Ok(()),
         }
     }
@@ -648,9 +643,7 @@ impl ScriptContext for Tap {
                 }
                 Ok(())
             }
-            Terminal::Multi(..) => {
-                Err(ScriptContextError::TaprootMultiDisabled)
-            }
+            Terminal::Multi(..) => Err(ScriptContextError::TaprootMultiDisabled),
             _ => Ok(()),
         }
     }

@@ -22,14 +22,11 @@
 //! Thus, as a simple solution we implement these as a separate
 //! struct with it's own API.
 
-use crate::BtcSatisfier;
-use crate::Descriptor;
-use crate::Error;
 use bitcoin;
 use bitcoin::Script as BtcScript;
 use elements::secp256k1_zkp;
 
-use crate::{MiniscriptKey, ToPublicKey};
+use crate::{BtcSatisfier, Descriptor, Error, MiniscriptKey, ToPublicKey};
 
 mod dynafed_pegin;
 mod legacy_pegin;

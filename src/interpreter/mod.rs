@@ -22,35 +22,22 @@
 use std::fmt;
 use std::str::FromStr;
 
+use bitcoin;
+use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine};
+use elements::{self, secp256k1_zkp, sighash, EcdsaSigHashType, SigHash};
+
 use crate::miniscript::context::NoChecks;
 use crate::miniscript::ScriptContext;
-use crate::util;
-use crate::Miniscript;
-use crate::Terminal;
-use crate::TranslatePk;
-use crate::{Descriptor, ElementsSig, ToPublicKey};
-use bitcoin;
-use elements::sighash;
-use elements::{self, secp256k1_zkp, SigHash};
-use elements::{
-    hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine},
-    EcdsaSigHashType,
-};
+use crate::{util, Descriptor, ElementsSig, Miniscript, Terminal, ToPublicKey, TranslatePk};
 
 mod error;
 mod inner;
 mod stack;
 
-use crate::MiniscriptKey;
-
-use crate::elementssig_from_rawsig;
-
 pub use self::error::Error;
 use self::error::PkEvalErrInner;
-pub use self::stack::Stack;
-use crate::{CovenantExt, Extension};
-
-pub use self::stack::Element;
+pub use self::stack::{Element, Stack};
+use crate::{elementssig_from_rawsig, CovenantExt, Extension, MiniscriptKey};
 
 /// An iterable Miniscript-structured representation of the spending of a coin
 pub struct Interpreter<'txin, Ext: Extension<BitcoinKey>> {
@@ -1197,17 +1184,14 @@ fn verify_sersig<'txin>(
 #[cfg(test)]
 mod tests {
 
-    use super::inner::ToNoChecks;
-    use super::*;
-    use crate::miniscript::context::NoChecks;
-    use crate::ElementsSig;
-    use crate::Miniscript;
-    use crate::MiniscriptKey;
-    use crate::NoExt;
-    use crate::ToPublicKey;
     use bitcoin;
     use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
     use elements::secp256k1_zkp::{self, Secp256k1};
+
+    use super::inner::ToNoChecks;
+    use super::*;
+    use crate::miniscript::context::NoChecks;
+    use crate::{ElementsSig, Miniscript, MiniscriptKey, NoExt, ToPublicKey};
 
     fn setup_keys_sigs(
         n: usize,

@@ -22,23 +22,17 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::{cmp, i64, mem};
 
-use crate::{MiniscriptKey, ToPublicKey};
 use bitcoin;
+use bitcoin::secp256k1::XOnlyPublicKey;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d};
 use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
-use elements::{self, secp256k1_zkp};
-use elements::{confidential, OutPoint, Script};
+use elements::{self, confidential, secp256k1_zkp, OutPoint, Script};
 
 use crate::miniscript::limits::{
     HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
 use crate::util::witness_size;
-use crate::Miniscript;
-use crate::ScriptContext;
-use crate::Terminal;
-use bitcoin::secp256k1::XOnlyPublicKey;
-
-use crate::Extension;
+use crate::{Extension, Miniscript, MiniscriptKey, ScriptContext, Terminal, ToPublicKey};
 
 /// Type alias for a signature/hashtype pair
 pub type ElementsSig = (secp256k1_zkp::ecdsa::Signature, elements::EcdsaSigHashType);

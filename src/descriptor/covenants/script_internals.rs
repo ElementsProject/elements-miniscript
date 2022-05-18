@@ -15,7 +15,8 @@
 //! Script Internals for Covenant Descriptor Support
 
 use bitcoin;
-use elements::{opcodes::all, script};
+use elements::opcodes::all;
+use elements::script;
 /// Additional operations required on script builder
 /// for Covenant operations support
 pub trait CovOperations: Sized {

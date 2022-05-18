@@ -14,14 +14,14 @@
 
 //! Example: Create an HTLC with miniscript using the policy compiler
 
-use bitcoin;
-use elements;
+use {bitcoin, elements};
 extern crate elements_miniscript as miniscript;
+
+use std::str::FromStr;
 
 use crate::miniscript::descriptor::Wsh;
 use crate::miniscript::policy::{Concrete, Liftable};
 use crate::miniscript::DescriptorTrait;
-use std::str::FromStr;
 
 fn main() {
     // HTLC policy with 10:1 odds for happy (co-operative) case compared to uncooperative case.

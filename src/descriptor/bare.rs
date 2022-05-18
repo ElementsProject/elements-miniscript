@@ -18,11 +18,13 @@
 //! Also includes pk, and pkh descriptors
 //!
 
-use std::{fmt, str::FromStr};
+use std::fmt;
+use std::str::FromStr;
 
-use elements::secp256k1_zkp;
-use elements::{self, script, Script};
+use elements::{self, script, secp256k1_zkp, Script};
 
+use super::checksum::{desc_checksum, verify_checksum};
+use super::{DescriptorTrait, ElementsTrait, ELMTS_STR};
 use crate::expression::{self, FromTree};
 use crate::miniscript::context::ScriptContext;
 use crate::policy::{semantic, Liftable};
@@ -30,11 +32,6 @@ use crate::util::{varint_len, witness_to_scriptsig};
 use crate::{
     BareCtx, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, ToPublicKey,
     TranslatePk,
-};
-
-use super::{
-    checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait, ElementsTrait, ELMTS_STR,
 };
 
 /// Create a Bare Descriptor. That is descriptor that is

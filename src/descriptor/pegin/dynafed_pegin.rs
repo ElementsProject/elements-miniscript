@@ -20,28 +20,23 @@
 //! Unlike Pegin descriptors these are Miniscript, so dealing
 //! with these is easier.
 
-use crate::expression::{self, FromTree};
-use crate::policy::{semantic, Liftable};
-use crate::Descriptor;
-use crate::Error;
-use crate::{
-    BtcDescriptor, BtcDescriptorTrait, BtcError, BtcFromTree, BtcLiftable, BtcPolicy, BtcSatisfier,
-    BtcTree,
-};
+use std::fmt;
+use std::str::FromStr;
+
+use bitcoin::blockdata::script;
 use bitcoin::hashes::Hash;
-use bitcoin::Script as BtcScript;
-use bitcoin::{self, blockdata::script, hashes};
+use bitcoin::{self, hashes, Script as BtcScript};
 use elements::secp256k1_zkp;
-use std::{fmt, str::FromStr};
-
-use crate::{DescriptorTrait, TranslatePk};
-
-use crate::tweak_key;
-
-use crate::descriptor::checksum::{desc_checksum, verify_checksum};
 
 use super::PeginTrait;
-use crate::{MiniscriptKey, ToPublicKey};
+use crate::descriptor::checksum::{desc_checksum, verify_checksum};
+use crate::expression::{self, FromTree};
+use crate::policy::{semantic, Liftable};
+use crate::{
+    tweak_key, BtcDescriptor, BtcDescriptorTrait, BtcError, BtcFromTree, BtcLiftable, BtcPolicy,
+    BtcSatisfier, BtcTree, Descriptor, DescriptorTrait, Error, MiniscriptKey, ToPublicKey,
+    TranslatePk,
+};
 
 /// New Pegin Descriptor with Miniscript support
 /// Useful with dynamic federations

@@ -31,25 +31,20 @@ use elements::sighash::SigHashCache;
 use elements::taproot::{self, LeafVersion, TapLeafHash};
 use elements::{self, EcdsaSigHashType, SchnorrSigHashType, Script};
 
-use crate::interpreter;
 use crate::miniscript::iter::PkPkh;
 use crate::miniscript::limits::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crate::miniscript::satisfy::{elementssig_from_rawsig, After, Older};
-use crate::Satisfier;
-use crate::{ElementsSig, Preimage32};
-use crate::{MiniscriptKey, ToPublicKey};
-use crate::{TranslatePk, TranslatePk2};
+use crate::{
+    interpreter, ElementsSig, MiniscriptKey, Preimage32, Satisfier, ToPublicKey, TranslatePk,
+    TranslatePk2,
+};
 
 mod finalizer;
-use crate::descriptor::CovSatisfier;
-use crate::Descriptor;
-
-use crate::{descriptor, util, DescriptorPublicKey};
-
-use crate::DescriptorTrait;
+pub use elements::pset as psbt;
 
 pub use self::finalizer::{finalize, finalize_input, interpreter_check, interpreter_inp_check};
-pub use elements::pset as psbt;
+use crate::descriptor::CovSatisfier;
+use crate::{descriptor, util, Descriptor, DescriptorPublicKey, DescriptorTrait};
 
 /// Error type for Pbst Input
 #[derive(Debug)]
@@ -272,10 +267,7 @@ impl<'psbt> PsbtInputSatisfier<'psbt> {
     /// create a new PsbtInputsatisfier from
     /// psbt and index
     pub fn new(psbt: &'psbt Psbt, index: usize) -> Self {
-        Self {
-            psbt,
-            index,
-        }
+        Self { psbt, index }
     }
 }
 
@@ -1162,15 +1154,16 @@ impl PsbtSigHashMsg {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::str::FromStr;
 
-    use crate::Miniscript;
     use bitcoin::util::bip32::{DerivationPath, ExtendedPubKey};
     use elements::encode::deserialize;
     use elements::hashes::hex::FromHex;
     use elements::secp256k1_zkp::XOnlyPublicKey;
     use elements::{AssetIssuance, OutPoint, TxIn, TxInWitness, TxOut};
-    use std::str::FromStr;
+
+    use super::*;
+    use crate::Miniscript;
 
     #[test]
     fn test_extract_psbt() {

@@ -16,8 +16,10 @@
 
 extern crate elements_miniscript as miniscript;
 
-use crate::miniscript::{descriptor::DescriptorType, Descriptor, DescriptorTrait};
 use std::str::FromStr;
+
+use crate::miniscript::descriptor::DescriptorType;
+use crate::miniscript::{Descriptor, DescriptorTrait};
 
 fn main() {
     let desc = miniscript::Descriptor::<bitcoin::PublicKey>::from_str(

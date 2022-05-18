@@ -23,30 +23,23 @@
 //! these with BIP32 paths, pay-to-contract instructions, etc.
 //!
 
+use std::collections::HashMap;
+use std::fmt;
 use std::ops::Range;
-use std::{collections::HashMap, sync::Arc};
-use std::{
-    fmt,
-    str::{self, FromStr},
-};
+use std::str::{self, FromStr};
+use std::sync::Arc;
 
 pub mod pegin;
 
-use bitcoin;
-use elements;
-use elements::secp256k1_zkp;
-use elements::Script;
-
-use crate::CovenantExt;
 use bitcoin::util::address::WitnessVersion;
+use elements::{secp256k1_zkp, Script};
+use {bitcoin, elements};
 
 use self::checksum::verify_checksum;
-use crate::expression;
-use crate::miniscript;
 use crate::miniscript::{Legacy, Miniscript, Segwitv0};
 use crate::{
-    BareCtx, Error, ForEach, ForEachKey, MiniscriptKey, Satisfier, ToPublicKey, TranslatePk,
-    TranslatePk2,
+    expression, miniscript, BareCtx, CovenantExt, Error, ForEach, ForEachKey, MiniscriptKey,
+    Satisfier, ToPublicKey, TranslatePk, TranslatePk2,
 };
 
 // Directly export from lib.rs, exporting the trait here causes conflicts in this file
@@ -69,12 +62,11 @@ pub use self::sortedmulti::SortedMultiVec;
 mod checksum;
 mod key;
 pub use self::covenants::{CovError, CovOperations, CovSatisfier, CovenantDescriptor};
-pub use self::tr::{TapTree, Tr};
-
 pub use self::key::{
     ConversionError, DerivedDescriptorKey, DescriptorKeyParseError, DescriptorPublicKey,
     DescriptorSecretKey, DescriptorXKey, InnerXKey, SinglePriv, SinglePub, SinglePubKey, Wildcard,
 };
+pub use self::tr::{TapTree, Tr};
 
 /// Alias type for a map of public key to secret key
 ///
@@ -1104,11 +1096,10 @@ serde_string_impl_pk!(Descriptor, "a script descriptor");
 
 #[cfg(test)]
 mod tests {
-    use super::checksum::desc_checksum;
-    use super::tr::Tr;
-    use super::*;
-    use crate::descriptor::key::Wildcard;
-    use crate::descriptor::{DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey};
+    use std::cmp;
+    use std::collections::HashMap;
+    use std::str::FromStr;
+
     use bitcoin;
     use bitcoin::util::bip32;
     use bitcoin::PublicKey;
@@ -1118,15 +1109,15 @@ mod tests {
     use elements::script::Instruction;
     use elements::{opcodes, script};
 
-    use crate::hex_script;
+    use super::checksum::desc_checksum;
+    use super::tr::Tr;
+    use super::*;
+    use crate::descriptor::key::Wildcard;
+    use crate::descriptor::{DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey};
     use crate::miniscript::satisfy::ElementsSig;
-    use crate::{Descriptor, DummyKey, Error, Miniscript, Satisfier, TranslatePk2};
-    use std::cmp;
-    use std::collections::HashMap;
-    use std::str::FromStr;
-
     #[cfg(feature = "compiler")]
     use crate::policy;
+    use crate::{hex_script, Descriptor, DummyKey, Error, Miniscript, Satisfier, TranslatePk2};
 
     type StdDescriptor = Descriptor<PublicKey>;
     const TEST_PK: &'static str =

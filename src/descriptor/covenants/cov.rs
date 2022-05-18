@@ -40,39 +40,28 @@
 //! After all the miniscript fragments are evaluated, we concat
 //! all the items using OP_CAT to obtain a Sighash on which we
 //! which we verify using CHECKSIGFROMSTACK
-use std::{fmt, str::FromStr};
+use std::fmt;
+use std::str::FromStr;
 
-use crate::miniscript::limits::{MAX_SCRIPT_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE};
 use bitcoin;
+use elements::encode::{serialize, Encodable};
 use elements::hashes::{sha256d, Hash};
-use elements::script;
-use elements::secp256k1_zkp;
-use elements::{
-    self,
-    encode::{serialize, Encodable},
-    Script,
-};
+use elements::{self, script, secp256k1_zkp, Script};
 
-use crate::{
-    expression::{self, FromTree},
-    miniscript::{
-        decode,
-        lex::{lex, Token as Tk, TokenIter},
-        limits::MAX_OPS_PER_SCRIPT,
-        types,
-    },
-    util::varint_len,
-    ForEach, ForEachKey, Miniscript, ScriptContext, Segwitv0, TranslatePk,
-};
-
-use crate::Extension;
-
-use super::super::{
-    checksum::{desc_checksum, verify_checksum},
-    ElementsTrait, ELMTS_STR,
-};
+use super::super::checksum::{desc_checksum, verify_checksum};
+use super::super::{ElementsTrait, ELMTS_STR};
 use super::{CovError, CovOperations};
-use crate::{DescriptorTrait, Error, MiniscriptKey, Satisfier, ToPublicKey};
+use crate::expression::{self, FromTree};
+use crate::miniscript::lex::{lex, Token as Tk, TokenIter};
+use crate::miniscript::limits::{
+    MAX_OPS_PER_SCRIPT, MAX_SCRIPT_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE,
+};
+use crate::miniscript::{decode, types};
+use crate::util::varint_len;
+use crate::{
+    DescriptorTrait, Error, Extension, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier,
+    ScriptContext, Segwitv0, ToPublicKey, TranslatePk,
+};
 
 // A simple utility function to serialize an array
 // of elements and compute double sha2 on it

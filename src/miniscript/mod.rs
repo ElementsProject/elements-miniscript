@@ -42,18 +42,19 @@ pub mod limits;
 pub mod satisfy;
 pub mod types;
 
+use std::cmp;
+use std::sync::Arc;
+
 use self::lex::{lex, TokenIter};
 use self::types::Property;
 pub use crate::miniscript::context::ScriptContext;
 use crate::miniscript::decode::Terminal;
 use crate::miniscript::types::extra_props::ExtData;
 use crate::miniscript::types::Type;
-use crate::{Extension, NoExt};
-
-use crate::MiniscriptKey;
-use crate::{expression, Error, ForEach, ForEachKey, ToPublicKey, TranslatePk};
-use std::cmp;
-use std::sync::Arc;
+use crate::{
+    expression, Error, Extension, ForEach, ForEachKey, MiniscriptKey, NoExt, ToPublicKey,
+    TranslatePk,
+};
 
 #[cfg(test)]
 mod ms_tests;
@@ -497,27 +498,24 @@ serde_string_impl_pk!(Miniscript, "a miniscript", Ctx; ScriptContext => Ext2 ; E
 #[cfg(test)]
 mod tests {
 
-    use crate::{Satisfier, ToPublicKey};
-    use elements::taproot::TapLeafHash;
-
-    use super::{Miniscript, ScriptContext};
-    use super::{Segwitv0, Tap};
-    use crate::hex_script;
-    use crate::miniscript::types::{self, ExtData, Property, Type};
-    use crate::miniscript::Terminal;
-    use crate::policy::Liftable;
-    use crate::{DummyKey, DummyKeyHash, MiniscriptKey, TranslatePk, TranslatePk1};
     use std::marker::PhantomData;
-
-    use crate::TranslatePk2;
-    use bitcoin;
-    use elements::hashes::{hash160, sha256, Hash};
-    use elements::{self, secp256k1_zkp};
     use std::str;
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use crate::CovenantExt;
+    use bitcoin;
+    use elements::hashes::{hash160, sha256, Hash};
+    use elements::taproot::TapLeafHash;
+    use elements::{self, secp256k1_zkp};
+
+    use super::{Miniscript, ScriptContext, Segwitv0, Tap};
+    use crate::miniscript::types::{self, ExtData, Property, Type};
+    use crate::miniscript::Terminal;
+    use crate::policy::Liftable;
+    use crate::{
+        hex_script, CovenantExt, DummyKey, DummyKeyHash, MiniscriptKey, Satisfier, ToPublicKey,
+        TranslatePk, TranslatePk1, TranslatePk2,
+    };
 
     type Tapscript = Miniscript<bitcoin::secp256k1::XOnlyPublicKey, Tap, CovenantExt>;
     type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt>;

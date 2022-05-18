@@ -4,32 +4,19 @@
 
 use std::fmt;
 
-use crate::MiniscriptKey;
+use elements::encode::serialize;
+use elements::{self};
 
-use crate::miniscript;
-use crate::miniscript::types::extra_props::OpLimits;
-use crate::Extension;
-use crate::ForEach;
-use crate::TranslatePk;
-use elements::{self, encode::serialize};
-
-use crate::ToPublicKey;
-
-use crate::util;
-
+use crate::descriptor::CovError;
+use crate::miniscript::astelem::StackCtxOperations;
+use crate::miniscript::lex::{Token as Tk, TokenIter};
+use crate::miniscript::satisfy::{Satisfaction, Witness};
+use crate::miniscript::types::extra_props::{OpLimits, TimeLockInfo};
+use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
+use crate::policy::{self, Liftable};
 use crate::{
-    descriptor::CovError,
-    expression, interpreter,
-    miniscript::{
-        astelem::StackCtxOperations,
-        lex::{Token as Tk, TokenIter},
-        satisfy::{Satisfaction, Witness},
-        types::{
-            extra_props::TimeLockInfo, Base, Correctness, Dissat, ExtData, Input, Malleability,
-        },
-    },
-    policy::{self, Liftable},
-    Error, Satisfier,
+    expression, interpreter, miniscript, util, Error, Extension, ForEach, MiniscriptKey, Satisfier,
+    ToPublicKey, TranslatePk,
 };
 
 /// Version struct
@@ -234,9 +221,10 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for VerEq {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::PublicKey;
+
     use super::*;
     use crate::{Miniscript, Segwitv0};
-    use bitcoin::PublicKey;
 
     #[test]
     fn test_ver_eq() {

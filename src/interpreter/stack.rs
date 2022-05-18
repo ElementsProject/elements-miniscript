@@ -24,7 +24,6 @@ use super::error::PkEvalErrInner;
 use super::{
     verify_sersig, BitcoinKey, Error, HashLockType, KeySigPair, SatisfiedConstraint, TypedHash160,
 };
-
 use crate::Extension;
 /// Definition of Stack Element of the Stack used for interpretation of Miniscript.
 /// All stack elements with vec![] go to Dissatisfied and vec![1] are marked to Satisfied.
@@ -176,7 +175,7 @@ impl<'txin> Stack<'txin> {
                             self.push(Element::Satisfied);
                             Some(Ok(SatisfiedConstraint::PublicKey { key_sig }))
                         }
-                        Err(e) => Some(Err(e))
+                        Err(e) => Some(Err(e)),
                     }
                 }
                 Element::Satisfied => {
@@ -237,9 +236,7 @@ impl<'txin> Stack<'txin> {
                                     Err(e) => Some(Err(e)),
                                 }
                             }
-                            Element::Satisfied => {
-                                Some(Err(Error::PkEvaluationError(pk.into())))
-                            }
+                            Element::Satisfied => Some(Err(Error::PkEvaluationError(pk.into()))),
                         }
                     } else {
                         Some(Err(Error::UnexpectedStackEnd))

@@ -15,12 +15,10 @@
 //! # Function-like Expression Language
 //!
 
-use std::{fmt, str::FromStr};
+use std::fmt;
+use std::str::FromStr;
 
-use crate::errstr;
-use crate::Error;
-
-use crate::MAX_RECURSION_DEPTH;
+use crate::{errstr, Error, MAX_RECURSION_DEPTH};
 
 #[derive(Debug, Clone)]
 /// A token of the form `x(...)` or `x`

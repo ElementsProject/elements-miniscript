@@ -4,34 +4,23 @@
 
 use std::fmt;
 
-use crate::MiniscriptKey;
+use elements::encode::serialize;
+use elements::hashes::hex::{FromHex, ToHex};
+use elements::hashes::{sha256d, Hash};
+use elements::{self};
 
-use crate::miniscript::types::extra_props::OpLimits;
-use crate::Extension;
-use crate::ForEach;
-use elements::hashes::hex::FromHex;
-use elements::hashes::hex::ToHex;
-use elements::hashes::sha256d;
-use elements::hashes::Hash;
-use elements::{self, encode::serialize};
-
+use crate::descriptor::CovError;
+use crate::miniscript::astelem::StackCtxOperations;
 use crate::miniscript::context::ScriptContextError;
-use crate::ToPublicKey;
-use crate::TranslatePk;
+use crate::miniscript::lex::{Token as Tk, TokenIter};
+use crate::miniscript::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
+use crate::miniscript::satisfy::{Satisfaction, Witness};
+use crate::miniscript::types::extra_props::{OpLimits, TimeLockInfo};
+use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
+use crate::policy::{self, Liftable};
 use crate::{
-    descriptor::CovError,
-    expression, interpreter,
-    miniscript::{
-        astelem::StackCtxOperations,
-        lex::{Token as Tk, TokenIter},
-        limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE},
-        satisfy::{Satisfaction, Witness},
-        types::{
-            extra_props::TimeLockInfo, Base, Correctness, Dissat, ExtData, Input, Malleability,
-        },
-    },
-    policy::{self, Liftable},
-    Error, Satisfier,
+    expression, interpreter, Error, Extension, ForEach, MiniscriptKey, Satisfier, ToPublicKey,
+    TranslatePk,
 };
 
 /// Prefix is initally encoded in the script pubkey
@@ -327,9 +316,10 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for OutputsPref {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::PublicKey;
+
     use super::*;
     use crate::{Miniscript, Segwitv0};
-    use bitcoin::PublicKey;
 
     #[test]
     fn test_outputs_pref() {

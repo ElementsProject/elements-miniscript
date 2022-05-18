@@ -18,24 +18,20 @@
 //! sh(miniscript), and sh(wpkh)
 //!
 
-use std::{fmt, str::FromStr};
+use std::fmt;
+use std::str::FromStr;
 
-use elements::secp256k1_zkp;
-use elements::{self, script, Script};
+use elements::{self, script, secp256k1_zkp, Script};
 
+use super::checksum::{desc_checksum, verify_checksum};
+use super::{DescriptorTrait, ElementsTrait, SortedMultiVec, Wpkh, Wsh, ELMTS_STR};
 use crate::expression::{self, FromTree};
 use crate::miniscript::context::ScriptContext;
 use crate::policy::{semantic, Liftable};
-use crate::push_opcode_size;
 use crate::util::{varint_len, witness_to_scriptsig};
 use crate::{
-    Error, ForEach, ForEachKey, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0,
-    ToPublicKey, TranslatePk,
-};
-
-use super::{
-    checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait, ElementsTrait, SortedMultiVec, Wpkh, Wsh, ELMTS_STR,
+    push_opcode_size, Error, ForEach, ForEachKey, Legacy, Miniscript, MiniscriptKey, Satisfier,
+    Segwitv0, ToPublicKey, TranslatePk,
 };
 
 /// A Legacy p2sh Descriptor

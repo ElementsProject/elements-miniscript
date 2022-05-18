@@ -1,27 +1,27 @@
 // Tapscript
 
-use crate::policy::semantic::Policy;
-use crate::policy::Liftable;
-use crate::util::{varint_len, witness_size};
-use crate::{DescriptorTrait, ForEach, ForEachKey, Satisfier, ToPublicKey, TranslatePk};
+use std::cmp::{self, max};
+use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+use std::{fmt, hash};
 
-use super::checksum::{desc_checksum, verify_checksum};
-use super::{ElementsTrait, ELMTS_STR};
-use crate::errstr;
-use crate::expression::{self, FromTree};
-use crate::miniscript::Miniscript;
-use crate::Tap;
-use crate::{Error, MiniscriptKey};
-use elements::opcodes;
 use elements::taproot::{
     LeafVersion, TaprootBuilder, TaprootBuilderError, TaprootSpendInfo, TAPROOT_CONTROL_BASE_SIZE,
     TAPROOT_CONTROL_MAX_NODE_COUNT, TAPROOT_CONTROL_NODE_SIZE,
 };
-use elements::{self, secp256k1_zkp, Script};
-use std::cmp::{self, max};
-use std::hash;
-use std::sync::{Arc, Mutex};
-use std::{fmt, str::FromStr};
+use elements::{self, opcodes, secp256k1_zkp, Script};
+
+use super::checksum::{desc_checksum, verify_checksum};
+use super::{ElementsTrait, ELMTS_STR};
+use crate::expression::{self, FromTree};
+use crate::miniscript::Miniscript;
+use crate::policy::semantic::Policy;
+use crate::policy::Liftable;
+use crate::util::{varint_len, witness_size};
+use crate::{
+    errstr, DescriptorTrait, Error, ForEach, ForEachKey, MiniscriptKey, Satisfier, Tap,
+    ToPublicKey, TranslatePk,
+};
 
 /// A Taproot Tree representation.
 // Hidden leaves are not yet supported in descriptor spec. Conceptually, it should
@@ -364,12 +364,10 @@ where
                     let right = parse_tr_script_spend(&args[1])?;
                     Ok(TapTree::Tree(Arc::new(left), Arc::new(right)))
                 }
-                _ => {
-                    Err(Error::Unexpected(
-                        "unknown format for script spending paths while parsing taproot descriptor"
-                            .to_string(),
-                    ))
-                }
+                _ => Err(Error::Unexpected(
+                    "unknown format for script spending paths while parsing taproot descriptor"
+                        .to_string(),
+                )),
             }
         }
 

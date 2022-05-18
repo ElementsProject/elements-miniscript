@@ -18,19 +18,16 @@
 //! Also includes pk, and pkh descriptors
 //!
 
-use std::{fmt, str::FromStr};
+use std::fmt;
+use std::str::FromStr;
 
-use elements::secp256k1_zkp;
-use elements::{self, Script};
+use elements::{self, secp256k1_zkp, Script};
 
+use super::checksum::{desc_checksum, strip_checksum, verify_checksum};
+use super::{Descriptor, DescriptorTrait, ElementsTrait, TranslatePk};
 use crate::expression::{self, FromTree};
 use crate::policy::{semantic, Liftable};
 use crate::{Error, MiniscriptKey, Satisfier, ToPublicKey};
-
-use super::{
-    checksum::{desc_checksum, strip_checksum, verify_checksum},
-    Descriptor, DescriptorTrait, ElementsTrait, TranslatePk,
-};
 
 /// Create a Bare Descriptor. That is descriptor that is
 /// not wrapped in sh or wsh. This covers the Pk descriptor
@@ -101,7 +98,7 @@ where
             let desc = Descriptor::<Pk>::from_tree(&top.args[1])?;
             if top.args[1].name == "blinded" {
                 return Err(Error::BadDescriptor(
-                    "Blinding only permitted at root level".to_string()
+                    "Blinding only permitted at root level".to_string(),
                 ));
             }
             Ok(Blinded { blinder, desc })

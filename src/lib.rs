@@ -106,8 +106,7 @@
 #![deny(unused_imports)]
 #![deny(missing_docs)]
 
-pub use bitcoin;
-pub use elements;
+pub use {bitcoin, elements};
 #[cfg(feature = "serde")]
 pub extern crate serde;
 #[cfg(all(test, feature = "unstable"))]
@@ -118,22 +117,18 @@ extern crate test;
 // As a rule, only import the library here and pub use all the required
 // items. Should help in faster code development in the long run
 extern crate miniscript as bitcoin_miniscript;
-pub(crate) use crate::bitcoin_miniscript::expression::FromTree as BtcFromTree;
-pub(crate) use crate::bitcoin_miniscript::expression::Tree as BtcTree;
+pub(crate) use crate::bitcoin_miniscript::expression::{FromTree as BtcFromTree, Tree as BtcTree};
 pub(crate) use crate::bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
 pub(crate) use crate::bitcoin_miniscript::policy::Liftable as BtcLiftable;
-pub(crate) use crate::bitcoin_miniscript::Descriptor as BtcDescriptor;
-pub(crate) use crate::bitcoin_miniscript::DescriptorTrait as BtcDescriptorTrait;
-pub(crate) use crate::bitcoin_miniscript::Error as BtcError;
-pub(crate) use crate::bitcoin_miniscript::Miniscript as BtcMiniscript;
-pub(crate) use crate::bitcoin_miniscript::Satisfier as BtcSatisfier;
-pub(crate) use crate::bitcoin_miniscript::Segwitv0 as BtcSegwitv0;
-pub(crate) use crate::bitcoin_miniscript::Terminal as BtcTerminal;
+pub(crate) use crate::bitcoin_miniscript::{
+    Descriptor as BtcDescriptor, DescriptorTrait as BtcDescriptorTrait, Error as BtcError,
+    Miniscript as BtcMiniscript, Satisfier as BtcSatisfier, Segwitv0 as BtcSegwitv0,
+    Terminal as BtcTerminal,
+};
 // re-export imports
-pub use crate::bitcoin_miniscript::{DummyKey, DummyKeyHash};
 pub use crate::bitcoin_miniscript::{
-    ForEach, ForEachKey, MiniscriptKey, ToPublicKey, TranslatePk, TranslatePk1, TranslatePk2,
-    TranslatePk3,
+    DummyKey, DummyKeyHash, ForEach, ForEachKey, MiniscriptKey, ToPublicKey, TranslatePk,
+    TranslatePk1, TranslatePk2, TranslatePk3,
 };
 // End imports
 
@@ -153,16 +148,19 @@ mod util;
 use std::{error, fmt, str};
 
 use elements::hashes::sha256;
-use elements::{opcodes, script, secp256k1_zkp, secp256k1_zkp::Secp256k1};
+use elements::secp256k1_zkp::Secp256k1;
+use elements::{opcodes, script, secp256k1_zkp};
 
-pub use crate::descriptor::pretaproot::{traits::PreTaprootDescriptorTrait, PreTaprootDescriptor};
+pub use crate::descriptor::pretaproot::traits::PreTaprootDescriptorTrait;
+pub use crate::descriptor::pretaproot::PreTaprootDescriptor;
 pub use crate::descriptor::{Descriptor, DescriptorPublicKey, DescriptorTrait};
 pub use crate::extensions::{CovenantExt, Extension, NoExt};
 pub use crate::interpreter::Interpreter;
 pub use crate::miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0, Tap};
 pub use crate::miniscript::decode::Terminal;
-pub use crate::miniscript::satisfy::{elementssig_from_rawsig, elementssig_to_rawsig};
-pub use crate::miniscript::satisfy::{ElementsSig, Preimage32, Satisfier};
+pub use crate::miniscript::satisfy::{
+    elementssig_from_rawsig, elementssig_to_rawsig, ElementsSig, Preimage32, Satisfier,
+};
 pub use crate::miniscript::Miniscript;
 
 // minimal implementation of contract hash module

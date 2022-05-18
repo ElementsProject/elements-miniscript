@@ -1,7 +1,6 @@
-use crate::miniscript::context;
-use elements::{self, script};
-use elements::{opcodes, Script};
+use elements::{self, opcodes, script, Script};
 
+use crate::miniscript::context;
 use crate::{ScriptContext, ToPublicKey};
 pub(crate) fn varint_len(n: usize) -> usize {
     elements::VarInt(n as u64).len()

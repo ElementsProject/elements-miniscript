@@ -27,21 +27,15 @@ use elements::hashes::hex::FromHex;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use elements::{opcodes, script};
 
-use crate::errstr;
-use crate::expression;
+use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 use crate::miniscript::context::SigType;
 use crate::miniscript::types::{self, Property};
 use crate::miniscript::ScriptContext;
-use crate::script_num_size;
-
 use crate::util::MsKeyBuilder;
 use crate::{
-    Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslatePk,
+    errstr, expression, script_num_size, Error, Extension, ForEach, ForEachKey, Miniscript,
+    MiniscriptKey, Terminal, ToPublicKey, TranslatePk,
 };
-
-use crate::Extension;
-
-use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx, Ext> {
     /// Internal helper function for displaying wrapper types; returns
@@ -209,9 +203,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                 Arc::new(right.real_translate_pk(translatefpk, translatefpkh)?),
             ),
             Terminal::OrI(ref left, ref right) => Terminal::OrI(
-                Arc::new(
-                    left.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)?,
-                ),
+                Arc::new(left.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)?),
                 Arc::new(right.real_translate_pk(translatefpk, translatefpkh)?),
             ),
             Terminal::Thresh(k, ref subs) => {

@@ -17,9 +17,9 @@
 //! Translates a script into a reversed sequence of tokens
 //!
 
-use elements::{opcodes, script};
-
 use std::fmt;
+
+use elements::{opcodes, script};
 
 use super::Error;
 use crate::util::{build_scriptint, slice_to_u32_le};

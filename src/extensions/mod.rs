@@ -4,23 +4,16 @@
 
 use std::{fmt, hash};
 
-use crate::policy;
-use crate::Error;
-use crate::MiniscriptKey;
-use crate::ToPublicKey;
-use crate::{ForEach, TranslatePk};
 use elements::script::Builder;
 
-use crate::{expression::Tree, policy::Liftable, Satisfier};
-
-use crate::miniscript::{
-    context::ScriptContextError,
-    lex::TokenIter,
-    satisfy::Satisfaction,
-    types::{Correctness, ExtData, Malleability},
-};
-
+use crate::expression::Tree;
 use crate::interpreter::{self, Stack};
+use crate::miniscript::context::ScriptContextError;
+use crate::miniscript::lex::TokenIter;
+use crate::miniscript::satisfy::Satisfaction;
+use crate::miniscript::types::{Correctness, ExtData, Malleability};
+use crate::policy::Liftable;
+use crate::{policy, Error, ForEach, MiniscriptKey, Satisfier, ToPublicKey, TranslatePk};
 mod outputs_pref;
 mod tx_ver;
 pub use self::outputs_pref::OutputsPref;
@@ -298,10 +291,7 @@ where
         try_from_arms!(from_name_tree, name, children,)
     }
 
-    fn evaluate(
-        &self,
-        stack: &mut Stack,
-    ) -> Option<Result<(), interpreter::Error>> {
+    fn evaluate(&self, stack: &mut Stack) -> Option<Result<(), interpreter::Error>> {
         all_arms_fn!(self, evaluate, stack,)
     }
 }

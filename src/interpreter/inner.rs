@@ -12,24 +12,17 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
-use crate::TranslatePk;
 use bitcoin;
 use bitcoin::util::taproot::TAPROOT_ANNEX_PREFIX;
 use elements::hashes::{hash160, sha256, Hash};
+use elements::schnorr::TapTweak;
+use elements::taproot::ControlBlock;
 use elements::{self, script};
 
 use super::{stack, BitcoinKey, Error, Stack, TypedHash160};
-use crate::Extension;
-
 use crate::descriptor::{CovOperations, CovenantDescriptor};
-use crate::miniscript::context::NoChecks;
-use elements::schnorr::TapTweak;
-use elements::taproot::ControlBlock;
-
-use crate::{BareCtx, Legacy, Segwitv0, Tap};
-
-use crate::miniscript::context::ScriptContext;
-use crate::{Miniscript, MiniscriptKey};
+use crate::miniscript::context::{NoChecks, ScriptContext};
+use crate::{BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, TranslatePk};
 
 /// Attempts to parse a slice as a Bitcoin public key, checking compressedness
 /// if asked to, but otherwise dropping it
@@ -299,8 +292,8 @@ where
                     let ctrl_blk = wit_stack.pop().ok_or(Error::UnexpectedStackEnd)?;
                     let ctrl_blk = ctrl_blk.as_push()?;
                     let tap_script = wit_stack.pop().ok_or(Error::UnexpectedStackEnd)?;
-                    let ctrl_blk = ControlBlock::from_slice(ctrl_blk)
-                        .map_err(Error::ControlBlockParse)?;
+                    let ctrl_blk =
+                        ControlBlock::from_slice(ctrl_blk).map_err(Error::ControlBlockParse)?;
                     let tap_script = script_from_stackelem::<
                         Tap,
                         <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output,
@@ -424,21 +417,21 @@ where
         }
     // ** bare script **
     } else if wit_stack.is_empty() {
-            // Bare script parsed in BareCtx
-            let miniscript = Miniscript::<
-                bitcoin::PublicKey,
-                BareCtx,
-                <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
-            >::parse_insane(spk)?;
-            let miniscript = miniscript.to_no_checks_ms();
-            Ok((
-                Inner::Script(miniscript, ScriptType::Bare),
-                ssig_stack,
-                Some(spk.clone()),
-            ))
-        } else {
-            Err(Error::NonEmptyWitness)
-        }
+        // Bare script parsed in BareCtx
+        let miniscript = Miniscript::<
+            bitcoin::PublicKey,
+            BareCtx,
+            <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
+        >::parse_insane(spk)?;
+        let miniscript = miniscript.to_no_checks_ms();
+        Ok((
+            Inner::Script(miniscript, ScriptType::Bare),
+            ssig_stack,
+            Some(spk.clone()),
+        ))
+    } else {
+        Err(Error::NonEmptyWitness)
+    }
 }
 
 // Convert a miniscript from a well-defined context to a no checks context.
@@ -487,13 +480,14 @@ where
 #[cfg(test)]
 mod tests {
 
-    use super::*;
-    use crate::CovenantExt;
+    use std::str::FromStr;
+
     use elements::hashes::hex::FromHex;
     use elements::hashes::{hash160, sha256, Hash};
-    use elements::script;
-    use elements::{self, Script};
-    use std::str::FromStr;
+    use elements::{self, script, Script};
+
+    use super::*;
+    use crate::CovenantExt;
 
     struct KeyTestData {
         pk_spk: elements::Script,

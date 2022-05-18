@@ -22,30 +22,25 @@
 //! Thus, as a simple solution we implement these as a separate
 //! struct with it's own API.
 
-use crate::expression::{self, FromTree};
-use crate::policy::{semantic, Liftable};
-use crate::Descriptor;
-use crate::Error;
-use crate::{
-    BtcError, BtcFromTree, BtcLiftable, BtcMiniscript, BtcPolicy, BtcSatisfier, BtcSegwitv0,
-    BtcTerminal, BtcTree,
-};
-use bitcoin::blockdata::opcodes;
-use bitcoin::hashes::hash160;
-use bitcoin::hashes::Hash;
-use bitcoin::Script as BtcScript;
-use bitcoin::{self, blockdata::script, hashes};
+use std::fmt;
+use std::str::FromStr;
+use std::sync::Arc;
+
+use bitcoin::blockdata::{opcodes, script};
+use bitcoin::hashes::{hash160, Hash};
+use bitcoin::{self, hashes, Script as BtcScript};
 use elements::secp256k1_zkp;
-use std::{fmt, str::FromStr, sync::Arc};
-
-use crate::{DescriptorTrait, TranslatePk};
-
-use crate::{tweak_key, util::varint_len};
-
-use crate::descriptor::checksum::{desc_checksum, verify_checksum};
 
 use super::PeginTrait;
-use crate::{MiniscriptKey, ToPublicKey};
+use crate::descriptor::checksum::{desc_checksum, verify_checksum};
+use crate::expression::{self, FromTree};
+use crate::policy::{semantic, Liftable};
+use crate::util::varint_len;
+use crate::{
+    tweak_key, BtcError, BtcFromTree, BtcLiftable, BtcMiniscript, BtcPolicy, BtcSatisfier,
+    BtcSegwitv0, BtcTerminal, BtcTree, Descriptor, DescriptorTrait, Error, MiniscriptKey,
+    ToPublicKey, TranslatePk,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// MiniscriptKey used for Pegins
@@ -84,7 +79,7 @@ impl FromStr for LegacyPeginKey {
             ))
         } else {
             Err(Error::BadDescriptor(
-                "Invalid Legacy Pegin descriptor".to_string()
+                "Invalid Legacy Pegin descriptor".to_string(),
             ))
         }
     }

@@ -55,27 +55,24 @@ pub use self::script_internals::CovOperations;
 #[allow(unused_imports)]
 mod tests {
 
-    use crate::interpreter;
-    use crate::CovenantExt;
+    use std::str::FromStr;
+
+    use bitcoin;
+    use elements::encode::serialize;
+    use elements::hashes::hex::ToHex;
+    use elements::opcodes::all::OP_PUSHNUM_1;
+    use elements::secp256k1_zkp::ZERO_TWEAK;
+    use elements::{
+        self, confidential, opcodes, script, secp256k1_zkp, AssetId, AssetIssuance,
+        EcdsaSigHashType, OutPoint, Script, Transaction, TxIn, TxInWitness, TxOut, Txid,
+    };
 
     use super::cov::*;
     use super::*;
-    use crate::descriptor::DescriptorTrait;
+    use crate::descriptor::{DescriptorTrait, DescriptorType};
     use crate::interpreter::SatisfiedConstraint;
     use crate::util::{count_non_push_opcodes, witness_size};
-    use crate::Interpreter;
-    use crate::{descriptor::DescriptorType, Descriptor, ElementsSig, Error, Satisfier};
-    use bitcoin;
-    use elements::hashes::hex::ToHex;
-    use elements::secp256k1_zkp;
-    use elements::{self, secp256k1_zkp::ZERO_TWEAK};
-    use elements::{confidential, opcodes::all::OP_PUSHNUM_1};
-    use elements::{encode::serialize, opcodes, script};
-    use elements::{
-        AssetId, AssetIssuance, EcdsaSigHashType, OutPoint, Script, Transaction, TxIn, TxInWitness,
-        TxOut, Txid,
-    };
-    use std::str::FromStr;
+    use crate::{interpreter, CovenantExt, Descriptor, ElementsSig, Error, Interpreter, Satisfier};
 
     const BTC_ASSET: [u8; 32] = [
         0x23, 0x0f, 0x4f, 0x5d, 0x4b, 0x7c, 0x6f, 0xa8, 0x45, 0x80, 0x6e, 0xe4, 0xf6, 0x77, 0x13,

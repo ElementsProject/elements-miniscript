@@ -17,21 +17,18 @@
 //! Optimizing compiler from concrete policies to Miniscript.
 //! Currently the policy compiler does not support any extensions
 
+use std::collections::vec_deque::VecDeque;
 use std::collections::BTreeMap;
 use std::convert::From;
 use std::marker::PhantomData;
-use std::{cmp, error, f64, fmt, mem};
+use std::sync::Arc;
+use std::{cmp, error, f64, fmt, hash, mem};
 
 use crate::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
 use crate::miniscript::types::{self, ErrorKind, ExtData, Property, Type};
 use crate::miniscript::ScriptContext;
 use crate::policy::Concrete;
-use crate::Extension;
-use crate::{policy, Terminal};
-use crate::{Miniscript, MiniscriptKey};
-use std::collections::vec_deque::VecDeque;
-use std::hash;
-use std::sync::Arc;
+use crate::{policy, Extension, Miniscript, MiniscriptKey, Terminal};
 
 type PolicyCache<Pk, Ctx> =
     BTreeMap<(Concrete<Pk>, OrdF64, Option<OrdF64>), BTreeMap<CompilationKey, AstElemExt<Pk, Ctx>>>;
@@ -1164,18 +1161,17 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use bitcoin;
-    use elements::{self, hashes, secp256k1_zkp};
-    use elements::{opcodes, script};
     use std::collections::HashMap;
     use std::str::FromStr;
     use std::string::String;
 
+    use bitcoin;
+    use elements::{self, hashes, opcodes, script, secp256k1_zkp};
+
+    use super::*;
     use crate::miniscript::{satisfy, Legacy, Segwitv0, Tap};
     use crate::policy::Liftable;
-    use crate::script_num_size;
-    use crate::ElementsSig;
+    use crate::{script_num_size, ElementsSig};
 
     type SPolicy = Concrete<String>;
     type BPolicy = Concrete<bitcoin::PublicKey>;
@@ -1566,11 +1562,12 @@ mod tests {
 #[cfg(all(test, feature = "unstable"))]
 mod benches {
     use std::str::FromStr;
+
+    use miniscript::Tap;
     use test::{black_box, Bencher};
+    use Miniscript;
 
     use super::{CompilerError, Concrete};
-    use miniscript::Tap;
-    use Miniscript;
     type TapMsRes = Result<Miniscript<String, Tap>, CompilerError>;
     #[bench]
     pub fn compile_basic(bh: &mut Bencher) {

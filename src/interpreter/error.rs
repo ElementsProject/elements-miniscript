@@ -12,13 +12,12 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
-use bitcoin;
-use elements;
+use std::{error, fmt};
+
 use elements::hashes::hash160;
 use elements::hashes::hex::ToHex;
-use elements::secp256k1_zkp;
-use elements::taproot;
-use std::{error, fmt};
+use elements::{secp256k1_zkp, taproot};
+use {bitcoin, elements};
 
 use super::BitcoinKey;
 

@@ -19,22 +19,16 @@
 //! `https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki`
 //!
 
-use crate::{util, Satisfier, Tap};
-
-use super::{sanity_check, Psbt};
-use super::{Error, InputError, PsbtInputSatisfier};
-use crate::descriptor::DescriptorTrait;
-use crate::descriptor::{CovSatisfier, CovenantDescriptor};
-use crate::interpreter;
-use crate::Descriptor;
-use crate::Miniscript;
-use crate::{BareCtx, Legacy, MiniscriptKey, Segwitv0};
 use bitcoin::{self, PublicKey, XOnlyPublicKey};
+use elements::secp256k1_zkp::{self, Secp256k1};
 use elements::taproot::LeafVersion;
-use elements::{self, confidential, Script};
-use elements::{
-    secp256k1_zkp::{self, Secp256k1},
-    Transaction,
+use elements::{self, confidential, Script, Transaction};
+
+use super::{sanity_check, Error, InputError, Psbt, PsbtInputSatisfier};
+use crate::descriptor::{CovSatisfier, CovenantDescriptor, DescriptorTrait};
+use crate::{
+    interpreter, util, BareCtx, Descriptor, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0,
+    Tap,
 };
 
 // Get the amount being spent for the psbt input

@@ -492,7 +492,7 @@ impl Property for Correctness {
                     return Err(ErrorKind::ThresholdBase(i, subtype.base));
                 }
             } else if subtype.base != Base::W {
-                    return Err(ErrorKind::ThresholdBase(i, subtype.base));
+                return Err(ErrorKind::ThresholdBase(i, subtype.base));
             }
             if !subtype.unit {
                 return Err(ErrorKind::ThresholdNonUnit(i));

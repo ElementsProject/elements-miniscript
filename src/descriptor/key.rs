@@ -1,15 +1,13 @@
-use std::{error, fmt, str::FromStr};
+use std::str::FromStr;
+use std::{error, fmt};
+
+use bitcoin::util::bip32;
+use bitcoin::{self, XpubIdentifier};
+use elements::hashes::hex::FromHex;
+use elements::hashes::{hash160, Hash, HashEngine};
+use elements::secp256k1_zkp::{Secp256k1, Signing, Verification};
 
 use crate::{MiniscriptKey, ToPublicKey};
-use bitcoin::{self, util::bip32, XpubIdentifier};
-
-use elements::{
-    hashes::hex::FromHex,
-    hashes::Hash,
-    hashes::hash160,
-    hashes::HashEngine,
-    secp256k1_zkp::{Secp256k1, Signing, Verification},
-};
 
 /// Single public key without any origin or range information
 #[derive(Debug, Eq, PartialEq, Clone, Ord, PartialOrd, Hash)]
@@ -682,15 +680,15 @@ impl<K: InnerXKey> DescriptorXKey<K> {
             ),
         };
 
-        let path_excluding_wildcard = if self.wildcard != Wildcard::None && !path.as_ref().is_empty()
-        {
-            path.into_iter()
-                .take(path.as_ref().len() - 1)
-                .cloned()
-                .collect()
-        } else {
-            path.clone()
-        };
+        let path_excluding_wildcard =
+            if self.wildcard != Wildcard::None && !path.as_ref().is_empty() {
+                path.into_iter()
+                    .take(path.as_ref().len() - 1)
+                    .cloned()
+                    .collect()
+            } else {
+                path.clone()
+            };
 
         if &compare_fingerprint == fingerprint
             && compare_path
@@ -799,11 +797,11 @@ impl ToPublicKey for DerivedDescriptorKey {
 
 #[cfg(test)]
 mod test {
-    use super::{DescriptorKeyParseError, DescriptorPublicKey, DescriptorSecretKey};
+    use std::str::FromStr;
 
     use elements::secp256k1_zkp;
 
-    use std::str::FromStr;
+    use super::{DescriptorKeyParseError, DescriptorPublicKey, DescriptorSecretKey};
 
     #[test]
     fn parse_descriptor_key_errors() {
