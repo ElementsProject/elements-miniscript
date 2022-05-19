@@ -16,18 +16,20 @@
 //! Implementation of sorted multi primitive for descriptors
 //!
 
-use std::{fmt, marker::PhantomData, str::FromStr};
+use std::fmt;
+use std::marker::PhantomData;
+use std::str::FromStr;
 
 use elements::script;
 
-use expression;
-use miniscript::{
-    self, context::ScriptContext, decode::Terminal, limits::MAX_PUBKEYS_PER_MULTISIG,
+use crate::miniscript::context::ScriptContext;
+use crate::miniscript::decode::Terminal;
+use crate::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
+use crate::miniscript::{self};
+use crate::{
+    errstr, expression, policy, script_num_size, Error, ForEach, ForEachKey, Miniscript,
+    MiniscriptKey, Satisfier, ToPublicKey,
 };
-use policy;
-use script_num_size;
-
-use {errstr, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, ToPublicKey};
 
 /// Contents of a "sortedmulti" descriptor
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -47,7 +49,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
     pub fn new(k: usize, pks: Vec<Pk>) -> Result<Self, Error> {
         // A sortedmulti() is only defined for <= 20 keys (it maps to CHECKMULTISIG)
         if pks.len() > MAX_PUBKEYS_PER_MULTISIG {
-            Error::BadDescriptor("Too many public keys".to_string());
+            return Err(Error::BadDescriptor("Too many public keys".to_string()));
         }
 
         // Check the limits before creating a new SortedMultiVec
@@ -68,7 +70,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         })
     }
     /// Parse an expression tree into a SortedMultiVec
-    pub fn from_tree(tree: &expression::Tree) -> Result<Self, Error>
+    pub fn from_tree(tree: &expression::Tree<'_>) -> Result<Self, Error>
     where
         Pk: FromStr,
         <Pk as FromStr>::Err: ToString,
@@ -225,17 +227,49 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> policy::Liftable<Pk> for SortedMulti
 }
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Debug for SortedMultiVec<Pk, Ctx> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(self, f)
     }
 }
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for SortedMultiVec<Pk, Ctx> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "sortedmulti({}", self.k)?;
         for k in &self.pks {
             write!(f, ",{}", k)?;
         }
         f.write_str(")")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::secp256k1::PublicKey;
+
+    use super::*;
+    use crate::miniscript::context::Legacy;
+
+    #[test]
+    fn too_many_pubkeys() {
+        // Arbitrary pubic key.
+        let pk = PublicKey::from_str(
+            "02e6642fd69bd211f93f7f1f36ca51a26a5290eb2dd1b0d8279a87bb0d480c8443",
+        )
+        .unwrap();
+
+        let over = 1 + MAX_PUBKEYS_PER_MULTISIG;
+
+        let mut pks = Vec::new();
+        for _ in 0..over {
+            pks.push(pk.clone());
+        }
+
+        let res: Result<SortedMultiVec<PublicKey, Legacy>, Error> = SortedMultiVec::new(0, pks);
+        let error = res.err().expect("constructor should err");
+
+        match error {
+            Error::BadDescriptor(_) => {} // ok
+            other => panic!("unexpected error: {:?}", other),
+        }
     }
 }

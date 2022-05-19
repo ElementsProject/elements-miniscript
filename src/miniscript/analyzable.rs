@@ -17,13 +17,11 @@
 //! Tools for determining whether the guarantees offered by the library
 //! actually hold.
 
-use error;
-use miniscript::iter::PkPkh;
 use std::collections::HashSet;
 use std::fmt;
 
-use Extension;
-use {Miniscript, MiniscriptKey, ScriptContext};
+use crate::miniscript::iter::PkPkh;
+use crate::{error, Extension, Miniscript, MiniscriptKey, ScriptContext};
 /// Possible reasons Miniscript guarantees can fail
 /// We currently mark Miniscript as Non-Analyzable if
 /// 1. It is unsafe(does not require a digital signature to spend it)
@@ -33,7 +31,7 @@ use {Miniscript, MiniscriptKey, ScriptContext};
 /// 3. The script is malleable and thereby some of satisfaction weight
 ///    guarantees are not satisfied.
 /// 4. It has repeated publickeys
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum AnalysisError {
     /// Top level is not safe.
     SiglessBranch,
@@ -48,7 +46,7 @@ pub enum AnalysisError {
 }
 
 impl fmt::Display for AnalysisError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             AnalysisError::SiglessBranch => {
                 f.write_str("All spend paths must require a signature")
@@ -84,10 +82,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
     // It maybe possible to return a detail error type containing why the miniscript
     // failed. But doing so may require returning a collection of errors
     pub fn within_resource_limits(&self) -> bool {
-        match Ctx::check_local_validity(&self) {
-            Ok(_) => true,
-            Err(_) => false,
-        }
+        Ctx::check_local_validity(self).is_ok()
     }
 
     /// Whether the miniscript contains a combination of timelocks

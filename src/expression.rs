@@ -15,12 +15,10 @@
 //! # Function-like Expression Language
 //!
 
-use std::{fmt, str::FromStr};
+use std::fmt;
+use std::str::FromStr;
 
-use errstr;
-use Error;
-
-use MAX_RECURSION_DEPTH;
+use crate::{errstr, Error, MAX_RECURSION_DEPTH};
 
 #[derive(Debug, Clone)]
 /// A token of the form `x(...)` or `x`
@@ -34,11 +32,11 @@ pub struct Tree<'a> {
 /// A trait for extracting a structure from a Tree representation in token form
 pub trait FromTree: Sized {
     /// Extract a structure from Tree representation
-    fn from_tree(top: &Tree) -> Result<Self, Error>;
+    fn from_tree(top: &Tree<'_>) -> Result<Self, Error>;
 }
 
 impl<'a> fmt::Display for Tree<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({}", self.name)?;
         for arg in &self.args {
             write!(f, ",{}", arg)?;
@@ -161,7 +159,7 @@ impl<'a> Tree<'a> {
             // String-ending terminal
             Found::Nothing => Ok((
                 Tree {
-                    name: &sl[..],
+                    name: sl,
                     args: vec![],
                 },
                 "",
@@ -210,7 +208,7 @@ impl<'a> Tree<'a> {
     /// Parses a tree from a string
     pub fn from_str(s: &'a str) -> Result<Tree<'a>, Error> {
         // Filter out non-ASCII because we byte-index strings all over the
-        // place and Rust gets very upset when you splinch a string.
+        // place and Rust gets very upsbt when you splinch a string.
         for ch in s.bytes() {
             if !ch.is_ascii() {
                 return Err(Error::Unprintable(ch));
@@ -230,7 +228,7 @@ impl<'a> Tree<'a> {
 pub fn parse_num(s: &str) -> Result<u32, Error> {
     if s.len() > 1 {
         let ch = s.chars().next().unwrap();
-        if ch < '1' || ch > '9' {
+        if !('1'..='9').contains(&ch) {
             return Err(Error::Unexpected(
                 "Number must start with a digit 1-9".to_string(),
             ));
@@ -240,7 +238,7 @@ pub fn parse_num(s: &str) -> Result<u32, Error> {
 }
 
 /// Attempts to parse a terminal expression
-pub fn terminal<T, F, Err>(term: &Tree, convert: F) -> Result<T, Error>
+pub fn terminal<T, F, Err>(term: &Tree<'_>, convert: F) -> Result<T, Error>
 where
     F: FnOnce(&str) -> Result<T, Err>,
     Err: ToString,
@@ -253,7 +251,7 @@ where
 }
 
 /// Attempts to parse an expression with exactly one child
-pub fn unary<L, T, F>(term: &Tree, convert: F) -> Result<T, Error>
+pub fn unary<L, T, F>(term: &Tree<'_>, convert: F) -> Result<T, Error>
 where
     L: FromTree,
     F: FnOnce(L) -> T,
@@ -267,7 +265,7 @@ where
 }
 
 /// Attempts to parse an expression with exactly two children
-pub fn binary<L, R, T, F>(term: &Tree, convert: F) -> Result<T, Error>
+pub fn binary<L, R, T, F>(term: &Tree<'_>, convert: F) -> Result<T, Error>
 where
     L: FromTree,
     R: FromTree,

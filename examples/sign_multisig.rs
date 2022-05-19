@@ -14,14 +14,14 @@
 
 //! Example: Signing a 2-of-3 multisignature
 
-extern crate bitcoin;
-extern crate elements;
 extern crate elements_miniscript as miniscript;
 
-use elements::secp256k1_zkp;
-use miniscript::DescriptorTrait;
 use std::collections::HashMap;
 use std::str::FromStr;
+
+use elements::secp256k1_zkp;
+
+use crate::miniscript::DescriptorTrait;
 
 fn main() {
     // Avoid repeatedly typing a pretty-common descriptor type
@@ -78,7 +78,7 @@ fn main() {
              531d75c136272f127a5dc14acc0722301cbddc222262934151f140da345af177",
         )
         .unwrap(),
-        elements::SigHashType::All,
+        elements::EcdsaSigHashType::All,
     );
 
     let descriptor_str = format!(

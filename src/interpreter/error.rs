@@ -12,13 +12,12 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
-use bitcoin;
-use elements;
+use std::{error, fmt};
+
 use elements::hashes::hash160;
 use elements::hashes::hex::ToHex;
-use elements::secp256k1_zkp;
-use elements::taproot;
-use std::{error, fmt};
+use elements::{secp256k1_zkp, taproot};
+use {bitcoin, elements};
 
 use super::BitcoinKey;
 
@@ -63,7 +62,7 @@ pub enum Error {
     /// Last byte of this signature isn't a standard sighash type
     NonStandardSigHash(Vec<u8>),
     /// Miniscript error
-    Miniscript(::Error),
+    Miniscript(crate::Error),
     /// MultiSig requires 1 extra zero element apart from the `k` signatures
     MissingExtraZeroMultiSig,
     /// Script abortion because of incorrect dissatisfaction for multisig.
@@ -188,8 +187,8 @@ impl From<elements::secp256k1_zkp::UpstreamError> for Error {
 }
 
 #[doc(hidden)]
-impl From<::Error> for Error {
-    fn from(e: ::Error) -> Error {
+impl From<crate::Error> for Error {
+    fn from(e: crate::Error) -> Error {
         Error::Miniscript(e)
     }
 }
@@ -204,7 +203,7 @@ impl error::Error for Error {
 }
 
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Error::AbsoluteLocktimeNotMet(n) => write!(
                 f,

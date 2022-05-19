@@ -1,12 +1,11 @@
-use std::{
-    fmt,
-    str::{self, FromStr},
-};
+use std::fmt;
+use std::str::{self, FromStr};
 
 use elements::{self, Script};
 
-use super::{checksum::verify_checksum, Bare, ElementsTrait, Pkh, Sh, Wpkh, Wsh};
-use {expression, DescriptorTrait, Error, MiniscriptKey, Satisfier, ToPublicKey};
+use super::checksum::verify_checksum;
+use super::{Bare, ElementsTrait, Pkh, Sh, Wpkh, Wsh};
+use crate::{expression, DescriptorTrait, Error, MiniscriptKey, Satisfier, ToPublicKey};
 
 /// Script descriptor
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -203,7 +202,7 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     /// Parse an expression tree into a descriptor
-    fn from_tree(top: &expression::Tree) -> Result<PreTaprootDescriptor<Pk>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<PreTaprootDescriptor<Pk>, Error> {
         Ok(match (top.name, top.args.len() as u32) {
             ("pkh", 1) => PreTaprootDescriptor::Pkh(Pkh::from_tree(top)?),
             ("wpkh", 1) => PreTaprootDescriptor::Wpkh(Wpkh::from_tree(top)?),
@@ -231,7 +230,7 @@ where
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for PreTaprootDescriptor<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             PreTaprootDescriptor::Bare(ref sub) => write!(f, "{:?}", sub),
             PreTaprootDescriptor::Pkh(ref pkh) => write!(f, "{:?}", pkh),
@@ -243,7 +242,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for PreTaprootDescriptor<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for PreTaprootDescriptor<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             PreTaprootDescriptor::Bare(ref sub) => write!(f, "{}", sub),
             PreTaprootDescriptor::Pkh(ref pkh) => write!(f, "{}", pkh),
@@ -260,12 +259,9 @@ serde_string_impl_pk!(PreTaprootDescriptor, "a pre-taproot script descriptor");
 pub(crate) mod traits {
     use elements::Script;
 
-    use {
-        descriptor::{Pkh, Sh, Wpkh, Wsh},
-        DescriptorTrait, MiniscriptKey, ToPublicKey,
-    };
-
     use super::PreTaprootDescriptor;
+    use crate::descriptor::{Pkh, Sh, Wpkh, Wsh};
+    use crate::{DescriptorTrait, MiniscriptKey, ToPublicKey};
 
     /// A general trait for Pre taproot bitcoin descriptor.
     /// Similar to [`DescriptorTrait`], but `explicit_script` and `script_code` methods cannot fail
@@ -278,7 +274,7 @@ pub(crate) mod traits {
         {
             // This expect can technically be avoided if we implement this for types, but
             // having this expect saves lots of LoC because of default implementation
-            <Self as DescriptorTrait<Pk>>::explicit_script(&self)
+            <Self as DescriptorTrait<Pk>>::explicit_script(self)
                 .expect("Pre taproot descriptor have explicit script")
         }
 
@@ -288,7 +284,7 @@ pub(crate) mod traits {
         where
             Pk: ToPublicKey,
         {
-            <Self as DescriptorTrait<Pk>>::script_code(&self)
+            <Self as DescriptorTrait<Pk>>::script_code(self)
                 .expect("Pre taproot descriptor have non-failing script code")
         }
     }

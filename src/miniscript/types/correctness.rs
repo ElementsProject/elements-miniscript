@@ -15,7 +15,7 @@
 //! Correctness/Soundness type properties
 
 use super::{ErrorKind, Property};
-use {Extension, MiniscriptKey};
+use crate::{Extension, MiniscriptKey};
 
 /// Basic type representing where the fragment can go
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -100,14 +100,10 @@ impl Correctness {
     /// in the given `Type`. This returns `true` on same arguments
     /// `a.is_subtype(a)` is `true`.
     pub fn is_subtype(&self, other: Self) -> bool {
-        if self.base == other.base
+        self.base == other.base
             && self.input.is_subtype(other.input)
             && self.dissatisfiable >= other.dissatisfiable
             && self.unit >= other.unit
-        {
-            return true;
-        }
-        return false;
     }
 }
 
@@ -192,24 +188,6 @@ impl Property for Correctness {
         }
     }
 
-    fn from_item_eq() -> Self {
-        Correctness {
-            base: Base::B,
-            input: Input::Zero,
-            dissatisfiable: true,
-            unit: true,
-        }
-    }
-
-    fn from_item_pref(_pref: &[u8]) -> Self {
-        Correctness {
-            base: Base::B,
-            input: Input::Any,    // 7 outputs
-            dissatisfiable: true, // Any 7 elements that don't cat
-            unit: true,
-        }
-    }
-
     fn cast_alt(self) -> Result<Self, ErrorKind> {
         Ok(Correctness {
             base: match self.base {
@@ -260,7 +238,7 @@ impl Property for Correctness {
                 _ => return Err(ErrorKind::NonZeroDupIf),
             },
             dissatisfiable: true,
-            unit: true,
+            unit: false,
         })
     }
 
@@ -497,22 +475,24 @@ impl Property for Correctness {
         e.corr_prop()
     }
 
-    fn threshold<S>(k: usize, n: usize, mut sub_ck: S) -> Result<Self, ErrorKind>
+    fn threshold<S>(_k: usize, n: usize, mut sub_ck: S) -> Result<Self, ErrorKind>
     where
         S: FnMut(usize) -> Result<Self, ErrorKind>,
     {
-        let mut is_n = k == n;
+        let mut num_args = 0;
         for i in 0..n {
             let subtype = sub_ck(i)?;
+            num_args += match subtype.input {
+                Input::Zero => 0,
+                Input::One | Input::OneNonZero => 1,
+                Input::Any | Input::AnyNonZero => 2, // we only check if num args is max 1
+            };
             if i == 0 {
-                is_n &= subtype.input == Input::OneNonZero || subtype.input == Input::AnyNonZero;
                 if subtype.base != Base::B {
                     return Err(ErrorKind::ThresholdBase(i, subtype.base));
                 }
-            } else {
-                if subtype.base != Base::W {
-                    return Err(ErrorKind::ThresholdBase(i, subtype.base));
-                }
+            } else if subtype.base != Base::W {
+                return Err(ErrorKind::ThresholdBase(i, subtype.base));
             }
             if !subtype.unit {
                 return Err(ErrorKind::ThresholdNonUnit(i));
@@ -524,7 +504,11 @@ impl Property for Correctness {
 
         Ok(Correctness {
             base: Base::B,
-            input: if is_n { Input::AnyNonZero } else { Input::Any },
+            input: match num_args {
+                0 => Input::Zero,
+                1 => Input::One,
+                _ => Input::Any,
+            },
             dissatisfiable: true,
             unit: true,
         })

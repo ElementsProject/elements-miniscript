@@ -17,25 +17,18 @@
 //! Functionality to parse a Bitcoin Script into a `Miniscript`
 //!
 
-use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
-use miniscript::limits::MAX_BLOCK_WEIGHT;
 use std::marker::PhantomData;
-use std::{error, fmt};
-use {bitcoin, Miniscript};
-
-use miniscript::lex::{Token as Tk, TokenIter};
-use miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
-use miniscript::types::extra_props::ExtData;
-use miniscript::types::Property;
-use miniscript::types::Type;
-use miniscript::ScriptContext;
 use std::sync::Arc;
-use Error;
-use MiniscriptKey;
+use std::{error, fmt};
 
-use Extension;
-use NoExt;
-use ToPublicKey;
+use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
+
+use crate::miniscript::lex::{Token as Tk, TokenIter};
+use crate::miniscript::limits::{MAX_BLOCK_WEIGHT, MAX_PUBKEYS_PER_MULTISIG};
+use crate::miniscript::types::extra_props::ExtData;
+use crate::miniscript::types::{Property, Type};
+use crate::miniscript::ScriptContext;
+use crate::{bitcoin, Error, Extension, Miniscript, MiniscriptKey, NoExt, ToPublicKey};
 
 fn return_none<T>(_: usize) -> Option<T> {
     None
@@ -214,8 +207,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> TerminalStack<Pk
         let ext = ExtData::type_check(&ms, return_none)?;
         let ms = Miniscript {
             node: ms,
-            ty: ty,
-            ext: ext,
+            ty,
+            ext,
             phantom: PhantomData,
         };
         Ctx::check_global_validity(&ms)?;
@@ -235,8 +228,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> TerminalStack<Pk
         let ext = ExtData::type_check(&wrapped_ms, return_none)?;
         let ms = Miniscript {
             node: wrapped_ms,
-            ty: ty,
-            ext: ext,
+            ty,
+            ext,
             phantom: PhantomData,
         };
         Ctx::check_global_validity(&ms)?;
@@ -261,8 +254,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> TerminalStack<Pk
         let ext = ExtData::type_check(&wrapped_ms, return_none)?;
         let ms = Miniscript {
             node: wrapped_ms,
-            ty: ty,
-            ext: ext,
+            ty,
+            ext,
             phantom: PhantomData,
         };
         Ctx::check_global_validity(&ms)?;
@@ -274,7 +267,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> TerminalStack<Pk
 /// Parse a script fragment into an `Miniscript`
 #[allow(unreachable_patterns)]
 pub fn parse<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
-    tokens: &mut TokenIter,
+    tokens: &mut TokenIter<'_>,
 ) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
     let mut non_term = Vec::with_capacity(tokens.len());
     let mut term = TerminalStack(Vec::with_capacity(tokens.len()));
@@ -285,14 +278,11 @@ pub fn parse<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
     loop {
         // Parse extensions as expressions
         if let Some(NonTerm::Expression) = non_term.last() {
-            match Ext::from_token_iter(tokens) {
-                Ok(ext) => {
-                    // Since we successfully parsed the expression, pop it
-                    non_term.pop();
-                    term.reduce0(Terminal::Ext(ext))?;
-                    continue;
-                }
-                Err(..) => {}
+            if let Ok(ext) = Ext::from_token_iter(tokens) {
+                // Since we successfully parsed the expression, pop it
+                non_term.pop();
+                term.reduce0(Terminal::Ext(ext))?;
+                continue;
             }
         }
         match non_term.pop() {
@@ -569,8 +559,8 @@ pub fn parse<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
 
                 term.0.push(Miniscript {
                     node: wrapped_ms,
-                    ty: ty,
-                    ext: ext,
+                    ty,
+                    ext,
                     phantom: PhantomData,
                 });
             }
@@ -657,7 +647,7 @@ pub fn parse<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
     Ok(term.pop().unwrap())
 }
 
-fn is_and_v(tokens: &mut TokenIter) -> bool {
+fn is_and_v(tokens: &mut TokenIter<'_>) -> bool {
     match tokens.peek() {
         None
         | Some(&Tk::If)

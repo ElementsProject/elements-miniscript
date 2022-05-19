@@ -15,19 +15,21 @@
 //! Concrete Policies
 //!
 
-use elements::hashes::hex::FromHex;
-use elements::hashes::{hash160, ripemd160, sha256, sha256d};
 use std::collections::HashSet;
 use std::{error, fmt, str};
 
+use elements::hashes::hex::FromHex;
+use elements::hashes::{hash160, ripemd160, sha256, sha256d};
+
 use super::ENTAILMENT_MAX_TERMINALS;
-use errstr;
-use expression::{self, FromTree};
-use miniscript::limits::{HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_TYPE_FLAG};
-use miniscript::types::extra_props::TimeLockInfo;
+use crate::expression::{self, FromTree};
+use crate::miniscript::limits::{HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_TYPE_FLAG};
+use crate::miniscript::types::extra_props::TimeLockInfo;
+use crate::{errstr, Error, ForEach, ForEachKey, MiniscriptKey};
 #[cfg(feature = "compiler")]
-use {miniscript::ScriptContext, policy::compiler, policy::compiler::CompilerError, Miniscript};
-use {Error, ForEach, ForEachKey, MiniscriptKey};
+use crate::{
+    miniscript::ScriptContext, policy::compiler, policy::compiler::CompilerError, Miniscript,
+};
 /// Concrete policy which corresponds directly to a Miniscript structure,
 /// and whose disjunctions are annotated with satisfaction probabilities
 /// to assist the compiler
@@ -89,7 +91,7 @@ pub enum PolicyError {
 impl error::Error for PolicyError {}
 
 impl fmt::Display for PolicyError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             PolicyError::NonBinaryArgAnd => {
                 f.write_str("And policy fragment must take 2 arguments")
@@ -196,10 +198,10 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             Policy::Unsatisfiable => Ok(Policy::Unsatisfiable),
             Policy::Trivial => Ok(Policy::Trivial),
             Policy::Key(ref pk) => translatefpk(pk).map(Policy::Key),
-            Policy::Sha256(ref h) => Ok(Policy::Sha256(h.clone())),
-            Policy::Hash256(ref h) => Ok(Policy::Hash256(h.clone())),
-            Policy::Ripemd160(ref h) => Ok(Policy::Ripemd160(h.clone())),
-            Policy::Hash160(ref h) => Ok(Policy::Hash160(h.clone())),
+            Policy::Sha256(ref h) => Ok(Policy::Sha256(*h)),
+            Policy::Hash256(ref h) => Ok(Policy::Hash256(*h)),
+            Policy::Ripemd160(ref h) => Ok(Policy::Ripemd160(*h)),
+            Policy::Hash160(ref h) => Ok(Policy::Hash160(*h)),
             Policy::After(n) => Ok(Policy::After(n)),
             Policy::Older(n) => Ok(Policy::Older(n)),
             Policy::Threshold(k, ref subs) => {
@@ -224,22 +226,15 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 
     /// Get all keys in the policy
     pub fn keys(&self) -> Vec<&Pk> {
-        match *self {
+        match &*self {
             Policy::Key(ref pk) => vec![pk],
-            Policy::Threshold(_k, ref subs) => subs
-                .iter()
-                .map(|sub| sub.keys())
-                .flatten()
-                .collect::<Vec<_>>(),
-            Policy::And(ref subs) => subs
-                .iter()
-                .map(|sub| sub.keys())
-                .flatten()
-                .collect::<Vec<_>>(),
+            Policy::Threshold(_k, ref subs) => {
+                subs.iter().flat_map(|sub| sub.keys()).collect::<Vec<_>>()
+            }
+            Policy::And(subs) => subs.iter().flat_map(|sub| sub.keys()).collect::<Vec<_>>(),
             Policy::Or(ref subs) => subs
                 .iter()
-                .map(|(ref _k, ref sub)| sub.keys())
-                .flatten()
+                .flat_map(|(ref _k, ref sub)| sub.keys())
                 .collect::<Vec<_>>(),
             // map all hashes and time
             _ => vec![],
@@ -344,7 +339,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                 }
             }
             Policy::Threshold(k, ref subs) => {
-                if k <= 0 || k > subs.len() {
+                if k == 0 || k > subs.len() {
                     Err(PolicyError::IncorrectThresh)
                 } else {
                     subs.iter()
@@ -417,7 +412,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Policy<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Policy::Unsatisfiable => f.write_str("UNSATISFIABLE()"),
             Policy::Trivial => f.write_str("TRIVIAL()"),
@@ -460,7 +455,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Policy<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Policy<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Policy::Unsatisfiable => f.write_str("UNSATISFIABLE"),
             Policy::Trivial => f.write_str("TRIVIAL"),
@@ -536,7 +531,7 @@ where
     /// Helper function for `from_tree` to parse subexpressions with
     /// names of the form x@y
     fn from_tree_prob(
-        top: &expression::Tree,
+        top: &expression::Tree<'_>,
         allow_prob: bool,
     ) -> Result<(usize, Policy<Pk>), Error> {
         let frag_prob;
@@ -567,7 +562,7 @@ where
             ("TRIVIAL", 0) => Ok(Policy::Trivial),
             ("pk", 1) => expression::terminal(&top.args[0], |pk| Pk::from_str(pk).map(Policy::Key)),
             ("after", 1) => {
-                let num = expression::terminal(&top.args[0], |x| expression::parse_num(x))?;
+                let num = expression::terminal(&top.args[0], expression::parse_num)?;
                 if num > 2u32.pow(31) {
                     return Err(Error::PolicyError(PolicyError::TimeTooFar));
                 } else if num == 0 {
@@ -576,7 +571,7 @@ where
                 Ok(Policy::After(num))
             }
             ("older", 1) => {
-                let num = expression::terminal(&top.args[0], |x| expression::parse_num(x))?;
+                let num = expression::terminal(&top.args[0], expression::parse_num)?;
                 if num > 2u32.pow(31) {
                     return Err(Error::PolicyError(PolicyError::TimeTooFar));
                 } else if num == 0 {
@@ -622,7 +617,7 @@ where
                 }
 
                 let thresh = expression::parse_num(top.args[0].name)?;
-                if thresh >= nsubs || thresh <= 0 {
+                if thresh >= nsubs || thresh == 0 {
                     return Err(Error::PolicyError(PolicyError::IncorrectThresh));
                 }
 
@@ -644,7 +639,7 @@ where
     Pk::Hash: str::FromStr,
     <Pk as str::FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Policy<Pk>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Policy<Pk>, Error> {
         Policy::from_tree_prob(top, false).map(|(_, result)| result)
     }
 }

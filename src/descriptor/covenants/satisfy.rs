@@ -14,13 +14,15 @@
 //
 //! Covenant Descriptor Satisfaction
 
-use super::CovError;
 use elements::encode::Encodable;
 use elements::hashes::{sha256d, Hash};
 use elements::sighash::SigHashCache;
-use elements::{self, confidential};
-use elements::{OutPoint, Script, SigHash, SigHashType, Transaction, TxOut};
-use {MiniscriptKey, Satisfier, ToPublicKey};
+use elements::{
+    self, confidential, EcdsaSigHashType, OutPoint, Script, SigHash, Transaction, TxOut,
+};
+
+use super::CovError;
+use crate::{MiniscriptKey, Satisfier, ToPublicKey};
 
 /// A satisfier for Covenant descriptors
 /// that can do transaction introspection
@@ -36,7 +38,7 @@ pub struct CovSatisfier<'tx, 'ptx> {
     /// The input index being spent
     idx: u32,
     /// The sighash type
-    hash_type: SigHashType,
+    hash_type: EcdsaSigHashType,
 
     // Segwitv0
     /// The script code required for segwit sighash
@@ -61,7 +63,7 @@ impl<'tx, 'ptx> CovSatisfier<'tx, 'ptx> {
         tx: &'tx Transaction,
         spent_utxos: &'ptx [TxOut],
         idx: u32,
-        hash_type: SigHashType,
+        hash_type: EcdsaSigHashType,
     ) -> Self {
         assert!(spent_utxos.len() == tx.input.len());
         assert!((idx as usize) < spent_utxos.len());
@@ -82,7 +84,7 @@ impl<'tx, 'ptx> CovSatisfier<'tx, 'ptx> {
         idx: u32,
         value: confidential::Value,
         script_code: &'ptx Script,
-        hash_type: SigHashType,
+        hash_type: EcdsaSigHashType,
     ) -> Self {
         assert!((idx as usize) < tx.input.len());
         Self {

@@ -23,34 +23,21 @@ use std::fmt;
 use std::str::FromStr;
 
 use bitcoin;
-use elements::sighash;
-use elements::{self, secp256k1_zkp, SigHash};
-use elements::{
-    hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine},
-    SigHashType,
-};
-use miniscript::context::NoChecks;
-use miniscript::ScriptContext;
-use util;
-use Miniscript;
-use Terminal;
-use TranslatePk;
-use {Descriptor, ElementsSig, ToPublicKey};
+use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine};
+use elements::{self, secp256k1_zkp, sighash, EcdsaSigHashType, SigHash};
+
+use crate::miniscript::context::NoChecks;
+use crate::miniscript::ScriptContext;
+use crate::{util, Descriptor, ElementsSig, Miniscript, Terminal, ToPublicKey, TranslatePk};
 
 mod error;
 mod inner;
 mod stack;
 
-use MiniscriptKey;
-
-use elementssig_from_rawsig;
-
 pub use self::error::Error;
 use self::error::PkEvalErrInner;
-pub use self::stack::Stack;
-use {CovenantExt, Extension};
-
-pub use self::stack::Element;
+pub use self::stack::{Element, Stack};
+use crate::{elementssig_from_rawsig, CovenantExt, Extension, MiniscriptKey};
 
 /// An iterable Miniscript-structured representation of the spending of a coin
 pub struct Interpreter<'txin, Ext: Extension<BitcoinKey>> {
@@ -238,7 +225,7 @@ where
         verify_sig: Box<dyn FnMut(&KeySigPair) -> bool + 'iter>,
     ) -> Iter<'txin, 'iter, Ext> {
         Iter {
-            verify_sig: verify_sig,
+            verify_sig,
             public_key: if let inner::Inner::PublicKey(ref pk, _) = self.inner {
                 Some(pk)
             } else {
@@ -272,7 +259,7 @@ where
     }
 
     /// Verify a signature for a given transaction and prevout information
-    /// This is a low level API, [`Interpreter::iter`] or [`Interpreter::iter_assume_sig`]
+    /// This is a low level API, [`Interpreter::iter`] or [`Interpreter::iter_assume_sigs`]
     /// should satisfy most use-cases.
     /// Returns false if
     /// - the signature verification fails
@@ -285,7 +272,7 @@ where
         secp: &secp256k1_zkp::Secp256k1<C>,
         tx: &elements::Transaction,
         input_idx: usize,
-        prevouts: &sighash::Prevouts,
+        prevouts: &sighash::Prevouts<'_>,
         genesis_hash: elements::BlockHash,
         sig: &KeySigPair,
     ) -> bool {
@@ -309,13 +296,13 @@ where
             KeySigPair::Ecdsa(key, ecdsa_sig) => {
                 let script_pubkey = self.script_code.as_ref().expect("Legacy have script code");
                 let sighash = if self.is_legacy() {
-                    cache.legacy_sighash(input_idx, &script_pubkey, ecdsa_sig.1)
+                    cache.legacy_sighash(input_idx, script_pubkey, ecdsa_sig.1)
                 } else if self.is_segwit_v0() {
                     let amt = match get_prevout(prevouts, input_idx) {
                         Some(txout) => txout.value,
                         None => return false,
                     };
-                    cache.segwitv0_sighash(input_idx, &script_pubkey, amt, ecdsa_sig.1)
+                    cache.segwitv0_sighash(input_idx, script_pubkey, amt, ecdsa_sig.1)
                 } else {
                     // taproot(or future) signatures in segwitv0 context
                     return false;
@@ -325,11 +312,9 @@ where
             }
             KeySigPair::Schnorr(xpk, schnorr_sig) => {
                 let sighash_msg = if self.is_taproot_v1_key_spend() {
-                    cache.taproot_sighash(
+                    cache.taproot_key_spend_signature_hash(
                         input_idx,
                         prevouts,
-                        None,
-                        None,
                         schnorr_sig.hash_ty,
                         genesis_hash,
                     )
@@ -338,11 +323,12 @@ where
                         "Internal Hack: Saving leaf script instead\
                         of script code for script spend",
                     );
-                    cache.taproot_sighash(
+                    let leaf_hash =
+                        elements::sighash::ScriptPath::with_defaults(tap_script).leaf_hash();
+                    cache.taproot_script_spend_signature_hash(
                         input_idx,
                         prevouts,
-                        None,
-                        Some(elements::sighash::ScriptPath::with_defaults(&tap_script)),
+                        leaf_hash,
                         schnorr_sig.hash_ty,
                         genesis_hash,
                     )
@@ -353,7 +339,7 @@ where
                 let msg = sighash_msg
                     .map(|hash| secp256k1_zkp::Message::from_slice(&hash).expect("32 byte"));
                 let success =
-                    msg.map(|msg| secp.verify_schnorr(&schnorr_sig.sig, &msg, &xpk).is_ok());
+                    msg.map(|msg| secp.verify_schnorr(&schnorr_sig.sig, &msg, xpk).is_ok());
                 success.unwrap_or(false) // unwrap_or_default checks for errors, while success would have checksig results
             }
         }
@@ -381,8 +367,8 @@ where
         secp: &'iter secp256k1_zkp::Secp256k1<C>,
         tx: &'txin elements::Transaction,
         input_idx: usize,
-        prevouts: &'iter sighash::Prevouts, // actually a 'prevouts, but 'prevouts: 'iter
-        genesis_hash: elements::BlockHash,  // required for sighash computation in BIP341
+        prevouts: &'iter sighash::Prevouts<'_>, // actually a 'prevouts, but 'prevouts: 'iter
+        genesis_hash: elements::BlockHash,      // required for sighash computation in BIP341
     ) -> Iter<'txin, 'iter, Ext> {
         self.iter_custom(Box::new(move |sig| {
             self.verify_sig(secp, tx, input_idx, prevouts, genesis_hash, sig)
@@ -510,7 +496,7 @@ where
     /// since it cannot distinguish between sorted and unsorted multisigs (and anyway
     /// it can only see the final keys, keyorigin info is lost in serializing to Bitcoin).
     /// x-only keys are translated to [`bitcoin::PublicKey`] with 0x02 prefix.
-    pub fn inferred_descriptor(&self) -> Result<Descriptor<bitcoin::PublicKey>, ::Error> {
+    pub fn inferred_descriptor(&self) -> Result<Descriptor<bitcoin::PublicKey>, crate::Error> {
         Descriptor::from_str(&self.inferred_descriptor_string())
     }
 }
@@ -592,7 +578,7 @@ pub enum SatisfiedConstraint<Ext: Extension<BitcoinKey>> {
 ///depending on evaluation of the children.
 struct NodeEvaluationState<'intp, Ext>
 where
-    Ext: 'intp + Extension<BitcoinKey>,
+    Ext: Extension<BitcoinKey>,
 {
     ///The node which is being evaluated
     node: &'intp Miniscript<BitcoinKey, NoChecks, Ext>,
@@ -615,7 +601,7 @@ where
 /// before ultimately returning an error.
 pub struct Iter<'intp, 'txin: 'intp, Ext>
 where
-    Ext: 'intp + Extension<BitcoinKey>,
+    Ext: Extension<BitcoinKey>,
 {
     verify_sig: Box<dyn FnMut(&KeySigPair) -> bool + 'intp>,
     public_key: Option<&'intp BitcoinKey>,
@@ -660,7 +646,7 @@ where
         node: &'intp Miniscript<BitcoinKey, NoChecks, Ext>,
         n_evaluated: usize,
         n_satisfied: usize,
-    ) -> () {
+    ) {
         self.state.push(NodeEvaluationState {
             node,
             n_evaluated,
@@ -952,6 +938,47 @@ where
                         None => return Some(Err(Error::UnexpectedStackEnd)),
                     }
                 }
+                Terminal::MultiA(k, ref subs) => {
+                    if node_state.n_evaluated == subs.len() {
+                        if node_state.n_satisfied == k {
+                            self.stack.push(stack::Element::Satisfied);
+                        } else {
+                            self.stack.push(stack::Element::Dissatisfied);
+                        }
+                    } else {
+                        // evaluate each key with as a pk
+                        // note that evaluate_pk will error on non-empty incorrect sigs
+                        // push 1 on satisfied sigs and push 0 on empty sigs
+                        match self
+                            .stack
+                            .evaluate_pk(&mut self.verify_sig, &subs[node_state.n_evaluated])
+                        {
+                            Some(Ok(x)) => {
+                                self.push_evaluation_state(
+                                    node_state.node,
+                                    node_state.n_evaluated + 1,
+                                    node_state.n_satisfied + 1,
+                                );
+                                match self.stack.pop() {
+                                    Some(..) => return Some(Ok(x)),
+                                    None => return Some(Err(Error::UnexpectedStackEnd)),
+                                }
+                            }
+                            None => {
+                                self.push_evaluation_state(
+                                    node_state.node,
+                                    node_state.n_evaluated + 1,
+                                    node_state.n_satisfied,
+                                );
+                                match self.stack.pop() {
+                                    Some(..) => {} // not-satisfied, look for next key
+                                    None => return Some(Err(Error::UnexpectedStackEnd)),
+                                }
+                            }
+                            x => return x, //forward errors as is
+                        }
+                    }
+                }
                 Terminal::Multi(ref k, ref subs) if node_state.n_evaluated == 0 => {
                     let len = self.stack.len();
                     if len < k + 1 {
@@ -1060,22 +1087,21 @@ where
             {
                 let sighash_bytes = self.stack[1].as_push().expect("Push checked above");
                 let sighash_u32 = util::slice_to_u32_le(sighash_bytes);
-                let sighash_ty = SigHashType::from_u32(sighash_u32);
+                let sighash_ty = EcdsaSigHashType::from_u32(sighash_u32);
                 let sig_vec = self.stack[0].as_push().expect("Size checked above");
                 ser_sig.extend(sig_vec);
                 ser_sig.push(sighash_ty as u8);
             }
 
-            if let Ok(sig) = verify_sersig(&mut self.verify_sig, &pk, &ser_sig) {
+            if let Ok(sig) = verify_sersig(&mut self.verify_sig, pk, &ser_sig) {
                 //Signature check successful, set cov to None to
                 //terminate the next() function in the subsequent call
                 self.cov = None;
                 // Do the checkSigFromStackCheck
                 let sighash_msg: Vec<u8> = self.stack.0[1..]
-                    .into_iter()
+                    .iter()
                     .rev()
-                    .map(|x| Vec::from(x.as_push().expect("Push checked above")))
-                    .flatten()
+                    .flat_map(|x| Vec::from(x.as_push().expect("Push checked above")))
                     .collect();
                 let mut eng = SigHash::engine();
                 eng.input(&sighash_msg);
@@ -1103,25 +1129,25 @@ where
         }
         if let Some(pk) = self.public_key {
             if let Some(stack::Element::Push(sig)) = self.stack.pop() {
-                if let Ok(key_sig) = verify_sersig(&mut self.verify_sig, &pk, &sig) {
+                if let Ok(key_sig) = verify_sersig(&mut self.verify_sig, pk, sig) {
                     //Signature check successful, set public_key to None to
                     //terminate the next() function in the subsequent call
                     self.public_key = None;
                     self.stack.push(stack::Element::Satisfied);
-                    return Some(Ok(SatisfiedConstraint::PublicKey { key_sig }));
+                    Some(Ok(SatisfiedConstraint::PublicKey { key_sig }))
                 } else {
-                    return Some(Err(Error::PkEvaluationError(PkEvalErrInner::from(*pk))));
+                    Some(Err(Error::PkEvaluationError(PkEvalErrInner::from(*pk))))
                 }
             } else {
-                return Some(Err(Error::UnexpectedStackEnd));
+                Some(Err(Error::UnexpectedStackEnd))
             }
         } else {
             //All the script has been executed.
             //Check that the stack must contain exactly 1 satisfied element
             if self.stack.pop() == Some(stack::Element::Satisfied) && self.stack.is_empty() {
-                return None;
+                None
             } else {
-                return Some(Err(Error::ScriptSatisfactionError));
+                Some(Err(Error::ScriptSatisfactionError))
             }
         }
     }
@@ -1158,17 +1184,14 @@ fn verify_sersig<'txin>(
 #[cfg(test)]
 mod tests {
 
-    use super::inner::ToNoChecks;
-    use super::*;
     use bitcoin;
     use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
-    use elements::secp256k1_zkp::{Secp256k1, VerifyOnly};
-    use miniscript::context::NoChecks;
-    use ElementsSig;
-    use Miniscript;
-    use MiniscriptKey;
-    use NoExt;
-    use ToPublicKey;
+    use elements::secp256k1_zkp::{self, Secp256k1};
+
+    use super::inner::ToNoChecks;
+    use super::*;
+    use crate::miniscript::context::NoChecks;
+    use crate::{ElementsSig, Miniscript, MiniscriptKey, NoExt, ToPublicKey};
 
     fn setup_keys_sigs(
         n: usize,
@@ -1177,15 +1200,21 @@ mod tests {
         Vec<Vec<u8>>,
         Vec<ElementsSig>,
         secp256k1_zkp::Message,
-        Secp256k1<VerifyOnly>,
+        Secp256k1<secp256k1_zkp::All>,
+        Vec<bitcoin::XOnlyPublicKey>,
+        Vec<elements::SchnorrSig>,
+        Vec<Vec<u8>>,
     ) {
-        let secp_sign = secp256k1_zkp::Secp256k1::signing_only();
-        let secp_verify = secp256k1_zkp::Secp256k1::verification_only();
+        let secp = secp256k1_zkp::Secp256k1::new();
         let msg = secp256k1_zkp::Message::from_slice(&b"Yoda: btc, I trust. HODL I must!"[..])
             .expect("32 bytes");
         let mut pks = vec![];
         let mut ecdsa_sigs = vec![];
         let mut der_sigs = vec![];
+        let mut x_only_pks = vec![];
+        let mut schnorr_sigs = vec![];
+        let mut ser_schnorr_sigs = vec![];
+
         let mut sk = [0; 32];
         for i in 1..n + 1 {
             sk[0] = i as u8;
@@ -1194,30 +1223,50 @@ mod tests {
 
             let sk = secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("secret key");
             let pk = bitcoin::PublicKey {
-                inner: secp256k1_zkp::PublicKey::from_secret_key(&secp_sign, &sk),
+                inner: secp256k1_zkp::PublicKey::from_secret_key(&secp, &sk),
                 compressed: true,
             };
-            let sig = secp_sign.sign_ecdsa(&msg, &sk);
-            ecdsa_sigs.push((sig, elements::SigHashType::All));
+            let sig = secp.sign_ecdsa(&msg, &sk);
+            ecdsa_sigs.push((sig, elements::EcdsaSigHashType::All));
             let mut sigser = sig.serialize_der().to_vec();
             sigser.push(0x01); // sighash_all
             pks.push(pk);
             der_sigs.push(sigser);
+
+            let keypair = bitcoin::KeyPair::from_secret_key(&secp, sk);
+            x_only_pks.push(bitcoin::XOnlyPublicKey::from_keypair(&keypair));
+            let schnorr_sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &[0u8; 32]);
+            let schnorr_sig = elements::SchnorrSig {
+                sig: schnorr_sig,
+                hash_ty: elements::SchnorrSigHashType::Default,
+            };
+            ser_schnorr_sigs.push(schnorr_sig.to_vec());
+            schnorr_sigs.push(schnorr_sig);
         }
-        (pks, der_sigs, ecdsa_sigs, msg, secp_verify)
+        (
+            pks,
+            der_sigs,
+            ecdsa_sigs,
+            msg,
+            secp,
+            x_only_pks,
+            schnorr_sigs,
+            ser_schnorr_sigs,
+        )
     }
 
     #[test]
     fn sat_constraints() {
-        let (pks, der_sigs, ecdsa_sigs, sighash, secp) = setup_keys_sigs(10);
+        let (pks, der_sigs, ecdsa_sigs, sighash, secp, xpks, schnorr_sigs, ser_schnorr_sigs) =
+            setup_keys_sigs(10);
         let secp_ref = &secp;
         let vfyfn_ = |pksig: &KeySigPair| match pksig {
             KeySigPair::Ecdsa(pk, ecdsa_sig) => secp_ref
                 .verify_ecdsa(&sighash, &ecdsa_sig.0, &pk.inner)
                 .is_ok(),
-            KeySigPair::Schnorr(_xpk, _schnorr_sig) => {
-                unreachable!("Schnorr sig not tested in this test")
-            }
+            KeySigPair::Schnorr(xpk, schnorr_sig) => secp_ref
+                .verify_schnorr(&schnorr_sig.sig, &sighash, xpk)
+                .is_ok(),
         };
 
         fn from_stack<'txin, 'elem>(
@@ -1634,12 +1683,92 @@ mod tests {
 
         let multi_error: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert!(multi_error.is_err());
+
+        // multi_a tests
+        let stack = Stack::from(vec![
+            stack::Element::Dissatisfied,
+            stack::Element::Dissatisfied,
+            stack::Element::Push(&ser_schnorr_sigs[2]),
+            stack::Element::Push(&ser_schnorr_sigs[1]),
+            stack::Element::Push(&ser_schnorr_sigs[0]),
+        ]);
+
+        let elem = x_only_no_checks_ms(&format!(
+            "multi_a(3,{},{},{},{},{})",
+            xpks[0], xpks[1], xpks[2], xpks[3], xpks[4],
+        ));
+        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
+        let constraints = from_stack(Box::new(vfyfn), stack, &elem);
+
+        let multi_a_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
+            constraints.collect();
+        assert_eq!(
+            multi_a_satisfied.unwrap(),
+            vec![
+                SatisfiedConstraint::PublicKey {
+                    key_sig: KeySigPair::Schnorr(xpks[0], schnorr_sigs[0])
+                },
+                SatisfiedConstraint::PublicKey {
+                    key_sig: KeySigPair::Schnorr(xpks[1], schnorr_sigs[1])
+                },
+                SatisfiedConstraint::PublicKey {
+                    key_sig: KeySigPair::Schnorr(xpks[2], schnorr_sigs[2])
+                },
+            ]
+        );
+
+        // multi_a tests: wrong order of sigs
+        let stack = Stack::from(vec![
+            stack::Element::Dissatisfied,
+            stack::Element::Push(&ser_schnorr_sigs[2]),
+            stack::Element::Push(&ser_schnorr_sigs[1]),
+            stack::Element::Push(&ser_schnorr_sigs[0]),
+            stack::Element::Dissatisfied,
+        ]);
+
+        let elem = x_only_no_checks_ms(&format!(
+            "multi_a(3,{},{},{},{},{})",
+            xpks[0], xpks[1], xpks[2], xpks[3], xpks[4],
+        ));
+        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
+        let constraints = from_stack(Box::new(vfyfn), stack.clone(), &elem);
+
+        let multi_a_error: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
+        assert!(multi_a_error.is_err());
+
+        // multi_a wrong thresh: k = 2, but three sigs
+        let elem = x_only_no_checks_ms(&format!(
+            "multi_a(2,{},{},{},{},{})",
+            xpks[0], xpks[1], xpks[2], xpks[3], xpks[4],
+        ));
+        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
+        let constraints = from_stack(Box::new(vfyfn), stack.clone(), &elem);
+
+        let multi_a_error: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
+        assert!(multi_a_error.is_err());
+
+        // multi_a correct thresh, but small stack
+        let elem = x_only_no_checks_ms(&format!(
+            "multi_a(3,{},{},{},{},{},{})",
+            xpks[0], xpks[1], xpks[2], xpks[3], xpks[4], xpks[5]
+        ));
+        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
+        let constraints = from_stack(Box::new(vfyfn), stack, &elem);
+
+        let multi_a_error: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
+        assert!(multi_a_error.is_err());
     }
 
     // By design there is no support for parse a miniscript with BitcoinKey
     // because it does not implement FromStr
     fn no_checks_ms(ms: &str) -> Miniscript<BitcoinKey, NoChecks> {
         let elem: Miniscript<bitcoin::PublicKey, NoChecks> =
+            Miniscript::from_str_insane(ms).unwrap();
+        elem.to_no_checks_ms()
+    }
+
+    fn x_only_no_checks_ms(ms: &str) -> Miniscript<BitcoinKey, NoChecks> {
+        let elem: Miniscript<bitcoin::XOnlyPublicKey, NoChecks> =
             Miniscript::from_str_insane(ms).unwrap();
         elem.to_no_checks_ms()
     }

@@ -23,25 +23,19 @@ use std::sync::Arc;
 use std::{cmp, i64, mem};
 
 use bitcoin;
+use bitcoin::secp256k1::XOnlyPublicKey;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d};
 use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
-use elements::{self, secp256k1_zkp};
-use elements::{confidential, OutPoint, Script};
-use {MiniscriptKey, ToPublicKey};
+use elements::{self, confidential, secp256k1_zkp, OutPoint, Script};
 
-use bitcoin::secp256k1::XOnlyPublicKey;
-use miniscript::limits::{
+use crate::miniscript::limits::{
     HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
-use util::witness_size;
-use Miniscript;
-use ScriptContext;
-use Terminal;
-
-use Extension;
+use crate::util::witness_size;
+use crate::{Extension, Miniscript, MiniscriptKey, ScriptContext, Terminal, ToPublicKey};
 
 /// Type alias for a signature/hashtype pair
-pub type ElementsSig = (secp256k1_zkp::ecdsa::Signature, elements::SigHashType);
+pub type ElementsSig = (secp256k1_zkp::ecdsa::Signature, elements::EcdsaSigHashType);
 /// Type alias for 32 byte Preimage.
 pub type Preimage32 = [u8; 32];
 
@@ -56,9 +50,9 @@ pub fn elementssig_to_rawsig(sig: &ElementsSig) -> Vec<u8> {
 /// Helper function to create ElementsSig from Rawsig
 /// Useful for downstream when implementing Satisfier.
 /// Returns underlying secp if the Signature is not of correct format
-pub fn elementssig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, ::interpreter::Error> {
+pub fn elementssig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, crate::interpreter::Error> {
     let (flag, sig) = rawsig.split_last().unwrap();
-    let flag = elements::SigHashType::from_u32(*flag as u32);
+    let flag = elements::EcdsaSigHashType::from_u32(*flag as u32);
     let sig = secp256k1_zkp::ecdsa::Signature::from_der(sig)?;
     Ok((sig, flag))
 }
@@ -245,7 +239,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for After {
 
 impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for HashMap<Pk, ElementsSig> {
     fn lookup_ecdsa_sig(&self, key: &Pk) -> Option<ElementsSig> {
-        self.get(key).map(|x| *x)
+        self.get(key).copied()
     }
 }
 
@@ -261,7 +255,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk>
         // If we change the signature the of lookup_tap_leaf_script_sig to accept a tuple. We would
         // face the same problem while satisfying PkK.
         // We use this signature to optimize for the psbt common use case.
-        self.get(&(key.clone(), *h)).map(|x| *x)
+        self.get(&(key.clone(), *h)).copied()
     }
 }
 
@@ -1119,16 +1113,15 @@ impl Satisfaction {
         // signatures
         let mut sat_indices = (0..subs.len()).collect::<Vec<_>>();
         sat_indices.sort_by_key(|&i| {
-            let stack_weight = match (&sats[i].stack, &ret_stack[i].stack) {
+            // For malleable satifactions, directly choose smallest weights
+            match (&sats[i].stack, &ret_stack[i].stack) {
                 (&Witness::Unavailable, _) | (&Witness::Impossible, _) => i64::MAX,
                 // This is only possible when one of the branches has PkH
                 (_, &Witness::Unavailable) | (_, &Witness::Impossible) => i64::MIN,
                 (&Witness::Stack(ref s), &Witness::Stack(ref d)) => {
                     witness_size(s) as i64 - witness_size(d) as i64
                 }
-            };
-            // For malleable satifactions, directly choose smallest weights
-            stack_weight
+            }
         });
 
         // swap the satisfactions
@@ -1454,7 +1447,7 @@ impl Satisfaction {
                         let max_idx = sigs
                             .iter()
                             .enumerate()
-                            .max_by_key(|&(_, ref v)| v.len())
+                            .max_by_key(|&(_, v)| v.len())
                             .unwrap()
                             .0;
                         sigs[max_idx] = vec![];

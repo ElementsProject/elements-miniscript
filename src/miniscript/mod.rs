@@ -42,23 +42,24 @@ pub mod limits;
 pub mod satisfy;
 pub mod types;
 
-use self::lex::{lex, TokenIter};
-use self::types::Property;
-pub use miniscript::context::ScriptContext;
-use miniscript::decode::Terminal;
-use miniscript::types::extra_props::ExtData;
-use miniscript::types::Type;
-use {Extension, NoExt};
-
 use std::cmp;
 use std::sync::Arc;
-use MiniscriptKey;
-use {expression, Error, ForEach, ForEachKey, ToPublicKey, TranslatePk};
+
+use self::lex::{lex, TokenIter};
+use self::types::Property;
+pub use crate::miniscript::context::ScriptContext;
+use crate::miniscript::decode::Terminal;
+use crate::miniscript::types::extra_props::ExtData;
+use crate::miniscript::types::Type;
+use crate::{
+    expression, Error, Extension, ForEach, ForEachKey, MiniscriptKey, NoExt, ToPublicKey,
+    TranslatePk,
+};
 
 #[cfg(test)]
 mod ms_tests;
 /// Top-level script AST type
-#[derive(Clone, Hash)]
+#[derive(Clone)]
 pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk> = NoExt> {
     ///A node in the Abstract Syntax Tree(
     pub node: Terminal<Pk, Ctx, Ext>,
@@ -101,6 +102,14 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> PartialEq
     }
 }
 
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> ::std::hash::Hash
+    for Miniscript<Pk, Ctx, Ext>
+{
+    fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
+        self.node.hash(state);
+    }
+}
+
 /// `Eq` of `Miniscript` must depend only on node and not the type information.
 /// The type information and extra_properties can be deterministically determined
 /// by the ast.
@@ -109,7 +118,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Eq for Miniscrip
 impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> fmt::Debug
     for Miniscript<Pk, Ctx, Ext>
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.node)
     }
 }
@@ -131,7 +140,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
 impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> fmt::Display
     for Miniscript<Pk, Ctx, Ext>
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.node)
     }
 }
@@ -436,7 +445,7 @@ where
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Arc<Miniscript<Pk, Ctx, Ext>>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Arc<Miniscript<Pk, Ctx, Ext>>, Error> {
         Ok(Arc::new(expression::FromTree::from_tree(top)?))
     }
 }
@@ -452,7 +461,7 @@ where
 {
     /// Parse an expression tree into a Miniscript. As a general rule, this
     /// should not be called directly; rather go through the descriptor API.
-    fn from_tree(top: &expression::Tree) -> Result<Miniscript<Pk, Ctx, Ext>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Miniscript<Pk, Ctx, Ext>, Error> {
         let inner: Terminal<Pk, Ctx, Ext> = expression::FromTree::from_tree(top)?;
         Ok(Miniscript {
             ty: Type::type_check(&inner, |_| None)?,
@@ -489,27 +498,24 @@ serde_string_impl_pk!(Miniscript, "a miniscript", Ctx; ScriptContext => Ext2 ; E
 #[cfg(test)]
 mod tests {
 
-    use elements::taproot::TapLeafHash;
-    use {Satisfier, ToPublicKey};
-
-    use super::{Miniscript, ScriptContext};
-    use super::{Segwitv0, Tap};
-    use hex_script;
-    use miniscript::types::{self, ExtData, Property, Type};
-    use miniscript::Terminal;
-    use policy::Liftable;
     use std::marker::PhantomData;
-    use {DummyKey, DummyKeyHash, MiniscriptKey, TranslatePk, TranslatePk1};
-
-    use bitcoin;
-    use elements::hashes::{hash160, sha256, Hash};
-    use elements::{self, secp256k1_zkp};
     use std::str;
     use std::str::FromStr;
     use std::sync::Arc;
-    use TranslatePk2;
 
-    use CovenantExt;
+    use bitcoin;
+    use elements::hashes::{hash160, sha256, Hash};
+    use elements::taproot::TapLeafHash;
+    use elements::{self, secp256k1_zkp};
+
+    use super::{Miniscript, ScriptContext, Segwitv0, Tap};
+    use crate::miniscript::types::{self, ExtData, Property, Type};
+    use crate::miniscript::Terminal;
+    use crate::policy::Liftable;
+    use crate::{
+        hex_script, CovenantExt, DummyKey, DummyKeyHash, MiniscriptKey, Satisfier, ToPublicKey,
+        TranslatePk, TranslatePk1, TranslatePk2,
+    };
 
     type Tapscript = Miniscript<bitcoin::secp256k1::XOnlyPublicKey, Tap, CovenantExt>;
     type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt>;
@@ -603,7 +609,7 @@ mod tests {
                 assert_eq!(format!("{:x}", ms.encode()), expected_hex);
                 assert_eq!(ms.ty.mall.non_malleable, non_mal);
                 assert_eq!(ms.ty.mall.safe, need_sig);
-                assert_eq!(ms.ext.ops_count_sat.unwrap(), ops);
+                assert_eq!(ms.ext.ops.op_count().unwrap(), ops);
             }
             (Err(_), false) => return,
             _ => unreachable!(),
@@ -643,7 +649,7 @@ mod tests {
         ms_attributes_test("and_b(hash256(32ba476771d01e37807990ead8719f08af494723de1d228f2c2c07cc0aa40bac),a:and_b(hash256(131772552c01444cd81360818376a040b7c3b2b7b0a53550ee3edde216cec61b),a:older(1)))", "82012088aa2032ba476771d01e37807990ead8719f08af494723de1d228f2c2c07cc0aa40bac876b82012088aa20131772552c01444cd81360818376a040b7c3b2b7b0a53550ee3edde216cec61b876b51b26c9a6c9a", true, true, false, 15, 2);
         ms_attributes_test("thresh(2,multi(2,03a0434d9e47f3c86235477c7b1ae6ae5d3442d49b1943c2b752a68e2a47e247c7,036d2b085e9e382ed10b69fc311a03f8641ccfff21574de0927513a49d9a688a00),a:multi(1,036d2b085e9e382ed10b69fc311a03f8641ccfff21574de0927513a49d9a688a00),ac:pk_k(022f01e5e15cca351daff3843fb70f3c2f0a1bdd05e5af888a67784ef3e10a2a01))", "522103a0434d9e47f3c86235477c7b1ae6ae5d3442d49b1943c2b752a68e2a47e247c721036d2b085e9e382ed10b69fc311a03f8641ccfff21574de0927513a49d9a688a0052ae6b5121036d2b085e9e382ed10b69fc311a03f8641ccfff21574de0927513a49d9a688a0051ae6c936b21022f01e5e15cca351daff3843fb70f3c2f0a1bdd05e5af888a67784ef3e10a2a01ac6c935287", true, true, true, 13, 6);
         ms_attributes_test("and_n(sha256(d1ec675902ef1633427ca360b290b0b3045a0d9058ddb5e648b4c3c3224c5c68),t:or_i(v:older(4252898),v:older(144)))", "82012088a820d1ec675902ef1633427ca360b290b0b3045a0d9058ddb5e648b4c3c3224c5c68876400676303e2e440b26967029000b269685168", true, false, false, 14, 2);
-        ms_attributes_test("or_d(d:and_v(v:older(4252898),v:older(4252898)),sha256(38df1c1f64a24a77b23393bca50dff872e31edc4f3b5aa3b90ad0b82f4f089b6))", "766303e2e440b26903e2e440b26968736482012088a82038df1c1f64a24a77b23393bca50dff872e31edc4f3b5aa3b90ad0b82f4f089b68768", true, false, false, 14, 2);
+        ms_attributes_test("or_d(nd:and_v(v:older(4252898),v:older(4252898)),sha256(38df1c1f64a24a77b23393bca50dff872e31edc4f3b5aa3b90ad0b82f4f089b6))", "766303e2e440b26903e2e440b2696892736482012088a82038df1c1f64a24a77b23393bca50dff872e31edc4f3b5aa3b90ad0b82f4f089b68768", true, false, false, 15, 2);
         ms_attributes_test("c:and_v(or_c(sha256(9267d3dbed802941483f1afa2a6bc68de5f653128aca9bf1461c5d0a3ad36ed2),v:multi(1,02c44d12c7065d812e8acf28d7cbb19f9011ecd9e9fdf281b0e6a3b5e87d22e7db)),pk_k(03acd484e2f0c7f65309ad178a9f559abde09796974c57e714c35f110dfc27ccbe))", "82012088a8209267d3dbed802941483f1afa2a6bc68de5f653128aca9bf1461c5d0a3ad36ed28764512102c44d12c7065d812e8acf28d7cbb19f9011ecd9e9fdf281b0e6a3b5e87d22e7db51af682103acd484e2f0c7f65309ad178a9f559abde09796974c57e714c35f110dfc27ccbeac", true, false, true, 9, 2);
         ms_attributes_test("c:and_v(or_c(multi(2,036d2b085e9e382ed10b69fc311a03f8641ccfff21574de0927513a49d9a688a00,02352bbf4a4cdd12564f93fa332ce333301d9ad40271f8107181340aef25be59d5),v:ripemd160(1b0f3c404d12075c68c938f9f60ebea4f74941a0)),pk_k(03fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a1460297556))", "5221036d2b085e9e382ed10b69fc311a03f8641ccfff21574de0927513a49d9a688a002102352bbf4a4cdd12564f93fa332ce333301d9ad40271f8107181340aef25be59d552ae6482012088a6141b0f3c404d12075c68c938f9f60ebea4f74941a088682103fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a1460297556ac", true, true, true, 10, 5);
         ms_attributes_test("and_v(andor(hash256(8a35d9ca92a48eaade6f53a64985e9e2afeb74dcf8acb4c3721e0dc7e4294b25),v:hash256(939894f70e6c3a25da75da0cc2071b4076d9b006563cf635986ada2e93c0d735),v:older(50000)),after(499999999))", "82012088aa208a35d9ca92a48eaade6f53a64985e9e2afeb74dcf8acb4c3721e0dc7e4294b2587640350c300b2696782012088aa20939894f70e6c3a25da75da0cc2071b4076d9b006563cf635986ada2e93c0d735886804ff64cd1db1", true, false, false, 14, 2);

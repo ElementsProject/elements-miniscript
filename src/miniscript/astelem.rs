@@ -27,19 +27,15 @@ use elements::hashes::hex::FromHex;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use elements::{opcodes, script};
 
-use errstr;
-use expression;
-use miniscript::context::SigType;
-use miniscript::types::{self, Property};
-use miniscript::ScriptContext;
-use script_num_size;
-
-use util::MsKeyBuilder;
-use {Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslatePk};
-
-use Extension;
-
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
+use crate::miniscript::context::SigType;
+use crate::miniscript::types::{self, Property};
+use crate::miniscript::ScriptContext;
+use crate::util::MsKeyBuilder;
+use crate::{
+    errstr, expression, script_num_size, Error, Extension, ForEach, ForEachKey, Miniscript,
+    MiniscriptKey, Terminal, ToPublicKey, TranslatePk,
+};
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx, Ext> {
     /// Internal helper function for displaying wrapper types; returns
@@ -207,9 +203,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                 Arc::new(right.real_translate_pk(translatefpk, translatefpkh)?),
             ),
             Terminal::OrI(ref left, ref right) => Terminal::OrI(
-                Arc::new(
-                    left.real_translate_pk(&mut *&mut *translatefpk, &mut *&mut *translatefpkh)?,
-                ),
+                Arc::new(left.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)?),
                 Arc::new(right.real_translate_pk(translatefpk, translatefpkh)?),
             ),
             Terminal::Thresh(k, ref subs) => {
@@ -217,7 +211,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                     .iter()
                     .map(|s| {
                         s.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)
-                            .and_then(|x| Ok(Arc::new(x)))
+                            .map(Arc::new)
                     })
                     .collect();
                 Terminal::Thresh(k, subs?)
@@ -257,7 +251,7 @@ where
     Ctx: ScriptContext,
     Ext: Extension<Pk>,
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("[")?;
         if let Ok(type_map) = types::Type::type_check(self, |_| None) {
             f.write_str(match type_map.corr.base {
@@ -364,7 +358,7 @@ where
     Ctx: ScriptContext,
     Ext: Extension<Pk>,
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Terminal::PkK(ref pk) => write!(f, "pk_k({})", pk),
             Terminal::PkH(ref pkh) => write!(f, "pk_h({})", pkh),
@@ -468,7 +462,7 @@ where
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Arc<Terminal<Pk, Ctx, Ext>>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Arc<Terminal<Pk, Ctx, Ext>>, Error> {
         Ok(Arc::new(expression::FromTree::from_tree(top)?))
     }
 }
@@ -482,7 +476,7 @@ where
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Terminal<Pk, Ctx, Ext>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Terminal<Pk, Ctx, Ext>, Error> {
         let mut aliased_wrap;
         let frag_name;
         let frag_wrap;
@@ -511,12 +505,12 @@ where
                 if name == "pk" {
                     frag_name = "pk_k";
                     aliased_wrap = wrap.to_owned();
-                    aliased_wrap.push_str("c");
+                    aliased_wrap.push('c');
                     frag_wrap = &aliased_wrap;
                 } else if name == "pkh" {
                     frag_name = "pk_h";
                     aliased_wrap = wrap.to_owned();
-                    aliased_wrap.push_str("c");
+                    aliased_wrap.push('c');
                     frag_wrap = &aliased_wrap;
                 } else {
                     frag_name = name;
@@ -590,7 +584,7 @@ where
 
                 let subs: Result<Vec<Arc<Miniscript<Pk, Ctx, Ext>>>, _> = top.args[1..]
                     .iter()
-                    .map(|sub| expression::FromTree::from_tree(sub))
+                    .map(expression::FromTree::from_tree)
                     .collect();
 
                 Ok(Terminal::Thresh(k, subs?))
@@ -618,7 +612,7 @@ where
             }
             (name, _num_child) => {
                 // If nothing matches try to parse as extension
-                match Ext::from_name_tree(&name, &top.args) {
+                match Ext::from_name_tree(name, &top.args) {
                     Ok(e) => Ok(Terminal::Ext(e)),
                     Err(..) => Err(Error::Unexpected(format!(
                         "{}({} args) while parsing Miniscript",
@@ -759,7 +753,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
             Terminal::PkH(ref hash) => builder
                 .push_opcode(opcodes::all::OP_DUP)
                 .push_opcode(opcodes::all::OP_HASH160)
-                .push_slice(&Pk::hash_to_hash160(&hash)[..])
+                .push_slice(&Pk::hash_to_hash160(hash)[..])
                 .push_opcode(opcodes::all::OP_EQUALVERIFY),
             Terminal::After(t) => builder
                 .push_int(t as i64)
@@ -877,7 +871,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                 builder = builder.push_opcode(opcodes::all::OP_CHECKSIG);
                 for pk in keys.iter().skip(1) {
                     builder = builder.push_ms_key::<_, Ctx>(pk);
-                    builder = builder.push_opcode(opcodes::all::OP_RETURN_186);
+                    builder = builder.push_opcode(opcodes::all::OP_CHECKSIGADD);
                 }
                 builder
                     .push_int(k as i64)

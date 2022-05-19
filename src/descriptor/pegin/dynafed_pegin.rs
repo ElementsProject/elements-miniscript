@@ -20,28 +20,23 @@
 //! Unlike Pegin descriptors these are Miniscript, so dealing
 //! with these is easier.
 
+use std::fmt;
+use std::str::FromStr;
+
+use bitcoin::blockdata::script;
 use bitcoin::hashes::Hash;
-use bitcoin::Script as BtcScript;
-use bitcoin::{self, blockdata::script, hashes};
+use bitcoin::{self, hashes, Script as BtcScript};
 use elements::secp256k1_zkp;
-use expression::{self, FromTree};
-use policy::{semantic, Liftable};
-use std::{fmt, str::FromStr};
-use Descriptor;
-use Error;
-use {
-    BtcDescriptor, BtcDescriptorTrait, BtcError, BtcFromTree, BtcLiftable, BtcPolicy, BtcSatisfier,
-    BtcTree,
-};
-
-use {DescriptorTrait, TranslatePk};
-
-use tweak_key;
-
-use descriptor::checksum::{desc_checksum, verify_checksum};
 
 use super::PeginTrait;
-use {MiniscriptKey, ToPublicKey};
+use crate::descriptor::checksum::{desc_checksum, verify_checksum};
+use crate::expression::{self, FromTree};
+use crate::policy::{semantic, Liftable};
+use crate::{
+    tweak_key, BtcDescriptor, BtcDescriptorTrait, BtcError, BtcFromTree, BtcLiftable, BtcPolicy,
+    BtcSatisfier, BtcTree, Descriptor, DescriptorTrait, Error, MiniscriptKey, ToPublicKey,
+    TranslatePk,
+};
 
 /// New Pegin Descriptor with Miniscript support
 /// Useful with dynamic federations
@@ -64,13 +59,13 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Pegin<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "pegin({:?},{:?})", self.fed_desc, self.elem_desc)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Pegin<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = format!("pegin({},{})", self.fed_desc, self.elem_desc);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
@@ -97,7 +92,7 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "pegin" && top.args.len() == 2 {
             // a roundtrip hack to use FromTree from bitcoin::Miniscript from
             // expression::Tree in elements.
@@ -145,10 +140,10 @@ where
     fn sanity_check(&self) -> Result<(), Error> {
         self.fed_desc
             .sanity_check()
-            .map_err(|_| Error::Unexpected(format!("Federation script sanity check failed")))?;
+            .map_err(|_| Error::Unexpected("Federation script sanity check failed".to_string()))?;
         self.elem_desc
             .sanity_check()
-            .map_err(|_| Error::Unexpected(format!("Federation script sanity check failed")))?;
+            .map_err(|_| Error::Unexpected("Federation script sanity check failed".to_string()))?;
         Ok(())
     }
 

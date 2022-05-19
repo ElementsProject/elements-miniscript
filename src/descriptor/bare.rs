@@ -18,23 +18,20 @@
 //! Also includes pk, and pkh descriptors
 //!
 
-use std::{fmt, str::FromStr};
+use std::fmt;
+use std::str::FromStr;
 
-use elements::secp256k1_zkp;
-use elements::{self, script, Script};
+use elements::{self, script, secp256k1_zkp, Script};
 
-use expression::{self, FromTree};
-use miniscript::context::ScriptContext;
-use policy::{semantic, Liftable};
-use util::{varint_len, witness_to_scriptsig};
-use {
+use super::checksum::{desc_checksum, verify_checksum};
+use super::{DescriptorTrait, ElementsTrait, ELMTS_STR};
+use crate::expression::{self, FromTree};
+use crate::miniscript::context::ScriptContext;
+use crate::policy::{semantic, Liftable};
+use crate::util::{varint_len, witness_to_scriptsig};
+use crate::{
     BareCtx, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, ToPublicKey,
     TranslatePk,
-};
-
-use super::{
-    checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait, ElementsTrait, ELMTS_STR,
 };
 
 /// Create a Bare Descriptor. That is descriptor that is
@@ -50,7 +47,7 @@ impl<Pk: MiniscriptKey> Bare<Pk> {
     pub fn new(ms: Miniscript<Pk, BareCtx>) -> Result<Self, Error> {
         // do the top-level checks
         BareCtx::top_level_checks(&ms)?;
-        Ok(Self { ms: ms })
+        Ok(Self { ms })
     }
 
     /// get the inner
@@ -85,13 +82,13 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bare<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Bare<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}{:?}", ELMTS_STR, self.ms)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Bare<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = format!("{}{}", ELMTS_STR, self.ms);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
@@ -111,7 +108,7 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         // extra allocations to use the existing code as is.
         if top.name.starts_with("el") {
             let new_tree = expression::Tree {
@@ -268,7 +265,7 @@ impl<Pk: MiniscriptKey> Pkh<Pk> {
     /// Create a new Pkh descriptor
     pub fn new(pk: Pk) -> Self {
         // do the top-level checks
-        Self { pk: pk }
+        Self { pk }
     }
 
     /// Get a reference to the inner key
@@ -318,13 +315,13 @@ impl<Pk: MiniscriptKey + ToPublicKey> Pkh<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Pkh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}pkh({:?})", ELMTS_STR, self.pk)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Pkh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = format!("{}pkh({})", ELMTS_STR, self.pk);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)
@@ -344,7 +341,7 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "elpkh" && top.args.len() == 1 {
             Ok(Pkh::new(expression::terminal(&top.args[0], |pk| {
                 Pk::from_str(pk)

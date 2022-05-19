@@ -55,27 +55,24 @@ pub use self::script_internals::CovOperations;
 #[allow(unused_imports)]
 mod tests {
 
-    use interpreter;
-    use CovenantExt;
+    use std::str::FromStr;
+
+    use bitcoin;
+    use elements::encode::serialize;
+    use elements::hashes::hex::ToHex;
+    use elements::opcodes::all::OP_PUSHNUM_1;
+    use elements::secp256k1_zkp::ZERO_TWEAK;
+    use elements::{
+        self, confidential, opcodes, script, secp256k1_zkp, AssetId, AssetIssuance,
+        EcdsaSigHashType, OutPoint, Script, Transaction, TxIn, TxInWitness, TxOut, Txid,
+    };
 
     use super::cov::*;
     use super::*;
-    use bitcoin;
-    use descriptor::DescriptorTrait;
-    use elements::hashes::hex::ToHex;
-    use elements::secp256k1_zkp;
-    use elements::{self, secp256k1_zkp::ZERO_TWEAK};
-    use elements::{confidential, opcodes::all::OP_PUSHNUM_1};
-    use elements::{encode::serialize, opcodes, script};
-    use elements::{
-        AssetId, AssetIssuance, OutPoint, Script, SigHashType, Transaction, TxIn, TxInWitness,
-        TxOut, Txid,
-    };
-    use interpreter::SatisfiedConstraint;
-    use std::str::FromStr;
-    use util::{count_non_push_opcodes, witness_size};
-    use Interpreter;
-    use {descriptor::DescriptorType, Descriptor, ElementsSig, Error, Satisfier};
+    use crate::descriptor::{DescriptorTrait, DescriptorType};
+    use crate::interpreter::SatisfiedConstraint;
+    use crate::util::{count_non_push_opcodes, witness_size};
+    use crate::{interpreter, CovenantExt, Descriptor, ElementsSig, Error, Interpreter, Satisfier};
 
     const BTC_ASSET: [u8; 32] = [
         0x23, 0x0f, 0x4f, 0x5d, 0x4b, 0x7c, 0x6f, 0xa8, 0x45, 0x80, 0x6e, 0xe4, 0xf6, 0x77, 0x13,
@@ -225,7 +222,7 @@ mod tests {
             0,
             confidential::Value::Explicit(200_000),
             &script_code,
-            SigHashType::All,
+            EcdsaSigHashType::All,
         );
 
         // Create a signature to sign the input
@@ -236,7 +233,7 @@ mod tests {
             &secp256k1_zkp::Message::from_slice(&sighash_u256[..]).unwrap(),
             &cov_sk,
         );
-        let el_sig = (sig, SigHashType::All);
+        let el_sig = (sig, EcdsaSigHashType::All);
 
         // For satisfying the Pk part of the covenant
         struct SimpleSat {
@@ -277,7 +274,7 @@ mod tests {
         assert_eq!(
             constraints.last().unwrap(),
             &SatisfiedConstraint::PublicKey {
-                key_sig: interpreter::KeySigPair::Ecdsa(desc.pk, (sig, SigHashType::All))
+                key_sig: interpreter::KeySigPair::Ecdsa(desc.pk, (sig, EcdsaSigHashType::All))
             }
         );
         Ok(())
@@ -418,7 +415,7 @@ mod tests {
             0,
             confidential::Value::Explicit(200_000),
             &script_code,
-            SigHashType::All,
+            EcdsaSigHashType::All,
         );
 
         // Create a signature to sign the input
@@ -429,7 +426,7 @@ mod tests {
             &secp256k1_zkp::Message::from_slice(&sighash_u256[..]).unwrap(),
             &sks[0],
         );
-        let sig = (sig, SigHashType::All);
+        let sig = (sig, EcdsaSigHashType::All);
 
         // For satisfying the Pk part of the covenant
         struct SimpleSat {

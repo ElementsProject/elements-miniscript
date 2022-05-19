@@ -4,33 +4,23 @@
 
 use std::fmt;
 
-use MiniscriptKey;
+use elements::encode::serialize;
+use elements::hashes::hex::{FromHex, ToHex};
+use elements::hashes::{sha256d, Hash};
+use elements::{self};
 
-use elements::hashes::hex::FromHex;
-use elements::hashes::hex::ToHex;
-use elements::hashes::sha256d;
-use elements::hashes::Hash;
-use elements::{self, encode::serialize};
-use Extension;
-use ForEach;
-
-use miniscript::context::ScriptContextError;
-use ToPublicKey;
-use TranslatePk;
-use {
-    descriptor::CovError,
-    expression, interpreter,
-    miniscript::{
-        astelem::StackCtxOperations,
-        lex::{Token as Tk, TokenIter},
-        limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE},
-        satisfy::{Satisfaction, Witness},
-        types::{
-            extra_props::TimeLockInfo, Base, Correctness, Dissat, ExtData, Input, Malleability,
-        },
-    },
-    policy::{self, Liftable},
-    Error, Satisfier,
+use crate::descriptor::CovError;
+use crate::miniscript::astelem::StackCtxOperations;
+use crate::miniscript::context::ScriptContextError;
+use crate::miniscript::lex::{Token as Tk, TokenIter};
+use crate::miniscript::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
+use crate::miniscript::satisfy::{Satisfaction, Witness};
+use crate::miniscript::types::extra_props::{OpLimits, TimeLockInfo};
+use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
+use crate::policy::{self, Liftable};
+use crate::{
+    expression, interpreter, Error, Extension, ForEach, MiniscriptKey, Satisfier, ToPublicKey,
+    TranslatePk,
 };
 
 /// Prefix is initally encoded in the script pubkey
@@ -105,9 +95,6 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
         ExtData {
             pk_cost: 8 + self.pref.len() + 1 + 6, // See script_size() in astelem.rs
             has_free_verify: true,
-            ops_count_static: 13,
-            ops_count_sat: Some(13),
-            ops_count_nsat: Some(13),
             stack_elem_count_sat: Some(7),
             stack_elem_count_dissat: Some(7),
             max_sat_size: Some((max_wit_sz, max_wit_sz)),
@@ -115,6 +102,11 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
             timelock_info: TimeLockInfo::default(),
             exec_stack_elem_count_sat: Some(3), // sha2 context, byte slice, target hash
             exec_stack_elem_count_dissat: Some(3),
+            ops: OpLimits {
+                count: 13,
+                sat: Some(0),
+                nsat: Some(0),
+            },
         }
     }
 
@@ -219,7 +211,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
                 + 6 /* line 2 */
     }
 
-    fn from_token_iter(tokens: &mut TokenIter) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
         let outputs_pref = {
             let sl = tokens.peek_slice(15).ok_or(())?;
             if let Tk::Push(pref) = &sl[6] {
@@ -249,7 +241,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
         Ok(outputs_pref)
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree]) -> Result<Self, ()> {
+    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
         if children.len() == 1 && name == "outputs_pref" {
             let pref = expression::terminal(&children[0], Vec::<u8>::from_hex).map_err(|_| ())?;
             Ok(Self { pref })
@@ -324,9 +316,10 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for OutputsPref {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use bitcoin::PublicKey;
-    use {Miniscript, Segwitv0};
+
+    use super::*;
+    use crate::{Miniscript, Segwitv0};
 
     #[test]
     fn test_outputs_pref() {

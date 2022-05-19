@@ -16,40 +16,40 @@
 //!
 //! Iterators for Miniscript with special functions for iterating
 //! over Public Keys, Public Key Hashes or both.
-use Extension;
+use std::ops::Deref;
+use std::sync::Arc;
 
 use super::decode::Terminal;
 use super::{Miniscript, MiniscriptKey, ScriptContext};
-use std::ops::Deref;
-use std::sync::Arc;
+use crate::Extension;
 
 /// Iterator-related extensions for [Miniscript]
 impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
     /// Creates a new [Iter] iterator that will iterate over all [Miniscript] items within
     /// AST by traversing its branches. For the specific algorithm please see
     /// [Iter::next] function.
-    pub fn iter(&self) -> Iter<Pk, Ctx, Ext> {
+    pub fn iter(&self) -> Iter<'_, Pk, Ctx, Ext> {
         Iter::new(self)
     }
 
     /// Creates a new [PkIter] iterator that will iterate over all plain public keys (and not
     /// key hash values) present in [Miniscript] items within AST by traversing all its branches.
     /// For the specific algorithm please see [PkIter::next] function.
-    pub fn iter_pk(&self) -> PkIter<Pk, Ctx, Ext> {
+    pub fn iter_pk(&self) -> PkIter<'_, Pk, Ctx, Ext> {
         PkIter::new(self)
     }
 
     /// Creates a new [PkhIter] iterator that will iterate over all public keys hashes (and not
     /// plain public keys) present in Miniscript items within AST by traversing all its branches.
     /// For the specific algorithm please see [PkhIter::next] function.
-    pub fn iter_pkh(&self) -> PkhIter<Pk, Ctx, Ext> {
+    pub fn iter_pkh(&self) -> PkhIter<'_, Pk, Ctx, Ext> {
         PkhIter::new(self)
     }
 
     /// Creates a new [PkPkhIter] iterator that will iterate over all plain public keys and
     /// key hash values present in Miniscript items within AST by traversing all its branches.
     /// For the specific algorithm please see [PkPkhIter::next] function.
-    pub fn iter_pk_pkh(&self) -> PkPkhIter<Pk, Ctx, Ext> {
+    pub fn iter_pk_pkh(&self) -> PkPkhIter<'_, Pk, Ctx, Ext> {
         PkPkhIter::new(self)
     }
 
@@ -160,7 +160,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
             Terminal::PkH(ref hash) => vec![PkPkh::HashedPubkey(hash.clone())],
             Terminal::PkK(ref key) => vec![PkPkh::PlainPubkey(key.clone())],
             Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => keys
-                .into_iter()
+                .iter()
                 .map(|key| PkPkh::PlainPubkey(key.clone()))
                 .collect(),
             _ => vec![],
@@ -217,7 +217,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
 
 /// Iterator for traversing all [Miniscript] miniscript AST references starting from some specific
 /// node which constructs the iterator via [Miniscript::iter] method.
-pub struct Iter<'a, Pk: 'a + MiniscriptKey, Ctx: 'a + ScriptContext, Ext: 'a + Extension<Pk>> {
+pub struct Iter<'a, Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
     next: Option<&'a Miniscript<Pk, Ctx, Ext>>,
     // Here we store vec of path elements, where each element is a tuple, consisting of:
     // 1. Miniscript node on the path
@@ -262,7 +262,7 @@ impl<'a, Pk: MiniscriptKey, Ctx: 'a + ScriptContext, Ext: 'a + Extension<Pk>> It
     /// To enumerate the branches iterator uses [Miniscript::branches] function.
     fn next(&mut self) -> Option<Self::Item> {
         let mut curr = self.next;
-        if let None = curr {
+        if curr.is_none() {
             while let Some((node, child)) = self.path.pop() {
                 curr = node.get_nth_child(child);
                 if curr.is_some() {
@@ -281,7 +281,7 @@ impl<'a, Pk: MiniscriptKey, Ctx: 'a + ScriptContext, Ext: 'a + Extension<Pk>> It
 
 /// Iterator for traversing all [MiniscriptKey]'s in AST starting from some specific node which
 /// constructs the iterator via [Miniscript::iter_pk] method.
-pub struct PkIter<'a, Pk: 'a + MiniscriptKey, Ctx: 'a + ScriptContext, Ext: 'a + Extension<Pk>> {
+pub struct PkIter<'a, Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
     node_iter: Iter<'a, Pk, Ctx, Ext>,
     curr_node: Option<&'a Miniscript<Pk, Ctx, Ext>>,
     key_index: usize,
@@ -325,7 +325,7 @@ impl<'a, Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Iterator
 
 /// Iterator for traversing all [MiniscriptKey] hashes in AST starting from some specific node which
 /// constructs the iterator via [Miniscript::iter_pkh] method.
-pub struct PkhIter<'a, Pk: 'a + MiniscriptKey, Ctx: 'a + ScriptContext, Ext: 'a + Extension<Pk>> {
+pub struct PkhIter<'a, Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
     node_iter: Iter<'a, Pk, Ctx, Ext>,
     curr_node: Option<&'a Miniscript<Pk, Ctx, Ext>>,
     key_index: usize,
@@ -376,10 +376,20 @@ pub enum PkPkh<Pk: MiniscriptKey> {
     HashedPubkey(Pk::Hash),
 }
 
+impl<Pk: MiniscriptKey<Hash = Pk>> PkPkh<Pk> {
+    /// Convenience method to avoid distinguishing between keys and hashes when these are the same type
+    pub fn as_key(self) -> Pk {
+        match self {
+            PkPkh::PlainPubkey(pk) => pk,
+            PkPkh::HashedPubkey(pkh) => pkh,
+        }
+    }
+}
+
 /// Iterator for traversing all [MiniscriptKey]'s and hashes, depending what data are present in AST,
 /// starting from some specific node which constructs the iterator via
 /// [Miniscript::iter_pk_pkh] method.
-pub struct PkPkhIter<'a, Pk: 'a + MiniscriptKey, Ctx: 'a + ScriptContext, Ext: 'a + Extension<Pk>> {
+pub struct PkPkhIter<'a, Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
     node_iter: Iter<'a, Pk, Ctx, Ext>,
     curr_node: Option<&'a Miniscript<Pk, Ctx, Ext>>,
     key_index: usize,
@@ -449,12 +459,13 @@ impl<'a, Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Iterator
 // dependent libraries for their own tasts based on Miniscript AST
 #[cfg(test)]
 pub mod test {
-    use super::{Miniscript, PkPkh};
     use bitcoin;
     use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
     use elements::secp256k1_zkp;
-    use miniscript::context::Segwitv0;
-    use CovenantExt;
+
+    use super::{Miniscript, PkPkh};
+    use crate::miniscript::context::Segwitv0;
+    use crate::CovenantExt;
 
     pub type TestData = (
         Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt>,

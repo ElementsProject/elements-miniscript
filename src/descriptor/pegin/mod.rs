@@ -25,11 +25,8 @@
 use bitcoin;
 use bitcoin::Script as BtcScript;
 use elements::secp256k1_zkp;
-use BtcSatisfier;
-use Descriptor;
-use Error;
 
-use {MiniscriptKey, ToPublicKey};
+use crate::{BtcSatisfier, Descriptor, Error, MiniscriptKey, ToPublicKey};
 
 mod dynafed_pegin;
 mod legacy_pegin;

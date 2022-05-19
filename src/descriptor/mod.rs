@@ -23,28 +23,23 @@
 //! these with BIP32 paths, pay-to-contract instructions, etc.
 //!
 
-use std::{collections::HashMap, sync::Arc};
-use std::{
-    fmt,
-    str::{self, FromStr},
-};
+use std::collections::HashMap;
+use std::fmt;
+use std::ops::Range;
+use std::str::{self, FromStr};
+use std::sync::Arc;
 
 pub mod pegin;
 
-use bitcoin;
-use elements;
-use elements::secp256k1_zkp;
-use elements::Script;
-
-use CovenantExt;
+use bitcoin::util::address::WitnessVersion;
+use elements::{secp256k1_zkp, Script};
+use {bitcoin, elements};
 
 use self::checksum::verify_checksum;
-use expression;
-use miniscript;
-use miniscript::{Legacy, Miniscript, Segwitv0};
-use {
-    BareCtx, Error, ForEach, ForEachKey, MiniscriptKey, Satisfier, ToPublicKey, TranslatePk,
-    TranslatePk2,
+use crate::miniscript::{Legacy, Miniscript, Segwitv0};
+use crate::{
+    expression, miniscript, BareCtx, CovenantExt, Error, ForEach, ForEachKey, MiniscriptKey,
+    Satisfier, ToPublicKey, TranslatePk, TranslatePk2,
 };
 
 // Directly export from lib.rs, exporting the trait here causes conflicts in this file
@@ -67,12 +62,11 @@ pub use self::sortedmulti::SortedMultiVec;
 mod checksum;
 mod key;
 pub use self::covenants::{CovError, CovOperations, CovSatisfier, CovenantDescriptor};
-pub use self::tr::{TapTree, Tr};
-
 pub use self::key::{
-    ConversionError, DescriptorKeyParseError, DescriptorPublicKey, DescriptorSecretKey,
-    DescriptorSinglePriv, DescriptorSinglePub, DescriptorXKey, InnerXKey, SinglePubKey, Wildcard,
+    ConversionError, DerivedDescriptorKey, DescriptorKeyParseError, DescriptorPublicKey,
+    DescriptorSecretKey, DescriptorXKey, InnerXKey, SinglePriv, SinglePub, SinglePubKey, Wildcard,
 };
+pub use self::tr::{TapTree, Tr};
 
 /// Alias type for a map of public key to secret key
 ///
@@ -235,7 +229,7 @@ pub enum DescriptorType {
 }
 
 impl fmt::Display for DescriptorType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             DescriptorType::Bare => write!(f, "bare"),
             DescriptorType::Sh => write!(f, "sh"),
@@ -376,6 +370,74 @@ pub enum Descriptor<Pk: MiniscriptKey> {
     /// Covenant descriptor with all known extensions
     /// Downstream implementations of extensions should implement directly use descriptor API
     Cov(CovenantDescriptor<Pk, CovenantExt>),
+}
+
+impl<Pk: MiniscriptKey> From<Bare<Pk>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: Bare<Pk>) -> Self {
+        Descriptor::Bare(inner)
+    }
+}
+
+impl<Pk: MiniscriptKey> From<Pkh<Pk>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: Pkh<Pk>) -> Self {
+        Descriptor::Pkh(inner)
+    }
+}
+
+impl<Pk: MiniscriptKey> From<Wpkh<Pk>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: Wpkh<Pk>) -> Self {
+        Descriptor::Wpkh(inner)
+    }
+}
+
+impl<Pk: MiniscriptKey> From<Sh<Pk>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: Sh<Pk>) -> Self {
+        Descriptor::Sh(inner)
+    }
+}
+
+impl<Pk: MiniscriptKey> From<Wsh<Pk>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: Wsh<Pk>) -> Self {
+        Descriptor::Wsh(inner)
+    }
+}
+
+impl<Pk: MiniscriptKey> From<Tr<Pk>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: Tr<Pk>) -> Self {
+        Descriptor::Tr(inner)
+    }
+}
+
+impl<Pk: MiniscriptKey> From<CovenantDescriptor<Pk, CovenantExt>> for Descriptor<Pk> {
+    #[inline]
+    fn from(inner: CovenantDescriptor<Pk, CovenantExt>) -> Self {
+        Descriptor::Cov(inner)
+    }
+}
+
+impl DescriptorType {
+    /// Returns the segwit version implied by the descriptor type.
+    ///
+    /// This will return `Some(WitnessVersion::V0)` whether it is "native" segwitv0 or "wrapped" p2sh segwit.
+    pub fn segwit_version(&self) -> Option<WitnessVersion> {
+        use self::DescriptorType::*;
+        match self {
+            Tr => Some(WitnessVersion::V1),
+            Wpkh | ShWpkh | Wsh | ShWsh | ShWshSortedMulti | WshSortedMulti => {
+                Some(WitnessVersion::V0)
+            }
+            Bare | Sh | Pkh | ShSortedMulti => None,
+            LegacyPegin => Some(WitnessVersion::V1),
+            Pegin => None, // Can have any witness version
+            Cov => None,   // Can have any witness version
+        }
+    }
 }
 
 impl<Pk: MiniscriptKey> Descriptor<Pk> {
@@ -828,15 +890,15 @@ impl Descriptor<DescriptorPublicKey> {
     ///
     /// In most cases, you would want to use [`Self::derived_descriptor`] directly to obtain
     /// a [`Descriptor<bitcoin::PublicKey>`]
-    pub fn derive(&self, index: u32) -> Descriptor<DescriptorPublicKey> {
+    pub fn derive(&self, index: u32) -> Descriptor<DerivedDescriptorKey> {
         self.translate_pk2_infallible(|pk| pk.clone().derive(index))
     }
 
     /// Derive a [`Descriptor`] with a concrete [`bitcoin::PublicKey`] at a given index
     /// Removes all extended pubkeys and wildcards from the descriptor and only leaves
-    /// concrete [`bitcoin::PublicKey`]. All [`crate::XOnlyKey`]s are converted to [`bitcoin::PublicKey`]
-    /// by adding a default(0x02) y-coordinate. For [`crate::descriptor::Tr`] descriptor,
-    /// spend info is also cached.
+    /// concrete [`bitcoin::PublicKey`]. All [`bitcoin::XOnlyPublicKey`]s are converted
+    /// to [`bitcoin::PublicKey`]s by adding a default(0x02) y-coordinate. For [`Tr`]
+    /// descriptor, spend info is also cached.
     ///
     /// # Examples
     ///
@@ -879,7 +941,7 @@ impl Descriptor<DescriptorPublicKey> {
                          key_map: &mut KeyMap|
          -> Result<DescriptorPublicKey, DescriptorKeyParseError> {
             let (public_key, secret_key) = match DescriptorSecretKey::from_str(s) {
-                Ok(sk) => (sk.as_public(&secp)?, Some(sk)),
+                Ok(sk) => (sk.to_public(secp)?, Some(sk)),
                 Err(_) => (DescriptorPublicKey::from_str(s)?, None),
             };
 
@@ -924,6 +986,32 @@ impl Descriptor<DescriptorPublicKey> {
 
         descriptor.to_string()
     }
+
+    /// Utility method for deriving the descriptor at each index in a range to find one matching
+    /// `script_pubkey`.
+    ///
+    /// If it finds a match then it returns the index it was derived at and the concrete
+    /// descriptor at that index. If the descriptor is non-derivable then it will simply check the
+    /// script pubkey against the descriptor and return it if it matches (in this case the index
+    /// returned will be meaningless).
+    pub fn find_derivation_index_for_spk<C: secp256k1_zkp::Verification>(
+        &self,
+        secp: &secp256k1_zkp::Secp256k1<C>,
+        script_pubkey: &Script,
+        range: Range<u32>,
+    ) -> Result<Option<(u32, Descriptor<bitcoin::PublicKey>)>, ConversionError> {
+        let range = if self.is_deriveable() { range } else { 0..1 };
+
+        for i in range {
+            let concrete = self.derived_descriptor(secp, i)?;
+            println!("{} {} {}", i, &concrete, concrete.script_pubkey());
+            if &concrete.script_pubkey() == script_pubkey {
+                return Ok(Some((i, concrete)));
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 impl<Pk> expression::FromTree for Descriptor<Pk>
@@ -934,7 +1022,7 @@ where
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
     /// Parse an expression tree into a descriptor
-    fn from_tree(top: &expression::Tree) -> Result<Descriptor<Pk>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Descriptor<Pk>, Error> {
         Ok(match (top.name, top.args.len() as u32) {
             ("elpkh", 1) => Descriptor::Pkh(Pkh::from_tree(top)?),
             ("elwpkh", 1) => Descriptor::Wpkh(Wpkh::from_tree(top)?),
@@ -962,12 +1050,14 @@ where
                 "Not an Elements Descriptor",
             )));
         }
-        let desc_str = verify_checksum(&s)?;
         // tr tree parsing has special code
-        if desc_str.starts_with(&format!("{}tr", ELMTS_STR)) {
-            let tr = Tr::from_str(desc_str)?;
+        // Tr::from_str will check the checksum
+        // match "tr(" to handle more extensibly
+        if s.starts_with(&format!("{}tr", ELMTS_STR)) {
+            let tr = Tr::from_str(s)?;
             Ok(Descriptor::Tr(tr))
         } else {
+            let desc_str = verify_checksum(s)?;
             let top = expression::Tree::from_str(desc_str)?;
             expression::FromTree::from_tree(&top)
         }
@@ -975,7 +1065,7 @@ where
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Descriptor<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Descriptor::Bare(ref sub) => write!(f, "{:?}", sub),
             Descriptor::Pkh(ref pkh) => write!(f, "{:?}", pkh),
@@ -989,7 +1079,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Descriptor<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Descriptor<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Descriptor::Bare(ref sub) => write!(f, "{}", sub),
             Descriptor::Pkh(ref pkh) => write!(f, "{}", pkh),
@@ -1006,31 +1096,28 @@ serde_string_impl_pk!(Descriptor, "a script descriptor");
 
 #[cfg(test)]
 mod tests {
-    use super::checksum::desc_checksum;
-    use super::tr::Tr;
-    use super::*;
+    use std::cmp;
+    use std::collections::HashMap;
+    use std::str::FromStr;
+
     use bitcoin;
     use bitcoin::util::bip32;
     use bitcoin::PublicKey;
-    use descriptor::key::Wildcard;
-    use descriptor::{
-        DescriptorPublicKey, DescriptorSecretKey, DescriptorSinglePub, DescriptorXKey,
-    };
     use elements::hashes::hex::{FromHex, ToHex};
     use elements::hashes::{hash160, sha256};
     use elements::opcodes::all::{OP_CLTV, OP_CSV};
     use elements::script::Instruction;
     use elements::{opcodes, script};
 
-    use hex_script;
-    use miniscript::satisfy::ElementsSig;
-    use std::cmp;
-    use std::collections::HashMap;
-    use std::str::FromStr;
-    use {Descriptor, DummyKey, Error, Miniscript, Satisfier, TranslatePk2};
-
+    use super::checksum::desc_checksum;
+    use super::tr::Tr;
+    use super::*;
+    use crate::descriptor::key::Wildcard;
+    use crate::descriptor::{DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey};
+    use crate::miniscript::satisfy::ElementsSig;
     #[cfg(feature = "compiler")]
-    use policy;
+    use crate::policy;
+    use crate::{hex_script, Descriptor, DummyKey, Error, Miniscript, Satisfier, TranslatePk2};
 
     type StdDescriptor = Descriptor<PublicKey>;
     const TEST_PK: &'static str =
@@ -1039,10 +1126,9 @@ mod tests {
     impl cmp::PartialEq for DescriptorSecretKey {
         fn eq(&self, other: &Self) -> bool {
             match (self, other) {
-                (
-                    &DescriptorSecretKey::SinglePriv(ref a),
-                    &DescriptorSecretKey::SinglePriv(ref b),
-                ) => a.origin == b.origin && a.key == b.key,
+                (&DescriptorSecretKey::Single(ref a), &DescriptorSecretKey::Single(ref b)) => {
+                    a.origin == b.origin && a.key == b.key
+                }
                 (&DescriptorSecretKey::XPrv(ref a), &DescriptorSecretKey::XPrv(ref b)) => {
                     a.origin == b.origin
                         && a.xkey == b.xkey
@@ -1337,7 +1423,7 @@ mod tests {
         impl Satisfier<bitcoin::PublicKey> for SimpleSat {
             fn lookup_ecdsa_sig(&self, pk: &bitcoin::PublicKey) -> Option<ElementsSig> {
                 if *pk == self.pk {
-                    Some((self.sig, elements::SigHashType::All))
+                    Some((self.sig, elements::EcdsaSigHashType::All))
                 } else {
                     None
                 }
@@ -1566,8 +1652,8 @@ mod tests {
         let satisfier = {
             let mut satisfier = HashMap::with_capacity(2);
 
-            satisfier.insert(a, (sig_a.clone(), ::elements::SigHashType::All));
-            satisfier.insert(b, (sig_b.clone(), ::elements::SigHashType::All));
+            satisfier.insert(a, (sig_a.clone(), ::elements::EcdsaSigHashType::All));
+            satisfier.insert(b, (sig_b.clone(), ::elements::EcdsaSigHashType::All));
 
             satisfier
         };
@@ -1693,7 +1779,7 @@ mod tests {
 
         // Raw (compressed) pubkey
         let key = "03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8";
-        let expected = DescriptorPublicKey::SinglePub(DescriptorSinglePub {
+        let expected = DescriptorPublicKey::Single(SinglePub {
             key: SinglePubKey::FullKey(
                 bitcoin::PublicKey::from_str(
                     "03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8",
@@ -1707,7 +1793,7 @@ mod tests {
 
         // Raw (uncompressed) pubkey
         let key = "04f5eeb2b10c944c6b9fbcfff94c35bdeecd93df977882babc7f3a2cf7f5c81d3b09a68db7f0e04f21de5d4230e75e6dbe7ad16eefe0d4325a62067dc6f369446a";
-        let expected = DescriptorPublicKey::SinglePub(DescriptorSinglePub {
+        let expected = DescriptorPublicKey::Single(SinglePub {
             key: SinglePubKey::FullKey(bitcoin::PublicKey::from_str(
                 "04f5eeb2b10c944c6b9fbcfff94c35bdeecd93df977882babc7f3a2cf7f5c81d3b09a68db7f0e04f21de5d4230e75e6dbe7ad16eefe0d4325a62067dc6f369446a",
             )
@@ -1720,7 +1806,7 @@ mod tests {
         // Raw pubkey with origin
         let desc =
             "[78412e3a/0'/42/0']0231c7d3fc85c148717848033ce276ae2b464a4e2c367ed33886cc428b8af48ff8";
-        let expected = DescriptorPublicKey::SinglePub(DescriptorSinglePub {
+        let expected = DescriptorPublicKey::Single(SinglePub {
             key: SinglePubKey::FullKey(
                 bitcoin::PublicKey::from_str(
                     "0231c7d3fc85c148717848033ce276ae2b464a4e2c367ed33886cc428b8af48ff8",
@@ -1748,18 +1834,17 @@ mod tests {
             let index = 5;
 
             // Parse descriptor
-            let mut desc_one = Descriptor::<DescriptorPublicKey>::from_str(raw_desc_one).unwrap();
-            let mut desc_two = Descriptor::<DescriptorPublicKey>::from_str(raw_desc_two).unwrap();
+            let desc_one = Descriptor::<DescriptorPublicKey>::from_str(raw_desc_one).unwrap();
+            let desc_two = Descriptor::<DescriptorPublicKey>::from_str(raw_desc_two).unwrap();
 
             // Same string formatting
             assert_eq!(desc_one.to_string(), raw_desc_one);
             assert_eq!(desc_two.to_string(), raw_desc_two);
 
-            // Derive a child if the descriptor is ranged
-            if raw_desc_one.contains("*") && raw_desc_two.contains("*") {
-                desc_one = desc_one.derive(index);
-                desc_two = desc_two.derive(index);
-            }
+            // Derive a child in case the descriptor is ranged. If it's not this won't have any
+            // effect
+            let desc_one = desc_one.derive(index);
+            let desc_two = desc_two.derive(index);
 
             // Same address
             let addr_one = desc_one
@@ -1855,7 +1940,7 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
             res_descriptor_str.parse().unwrap();
         let res_descriptor = Descriptor::new_sh(res_policy.compile().unwrap()).unwrap();
 
-        assert_eq!(res_descriptor, derived_descriptor);
+        assert_eq!(res_descriptor.to_string(), derived_descriptor.to_string());
     }
 
     #[test]
@@ -1882,5 +1967,47 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
         let descriptor_str = "elsh(wsh(pk(xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL)))";
         let descriptor: Descriptor<DescriptorPublicKey> = descriptor_str.parse().unwrap();
         assert_eq!(descriptor.to_string(), "elsh(wsh(pk(xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL)))#pqs0de7e");
+    }
+
+    #[test]
+    fn test_xonly_keys() {
+        let comp_key = "0308c0fcf8895f4361b4fc77afe2ad53b0bd27dcebfd863421b2b246dc283d4103";
+        let x_only_key = "08c0fcf8895f4361b4fc77afe2ad53b0bd27dcebfd863421b2b246dc283d4103";
+
+        // Both x-only keys and comp keys allowed in tr
+        Descriptor::<DescriptorPublicKey>::from_str(&format!("eltr({})", comp_key)).unwrap();
+        Descriptor::<DescriptorPublicKey>::from_str(&format!("eltr({})", x_only_key)).unwrap();
+
+        // Only compressed keys allowed in wsh
+        Descriptor::<DescriptorPublicKey>::from_str(&format!("elwsh(pk({}))", comp_key)).unwrap();
+        Descriptor::<DescriptorPublicKey>::from_str(&format!("elwsh(pk({}))", x_only_key))
+            .unwrap_err();
+    }
+
+    #[test]
+    fn test_find_derivation_index_for_spk() {
+        let secp = secp256k1_zkp::Secp256k1::verification_only();
+        let descriptor = Descriptor::from_str("eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*)").unwrap();
+        let script_at_0_1 = Script::from_str(
+            "5120c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0",
+        )
+        .unwrap();
+        let expected_concrete = Descriptor::from_str(
+            "eltr(0283dfe85a3151d2517290da461fe2815591ef69f2b18a2ce63f01697a8b313145)",
+        )
+        .unwrap();
+
+        assert_eq!(
+            descriptor.find_derivation_index_for_spk(&secp, &script_at_0_1, 0..1),
+            Ok(None)
+        );
+        assert_eq!(
+            descriptor.find_derivation_index_for_spk(&secp, &script_at_0_1, 0..2),
+            Ok(Some((1, expected_concrete.clone())))
+        );
+        assert_eq!(
+            descriptor.find_derivation_index_for_spk(&secp, &script_at_0_1, 0..10),
+            Ok(Some((1, expected_concrete)))
+        );
     }
 }

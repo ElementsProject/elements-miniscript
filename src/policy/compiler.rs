@@ -17,22 +17,18 @@
 //! Optimizing compiler from concrete policies to Miniscript.
 //! Currently the policy compiler does not support any extensions
 
+use std::collections::vec_deque::VecDeque;
 use std::collections::BTreeMap;
 use std::convert::From;
 use std::marker::PhantomData;
-use std::{cmp, error, f64, fmt, mem};
-
-use miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
-use miniscript::limits::MAX_SCRIPT_ELEMENT_SIZE;
-use miniscript::types::{self, ErrorKind, ExtData, Property, Type};
-use miniscript::ScriptContext;
-use policy::Concrete;
-use std::collections::vec_deque::VecDeque;
-use std::hash;
 use std::sync::Arc;
-use Extension;
-use {policy, Terminal};
-use {Miniscript, MiniscriptKey};
+use std::{cmp, error, f64, fmt, hash, mem};
+
+use crate::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
+use crate::miniscript::types::{self, ErrorKind, ExtData, Property, Type};
+use crate::miniscript::ScriptContext;
+use crate::policy::Concrete;
+use crate::{policy, Extension, Miniscript, MiniscriptKey, Terminal};
 
 type PolicyCache<Pk, Ctx> =
     BTreeMap<(Concrete<Pk>, OrdF64, Option<OrdF64>), BTreeMap<CompilationKey, AstElemExt<Pk, Ctx>>>;
@@ -68,7 +64,7 @@ pub enum CompilerError {
 impl error::Error for CompilerError {}
 
 impl fmt::Display for CompilerError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             CompilerError::TopLevelNonSafe => {
                 f.write_str("Top Level script is not safe on some spendpath")
@@ -206,28 +202,6 @@ impl Property for CompilerExtData {
             branch_prob: None,
             sat_cost: 0.0,
             dissat_cost: None,
-        }
-    }
-
-    fn from_item_eq() -> Self {
-        // both sat and dissat costs are zero
-        // because witness is already calculated in
-        // stack
-        CompilerExtData {
-            branch_prob: None,
-            sat_cost: 0.0,
-            dissat_cost: Some(0.0),
-        }
-    }
-
-    fn from_item_pref(pref: &[u8]) -> Self {
-        // both sat and dissat costs are zero
-        // because witness is already calculated in
-        // stack
-        CompilerExtData {
-            branch_prob: None,
-            sat_cost: (MAX_SCRIPT_ELEMENT_SIZE - pref.len()) as f64,
-            dissat_cost: Some(0.0),
         }
     }
 
@@ -1187,22 +1161,21 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use bitcoin;
-    use elements::{self, hashes, secp256k1_zkp};
-    use elements::{opcodes, script};
     use std::collections::HashMap;
     use std::str::FromStr;
     use std::string::String;
 
-    use miniscript::{satisfy, Legacy, Segwitv0};
-    use policy::Liftable;
-    use script_num_size;
-    use ElementsSig;
+    use bitcoin;
+    use elements::{self, hashes, opcodes, script, secp256k1_zkp};
+
+    use super::*;
+    use crate::miniscript::{satisfy, Legacy, Segwitv0, Tap};
+    use crate::policy::Liftable;
+    use crate::{script_num_size, ElementsSig};
 
     type SPolicy = Concrete<String>;
     type BPolicy = Concrete<bitcoin::PublicKey>;
-    type DummySegwitAstElemExt = policy::compiler::AstElemExt<String, Segwitv0>;
+    type DummyTapAstElemExt = policy::compiler::AstElemExt<String, Tap>;
     type SegwitMiniScript = Miniscript<bitcoin::PublicKey, Segwitv0>;
 
     fn pubkeys_and_a_sig(n: usize) -> (Vec<bitcoin::PublicKey>, secp256k1_zkp::ecdsa::Signature) {
@@ -1292,7 +1265,7 @@ mod tests {
     #[test]
     fn compile_q() {
         let policy = SPolicy::from_str("or(1@and(pk(A),pk(B)),127@pk(C))").expect("parsing");
-        let compilation: DummySegwitAstElemExt =
+        let compilation: DummyTapAstElemExt =
             best_t(&mut BTreeMap::new(), &policy, 1.0, None).unwrap();
 
         assert_eq!(compilation.cost_1d(1.0, None), 88.0 + 74.109375);
@@ -1301,13 +1274,14 @@ mod tests {
             compilation.ms.lift().unwrap().sorted()
         );
 
+        // compile into taproot context to avoid limit errors
         let policy = SPolicy::from_str(
                 "and(and(and(or(127@thresh(2,pk(A),pk(B),thresh(2,or(127@pk(A),1@pk(B)),after(100),or(and(pk(C),after(200)),and(pk(D),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925))),pk(E))),1@pk(F)),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925)),or(127@pk(G),1@after(300))),or(127@after(400),pk(H)))"
             ).expect("parsing");
-        let compilation: DummySegwitAstElemExt =
+        let compilation: DummyTapAstElemExt =
             best_t(&mut BTreeMap::new(), &policy, 1.0, None).unwrap();
 
-        assert_eq!(compilation.cost_1d(1.0, None), 437.0 + 299.4003295898438);
+        assert_eq!(compilation.cost_1d(1.0, None), 438.0 + 299.4003295898438);
         assert_eq!(
             policy.lift().unwrap().sorted(),
             compilation.ms.lift().unwrap().sorted()
@@ -1394,7 +1368,7 @@ mod tests {
         assert_eq!(abs.n_keys(), 5);
         assert_eq!(abs.minimum_n_keys(), Some(3));
 
-        let elements_sig = (sig, elements::SigHashType::All);
+        let elements_sig = (sig, elements::EcdsaSigHashType::All);
         let mut sigvec = elements_sig.0.serialize_der().to_vec();
         sigvec.push(elements_sig.1 as u8);
 
@@ -1544,7 +1518,7 @@ mod tests {
             keys.iter().map(|pubkey| Concrete::Key(*pubkey)).collect();
         let thresh_res: Result<SegwitMiniScript, _> =
             Concrete::Threshold(keys.len() - 1, keys).compile();
-        let ops_count = thresh_res.clone().and_then(|m| Ok(m.ext.ops_count_sat));
+        let ops_count = thresh_res.clone().and_then(|m| Ok(m.ext.ops.op_count()));
         assert_eq!(
             thresh_res,
             Err(CompilerError::LimitsExceeded),
@@ -1556,7 +1530,7 @@ mod tests {
         let keys: Vec<Concrete<bitcoin::PublicKey>> =
             keys.iter().map(|pubkey| Concrete::Key(*pubkey)).collect();
         let thresh_res = Concrete::Threshold(keys.len() - 1, keys).compile::<Legacy>();
-        let ops_count = thresh_res.clone().and_then(|m| Ok(m.ext.ops_count_sat));
+        let ops_count = thresh_res.clone().and_then(|m| Ok(m.ext.ops.op_count()));
         assert_eq!(
             thresh_res,
             Err(CompilerError::LimitsExceeded),
@@ -1588,13 +1562,12 @@ mod tests {
 #[cfg(all(test, feature = "unstable"))]
 mod benches {
     use std::str::FromStr;
+
     use test::{black_box, Bencher};
 
     use super::{CompilerError, Concrete};
-    use miniscript::Segwitv0;
-    use Miniscript;
-
-    type SegwitMsRes = Result<Miniscript<String, Segwitv0>, CompilerError>;
+    use crate::{Miniscript, Tap};
+    type TapMsRes = Result<Miniscript<String, Tap>, CompilerError>;
     #[bench]
     pub fn compile_basic(bh: &mut Bencher) {
         let h = (0..64).map(|_| "a").collect::<String>();
@@ -1604,7 +1577,7 @@ mod benches {
         ))
         .expect("parsing");
         bh.iter(|| {
-            let pt: SegwitMsRes = pol.compile();
+            let pt: TapMsRes = pol.compile();
             black_box(pt).unwrap();
         });
     }
@@ -1616,7 +1589,7 @@ mod benches {
             &format!("or(pk(L),thresh(9,sha256({}),pk(A),pk(B),and(or(pk(C),pk(D)),pk(E)),after(100),pk(F),pk(G),pk(H),pk(I),and(pk(J),pk(K))))", h)
         ).expect("parsing");
         bh.iter(|| {
-            let pt: SegwitMsRes = pol.compile();
+            let pt: TapMsRes = pol.compile();
             black_box(pt).unwrap();
         });
     }
@@ -1627,7 +1600,7 @@ mod benches {
             "or(pk(A),thresh(4,pk(B),older(100),pk(C),and(after(100),or(pk(D),or(pk(E),and(pk(F),thresh(2,pk(G),or(pk(H),and(thresh(5,pk(I),or(pk(J),pk(K)),pk(L),pk(M),pk(N),pk(O),pk(P),pk(Q),pk(R),pk(S),pk(T)),pk(U))),pk(V),or(and(pk(W),pk(X)),pk(Y)),after(100)))))),pk(Z)))"
         ).expect("parsing");
         bh.iter(|| {
-            let pt: SegwitMsRes = pol.compile();
+            let pt: TapMsRes = pol.compile();
             black_box(pt).unwrap();
         });
     }

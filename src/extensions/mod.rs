@@ -5,22 +5,15 @@
 use std::{fmt, hash};
 
 use elements::script::Builder;
-use policy;
-use Error;
-use MiniscriptKey;
-use ToPublicKey;
-use {ForEach, TranslatePk};
 
-use {expression::Tree, policy::Liftable, Satisfier};
-
-use miniscript::{
-    context::ScriptContextError,
-    lex::TokenIter,
-    satisfy::Satisfaction,
-    types::{Correctness, ExtData, Malleability},
-};
-
-use interpreter::{self, Stack};
+use crate::expression::Tree;
+use crate::interpreter::{self, Stack};
+use crate::miniscript::context::ScriptContextError;
+use crate::miniscript::lex::TokenIter;
+use crate::miniscript::satisfy::Satisfaction;
+use crate::miniscript::types::{Correctness, ExtData, Malleability};
+use crate::policy::Liftable;
+use crate::{policy, Error, ForEach, MiniscriptKey, Satisfier, ToPublicKey, TranslatePk};
 mod outputs_pref;
 mod tx_ver;
 pub use self::outputs_pref::OutputsPref;
@@ -85,13 +78,13 @@ pub trait Extension<Pk: MiniscriptKey>:
     /// Parse the terminal from [`TokenIter`]. Implementers of this trait are responsible
     /// for making sure tokens is mutated correctly. If parsing is not successful, the tokens
     /// should not be consumed.
-    fn from_token_iter(_tokens: &mut TokenIter) -> Result<Self, ()>;
+    fn from_token_iter(_tokens: &mut TokenIter<'_>) -> Result<Self, ()>;
 
     /// Create an instance of this object from a Tree with root name and children as
     /// Vec<Tree>.
     // Ideally, we would want a FromTree implementation here, but that is not possible
     // as we would need to create a new Tree by removing wrappers from root.
-    fn from_name_tree(_name: &str, children: &[Tree]) -> Result<Self, ()>;
+    fn from_name_tree(_name: &str, children: &[Tree<'_>]) -> Result<Self, ()>;
 
     /// Interpreter support
     /// Evaluate the fragment based on inputs from stack. If an implementation of this
@@ -159,12 +152,12 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
         match *self {}
     }
 
-    fn from_token_iter(_tokens: &mut TokenIter) -> Result<Self, ()> {
+    fn from_token_iter(_tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
         // No extensions should return Err on parsing
         Err(())
     }
 
-    fn from_name_tree(_name: &str, _children: &[Tree]) -> Result<Self, ()> {
+    fn from_name_tree(_name: &str, _children: &[Tree<'_>]) -> Result<Self, ()> {
         // No extensions should not parse any extensions from String
         Err(())
     }
@@ -290,18 +283,15 @@ where
         all_arms_fn!(self, script_size,)
     }
 
-    fn from_token_iter(tokens: &mut TokenIter) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
         try_from_arms!(from_token_iter, tokens,)
     }
 
-    fn from_name_tree(name: &str, children: &[Tree]) -> Result<Self, ()> {
+    fn from_name_tree(name: &str, children: &[Tree<'_>]) -> Result<Self, ()> {
         try_from_arms!(from_name_tree, name, children,)
     }
 
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        stack: &mut Stack<'txin>,
-    ) -> Option<Result<(), interpreter::Error>> {
+    fn evaluate(&self, stack: &mut Stack) -> Option<Result<(), interpreter::Error>> {
         all_arms_fn!(self, evaluate, stack,)
     }
 }

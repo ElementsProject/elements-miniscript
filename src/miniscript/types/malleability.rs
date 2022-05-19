@@ -15,7 +15,7 @@
 //! Malleability-related Type properties
 
 use super::{ErrorKind, Property};
-use {Extension, MiniscriptKey};
+use crate::{Extension, MiniscriptKey};
 
 /// Whether the fragment has a dissatisfaction, and if so, whether
 /// it is unique. Affects both correctness and malleability-freeness,
@@ -72,13 +72,9 @@ impl Malleability {
     /// in the given `Type`. This returns `true` on same arguments
     /// `a.is_subtype(a)` is `true`.
     pub fn is_subtype(&self, other: Self) -> bool {
-        if self.dissat.is_subtype(other.dissat)
+        self.dissat.is_subtype(other.dissat)
             && self.safe >= other.safe
             && self.non_malleable >= other.non_malleable
-        {
-            return true;
-        }
-        return false;
     }
 }
 
@@ -134,22 +130,6 @@ impl Property for Malleability {
     fn from_time(_: u32) -> Self {
         Malleability {
             dissat: Dissat::None,
-            safe: false,
-            non_malleable: true,
-        }
-    }
-
-    fn from_item_eq() -> Self {
-        Malleability {
-            dissat: Dissat::Unknown,
-            safe: false,
-            non_malleable: true,
-        }
-    }
-
-    fn from_item_pref(_pref: &[u8]) -> Self {
-        Malleability {
-            dissat: Dissat::Unknown,
             safe: false,
             non_malleable: true,
         }
@@ -338,15 +318,13 @@ impl Property for Malleability {
             all_are_non_malleable &= subtype.non_malleable;
         }
         Ok(Malleability {
-            dissat: if all_are_dissat_unique && (k == 1 || safe_count == n) {
+            dissat: if all_are_dissat_unique && safe_count == n {
                 Dissat::Unique
             } else {
                 Dissat::Unknown
             },
             safe: safe_count > n - k,
-            non_malleable: all_are_non_malleable
-                && safe_count >= n - k
-                && (k == n || all_are_dissat_unique),
+            non_malleable: all_are_non_malleable && safe_count >= n - k && all_are_dissat_unique,
         })
     }
 }

@@ -18,19 +18,16 @@
 //! Also includes pk, and pkh descriptors
 //!
 
-use std::{fmt, str::FromStr};
+use std::fmt;
+use std::str::FromStr;
 
-use elements::secp256k1_zkp;
-use elements::{self, Script};
+use elements::{self, secp256k1_zkp, Script};
 
-use expression::{self, FromTree};
-use policy::{semantic, Liftable};
-use {Error, MiniscriptKey, Satisfier, ToPublicKey};
-
-use super::{
-    checksum::{desc_checksum, strip_checksum, verify_checksum},
-    Descriptor, DescriptorTrait, ElementsTrait, TranslatePk,
-};
+use super::checksum::{desc_checksum, strip_checksum, verify_checksum};
+use super::{Descriptor, DescriptorTrait, ElementsTrait, TranslatePk};
+use crate::expression::{self, FromTree};
+use crate::policy::{semantic, Liftable};
+use crate::{Error, MiniscriptKey, Satisfier, ToPublicKey};
 
 /// Create a Bare Descriptor. That is descriptor that is
 /// not wrapped in sh or wsh. This covers the Pk descriptor
@@ -67,13 +64,13 @@ impl<Pk: MiniscriptKey> Blinded<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Blinded<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "blinded({:?},{:?})", self.blinder, self.desc)
     }
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Blinded<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // strip thec checksum from display
         let desc = format!("{}", self.desc);
         let desc = format!("blinded({},{})", self.blinder, strip_checksum(&desc));
@@ -95,14 +92,14 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "blinded" && top.args.len() == 2 {
             let blinder = expression::terminal(&top.args[0], |pk| Pk::from_str(pk))?;
             let desc = Descriptor::<Pk>::from_tree(&top.args[1])?;
             if top.args[1].name == "blinded" {
-                return Err(Error::BadDescriptor(format!(
-                    "Blinding only permitted at root level"
-                )));
+                return Err(Error::BadDescriptor(
+                    "Blinding only permitted at root level".to_string(),
+                ));
             }
             Ok(Blinded { blinder, desc })
         } else {

@@ -17,12 +17,12 @@
 //! Translates a script into a reversed sequence of tokens
 //!
 
-use elements::{opcodes, script};
-
 use std::fmt;
 
+use elements::{opcodes, script};
+
 use super::Error;
-use util::{build_scriptint, slice_to_u32_le};
+use crate::util::{build_scriptint, slice_to_u32_le};
 /// Atom of a tokenized version of a script
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
@@ -75,7 +75,7 @@ pub enum Token<'s> {
 }
 
 impl<'s> fmt::Display for Token<'s> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Token::Num(n) => write!(f, "#{}", n),
             Token::Hash20(b) | Token::Bytes33(b) | Token::Bytes32(b) | Token::Bytes65(b) => {
@@ -104,12 +104,12 @@ impl<'s> TokenIter<'s> {
     }
 
     /// Look at the top at Iterator
-    pub fn peek(&self) -> Option<&'s Token> {
+    pub fn peek(&self) -> Option<&'s Token<'_>> {
         self.0.last()
     }
 
     /// Look at the slice with the last n elements
-    pub fn peek_slice(&self, n: usize) -> Option<&[Token]> {
+    pub fn peek_slice(&self, n: usize) -> Option<&[Token<'_>]> {
         if n <= self.len() {
             Some(self.0[self.len() - n..].as_ref())
         } else {
@@ -140,6 +140,11 @@ impl<'s> TokenIter<'s> {
     pub fn len(&self) -> usize {
         self.0.len()
     }
+
+    /// Check if the iterator is empty
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl<'s> Iterator for TokenIter<'s> {
@@ -151,10 +156,10 @@ impl<'s> Iterator for TokenIter<'s> {
 }
 
 /// Tokenize a script
-pub fn lex<'s>(script: &'s script::Script) -> Result<Vec<Token<'s>>, Error> {
+pub fn lex(script: &script::Script) -> Result<Vec<Token<'_>>, Error> {
     let mut ret = Vec::with_capacity(script.len());
 
-    fn process_candidate_push(ret: &mut Vec<Token>) -> Result<(), Error> {
+    fn process_candidate_push(ret: &mut [Token<'_>]) -> Result<(), Error> {
         let ret_len = ret.len();
 
         if ret_len < 2 || ret[ret_len - 1] != Token::Swap {
@@ -207,7 +212,7 @@ pub fn lex<'s>(script: &'s script::Script) -> Result<Vec<Token<'s>>, Error> {
             }
             // Change once the opcode name is updated
             // TODO: UPDATE UPSTREAM OPCODES
-            script::Instruction::Op(opcodes::all::OP_RETURN_186) => {
+            script::Instruction::Op(opcodes::all::OP_CHECKSIGADD) => {
                 ret.push(Token::CheckSigAdd);
             }
             script::Instruction::Op(opcodes::all::OP_CHECKMULTISIG) => {
@@ -289,7 +294,7 @@ pub fn lex<'s>(script: &'s script::Script) -> Result<Vec<Token<'s>>, Error> {
                     Some(op @ &Token::Equal)
                     | Some(op @ &Token::CheckSig)
                     | Some(op @ &Token::CheckMultiSig) => {
-                        return Err(Error::NonMinimalVerify(String::from(format!("{:?}", op))))
+                        return Err(Error::NonMinimalVerify(format!("{:?}", op)))
                     }
                     _ => {}
                 }
@@ -334,10 +339,10 @@ pub fn lex<'s>(script: &'s script::Script) -> Result<Vec<Token<'s>>, Error> {
                     // reconvert these to pushes.
                     // See [process_candidate_push]
                     match bytes.len() {
-                        20 => ret.push(Token::Hash20(&bytes)),
-                        32 => ret.push(Token::Bytes32(&bytes)),
-                        33 => ret.push(Token::Bytes33(&bytes)),
-                        65 => ret.push(Token::Bytes65(&bytes)),
+                        20 => ret.push(Token::Hash20(bytes)),
+                        32 => ret.push(Token::Bytes32(bytes)),
+                        33 => ret.push(Token::Bytes33(bytes)),
+                        65 => ret.push(Token::Bytes65(bytes)),
                         _ => {
                             match script::read_scriptint(bytes) {
                                 Ok(v) if v >= 0 => {

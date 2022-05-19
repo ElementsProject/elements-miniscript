@@ -15,7 +15,8 @@
 //! Covenant Descriptor Errors
 
 use std::{error, fmt};
-use Error;
+
+use crate::Error;
 /// Covenant related Errors
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CovError {
@@ -42,7 +43,7 @@ pub enum CovError {
 }
 
 impl fmt::Display for CovError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             CovError::MissingScriptCode => write!(f, "Missing Script code"),
             CovError::MissingValue => write!(f, "Missing value"),

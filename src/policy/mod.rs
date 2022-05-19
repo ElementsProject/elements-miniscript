@@ -21,29 +21,20 @@
 //! The format represents EC public keys abstractly to allow wallets to replace
 //! these with BIP32 paths, pay-to-contract instructions, etc.
 //!
-use {error, fmt};
+use crate::{error, fmt};
 
 #[cfg(feature = "compiler")]
 pub mod compiler;
 pub mod concrete;
 pub mod semantic;
 
-use BtcPolicy;
-
-use descriptor::Descriptor;
-use miniscript::{Miniscript, ScriptContext};
-use Terminal;
-
-use descriptor::CovError;
-
-use Extension;
-
 pub use self::concrete::Policy as Concrete;
 /// Semantic policies are "abstract" policies elsewhere; but we
 /// avoid this word because it is a reserved keyword in Rust
 pub use self::semantic::Policy as Semantic;
-use Error;
-use MiniscriptKey;
+use crate::descriptor::{CovError, Descriptor};
+use crate::miniscript::{Miniscript, ScriptContext};
+use crate::{BtcPolicy, Error, Extension, MiniscriptKey, Terminal};
 
 /// Policy entailment algorithm maximum number of terminals allowed
 const ENTAILMENT_MAX_TERMINALS: usize = 20;
@@ -85,7 +76,7 @@ impl error::Error for LiftError {
 }
 
 impl fmt::Display for LiftError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             LiftError::HeightTimeLockCombination => {
                 f.write_str("Cannot lift policies that have a heightlock and timelock combination")
@@ -170,13 +161,12 @@ where
                 Semantic::Threshold(1, vec![left.node.lift()?, right.node.lift()?])
             }
             Terminal::Thresh(k, ref subs) => {
-                let semantic_subs: Result<_, Error> =
-                    subs.into_iter().map(|s| s.node.lift()).collect();
+                let semantic_subs: Result<_, Error> = subs.iter().map(|s| s.node.lift()).collect();
                 Semantic::Threshold(k, semantic_subs?)
             }
             Terminal::Multi(k, ref keys) | Terminal::MultiA(k, ref keys) => Semantic::Threshold(
                 k,
-                keys.into_iter()
+                keys.iter()
                     .map(|k| Semantic::KeyHash(k.to_pubkeyhash()))
                     .collect(),
             ),
@@ -248,10 +238,10 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for BtcPolicy<Pk> {
             BtcPolicy::Unsatisfiable => Ok(Semantic::Unsatisfiable),
             BtcPolicy::Trivial => Ok(Semantic::Trivial),
             BtcPolicy::KeyHash(ref pkh) => Ok(Semantic::KeyHash(pkh.clone())),
-            BtcPolicy::Sha256(ref h) => Ok(Semantic::Sha256(h.clone())),
-            BtcPolicy::Hash256(ref h) => Ok(Semantic::Hash256(h.clone())),
-            BtcPolicy::Ripemd160(ref h) => Ok(Semantic::Ripemd160(h.clone())),
-            BtcPolicy::Hash160(ref h) => Ok(Semantic::Hash160(h.clone())),
+            BtcPolicy::Sha256(ref h) => Ok(Semantic::Sha256(*h)),
+            BtcPolicy::Hash256(ref h) => Ok(Semantic::Hash256(*h)),
+            BtcPolicy::Ripemd160(ref h) => Ok(Semantic::Ripemd160(*h)),
+            BtcPolicy::Hash160(ref h) => Ok(Semantic::Hash160(*h)),
             BtcPolicy::After(n) => Ok(Semantic::After(n)),
             BtcPolicy::Older(n) => Ok(Semantic::Older(n)),
             BtcPolicy::Threshold(k, ref subs) => {
@@ -265,13 +255,14 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for BtcPolicy<Pk> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        super::miniscript::{context::Segwitv0, Miniscript},
-        Concrete, Liftable, Semantic,
-    };
-    use bitcoin;
     use std::str::FromStr;
-    use DummyKey;
+
+    use bitcoin;
+
+    use super::super::miniscript::context::Segwitv0;
+    use super::super::miniscript::Miniscript;
+    use super::{Concrete, Liftable, Semantic};
+    use crate::DummyKey;
 
     type ConcretePol = Concrete<DummyKey>;
     type SemanticPol = Semantic<DummyKey>;

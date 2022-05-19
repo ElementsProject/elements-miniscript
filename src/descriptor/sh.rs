@@ -18,24 +18,20 @@
 //! sh(miniscript), and sh(wpkh)
 //!
 
-use std::{fmt, str::FromStr};
+use std::fmt;
+use std::str::FromStr;
 
-use elements::secp256k1_zkp;
-use elements::{self, script, Script};
+use elements::{self, script, secp256k1_zkp, Script};
 
-use expression::{self, FromTree};
-use miniscript::context::ScriptContext;
-use policy::{semantic, Liftable};
-use push_opcode_size;
-use util::{varint_len, witness_to_scriptsig};
-use {
-    Error, ForEach, ForEachKey, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0,
-    ToPublicKey, TranslatePk,
-};
-
-use super::{
-    checksum::{desc_checksum, verify_checksum},
-    DescriptorTrait, ElementsTrait, SortedMultiVec, Wpkh, Wsh, ELMTS_STR,
+use super::checksum::{desc_checksum, verify_checksum};
+use super::{DescriptorTrait, ElementsTrait, SortedMultiVec, Wpkh, Wsh, ELMTS_STR};
+use crate::expression::{self, FromTree};
+use crate::miniscript::context::ScriptContext;
+use crate::policy::{semantic, Liftable};
+use crate::util::{varint_len, witness_to_scriptsig};
+use crate::{
+    push_opcode_size, Error, ForEach, ForEachKey, Legacy, Miniscript, MiniscriptKey, Satisfier,
+    Segwitv0, ToPublicKey, TranslatePk,
 };
 
 /// A Legacy p2sh Descriptor
@@ -71,7 +67,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Sh<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Sh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.inner {
             ShInner::Wsh(ref wsh_inner) => write!(f, "{}sh({:?})", ELMTS_STR, wsh_inner),
             ShInner::Wpkh(ref pk) => write!(f, "{}sh({:?})", ELMTS_STR, pk),
@@ -82,7 +78,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Sh<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Sh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = match self.inner {
             ShInner::Wsh(ref wsh) => format!("{}sh({})", ELMTS_STR, wsh.to_string_no_checksum()),
             ShInner::Wpkh(ref pk) => format!("{}sh({})", ELMTS_STR, pk.to_string_no_checksum()),
@@ -101,20 +97,20 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "elsh" && top.args.len() == 1 {
             let top = &top.args[0];
             let inner = match top.name {
-                "wsh" => ShInner::Wsh(Wsh::from_inner_tree(&top)?),
-                "wpkh" => ShInner::Wpkh(Wpkh::from_inner_tree(&top)?),
-                "sortedmulti" => ShInner::SortedMulti(SortedMultiVec::from_tree(&top)?),
+                "wsh" => ShInner::Wsh(Wsh::from_inner_tree(top)?),
+                "wpkh" => ShInner::Wpkh(Wpkh::from_inner_tree(top)?),
+                "sortedmulti" => ShInner::SortedMulti(SortedMultiVec::from_tree(top)?),
                 _ => {
-                    let sub = Miniscript::from_tree(&top)?;
+                    let sub = Miniscript::from_tree(top)?;
                     Legacy::top_level_checks(&sub)?;
                     ShInner::Ms(sub)
                 }
             };
-            Ok(Sh { inner: inner })
+            Ok(Sh { inner })
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing sh descriptor",
@@ -482,6 +478,6 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Sh<P> {
                 ShInner::Ms(ms.translate_pk(&mut translatefpk, &mut translatefpkh)?)
             }
         };
-        Ok(Sh { inner: inner })
+        Ok(Sh { inner })
     }
 }

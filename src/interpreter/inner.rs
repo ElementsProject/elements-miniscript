@@ -15,21 +15,14 @@
 use bitcoin;
 use bitcoin::util::taproot::TAPROOT_ANNEX_PREFIX;
 use elements::hashes::{hash160, sha256, Hash};
-use elements::{self, script};
-use TranslatePk;
-
-use super::{stack, BitcoinKey, Error, Stack, TypedHash160};
-use Extension;
-
-use descriptor::{CovOperations, CovenantDescriptor};
 use elements::schnorr::TapTweak;
 use elements::taproot::ControlBlock;
-use miniscript::context::NoChecks;
+use elements::{self, script};
 
-use {BareCtx, Legacy, Segwitv0, Tap};
-
-use miniscript::context::ScriptContext;
-use {Miniscript, MiniscriptKey};
+use super::{stack, BitcoinKey, Error, Stack, TypedHash160};
+use crate::descriptor::{CovOperations, CovenantDescriptor};
+use crate::miniscript::context::{NoChecks, ScriptContext};
+use crate::{BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, TranslatePk};
 
 /// Attempts to parse a slice as a Bitcoin public key, checking compressedness
 /// if asked to, but otherwise dropping it
@@ -45,8 +38,8 @@ fn pk_from_slice(slice: &[u8], require_compressed: bool) -> Result<bitcoin::Publ
     }
 }
 
-fn pk_from_stackelem<'a>(
-    elem: &stack::Element<'a>,
+fn pk_from_stackelem(
+    elem: &stack::Element<'_>,
     require_compressed: bool,
 ) -> Result<bitcoin::PublicKey, Error> {
     let slice = if let stack::Element::Push(slice) = *elem {
@@ -59,24 +52,26 @@ fn pk_from_stackelem<'a>(
 
 // Parse the script with appropriate context to check for context errors like
 // correct usage of x-only keys or multi_a
-fn script_from_stackelem<'a, Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
-    elem: &stack::Element<'a>,
+fn script_from_stackelem<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
+    elem: &stack::Element,
 ) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
     match *elem {
         stack::Element::Push(sl) => {
             Miniscript::parse_insane(&elements::Script::from(sl.to_owned())).map_err(Error::from)
         }
-        stack::Element::Satisfied => Miniscript::from_ast(::Terminal::True).map_err(Error::from),
+        stack::Element::Satisfied => {
+            Miniscript::from_ast(crate::Terminal::True).map_err(Error::from)
+        }
         stack::Element::Dissatisfied => {
-            Miniscript::from_ast(::Terminal::False).map_err(Error::from)
+            Miniscript::from_ast(crate::Terminal::False).map_err(Error::from)
         }
     }
 }
 
 // Try to parse covenant components from witness script
 // stack element
-fn cov_components_from_stackelem<'a, Ext>(
-    elem: &stack::Element<'a>,
+fn cov_components_from_stackelem<Ext>(
+    elem: &stack::Element<'_>,
 ) -> Option<(
     super::BitcoinKey,
     Miniscript<super::BitcoinKey, NoChecks, Ext>,
@@ -164,15 +159,15 @@ where
     <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
         TranslatePk<bitcoin::XOnlyPublicKey, BitcoinKey, Output = Ext>,
 {
-    let mut ssig_stack: Stack = script_sig
+    let mut ssig_stack: Stack<'_> = script_sig
         .instructions_minimal()
         .map(stack::Element::from_instruction)
-        .collect::<Result<Vec<stack::Element>, Error>>()?
+        .collect::<Result<Vec<stack::Element<'_>>, Error>>()?
         .into();
-    let mut wit_stack: Stack = witness
+    let mut wit_stack: Stack<'_> = witness
         .iter()
         .map(stack::Element::from)
-        .collect::<Vec<stack::Element>>()
+        .collect::<Vec<stack::Element<'_>>>()
         .into();
 
     // ** pay to pubkey **
@@ -276,7 +271,7 @@ where
             let has_annex = wit_stack
                 .last()
                 .and_then(|x| x.as_push().ok())
-                .map(|x| x.len() > 0 && x[0] == TAPROOT_ANNEX_PREFIX)
+                .map(|x| !x.is_empty() && x[0] == TAPROOT_ANNEX_PREFIX)
                 .unwrap_or(false);
             let has_annex = has_annex && (wit_stack.len() >= 2);
             if has_annex {
@@ -297,8 +292,8 @@ where
                     let ctrl_blk = wit_stack.pop().ok_or(Error::UnexpectedStackEnd)?;
                     let ctrl_blk = ctrl_blk.as_push()?;
                     let tap_script = wit_stack.pop().ok_or(Error::UnexpectedStackEnd)?;
-                    let ctrl_blk = ControlBlock::from_slice(ctrl_blk)
-                        .map_err(|e| Error::ControlBlockParse(e))?;
+                    let ctrl_blk =
+                        ControlBlock::from_slice(ctrl_blk).map_err(Error::ControlBlockParse)?;
                     let tap_script = script_from_stackelem::<
                         Tap,
                         <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output,
@@ -326,7 +321,7 @@ where
                             Some(tap_script),
                         ))
                     } else {
-                        return Err(Error::ControlBlockVerificationError);
+                        Err(Error::ControlBlockVerificationError)
                     }
                 }
             }
@@ -421,23 +416,21 @@ where
             None => Err(Error::UnexpectedStackEnd),
         }
     // ** bare script **
+    } else if wit_stack.is_empty() {
+        // Bare script parsed in BareCtx
+        let miniscript = Miniscript::<
+            bitcoin::PublicKey,
+            BareCtx,
+            <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
+        >::parse_insane(spk)?;
+        let miniscript = miniscript.to_no_checks_ms();
+        Ok((
+            Inner::Script(miniscript, ScriptType::Bare),
+            ssig_stack,
+            Some(spk.clone()),
+        ))
     } else {
-        if wit_stack.is_empty() {
-            // Bare script parsed in BareCtx
-            let miniscript = Miniscript::<
-                bitcoin::PublicKey,
-                BareCtx,
-                <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
-            >::parse_insane(spk)?;
-            let miniscript = miniscript.to_no_checks_ms();
-            Ok((
-                Inner::Script(miniscript, ScriptType::Bare),
-                ssig_stack,
-                Some(spk.clone()),
-            ))
-        } else {
-            Err(Error::NonEmptyWitness)
-        }
+        Err(Error::NonEmptyWitness)
     }
 }
 
@@ -487,13 +480,14 @@ where
 #[cfg(test)]
 mod tests {
 
-    use super::*;
+    use std::str::FromStr;
+
     use elements::hashes::hex::FromHex;
     use elements::hashes::{hash160, sha256, Hash};
-    use elements::script;
-    use elements::{self, Script};
-    use std::str::FromStr;
-    use CovenantExt;
+    use elements::{self, script, Script};
+
+    use super::*;
+    use crate::CovenantExt;
 
     struct KeyTestData {
         pk_spk: elements::Script,

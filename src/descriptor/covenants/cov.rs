@@ -40,39 +40,28 @@
 //! After all the miniscript fragments are evaluated, we concat
 //! all the items using OP_CAT to obtain a Sighash on which we
 //! which we verify using CHECKSIGFROMSTACK
-use std::{fmt, str::FromStr};
+use std::fmt;
+use std::str::FromStr;
 
 use bitcoin;
+use elements::encode::{serialize, Encodable};
 use elements::hashes::{sha256d, Hash};
-use elements::script;
-use elements::secp256k1_zkp;
-use elements::{
-    self,
-    encode::{serialize, Encodable},
-    Script,
-};
-use miniscript::limits::{MAX_SCRIPT_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE};
+use elements::{self, script, secp256k1_zkp, Script};
 
-use {
-    expression::{self, FromTree},
-    miniscript::{
-        decode,
-        lex::{lex, Token as Tk, TokenIter},
-        limits::MAX_OPS_PER_SCRIPT,
-        types,
-    },
-    util::varint_len,
-    ForEach, ForEachKey, Miniscript, ScriptContext, Segwitv0, TranslatePk,
-};
-
-use Extension;
-
-use super::super::{
-    checksum::{desc_checksum, verify_checksum},
-    ElementsTrait, ELMTS_STR,
-};
+use super::super::checksum::{desc_checksum, verify_checksum};
+use super::super::{ElementsTrait, ELMTS_STR};
 use super::{CovError, CovOperations};
-use {DescriptorTrait, Error, MiniscriptKey, Satisfier, ToPublicKey};
+use crate::expression::{self, FromTree};
+use crate::miniscript::lex::{lex, Token as Tk, TokenIter};
+use crate::miniscript::limits::{
+    MAX_OPS_PER_SCRIPT, MAX_SCRIPT_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE,
+};
+use crate::miniscript::{decode, types};
+use crate::util::varint_len;
+use crate::{
+    DescriptorTrait, Error, Extension, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier,
+    ScriptContext, Segwitv0, ToPublicKey, TranslatePk,
+};
 
 // A simple utility function to serialize an array
 // of elements and compute double sha2 on it
@@ -116,7 +105,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
     /// Create a new Self from components
     pub fn new(pk: Pk, ms: Miniscript<Pk, Segwitv0, Ext>) -> Result<Self, Error> {
         // // 1) Check the 201 opcode count here
-        let ms_op_count = ms.ext.ops_count_sat;
+        let ms_op_count = ms.ext.ops.op_count();
         // statically computed
         // see cov_test_limits test for the test assert
         let cov_script_ops = COV_SCRIPT_OPCODE_COST;
@@ -152,7 +141,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
         Pk: ToPublicKey,
     {
         let mut wit = {
-            use descriptor::CovError::MissingSighashItem;
+            use crate::descriptor::CovError::MissingSighashItem;
             let n_version = s.lookup_nversion().ok_or(MissingSighashItem(1))?;
             let hash_prevouts = s.lookup_hashprevouts().ok_or(MissingSighashItem(1))?;
             let hash_sequence = s.lookup_hashsequence().ok_or(MissingSighashItem(3))?;
@@ -217,7 +206,7 @@ impl<Ext: Extension<bitcoin::PublicKey>> CovenantDescriptor<bitcoin::PublicKey, 
     /// Consumes the iterator so that only remaining miniscript
     /// needs to be parsed from the iterator
     #[allow(unreachable_patterns)]
-    fn check_cov_script(tokens: &mut TokenIter) -> Result<bitcoin::PublicKey, Error> {
+    fn check_cov_script(tokens: &mut TokenIter<'_>) -> Result<bitcoin::PublicKey, Error> {
         match_token!(tokens,
             Tk::CheckSigFromStack, Tk::Verify, Tk::CheckSig, Tk::CodeSep, Tk::Swap,
             Tk::FromAltStack, Tk::Dup, Tk::Bytes33(pk), Tk::Sha256,
@@ -237,10 +226,10 @@ impl<Ext: Extension<bitcoin::PublicKey>> CovenantDescriptor<bitcoin::PublicKey, 
             Tk::Swap, Tk::Verify, Tk::Equal, Tk::Num(4), Tk::Size,  // item 1
             Tk::ToAltStack, Tk::Cat, Tk::Left, Tk::Num(1),
             Tk::Pick, Tk::Num(11), Tk::Pick, Tk::Num(11), Tk::Verify => {
-                return Ok(bitcoin::PublicKey::from_slice(pk)?);
+                Ok(bitcoin::PublicKey::from_slice(pk)?)
             },
-            _ => return Err(Error::CovError(CovError::BadCovDescriptor)),
-        );
+            _ => Err(Error::CovError(CovError::BadCovDescriptor)),
+        )
     }
 
     /// Parse a descriptor from script. While parsing
@@ -305,13 +294,13 @@ where
     <Pk as FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "elcovwsh" && top.args.len() == 2 {
             let pk = expression::terminal(&top.args[0], |pk| Pk::from_str(pk))?;
             let top = &top.args[1];
-            let sub = Miniscript::from_tree(&top)?;
+            let sub = Miniscript::from_tree(top)?;
             Segwitv0::top_level_checks(&sub)?;
-            Ok(CovenantDescriptor { pk: pk, ms: sub })
+            Ok(CovenantDescriptor { pk, ms: sub })
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing elcovwsh descriptor",
@@ -326,7 +315,7 @@ where
     Pk: MiniscriptKey,
     Ext: Extension<Pk>,
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}covwsh({},{})", ELMTS_STR, self.pk, self.ms)
     }
 }
@@ -336,7 +325,7 @@ where
     Pk: MiniscriptKey,
     Ext: Extension<Pk>,
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = format!("{}covwsh({},{})", ELMTS_STR, self.pk, self.ms);
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
         write!(f, "{}#{}", &desc, &checksum)

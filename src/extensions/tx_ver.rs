@@ -4,31 +4,19 @@
 
 use std::fmt;
 
-use MiniscriptKey;
+use elements::encode::serialize;
+use elements::{self};
 
-use elements::{self, encode::serialize};
-use miniscript;
-use Extension;
-use ForEach;
-use TranslatePk;
-
-use ToPublicKey;
-
-use util;
-
-use {
-    descriptor::CovError,
-    expression, interpreter,
-    miniscript::{
-        astelem::StackCtxOperations,
-        lex::{Token as Tk, TokenIter},
-        satisfy::{Satisfaction, Witness},
-        types::{
-            extra_props::TimeLockInfo, Base, Correctness, Dissat, ExtData, Input, Malleability,
-        },
-    },
-    policy::{self, Liftable},
-    Error, Satisfier,
+use crate::descriptor::CovError;
+use crate::miniscript::astelem::StackCtxOperations;
+use crate::miniscript::lex::{Token as Tk, TokenIter};
+use crate::miniscript::satisfy::{Satisfaction, Witness};
+use crate::miniscript::types::extra_props::{OpLimits, TimeLockInfo};
+use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
+use crate::policy::{self, Liftable};
+use crate::{
+    expression, interpreter, miniscript, util, Error, Extension, ForEach, MiniscriptKey, Satisfier,
+    ToPublicKey, TranslatePk,
 };
 
 /// Version struct
@@ -86,9 +74,6 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         ExtData {
             pk_cost: 4 + 1 + 1 + 4, // 4 opcodes, 1 push, (5) 4 byte push
             has_free_verify: true,
-            ops_count_static: 4,
-            ops_count_sat: Some(4),
-            ops_count_nsat: Some(4),
             stack_elem_count_sat: Some(0),
             stack_elem_count_dissat: Some(0),
             max_sat_size: Some((0, 0)),
@@ -96,6 +81,11 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
             timelock_info: TimeLockInfo::default(),
             exec_stack_elem_count_sat: Some(2),
             exec_stack_elem_count_dissat: Some(2),
+            ops: OpLimits {
+                count: 4,
+                sat: Some(0),
+                nsat: Some(0),
+            },
         }
     }
 
@@ -153,7 +143,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         4 + 1 + 1 + 4 // opcodes + push opcodes + target size
     }
 
-    fn from_token_iter(tokens: &mut TokenIter) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
         let ver = {
             let sl = tokens.peek_slice(5).ok_or(())?;
             if let Tk::PickPush4(ver) = sl[3] {
@@ -174,7 +164,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         Ok(ver)
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree]) -> Result<Self, ()> {
+    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
         if children.len() == 1 && name == "ver_eq" {
             let n = expression::terminal(&children[0], expression::parse_num).map_err(|_| ())?;
             Ok(Self { n })
@@ -231,9 +221,10 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for VerEq {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use bitcoin::PublicKey;
-    use {Miniscript, Segwitv0};
+
+    use super::*;
+    use crate::{Miniscript, Segwitv0};
 
     #[test]
     fn test_ver_eq() {

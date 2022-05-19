@@ -21,11 +21,8 @@ use elements::hashes::hex::FromHex;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d};
 
 use super::concrete::PolicyError;
-use errstr;
-use Error;
-use {expression, ForEach, ForEachKey, MiniscriptKey};
-
 use super::ENTAILMENT_MAX_TERMINALS;
+use crate::{errstr, expression, Error, ForEach, ForEachKey, MiniscriptKey};
 
 /// Abstract policy which corresponds to the semantics of a Miniscript
 /// and which allows complex forms of analysis, e.g. filtering and
@@ -116,10 +113,10 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             Policy::Unsatisfiable => Ok(Policy::Unsatisfiable),
             Policy::Trivial => Ok(Policy::Trivial),
             Policy::KeyHash(ref pkh) => translatefpkh(pkh).map(Policy::KeyHash),
-            Policy::Sha256(ref h) => Ok(Policy::Sha256(h.clone())),
-            Policy::Hash256(ref h) => Ok(Policy::Hash256(h.clone())),
-            Policy::Ripemd160(ref h) => Ok(Policy::Ripemd160(h.clone())),
-            Policy::Hash160(ref h) => Ok(Policy::Hash160(h.clone())),
+            Policy::Sha256(ref h) => Ok(Policy::Sha256(*h)),
+            Policy::Hash256(ref h) => Ok(Policy::Hash256(*h)),
+            Policy::Ripemd160(ref h) => Ok(Policy::Ripemd160(*h)),
+            Policy::Hash160(ref h) => Ok(Policy::Hash160(*h)),
             Policy::After(n) => Ok(Policy::After(n)),
             Policy::Older(n) => Ok(Policy::Older(n)),
             Policy::Threshold(k, ref subs) => {
@@ -190,12 +187,11 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     // Witness is currently encoded as policy. Only accepts leaf fragment and
     // a normalized policy
     fn satisfy_constraint(self, witness: &Policy<Pk>, available: bool) -> Policy<Pk> {
-        debug_assert!(self.clone().normalized() == self.clone());
-        match *witness {
-            // only for internal purposes, safe to use unreachable!
-            Policy::Threshold(..) => unreachable!(),
-            _ => {}
-        };
+        debug_assert!(self.clone().normalized() == self);
+        // only for internal purposes, safe to use unreachable!
+        if let Policy::Threshold(..) = *witness {
+            unreachable!()
+        }
         let ret = match self {
             Policy::Threshold(k, subs) => {
                 let mut ret_subs = vec![];
@@ -218,7 +214,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Debug for Policy<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Policy::Unsatisfiable => f.write_str("UNSATISFIABLE()"),
             Policy::Trivial => f.write_str("TRIVIAL()"),
@@ -237,7 +233,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Policy<Pk> {
                 } else {
                     write!(f, "thresh({},", k)?;
                 }
-                for (i, sub) in subs.into_iter().enumerate() {
+                for (i, sub) in subs.iter().enumerate() {
                     if i == 0 {
                         write!(f, "{}", sub)?;
                     } else {
@@ -251,7 +247,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Policy<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Policy<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Policy::Unsatisfiable => f.write_str("UNSATISFIABLE"),
             Policy::Trivial => f.write_str("TRIVIAL"),
@@ -270,7 +266,7 @@ impl<Pk: MiniscriptKey> fmt::Display for Policy<Pk> {
                 } else {
                     write!(f, "thresh({},", k)?;
                 }
-                for (i, sub) in subs.into_iter().enumerate() {
+                for (i, sub) in subs.iter().enumerate() {
                     if i == 0 {
                         write!(f, "{}", sub)?;
                     } else {
@@ -313,7 +309,7 @@ where
     <Pk as str::FromStr>::Err: ToString,
     <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
 {
-    fn from_tree(top: &expression::Tree) -> Result<Policy<Pk>, Error> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Policy<Pk>, Error> {
         match (top.name, top.args.len()) {
             ("UNSATISFIABLE", 0) => Ok(Policy::Unsatisfiable),
             ("TRIVIAL", 0) => Ok(Policy::Trivial),
@@ -491,7 +487,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// which appear in the policy
     pub fn relative_timelocks(&self) -> Vec<u32> {
         let mut ret = self.real_relative_timelocks();
-        ret.sort();
+        ret.sort_unstable();
         ret.dedup();
         ret
     }
@@ -519,7 +515,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// which appear in the policy
     pub fn absolute_timelocks(&self) -> Vec<u32> {
         let mut ret = self.real_absolute_timelocks();
-        ret.sort();
+        ret.sort_unstable();
         ret.dedup();
         ret
     }
@@ -599,7 +595,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                     // Not enough branches are satisfiable
                     None
                 } else {
-                    sublens.sort();
+                    sublens.sort_unstable();
                     Some(sublens[0..k].iter().cloned().sum::<usize>())
                 }
             }
@@ -626,8 +622,9 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::PublicKey;
     use std::str::FromStr;
+
+    use bitcoin::PublicKey;
 
     use super::*;
 

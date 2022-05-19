@@ -5,7 +5,7 @@
 
 use std::iter::FromIterator;
 
-use Error;
+use crate::Error;
 
 const INPUT_CHARSET: &str =  "0123456789()[],'/*abcdefgh@:$%{}IJKLMNOPQRSTUVWXYZ&+-.;<=>?!^_|~ijklmnopqrstuvwxyzABCDEFGH`#\"\\ ";
 const CHECKSUM_CHARSET: &str = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
@@ -43,10 +43,9 @@ pub fn desc_checksum(desc: &str) -> Result<String, Error> {
     let mut clscount = 0;
 
     for ch in desc.chars() {
-        let pos = INPUT_CHARSET.find(ch).ok_or(Error::BadDescriptor(format!(
-            "Invalid character in checksum: '{}'",
-            ch
-        )))? as u64;
+        let pos = INPUT_CHARSET.find(ch).ok_or_else(|| {
+            Error::BadDescriptor(format!("Invalid character in checksum: '{}'", ch))
+        })? as u64;
         c = poly_mod(c, pos & 31);
         cls = cls * 3 + (pos >> 5);
         clscount += 1;
@@ -108,8 +107,9 @@ pub(super) fn strip_checksum(s: &str) -> &str {
 }
 #[cfg(test)]
 mod test {
-    use super::*;
     use std::str;
+
+    use super::*;
 
     macro_rules! check_expected {
         ($desc: expr, $checksum: expr) => {

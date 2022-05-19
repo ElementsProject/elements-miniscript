@@ -16,19 +16,16 @@ use std::{fmt, hash};
 
 use bitcoin;
 use bitcoin::blockdata::constants::MAX_BLOCK_WEIGHT;
-use miniscript::limits::{
+
+use super::decode::ParseableKey;
+use crate::miniscript::limits::{
     MAX_OPS_PER_SCRIPT, MAX_PUBKEYS_PER_MULTISIG, MAX_SCRIPTSIG_SIZE, MAX_SCRIPT_ELEMENT_SIZE,
     MAX_SCRIPT_SIZE, MAX_STACK_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE,
     MAX_STANDARD_P2WSH_STACK_ITEMS,
 };
-use miniscript::types;
-use util::witness_to_scriptsig;
-use Error;
-
-use super::decode::ParseableKey;
-
-use Extension;
-use {Miniscript, MiniscriptKey, Terminal};
+use crate::miniscript::types;
+use crate::util::witness_to_scriptsig;
+use crate::{Error, Extension, Miniscript, MiniscriptKey, Terminal};
 
 /// Error for Script Context
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -91,7 +88,7 @@ pub enum SigType {
 }
 
 impl fmt::Display for ScriptContextError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             ScriptContextError::MalleablePkH => write!(f, "PkH is malleable under Legacy rules"),
             ScriptContextError::MalleableOrI => write!(f, "OrI is malleable under Legacy rules"),
@@ -423,7 +420,7 @@ impl ScriptContext for Legacy {
     fn check_local_consensus_validity<Pk: MiniscriptKey, Ext: Extension<Pk>>(
         ms: &Miniscript<Pk, Self, Ext>,
     ) -> Result<(), ScriptContextError> {
-        match ms.ext.ops_count_sat {
+        match ms.ext.ops.op_count() {
             None => Err(ScriptContextError::MaxOpCountExceeded),
             Some(op_count) if op_count > MAX_OPS_PER_SCRIPT => {
                 Err(ScriptContextError::MaxOpCountExceeded)
@@ -535,9 +532,7 @@ impl ScriptContext for Segwitv0 {
                 e.segwit_ctx_checks()?;
                 Ok(())
             }
-            Terminal::MultiA(..) => {
-                return Err(ScriptContextError::MultiANotAllowed);
-            }
+            Terminal::MultiA(..) => Err(ScriptContextError::MultiANotAllowed),
             _ => Ok(()),
         }
     }
@@ -545,7 +540,7 @@ impl ScriptContext for Segwitv0 {
     fn check_local_consensus_validity<Pk: MiniscriptKey, Ext: Extension<Pk>>(
         ms: &Miniscript<Pk, Self, Ext>,
     ) -> Result<(), ScriptContextError> {
-        match ms.ext.ops_count_sat {
+        match ms.ext.ops.op_count() {
             None => Err(ScriptContextError::MaxOpCountExceeded),
             Some(op_count) if op_count > MAX_OPS_PER_SCRIPT => {
                 Err(ScriptContextError::MaxOpCountExceeded)
@@ -648,9 +643,7 @@ impl ScriptContext for Tap {
                 }
                 Ok(())
             }
-            Terminal::Multi(..) => {
-                return Err(ScriptContextError::TaprootMultiDisabled);
-            }
+            Terminal::Multi(..) => Err(ScriptContextError::TaprootMultiDisabled),
             _ => Ok(()),
         }
     }
@@ -766,7 +759,7 @@ impl ScriptContext for BareCtx {
                 }
                 Ok(())
             }
-            Terminal::MultiA(..) => return Err(ScriptContextError::MultiANotAllowed),
+            Terminal::MultiA(..) => Err(ScriptContextError::MultiANotAllowed),
             _ => Ok(()),
         }
     }
@@ -774,7 +767,7 @@ impl ScriptContext for BareCtx {
     fn check_local_consensus_validity<Pk: MiniscriptKey, Ext: Extension<Pk>>(
         ms: &Miniscript<Pk, Self, Ext>,
     ) -> Result<(), ScriptContextError> {
-        match ms.ext.ops_count_sat {
+        match ms.ext.ops.op_count() {
             None => Err(ScriptContextError::MaxOpCountExceeded),
             Some(op_count) if op_count > MAX_OPS_PER_SCRIPT => {
                 Err(ScriptContextError::MaxOpCountExceeded)

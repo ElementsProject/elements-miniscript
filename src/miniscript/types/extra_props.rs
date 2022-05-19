@@ -1,22 +1,17 @@
 //! Other miscellaneous type properties which are not related to
 //! correctness or malleability.
 
-use miniscript::limits::{
-    HEIGHT_TIME_THRESHOLD, MAX_SCRIPT_ELEMENT_SIZE, SEQUENCE_LOCKTIME_DISABLE_FLAG,
-    SEQUENCE_LOCKTIME_TYPE_FLAG,
-};
-
-use Extension;
-
-use super::{Error, ErrorKind, Property, ScriptContext};
-use script_num_size;
 use std::cmp;
 use std::iter::once;
-use MiniscriptKey;
-use Terminal;
+
+use super::{Error, ErrorKind, Property, ScriptContext};
+use crate::miniscript::limits::{
+    HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
+};
+use crate::{script_num_size, Extension, MiniscriptKey, Terminal};
 
 /// Helper struct Whether any satisfaction of this fragment contains any timelocks
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 pub struct TimeLockInfo {
     /// csv with heights
     pub csv_with_height: bool,
@@ -30,15 +25,31 @@ pub struct TimeLockInfo {
     pub contains_combination: bool,
 }
 
-impl Default for TimeLockInfo {
-    fn default() -> Self {
-        Self {
-            csv_with_height: false,
-            csv_with_time: false,
-            cltv_with_height: false,
-            cltv_with_time: false,
-            contains_combination: false,
+/// Helper struct to store information about op code limits. Note that this only
+/// counts the non-push opcodes. This is not relevant for TapScript context
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub struct OpLimits {
+    /// The worst case static(executed + unexecuted) ops-count for this Miniscript fragment.
+    pub count: usize,
+    /// The worst case additional ops-count for satisfying this Miniscript fragment.
+    pub sat: Option<usize>,
+    /// The worst case additional ops-count for dissatisfying this Miniscript fragment.
+    pub nsat: Option<usize>,
+}
+
+impl OpLimits {
+    /// Creates a new instance of [`OpLimits`]
+    pub fn new(op_static: usize, op_sat: Option<usize>, op_nsat: Option<usize>) -> Self {
+        OpLimits {
+            count: op_static,
+            sat: op_sat,
+            nsat: op_nsat,
         }
+    }
+
+    /// Worst case opcode count when this element is satisfied
+    pub fn op_count(&self) -> Option<usize> {
+        opt_add(Some(self.count), self.sat)
     }
 }
 
@@ -103,12 +114,8 @@ pub struct ExtData {
     pub pk_cost: usize,
     /// Whether this fragment can be verify-wrapped for free
     pub has_free_verify: bool,
-    /// The worst case static(unexecuted) ops-count for this Miniscript fragment.
-    pub ops_count_static: usize,
-    /// The worst case ops-count for satisfying this Miniscript fragment.
-    pub ops_count_sat: Option<usize>,
-    /// The worst case ops-count for dissatisfying this Miniscript fragment.
-    pub ops_count_nsat: Option<usize>,
+    /// Opcode limits for this fragment.
+    pub ops: OpLimits,
     /// The worst case number of stack elements for satisfying this Miniscript fragment.
     pub stack_elem_count_sat: Option<usize>,
     /// The worst case number of stack elements for dissatisfying this Miniscript fragment.
@@ -150,9 +157,7 @@ impl Property for ExtData {
         ExtData {
             pk_cost: 1,
             has_free_verify: false,
-            ops_count_static: 0,
-            ops_count_sat: Some(0),
-            ops_count_nsat: None,
+            ops: OpLimits::new(0, Some(0), None),
             stack_elem_count_sat: Some(0),
             stack_elem_count_dissat: None,
             max_sat_size: Some((0, 0)),
@@ -167,9 +172,7 @@ impl Property for ExtData {
         ExtData {
             pk_cost: 1,
             has_free_verify: false,
-            ops_count_static: 0,
-            ops_count_sat: None,
-            ops_count_nsat: Some(0),
+            ops: OpLimits::new(0, None, Some(0)),
             stack_elem_count_sat: None,
             stack_elem_count_dissat: Some(0),
             max_sat_size: None,
@@ -184,9 +187,7 @@ impl Property for ExtData {
         ExtData {
             pk_cost: 34,
             has_free_verify: false,
-            ops_count_static: 0,
-            ops_count_sat: Some(0),
-            ops_count_nsat: Some(0),
+            ops: OpLimits::new(0, Some(0), Some(0)),
             stack_elem_count_sat: Some(1),
             stack_elem_count_dissat: Some(1),
             max_sat_size: Some((73, 73)),
@@ -201,9 +202,7 @@ impl Property for ExtData {
         ExtData {
             pk_cost: 24,
             has_free_verify: false,
-            ops_count_static: 3,
-            ops_count_sat: Some(3),
-            ops_count_nsat: Some(3),
+            ops: OpLimits::new(3, Some(0), Some(0)),
             stack_elem_count_sat: Some(2),
             stack_elem_count_dissat: Some(2),
             max_sat_size: Some((34 + 73, 34 + 73)),
@@ -224,9 +223,9 @@ impl Property for ExtData {
         ExtData {
             pk_cost: num_cost + 34 * n + 1,
             has_free_verify: true,
-            ops_count_static: 1,
-            ops_count_sat: Some(n + 1),
-            ops_count_nsat: Some(n + 1),
+            // Multi is the only case because of which we need to count additional
+            // executed opcodes.
+            ops: OpLimits::new(1, Some(n), Some(n)),
             stack_elem_count_sat: Some(k + 1),
             stack_elem_count_dissat: Some(k + 1),
             max_sat_size: Some((1 + 73 * k, 1 + 73 * k)),
@@ -247,12 +246,11 @@ impl Property for ExtData {
         ExtData {
             pk_cost: num_cost + 33 * n /*pks*/ + (n-1) /*checksigadds*/ + 1,
             has_free_verify: true,
-            ops_count_static: 1, // We don't care about opcounts in tapscript
-            ops_count_sat: Some(n + 1),
-            ops_count_nsat: Some(n + 1),
+            // These numbers are irrelevant here are there is no op limit in tapscript
+            ops: OpLimits::new(n, Some(0), Some(0)),
             stack_elem_count_sat: Some(n),
             stack_elem_count_dissat: Some(n),
-            max_sat_size: Some(((n - k) + 64 * k, (n - k) + 64 * k)),
+            max_sat_size: Some(((n - k) + 66 * k, (n - k) + 66 * k)),
             max_dissat_size: Some((n, n)),
             timelock_info: TimeLockInfo::default(),
             exec_stack_elem_count_sat: Some(2), // the two nums before num equal verify
@@ -269,9 +267,7 @@ impl Property for ExtData {
         ExtData {
             pk_cost: 33 + 6,
             has_free_verify: true,
-            ops_count_static: 4,
-            ops_count_sat: Some(4),
-            ops_count_nsat: Some(4),
+            ops: OpLimits::new(4, Some(0), Some(0)),
             stack_elem_count_sat: Some(1),
             stack_elem_count_dissat: Some(1),
             max_sat_size: Some((33, 33)),
@@ -286,9 +282,7 @@ impl Property for ExtData {
         ExtData {
             pk_cost: 33 + 6,
             has_free_verify: true,
-            ops_count_static: 4,
-            ops_count_sat: Some(4),
-            ops_count_nsat: Some(4),
+            ops: OpLimits::new(4, Some(0), Some(0)),
             stack_elem_count_sat: Some(1),
             stack_elem_count_dissat: Some(1),
             max_sat_size: Some((33, 33)),
@@ -303,9 +297,7 @@ impl Property for ExtData {
         ExtData {
             pk_cost: 21 + 6,
             has_free_verify: true,
-            ops_count_static: 4,
-            ops_count_sat: Some(4),
-            ops_count_nsat: Some(4),
+            ops: OpLimits::new(4, Some(0), Some(0)),
             stack_elem_count_sat: Some(1),
             stack_elem_count_dissat: Some(1),
             max_sat_size: Some((33, 33)),
@@ -320,9 +312,7 @@ impl Property for ExtData {
         ExtData {
             pk_cost: 21 + 6,
             has_free_verify: true,
-            ops_count_static: 4,
-            ops_count_sat: Some(4),
-            ops_count_nsat: Some(4),
+            ops: OpLimits::new(4, Some(0), Some(0)),
             stack_elem_count_sat: Some(1),
             stack_elem_count_dissat: Some(1),
             max_sat_size: Some((33, 33)),
@@ -341,9 +331,7 @@ impl Property for ExtData {
         ExtData {
             pk_cost: script_num_size(t as usize) + 1,
             has_free_verify: false,
-            ops_count_static: 1,
-            ops_count_sat: Some(1),
-            ops_count_nsat: None,
+            ops: OpLimits::new(1, Some(0), None),
             stack_elem_count_sat: Some(0),
             stack_elem_count_dissat: None,
             max_sat_size: Some((0, 0)),
@@ -364,9 +352,7 @@ impl Property for ExtData {
         ExtData {
             pk_cost: script_num_size(t as usize) + 1,
             has_free_verify: false,
-            ops_count_static: 1,
-            ops_count_sat: Some(1),
-            ops_count_nsat: None,
+            ops: OpLimits::new(1, Some(0), None),
             stack_elem_count_sat: Some(0),
             stack_elem_count_dissat: None,
             max_sat_size: Some((0, 0)),
@@ -383,57 +369,11 @@ impl Property for ExtData {
         }
     }
 
-    fn from_item_eq() -> Self {
-        unreachable!()
-    }
-
-    fn from_item_pref(_pref: &[u8]) -> Self {
-        unreachable!()
-    }
-
-    fn from_ver_eq() -> Self {
-        ExtData {
-            pk_cost: 4 + 1 + 1 + 4, // 4 opcodes, 1 push, (5) 4 byte push
-            has_free_verify: true,
-            ops_count_static: 4,
-            ops_count_sat: Some(4),
-            ops_count_nsat: Some(4),
-            stack_elem_count_sat: Some(0),
-            stack_elem_count_dissat: Some(0),
-            max_sat_size: Some((0, 0)),
-            max_dissat_size: Some((0, 0)),
-            timelock_info: TimeLockInfo::default(),
-            exec_stack_elem_count_sat: Some(2), // two things to compare on stack
-            exec_stack_elem_count_dissat: Some(2),
-        }
-    }
-
-    fn from_output_pref(pref: &[u8]) -> Self {
-        // Assume txouts fill out all the 520 bytes
-        let max_wit_sz = MAX_SCRIPT_ELEMENT_SIZE - pref.len();
-        ExtData {
-            pk_cost: 8 + pref.len() + 1 + 6, // See script_size() in astelem.rs
-            has_free_verify: true,
-            ops_count_static: 13,
-            ops_count_sat: Some(13),
-            ops_count_nsat: Some(13),
-            stack_elem_count_sat: Some(7),
-            stack_elem_count_dissat: Some(7),
-            max_sat_size: Some((max_wit_sz, max_wit_sz)),
-            max_dissat_size: Some((0, 0)), // all empty should dissatisfy
-            timelock_info: TimeLockInfo::default(),
-            exec_stack_elem_count_sat: Some(3), // context object, slice to hash, hash to compare
-            exec_stack_elem_count_dissat: Some(3),
-        }
-    }
-
     fn cast_alt(self) -> Result<Self, ErrorKind> {
         Ok(ExtData {
             pk_cost: self.pk_cost + 2,
             has_free_verify: false,
-            ops_count_static: self.ops_count_static + 2,
-            ops_count_sat: self.ops_count_sat.map(|x| x + 2),
-            ops_count_nsat: self.ops_count_nsat.map(|x| x + 2),
+            ops: OpLimits::new(2 + self.ops.count, self.ops.sat, self.ops.nsat),
             stack_elem_count_sat: self.stack_elem_count_sat,
             stack_elem_count_dissat: self.stack_elem_count_dissat,
             max_sat_size: self.max_sat_size,
@@ -448,9 +388,7 @@ impl Property for ExtData {
         Ok(ExtData {
             pk_cost: self.pk_cost + 1,
             has_free_verify: self.has_free_verify,
-            ops_count_static: self.ops_count_static + 1,
-            ops_count_sat: self.ops_count_sat.map(|x| x + 1),
-            ops_count_nsat: self.ops_count_nsat.map(|x| x + 1),
+            ops: OpLimits::new(1 + self.ops.count, self.ops.sat, self.ops.nsat),
             stack_elem_count_sat: self.stack_elem_count_sat,
             stack_elem_count_dissat: self.stack_elem_count_dissat,
             max_sat_size: self.max_sat_size,
@@ -465,9 +403,7 @@ impl Property for ExtData {
         Ok(ExtData {
             pk_cost: self.pk_cost + 1,
             has_free_verify: true,
-            ops_count_static: self.ops_count_static + 1,
-            ops_count_sat: self.ops_count_sat.map(|x| x + 1),
-            ops_count_nsat: self.ops_count_nsat.map(|x| x + 1),
+            ops: OpLimits::new(1 + self.ops.count, self.ops.sat, self.ops.nsat),
             stack_elem_count_sat: self.stack_elem_count_sat,
             stack_elem_count_dissat: self.stack_elem_count_dissat,
             max_sat_size: self.max_sat_size,
@@ -482,9 +418,7 @@ impl Property for ExtData {
         Ok(ExtData {
             pk_cost: self.pk_cost + 3,
             has_free_verify: false,
-            ops_count_static: self.ops_count_static + 3,
-            ops_count_sat: self.ops_count_sat.map(|x| x + 3),
-            ops_count_nsat: Some(self.ops_count_static + 3),
+            ops: OpLimits::new(3 + self.ops.count, self.ops.sat, Some(0)),
             stack_elem_count_sat: self.stack_elem_count_sat.map(|x| x + 1),
             stack_elem_count_dissat: Some(1),
             max_sat_size: self.max_sat_size.map(|(w, s)| (w + 2, s + 1)),
@@ -503,9 +437,7 @@ impl Property for ExtData {
         Ok(ExtData {
             pk_cost: self.pk_cost + if self.has_free_verify { 0 } else { 1 },
             has_free_verify: false,
-            ops_count_static: self.ops_count_static + verify_cost,
-            ops_count_sat: self.ops_count_sat.map(|x| x + verify_cost),
-            ops_count_nsat: None,
+            ops: OpLimits::new(verify_cost + self.ops.count, self.ops.sat, None),
             stack_elem_count_sat: self.stack_elem_count_sat,
             stack_elem_count_dissat: None,
             max_sat_size: self.max_sat_size,
@@ -520,9 +452,7 @@ impl Property for ExtData {
         Ok(ExtData {
             pk_cost: self.pk_cost + 4,
             has_free_verify: false,
-            ops_count_static: self.ops_count_static + 4,
-            ops_count_sat: self.ops_count_sat.map(|x| x + 4),
-            ops_count_nsat: Some(self.ops_count_static + 4),
+            ops: OpLimits::new(4 + self.ops.count, self.ops.sat, Some(0)),
             stack_elem_count_sat: self.stack_elem_count_sat,
             stack_elem_count_dissat: Some(1),
             max_sat_size: self.max_sat_size,
@@ -537,9 +467,7 @@ impl Property for ExtData {
         Ok(ExtData {
             pk_cost: self.pk_cost + 1,
             has_free_verify: false,
-            ops_count_static: self.ops_count_static + 1,
-            ops_count_sat: self.ops_count_sat.map(|x| x + 1),
-            ops_count_nsat: self.ops_count_nsat.map(|x| x + 1),
+            ops: OpLimits::new(1 + self.ops.count, self.ops.sat, self.ops.nsat),
             stack_elem_count_sat: self.stack_elem_count_sat,
             stack_elem_count_dissat: self.stack_elem_count_dissat,
             max_sat_size: self.max_sat_size,
@@ -551,78 +479,20 @@ impl Property for ExtData {
         })
     }
 
-    fn cast_true(self) -> Result<Self, ErrorKind> {
-        Ok(ExtData {
-            pk_cost: self.pk_cost + 1,
-            has_free_verify: false,
-            ops_count_static: self.ops_count_static,
-            ops_count_sat: self.ops_count_sat,
-            ops_count_nsat: None,
-            stack_elem_count_sat: self.stack_elem_count_sat,
-            stack_elem_count_dissat: None,
-            max_sat_size: self.max_sat_size,
-            max_dissat_size: None,
-            timelock_info: self.timelock_info,
-            // Technically max(1, self.exec_stack_elem_count_sat), same rationale as cast_dupif
-            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
-            exec_stack_elem_count_dissat: None,
-        })
-    }
-
     fn cast_or_i_false(self) -> Result<Self, ErrorKind> {
         // never called directly
         unreachable!()
-    }
-
-    fn cast_unlikely(self) -> Result<Self, ErrorKind> {
-        Ok(ExtData {
-            pk_cost: self.pk_cost + 4,
-            has_free_verify: false,
-            ops_count_static: self.ops_count_static + 3,
-            ops_count_sat: self.ops_count_sat.map(|x| x + 3),
-            ops_count_nsat: Some(self.ops_count_static + 3),
-            stack_elem_count_sat: self.stack_elem_count_sat.map(|x| x + 1),
-            stack_elem_count_dissat: self.stack_elem_count_dissat.map(|x| x + 1),
-            max_sat_size: self.max_sat_size.map(|(w, s)| (w + 2, s + 1)),
-            max_dissat_size: self.max_dissat_size.map(|(w, s)| (w + 1, s + 1)),
-            // TODO: fix dissat stack elem counting above in a later commit
-            // Technically max(1, self.exec_stack_elem_count_sat), same rationale as cast_dupif
-            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
-            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
-            timelock_info: self.timelock_info,
-        })
-    }
-
-    fn cast_likely(self) -> Result<Self, ErrorKind> {
-        Ok(ExtData {
-            pk_cost: self.pk_cost + 4,
-            has_free_verify: false,
-            ops_count_static: self.ops_count_static + 3,
-            ops_count_sat: self.ops_count_sat.map(|x| x + 3),
-            ops_count_nsat: Some(self.ops_count_static + 3),
-            stack_elem_count_sat: self.stack_elem_count_sat.map(|x| x + 1),
-            stack_elem_count_dissat: self.stack_elem_count_dissat.map(|x| x + 1),
-            max_sat_size: self.max_sat_size.map(|(w, s)| (w + 1, s + 1)),
-            max_dissat_size: self.max_dissat_size.map(|(w, s)| (w + 2, s + 1)),
-            timelock_info: self.timelock_info,
-            // TODO: fix dissat stack elem counting above in a later commit
-            // Technically max(1, self.exec_stack_elem_count_sat), same rationale as cast_dupif
-            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
-            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
-        })
     }
 
     fn and_b(l: Self, r: Self) -> Result<Self, ErrorKind> {
         Ok(ExtData {
             pk_cost: l.pk_cost + r.pk_cost + 1,
             has_free_verify: false,
-            ops_count_static: l.ops_count_static + r.ops_count_static + 1,
-            ops_count_sat: l
-                .ops_count_sat
-                .and_then(|x| r.ops_count_sat.map(|y| x + y + 1)),
-            ops_count_nsat: l
-                .ops_count_nsat
-                .and_then(|x| r.ops_count_nsat.map(|y| x + y + 1)),
+            ops: OpLimits::new(
+                1 + l.ops.count + r.ops.count,
+                opt_add(l.ops.sat, r.ops.sat),
+                opt_add(l.ops.nsat, r.ops.nsat),
+            ),
             stack_elem_count_sat: l
                 .stack_elem_count_sat
                 .and_then(|l| r.stack_elem_count_sat.map(|r| l + r)),
@@ -653,9 +523,11 @@ impl Property for ExtData {
         Ok(ExtData {
             pk_cost: l.pk_cost + r.pk_cost,
             has_free_verify: r.has_free_verify,
-            ops_count_static: l.ops_count_static + r.ops_count_static,
-            ops_count_sat: l.ops_count_sat.and_then(|x| r.ops_count_sat.map(|y| x + y)),
-            ops_count_nsat: None,
+            ops: OpLimits::new(
+                l.ops.count + r.ops.count,
+                opt_add(l.ops.sat, r.ops.sat),
+                None,
+            ),
             stack_elem_count_sat: l
                 .stack_elem_count_sat
                 .and_then(|l| r.stack_elem_count_sat.map(|r| l + r)),
@@ -678,16 +550,14 @@ impl Property for ExtData {
         Ok(ExtData {
             pk_cost: l.pk_cost + r.pk_cost + 1,
             has_free_verify: false,
-            ops_count_static: l.ops_count_static + r.ops_count_static + 1,
-            ops_count_sat: cmp::max(
-                l.ops_count_sat
-                    .and_then(|x| r.ops_count_nsat.map(|y| y + x + 1)),
-                r.ops_count_sat
-                    .and_then(|x| l.ops_count_nsat.map(|y| y + x + 1)),
+            ops: OpLimits::new(
+                l.ops.count + r.ops.count + 1,
+                cmp::max(
+                    opt_add(l.ops.sat, r.ops.nsat),
+                    opt_add(l.ops.nsat, r.ops.sat),
+                ),
+                opt_add(l.ops.nsat, r.ops.nsat),
             ),
-            ops_count_nsat: l
-                .ops_count_nsat
-                .and_then(|x| r.ops_count_nsat.map(|y| x + y + 1)),
             stack_elem_count_sat: cmp::max(
                 l.stack_elem_count_sat
                     .and_then(|l| r.stack_elem_count_dissat.map(|r| l + r)),
@@ -725,18 +595,14 @@ impl Property for ExtData {
     }
 
     fn or_d(l: Self, r: Self) -> Result<Self, ErrorKind> {
-        Ok(ExtData {
+        let res = ExtData {
             pk_cost: l.pk_cost + r.pk_cost + 3,
             has_free_verify: false,
-            ops_count_static: l.ops_count_static + r.ops_count_static + 1,
-            ops_count_sat: cmp::max(
-                l.ops_count_sat.map(|x| x + 3 + r.ops_count_static),
-                r.ops_count_sat
-                    .and_then(|x| l.ops_count_nsat.map(|y| y + x + 3)),
+            ops: OpLimits::new(
+                l.ops.count + r.ops.count + 3,
+                cmp::max(l.ops.sat, opt_add(l.ops.nsat, r.ops.sat)),
+                opt_add(l.ops.nsat, r.ops.nsat),
             ),
-            ops_count_nsat: l
-                .ops_count_nsat
-                .and_then(|x| r.ops_count_nsat.map(|y| x + y + 3)),
             stack_elem_count_sat: cmp::max(
                 l.stack_elem_count_sat,
                 l.stack_elem_count_dissat
@@ -755,27 +621,26 @@ impl Property for ExtData {
                 .and_then(|(lw, ls)| r.max_dissat_size.map(|(rw, rs)| (lw + rw, ls + rs))),
             timelock_info: TimeLockInfo::comb_or_timelocks(l.timelock_info, r.timelock_info),
             exec_stack_elem_count_sat: cmp::max(
-                opt_max(l.exec_stack_elem_count_sat, r.exec_stack_elem_count_dissat),
-                r.exec_stack_elem_count_sat,
+                l.exec_stack_elem_count_sat,
+                opt_max(r.exec_stack_elem_count_sat, l.exec_stack_elem_count_dissat),
             ),
             exec_stack_elem_count_dissat: opt_max(
                 l.exec_stack_elem_count_dissat,
                 r.exec_stack_elem_count_dissat.map(|x| x + 1),
             ),
-        })
+        };
+        Ok(res)
     }
 
     fn or_c(l: Self, r: Self) -> Result<Self, ErrorKind> {
         Ok(ExtData {
             pk_cost: l.pk_cost + r.pk_cost + 2,
             has_free_verify: false,
-            ops_count_static: l.ops_count_static + r.ops_count_static + 2,
-            ops_count_sat: cmp::max(
-                l.ops_count_sat.map(|x| x + 2 + r.ops_count_static),
-                r.ops_count_sat
-                    .and_then(|x| l.ops_count_nsat.map(|y| y + x + 2)),
+            ops: OpLimits::new(
+                l.ops.count + r.ops.count + 2,
+                cmp::max(l.ops.sat, opt_add(l.ops.nsat, r.ops.sat)),
+                None,
             ),
-            ops_count_nsat: None,
             stack_elem_count_sat: cmp::max(
                 l.stack_elem_count_sat,
                 l.stack_elem_count_dissat
@@ -790,8 +655,8 @@ impl Property for ExtData {
             max_dissat_size: None,
             timelock_info: TimeLockInfo::comb_or_timelocks(l.timelock_info, r.timelock_info),
             exec_stack_elem_count_sat: cmp::max(
-                opt_max(l.exec_stack_elem_count_sat, r.exec_stack_elem_count_dissat),
-                r.exec_stack_elem_count_sat,
+                l.exec_stack_elem_count_sat,
+                opt_max(r.exec_stack_elem_count_sat, l.exec_stack_elem_count_dissat),
             ),
             exec_stack_elem_count_dissat: None,
         })
@@ -801,16 +666,11 @@ impl Property for ExtData {
         Ok(ExtData {
             pk_cost: l.pk_cost + r.pk_cost + 3,
             has_free_verify: false,
-            ops_count_static: l.ops_count_static + r.ops_count_static + 3,
-            ops_count_sat: cmp::max(
-                l.ops_count_sat.map(|x| x + 3 + r.ops_count_static),
-                r.ops_count_sat.map(|x| x + 3 + l.ops_count_static),
+            ops: OpLimits::new(
+                l.ops.count + r.ops.count + 3,
+                cmp::max(l.ops.sat, r.ops.sat),
+                cmp::max(l.ops.nsat, r.ops.nsat),
             ),
-            ops_count_nsat: match (l.ops_count_nsat, r.ops_count_nsat) {
-                (Some(a), Some(b)) => Some(cmp::max(a, b) + 3),
-                (_, Some(x)) | (Some(x), _) => Some(x + 3),
-                (None, None) => None,
-            },
             stack_elem_count_sat: match (l.stack_elem_count_sat, r.stack_elem_count_sat) {
                 (Some(l), Some(r)) => Some(1 + cmp::max(l, r)),
                 (Some(l), None) => Some(1 + l),
@@ -824,8 +684,8 @@ impl Property for ExtData {
                 (None, None) => None,
             },
             max_sat_size: cmp::max(
-                l.max_sat_size.and_then(|(w, s)| Some((w + 2, s + 1))),
-                r.max_sat_size.and_then(|(w, s)| Some((w + 1, s + 1))),
+                l.max_sat_size.map(|(w, s)| (w + 2, s + 1)),
+                r.max_sat_size.map(|(w, s)| (w + 1, s + 1)),
             ),
             max_dissat_size: match (l.max_dissat_size, r.max_dissat_size) {
                 (Some(l), Some(r)) => {
@@ -853,16 +713,14 @@ impl Property for ExtData {
         Ok(ExtData {
             pk_cost: a.pk_cost + b.pk_cost + c.pk_cost + 3,
             has_free_verify: false,
-            ops_count_static: a.ops_count_static + b.ops_count_static + c.ops_count_static + 3,
-            ops_count_sat: cmp::max(
-                a.ops_count_sat
-                    .and_then(|x| b.ops_count_sat.map(|y| x + y + c.ops_count_static + 3)),
-                c.ops_count_sat
-                    .and_then(|z| a.ops_count_nsat.map(|y| y + z + b.ops_count_static + 3)),
+            ops: OpLimits::new(
+                a.ops.count + b.ops.count + c.ops.count + 3,
+                cmp::max(
+                    opt_add(a.ops.sat, b.ops.sat),
+                    opt_add(a.ops.nsat, c.ops.sat),
+                ),
+                opt_add(a.ops.nsat, c.ops.nsat),
             ),
-            ops_count_nsat: c
-                .ops_count_nsat
-                .and_then(|z| a.ops_count_nsat.map(|x| x + b.ops_count_static + z + 3)),
             stack_elem_count_sat: cmp::max(
                 a.stack_elem_count_sat
                     .and_then(|a| b.stack_elem_count_sat.map(|b| b + a)),
@@ -901,12 +759,10 @@ impl Property for ExtData {
         S: FnMut(usize) -> Result<Self, ErrorKind>,
     {
         let mut pk_cost = 1 + script_num_size(k); //Equal and k
-        let mut ops_count_static = 0 as usize;
+        let mut ops_count = 0;
         let mut ops_count_sat_vec = Vec::with_capacity(n);
-        let mut ops_count_nsat_sum = 0 as usize;
-        let mut ops_count_nsat = Some(0);
-        let mut ops_count_sat = Some(0);
-        let mut sat_count = 0;
+        let mut ops_count_nsat_sum = 0_usize;
+        let mut op_count_sat = Some(0);
         let mut timelocks = Vec::with_capacity(n);
         let mut stack_elem_count_sat_vec = Vec::with_capacity(n);
         let mut stack_elem_count_sat = Some(0);
@@ -923,7 +779,7 @@ impl Property for ExtData {
             let sub = sub_ck(i)?;
 
             pk_cost += sub.pk_cost;
-            ops_count_static += sub.ops_count_static;
+            ops_count += sub.ops.count;
             timelocks.push(sub.timelock_info);
 
             if let Some(n_items) = sub.stack_elem_count_dissat {
@@ -940,19 +796,9 @@ impl Property for ExtData {
             stack_elem_count_sat_vec.push((sub.stack_elem_count_sat, sub.stack_elem_count_dissat));
             max_sat_size_vec.push((sub.max_sat_size, sub.max_sat_size));
 
-            match (sub.ops_count_sat, sub.ops_count_nsat) {
-                (Some(x), Some(y)) => {
-                    ops_count_sat_vec.push(Some(x as i32 - y as i32));
-                    ops_count_nsat = ops_count_nsat.map(|v| y + v);
-                    ops_count_nsat_sum = ops_count_nsat_sum + y;
-                }
-                (Some(x), None) => {
-                    sat_count = sat_count + 1;
-                    ops_count_sat = ops_count_sat.map(|y| x + y);
-                    ops_count_nsat = None;
-                }
-                _ => {}
-            }
+            let sub_nsat = sub.ops.nsat.expect("Thresh children must be d");
+            ops_count_nsat_sum += sub_nsat;
+            ops_count_sat_vec.push((sub.ops.sat, sub_nsat));
             exec_stack_elem_count_sat_vec.push((
                 sub.exec_stack_elem_count_sat,
                 sub.exec_stack_elem_count_dissat,
@@ -1007,26 +853,25 @@ impl Property for ExtData {
             };
         }
 
-        let remaining_sat = k - sat_count;
-        let mut sum: i32 = 0;
-        if k < sat_count || ops_count_sat_vec.len() < remaining_sat {
-            ops_count_sat = None;
-        } else {
-            ops_count_sat_vec.sort();
-            ops_count_sat_vec.reverse();
-            sum = ops_count_sat_vec
-                .split_off(remaining_sat)
-                .iter()
-                .map(|z| z.unwrap())
-                .sum();
+        ops_count_sat_vec.sort_by(|a, b| {
+            a.0.map(|x| x as isize - a.1 as isize)
+                .cmp(&b.0.map(|x| x as isize - b.1 as isize))
+        });
+        for (i, &(x, y)) in ops_count_sat_vec.iter().enumerate() {
+            op_count_sat = if i <= k {
+                opt_add(op_count_sat, x)
+            } else {
+                opt_add(op_count_sat, Some(y))
+            };
         }
         Ok(ExtData {
             pk_cost: pk_cost + n - 1, //all pk cost + (n-1)*ADD
             has_free_verify: true,
-            ops_count_static: ops_count_static + (n - 1) + 1, //adds and equal
-            ops_count_sat: ops_count_sat
-                .map(|x: usize| (x + (n - 1) + 1 + (sum + ops_count_nsat_sum as i32) as usize)), //adds and equal
-            ops_count_nsat: ops_count_nsat.map(|x| x + (n - 1) + 1), //adds and equal
+            ops: OpLimits::new(
+                ops_count + 1 + (n - 1), // adds and equal
+                op_count_sat,
+                Some(ops_count_nsat_sum),
+            ),
             stack_elem_count_sat,
             stack_elem_count_dissat,
             max_sat_size,
@@ -1088,7 +933,7 @@ impl Property for ExtData {
                 // Note that for CLTV this is a limitation not of Bitcoin but Miniscript. The
                 // number on the stack would be a 5 bytes signed integer but Miniscript's B type
                 // only consumes 4 bytes from the stack.
-                if t == 0 || (t & SEQUENCE_LOCKTIME_DISABLE_FLAG) == 1 {
+                if t == 0 || (t & SEQUENCE_LOCKTIME_DISABLE_FLAG) != 0 {
                     return Err(Error {
                         fragment: fragment.clone(),
                         error: ErrorKind::InvalidTime,
@@ -1097,7 +942,7 @@ impl Property for ExtData {
                 Ok(Self::from_after(t))
             }
             Terminal::Older(t) => {
-                if t == 0 || (t & SEQUENCE_LOCKTIME_DISABLE_FLAG) == 1 {
+                if t == 0 || (t & SEQUENCE_LOCKTIME_DISABLE_FLAG) != 0 {
                     return Err(Error {
                         fragment: fragment.clone(),
                         error: ErrorKind::InvalidTime,
@@ -1109,47 +954,47 @@ impl Property for ExtData {
             Terminal::Hash256(..) => Ok(Self::from_hash256()),
             Terminal::Ripemd160(..) => Ok(Self::from_ripemd160()),
             Terminal::Hash160(..) => Ok(Self::from_hash160()),
-            Terminal::Alt(ref sub) => wrap_err(Self::cast_alt(sub.ext.clone())),
-            Terminal::Swap(ref sub) => wrap_err(Self::cast_swap(sub.ext.clone())),
-            Terminal::Check(ref sub) => wrap_err(Self::cast_check(sub.ext.clone())),
-            Terminal::DupIf(ref sub) => wrap_err(Self::cast_dupif(sub.ext.clone())),
-            Terminal::Verify(ref sub) => wrap_err(Self::cast_verify(sub.ext.clone())),
-            Terminal::NonZero(ref sub) => wrap_err(Self::cast_nonzero(sub.ext.clone())),
-            Terminal::ZeroNotEqual(ref sub) => wrap_err(Self::cast_zeronotequal(sub.ext.clone())),
+            Terminal::Alt(ref sub) => wrap_err(Self::cast_alt(sub.ext)),
+            Terminal::Swap(ref sub) => wrap_err(Self::cast_swap(sub.ext)),
+            Terminal::Check(ref sub) => wrap_err(Self::cast_check(sub.ext)),
+            Terminal::DupIf(ref sub) => wrap_err(Self::cast_dupif(sub.ext)),
+            Terminal::Verify(ref sub) => wrap_err(Self::cast_verify(sub.ext)),
+            Terminal::NonZero(ref sub) => wrap_err(Self::cast_nonzero(sub.ext)),
+            Terminal::ZeroNotEqual(ref sub) => wrap_err(Self::cast_zeronotequal(sub.ext)),
             Terminal::AndB(ref l, ref r) => {
-                let ltype = l.ext.clone();
-                let rtype = r.ext.clone();
+                let ltype = l.ext;
+                let rtype = r.ext;
                 wrap_err(Self::and_b(ltype, rtype))
             }
             Terminal::AndV(ref l, ref r) => {
-                let ltype = l.ext.clone();
-                let rtype = r.ext.clone();
+                let ltype = l.ext;
+                let rtype = r.ext;
                 wrap_err(Self::and_v(ltype, rtype))
             }
             Terminal::OrB(ref l, ref r) => {
-                let ltype = l.ext.clone();
-                let rtype = r.ext.clone();
+                let ltype = l.ext;
+                let rtype = r.ext;
                 wrap_err(Self::or_b(ltype, rtype))
             }
             Terminal::OrD(ref l, ref r) => {
-                let ltype = l.ext.clone();
-                let rtype = r.ext.clone();
+                let ltype = l.ext;
+                let rtype = r.ext;
                 wrap_err(Self::or_d(ltype, rtype))
             }
             Terminal::OrC(ref l, ref r) => {
-                let ltype = l.ext.clone();
-                let rtype = r.ext.clone();
+                let ltype = l.ext;
+                let rtype = r.ext;
                 wrap_err(Self::or_c(ltype, rtype))
             }
             Terminal::OrI(ref l, ref r) => {
-                let ltype = l.ext.clone();
-                let rtype = r.ext.clone();
+                let ltype = l.ext;
+                let rtype = r.ext;
                 wrap_err(Self::or_i(ltype, rtype))
             }
             Terminal::AndOr(ref a, ref b, ref c) => {
-                let atype = a.ext.clone();
-                let btype = b.ext.clone();
-                let ctype = c.ext.clone();
+                let atype = a.ext;
+                let btype = b.ext;
+                let ctype = c.ext;
                 wrap_err(Self::and_or(atype, btype, ctype))
             }
             Terminal::Thresh(k, ref subs) => {
@@ -1166,7 +1011,7 @@ impl Property for ExtData {
                     });
                 }
 
-                let res = Self::threshold(k, subs.len(), |n| Ok(subs[n].ext.clone()));
+                let res = Self::threshold(k, subs.len(), |n| Ok(subs[n].ext));
 
                 res.map_err(|kind| Error {
                     fragment: fragment.clone(),
@@ -1189,4 +1034,9 @@ fn opt_max<T: Ord>(a: Option<T>, b: Option<T>) -> Option<T> {
     } else {
         None
     }
+}
+
+// Returns Some(x+y) is both x and y are Some. Otherwise, return none
+fn opt_add(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+    a.and_then(|x| b.map(|y| x + y))
 }
