@@ -1563,11 +1563,10 @@ mod tests {
 mod benches {
     use std::str::FromStr;
 
-    use miniscript::Tap;
     use test::{black_box, Bencher};
-    use Miniscript;
 
     use super::{CompilerError, Concrete};
+    use crate::{Miniscript, Tap};
     type TapMsRes = Result<Miniscript<String, Tap>, CompilerError>;
     #[bench]
     pub fn compile_basic(bh: &mut Bencher) {
