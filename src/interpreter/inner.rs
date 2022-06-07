@@ -304,6 +304,7 @@ where
                     let tap_script = tap_script.encode();
                     // Should not really need to call dangerous assumed tweaked here.
                     // Should be fixed after RC
+                    // This is fixed in rust-bitcoin. Should also be fixed in rust-elements
                     if ctrl_blk.verify_taproot_commitment(
                         &secp,
                         &output_key.dangerous_assume_tweaked(),
