@@ -516,7 +516,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
     /// Obtains the blinded address for this descriptor
     ///
     /// # Errors
-    /// For raw/bare descriptors that don't have any address.
+    /// For raw/bare descriptors that don't have an address.
     //
     // Note: The address kept is kept without the blinder to avoid more conflicts with upstream
     pub fn blinded_address(
