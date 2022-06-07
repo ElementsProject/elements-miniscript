@@ -104,21 +104,6 @@ pub struct Error<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk> = NoE
     pub error: ErrorKind,
 }
 
-impl<Pk, Ctx, Ext> error::Error for Error<Pk, Ctx, Ext>
-where
-    Pk: MiniscriptKey,
-    Ctx: ScriptContext,
-    Ext: Extension<Pk>,
-{
-    fn cause(&self) -> Option<&error::Error> {
-        None
-    }
-
-    fn description(&self) -> &str {
-        "description() is deprecated; use Display"
-    }
-}
-
 impl<Pk, Ctx, Ext> fmt::Display for Error<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
@@ -230,6 +215,12 @@ where
                 n_strong,
             ),
         }
+    }
+}
+
+impl<Pk: MiniscriptKey, Ctx: ScriptContext> error::Error for Error<Pk, Ctx> {
+    fn cause(&self) -> Option<&dyn error::Error> {
+        None
     }
 }
 

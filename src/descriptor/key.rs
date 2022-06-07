@@ -220,7 +220,11 @@ impl fmt::Display for DescriptorKeyParseError {
     }
 }
 
-impl error::Error for DescriptorKeyParseError {}
+impl error::Error for DescriptorKeyParseError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
+}
 
 impl fmt::Display for DescriptorPublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -370,7 +374,15 @@ impl fmt::Display for ConversionError {
     }
 }
 
-impl error::Error for ConversionError {}
+impl error::Error for ConversionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        use self::ConversionError::*;
+
+        match self {
+            Wildcard | HardenedChild | HardenedWildcard => None,
+        }
+    }
+}
 
 impl DescriptorPublicKey {
     /// The fingerprint of the master key associated with this key, `0x00000000` if none.

@@ -46,6 +46,68 @@ pub use self::finalizer::{finalize, finalize_input, interpreter_check, interpret
 use crate::descriptor::CovSatisfier;
 use crate::{descriptor, util, Descriptor, DescriptorPublicKey};
 
+/// Error type for entire Psbt
+#[derive(Debug)]
+pub enum Error {
+    /// Cannot combine locktimes
+    LockTimeCombinationError,
+    /// Upstream Error
+    PsbtError(elements::pset::Error),
+    /// Input Error type
+    InputError(InputError, usize),
+    /// Wrong Input Count
+    WrongInputCount {
+        /// Input count in tx
+        in_tx: usize,
+        /// Input count in psbt
+        in_map: usize,
+    },
+    /// Input index out of bounds
+    InputIdxOutofBounds {
+        /// Number of inputs in psbt
+        psbt_inp: usize,
+        /// The input index
+        index: usize,
+    },
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Error::InputError(ref inp_err, index) => write!(f, "{} at index {}", inp_err, index),
+            Error::WrongInputCount { in_tx, in_map } => write!(
+                f,
+                "PSET had {} inputs in transaction but {} inputs in map",
+                in_tx, in_map
+            ),
+            Error::LockTimeCombinationError => writeln!(
+                f,
+                "Cannot combine hieghtlocks and \
+                timelocks"
+            ),
+            Error::PsbtError(ref e) => write!(f, "Psbt Error {}", e),
+            Error::InputIdxOutofBounds { psbt_inp, index } => write!(
+                f,
+                "Index {} is out of bounds for psbt inputs len {}",
+                index, psbt_inp
+            ),
+        }
+    }
+}
+
+impl error::Error for Error {
+    fn cause(&self) -> Option<&dyn error::Error> {
+        use self::Error::*;
+
+        match self {
+            InputError(e, _) => Some(e),
+            WrongInputCount { .. } | InputIdxOutofBounds { .. } => None,
+            LockTimeCombinationError => None,
+            PsbtError(e) => Some(e),
+        }
+    }
+}
+
 /// Error type for Pbst Input
 #[derive(Debug)]
 pub enum InputError {
@@ -95,7 +157,7 @@ pub enum InputError {
     /// Non empty Redeem script
     NonEmptyRedeemScript,
     /// Non standard sighash type
-    NonStandardSigHashType,
+    NonStandardSighashType,
     /// Sighash did not match
     WrongSigHashFlag {
         /// required sighash type
@@ -107,29 +169,30 @@ pub enum InputError {
     },
 }
 
-/// Error type for entire Psbt
-#[derive(Debug)]
-pub enum Error {
-    /// Cannot combine locktimes
-    LockTimeCombinationError,
-    /// Upstream Error
-    PsbtError(elements::pset::Error),
-    /// Input Error type
-    InputError(InputError, usize),
-    /// Wrong Input Count
-    WrongInputCount {
-        /// Input count in tx
-        in_tx: usize,
-        /// Input count in psbt
-        in_map: usize,
-    },
-    /// Input index out of bounds
-    InputIdxOutofBounds {
-        /// Number of inputs in psbt
-        psbt_inp: usize,
-        /// The input index
-        index: usize,
-    },
+impl error::Error for InputError {
+    fn cause(&self) -> Option<&dyn error::Error> {
+        use self::InputError::*;
+
+        match self {
+            CouldNotSatisfyTr
+            | InvalidRedeemScript { .. }
+            | InvalidWitnessScript { .. }
+            | InvalidSignature { .. }
+            | MissingRedeemScript
+            | MissingWitness
+            | MissingPubkey
+            | MissingWitnessScript
+            | MissingUtxo
+            | NonEmptyWitnessScript
+            | NonEmptyRedeemScript
+            | NonStandardSighashType
+            | WrongSigHashFlag { .. } => None,
+            SecpErr(e) => Some(e),
+            KeyErr(e) => Some(e),
+            Interpreter(e) => Some(e),
+            MiniscriptError(e) => Some(e),
+        }
+    }
 }
 
 impl fmt::Display for InputError {
@@ -184,7 +247,7 @@ impl fmt::Display for InputError {
                 pubkey, got, required
             ),
             InputError::CouldNotSatisfyTr => write!(f, "Cannot satisfy Tr descriptor"),
-            InputError::NonStandardSigHashType => write!(f, "Non-standard sighash type"),
+            InputError::NonStandardSighashType => write!(f, "Non-standard sighash type"),
         }
     }
 }
@@ -207,32 +270,6 @@ impl From<elements::secp256k1_zkp::Error> for InputError {
 impl From<bitcoin::util::key::Error> for InputError {
     fn from(e: bitcoin::util::key::Error) -> InputError {
         InputError::KeyErr(e)
-    }
-}
-
-impl error::Error for Error {}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Error::InputError(ref inp_err, index) => write!(f, "{} at index {}", inp_err, index),
-            Error::WrongInputCount { in_tx, in_map } => write!(
-                f,
-                "PSET had {} inputs in transaction but {} inputs in map",
-                in_tx, in_map
-            ),
-            Error::LockTimeCombinationError => writeln!(
-                f,
-                "Cannot combine hieghtlocks and \
-                timelocks"
-            ),
-            Error::PsbtError(ref e) => write!(f, "Psbt Error {}", e),
-            Error::InputIdxOutofBounds { psbt_inp, index } => write!(
-                f,
-                "Index {} is out of bounds for psbt inputs len {}",
-                index, psbt_inp
-            ),
-        }
     }
 }
 
@@ -542,7 +579,7 @@ pub trait PsbtExt {
         cache: &mut SigHashCache<T>,
         tapleaf_hash: Option<TapLeafHash>,
         genesis_hash: elements::BlockHash,
-    ) -> Result<PsbtSigHashMsg, SigHashError>;
+    ) -> Result<PsbtSigHashMsg, SighashError>;
 }
 
 impl PsbtExt for Psbt {
@@ -770,24 +807,24 @@ impl PsbtExt for Psbt {
         cache: &mut SigHashCache<T>,
         tapleaf_hash: Option<TapLeafHash>,
         genesis_hash: elements::BlockHash,
-    ) -> Result<PsbtSigHashMsg, SigHashError> {
+    ) -> Result<PsbtSigHashMsg, SighashError> {
         // Infer a descriptor at idx
         if idx >= self.inputs().len() {
-            return Err(SigHashError::IndexOutOfBounds(idx, self.inputs().len()));
+            return Err(SighashError::IndexOutOfBounds(idx, self.inputs().len()));
         }
         let inp = &self.inputs()[idx];
-        let prevouts = finalizer::prevouts(self).map_err(|_e| SigHashError::MissingSpendUtxos)?;
+        let prevouts = finalizer::prevouts(self).map_err(|_e| SighashError::MissingSpendUtxos)?;
         // Note that as per Psbt spec we should have access to spent_utxos for the transaction
         // Even if the transaction does not require SigHashAll, we create `Prevouts::All` for code simplicity
         let prevouts = elements::sighash::Prevouts::All(&prevouts);
         let inp_spk =
-            finalizer::get_scriptpubkey(self, idx).map_err(|_e| SigHashError::MissingInputUtxo)?;
+            finalizer::get_scriptpubkey(self, idx).map_err(|_e| SighashError::MissingInputUtxo)?;
         if util::is_v1_p2tr(inp_spk) {
             let hash_ty = inp
                 .sighash_type
                 .map(|h| h.schnorr_hash_ty())
                 .unwrap_or(Some(SchnorrSigHashType::Default))
-                .ok_or(SigHashError::InvalidSigHashType)?;
+                .ok_or(SighashError::InvalidSigHashType)?;
             match tapleaf_hash {
                 Some(leaf_hash) => {
                     let tap_sighash_msg = cache.taproot_script_spend_signature_hash(
@@ -814,9 +851,9 @@ impl PsbtExt for Psbt {
                 .sighash_type
                 .map(|h| h.ecdsa_hash_ty())
                 .unwrap_or(Some(EcdsaSigHashType::All))
-                .ok_or(SigHashError::InvalidSigHashType)?;
+                .ok_or(SighashError::InvalidSigHashType)?;
             let amt = finalizer::get_utxo(self, idx)
-                .map_err(|_e| SigHashError::MissingInputUtxo)?
+                .map_err(|_e| SighashError::MissingInputUtxo)?
                 .value;
             let is_nested_wpkh = inp_spk.is_p2sh()
                 && inp
@@ -846,7 +883,7 @@ impl PsbtExt for Psbt {
                     let script_code = inp
                         .witness_script
                         .as_ref()
-                        .ok_or(SigHashError::MissingWitnessScript)?;
+                        .ok_or(SighashError::MissingWitnessScript)?;
                     cache.segwitv0_sighash(idx, script_code, amt, hash_ty)
                 };
                 Ok(PsbtSigHashMsg::EcdsaSigHash(msg))
@@ -855,7 +892,7 @@ impl PsbtExt for Psbt {
                 let script_code = if inp_spk.is_p2sh() {
                     inp.redeem_script
                         .as_ref()
-                        .ok_or(SigHashError::MissingRedeemScript)?
+                        .ok_or(SighashError::MissingRedeemScript)?
                 } else {
                     inp_spk
                 };
@@ -1079,12 +1116,21 @@ impl fmt::Display for UtxoUpdateError {
     }
 }
 
-impl error::Error for UtxoUpdateError {}
+impl error::Error for UtxoUpdateError {
+    fn cause(&self) -> Option<&dyn error::Error> {
+        use self::UtxoUpdateError::*;
+
+        match self {
+            IndexOutOfBounds(_, _) | MissingInputUtxo | UtxoCheck | MismatchedScriptPubkey => None,
+            DerivationError(e) => Some(e),
+        }
+    }
+}
 
 /// Return error type for [`PsbtExt::sighash_msg`]
 // We need to implement auto-derives upstream
 #[derive(Debug)]
-pub enum SigHashError {
+pub enum SighashError {
     /// Index out of bounds
     IndexOutOfBounds(usize, usize),
     /// Missing input utxo
@@ -1103,31 +1149,45 @@ pub enum SigHashError {
     MissingRedeemScript,
 }
 
-impl fmt::Display for SigHashError {
+impl fmt::Display for SighashError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SigHashError::IndexOutOfBounds(ind, len) => {
+            SighashError::IndexOutOfBounds(ind, len) => {
                 write!(f, "index {}, psbt input len: {}", ind, len)
             }
-            SigHashError::MissingInputUtxo => write!(f, "Missing input utxo in pbst"),
-            SigHashError::MissingSpendUtxos => write!(f, "Missing Psbt spend utxos"),
-            SigHashError::InvalidSigHashType => write!(f, "Invalid Sighash type"),
-            SigHashError::SigHashComputationError(e) => {
+            SighashError::MissingInputUtxo => write!(f, "Missing input utxo in pbst"),
+            SighashError::MissingSpendUtxos => write!(f, "Missing Psbt spend utxos"),
+            SighashError::InvalidSigHashType => write!(f, "Invalid Sighash type"),
+            SighashError::SigHashComputationError(e) => {
                 write!(f, "Sighash computation error : {}", e)
             }
-            SigHashError::MissingWitnessScript => write!(f, "Missing Witness Script"),
-            SigHashError::MissingRedeemScript => write!(f, "Missing Redeem Script"),
+            SighashError::MissingWitnessScript => write!(f, "Missing Witness Script"),
+            SighashError::MissingRedeemScript => write!(f, "Missing Redeem Script"),
         }
     }
 }
 
-impl From<elements::sighash::Error> for SigHashError {
+impl From<elements::sighash::Error> for SighashError {
     fn from(e: elements::sighash::Error) -> Self {
-        SigHashError::SigHashComputationError(e)
+        SighashError::SigHashComputationError(e)
     }
 }
 
-impl error::Error for SigHashError {}
+impl error::Error for SighashError {
+    fn cause(&self) -> Option<&dyn error::Error> {
+        use self::SighashError::*;
+
+        match self {
+            IndexOutOfBounds(_, _)
+            | MissingInputUtxo
+            | MissingSpendUtxos
+            | InvalidSigHashType
+            | MissingWitnessScript
+            | MissingRedeemScript => None,
+            SigHashComputationError(e) => Some(e),
+        }
+    }
+}
 
 /// Sighash message(signing data) for a given psbt transaction input.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
