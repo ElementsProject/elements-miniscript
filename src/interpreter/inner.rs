@@ -38,7 +38,7 @@ fn pk_from_slice(slice: &[u8], require_compressed: bool) -> Result<bitcoin::Publ
     }
 }
 
-fn pk_from_stackelem(
+fn pk_from_stack_elem(
     elem: &stack::Element<'_>,
     require_compressed: bool,
 ) -> Result<bitcoin::PublicKey, Error> {
@@ -52,7 +52,7 @@ fn pk_from_stackelem(
 
 // Parse the script with appropriate context to check for context errors like
 // correct usage of x-only keys or multi_a
-fn script_from_stackelem<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
+fn script_from_stack_elem<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
     elem: &stack::Element,
 ) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
     match *elem {
@@ -191,7 +191,7 @@ where
         } else {
             match ssig_stack.pop() {
                 Some(elem) => {
-                    let pk = pk_from_stackelem(&elem, false)?;
+                    let pk = pk_from_stack_elem(&elem, false)?;
                     if *spk == elements::Script::new_p2pkh(&pk.to_pubkeyhash().into()) {
                         Ok((
                             Inner::PublicKey(pk.into(), PubkeyType::Pkh),
@@ -212,7 +212,7 @@ where
         } else {
             match wit_stack.pop() {
                 Some(elem) => {
-                    let pk = pk_from_stackelem(&elem, true)?;
+                    let pk = pk_from_stack_elem(&elem, true)?;
                     if *spk == elements::Script::new_v0_wpkh(&pk.to_pubkeyhash().into()) {
                         Ok((
                             Inner::PublicKey(pk.into(), PubkeyType::Wpkh),
@@ -238,7 +238,7 @@ where
                             script::Builder::new().post_codesep_script().into_script();
                         return Ok((Inner::CovScript(pk, ms), wit_stack, Some(script_code)));
                     }
-                    let miniscript = script_from_stackelem::<
+                    let miniscript = script_from_stack_elem::<
                         Segwitv0,
                         <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
                     >(&elem)?;
@@ -294,7 +294,7 @@ where
                     let tap_script = wit_stack.pop().ok_or(Error::UnexpectedStackEnd)?;
                     let ctrl_blk =
                         ControlBlock::from_slice(ctrl_blk).map_err(Error::ControlBlockParse)?;
-                    let tap_script = script_from_stackelem::<
+                    let tap_script = script_from_stack_elem::<
                         Tap,
                         <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output,
                     >(&tap_script)?;
@@ -342,7 +342,7 @@ where
                                 if !ssig_stack.is_empty() {
                                     Err(Error::NonEmptyScriptSig)
                                 } else {
-                                    let pk = pk_from_stackelem(&elem, true)?;
+                                    let pk = pk_from_stack_elem(&elem, true)?;
                                     if slice
                                         == &elements::Script::new_v0_wpkh(
                                             &pk.to_pubkeyhash().into(),
@@ -370,7 +370,7 @@ where
                                     Err(Error::NonEmptyScriptSig)
                                 } else {
                                     // parse wsh with Segwitv0 context
-                                    let miniscript = script_from_stackelem::<Segwitv0,                         <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,>(&elem)?;
+                                    let miniscript = script_from_stack_elem::<Segwitv0,                         <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,>(&elem)?;
                                     let script = miniscript.encode();
                                     let miniscript = miniscript.to_no_checks_ms();
                                     let scripthash = sha256::Hash::hash(&script[..]);
@@ -392,7 +392,7 @@ where
                     }
                 }
                 // normal p2sh parsed in Legacy context
-                let miniscript = script_from_stackelem::<
+                let miniscript = script_from_stack_elem::<
                     Legacy,
                     <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
                 >(&elem)?;
