@@ -15,7 +15,7 @@ use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 use crate::miniscript::satisfy::{Satisfaction, Witness};
-use crate::miniscript::types::extra_props::{OpLimits, TimeLockInfo};
+use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::policy::{self, Liftable};
 use crate::{
@@ -99,7 +99,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
             stack_elem_count_dissat: Some(7),
             max_sat_size: Some((max_wit_sz, max_wit_sz)),
             max_dissat_size: Some((0, 0)), // all empty should dissatisfy
-            timelock_info: TimeLockInfo::default(),
+            timelock_info: TimelockInfo::default(),
             exec_stack_elem_count_sat: Some(3), // sha2 context, byte slice, target hash
             exec_stack_elem_count_dissat: Some(3),
             ops: OpLimits {

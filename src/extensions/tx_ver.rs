@@ -11,7 +11,7 @@ use crate::descriptor::CovError;
 use crate::miniscript::astelem::StackCtxOperations;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::satisfy::{Satisfaction, Witness};
-use crate::miniscript::types::extra_props::{OpLimits, TimeLockInfo};
+use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::policy::{self, Liftable};
 use crate::{
@@ -78,7 +78,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
             stack_elem_count_dissat: Some(0),
             max_sat_size: Some((0, 0)),
             max_dissat_size: Some((0, 0)),
-            timelock_info: TimeLockInfo::default(),
+            timelock_info: TimelockInfo::default(),
             exec_stack_elem_count_sat: Some(2),
             exec_stack_elem_count_dissat: Some(2),
             ops: OpLimits {
