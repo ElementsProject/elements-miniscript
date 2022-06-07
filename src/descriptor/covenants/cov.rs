@@ -49,7 +49,7 @@ use elements::hashes::{sha256d, Hash};
 use elements::{self, script, secp256k1_zkp, Script};
 
 use super::super::checksum::{desc_checksum, verify_checksum};
-use super::super::{ElementsTrait, ELMTS_STR};
+use super::super::ELMTS_STR;
 use super::{CovError, CovOperations};
 use crate::expression::{self, FromTree};
 use crate::miniscript::lex::{lex, Token as Tk, TokenIter};
@@ -59,8 +59,8 @@ use crate::miniscript::limits::{
 use crate::miniscript::{decode, types};
 use crate::util::varint_len;
 use crate::{
-    DescriptorTrait, Error, Extension, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier,
-    ScriptContext, Segwitv0, ToPublicKey, TranslatePk,
+    Error, Extension, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, ScriptContext,
+    Segwitv0, ToPublicKey, TranslatePk,
 };
 
 // A simple utility function to serialize an array
@@ -350,29 +350,13 @@ where
     }
 }
 
-impl<Pk, Ext> ElementsTrait<Pk> for CovenantDescriptor<Pk, Ext>
+impl<Pk, Ext> CovenantDescriptor<Pk, Ext>
 where
     Pk: MiniscriptKey,
     Ext: Extension<Pk>,
 {
-    fn blind_addr(
-        &self,
-        blinder: Option<secp256k1_zkp::PublicKey>,
-        params: &'static elements::AddressParams,
-    ) -> Result<elements::Address, Error>
-    where
-        Pk: ToPublicKey,
-    {
-        Ok(elements::Address::p2wsh(&self.encode(), blinder, params))
-    }
-}
-
-impl<Pk, Ext> DescriptorTrait<Pk> for CovenantDescriptor<Pk, Ext>
-where
-    Pk: MiniscriptKey,
-    Ext: Extension<Pk>,
-{
-    fn sanity_check(&self) -> Result<(), Error> {
+    /// Sanity checks for this covenant descriptor
+    pub fn sanity_check(&self) -> Result<(), Error> {
         self.ms.sanity_check()?;
         // Additional local check for p2wsh script size
         let ss = COV_SCRIPT_SIZE - if self.ms.ext.has_free_verify { 1 } else { 0 };
@@ -383,35 +367,47 @@ where
         }
     }
 
-    fn address(&self, params: &'static elements::AddressParams) -> Result<elements::Address, Error>
+    /// Obtains the blinded address for this descriptor.
+    pub fn address(
+        &self,
+        blinder: Option<secp256k1_zkp::PublicKey>,
+        params: &'static elements::AddressParams,
+    ) -> elements::Address
     where
         Pk: ToPublicKey,
     {
-        Ok(elements::Address::p2wsh(&self.encode(), None, params))
+        elements::Address::p2wsh(&self.encode(), blinder, params)
     }
 
-    fn script_pubkey(&self) -> Script
+    /// Obtains the script pubkey for this descriptor.
+    pub fn script_pubkey(&self) -> Script
     where
         Pk: ToPublicKey,
     {
         self.encode().to_v0_p2wsh()
     }
 
-    fn unsigned_script_sig(&self) -> Script
+    /// Computes the scriptSig that will be in place for an unsigned input
+    /// spending an output with this descriptor.
+    pub fn unsigned_script_sig(&self) -> Script
     where
         Pk: ToPublicKey,
     {
         Script::new()
     }
 
-    fn explicit_script(&self) -> Result<Script, Error>
+    /// Computes the the underlying script before any hashing is done.
+    pub fn inner_script(&self) -> Script
     where
         Pk: ToPublicKey,
     {
-        Ok(self.encode())
+        self.encode()
     }
 
-    fn get_satisfaction<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
+    /// Returns satisfying non-malleable witness and scriptSig to spend an
+    /// output controlled by the given descriptor if it possible to
+    /// construct one using the satisfier S.
+    pub fn get_satisfaction<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
@@ -422,7 +418,9 @@ where
         Ok((witness, script_sig))
     }
 
-    fn max_satisfaction_weight(&self) -> Result<usize, Error> {
+    /// Computes an upper bound on the weight of a satisfying witness to the
+    /// transaction.
+    pub fn max_satisfaction_weight(&self) -> Result<usize, Error> {
         let script_size =
             self.ms.script_size() + 58 - if self.ms.ext.has_free_verify { 1 } else { 0 };
         let max_sat_elems = self.ms.max_satisfaction_witness_elements()? + 12;
@@ -439,14 +437,17 @@ where
     /// You will need this script code when singing with pks that
     /// inside Miniscript. Use the [cov_script_code] method to
     /// get the script code for signing with covenant pk
-    fn script_code(&self) -> Result<Script, Error>
+    pub fn ecdsa_sighash_script_code(&self) -> Script
     where
         Pk: ToPublicKey,
     {
-        self.explicit_script()
+        self.inner_script()
     }
 
-    fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
+    /// Returns a possilbly mallable satisfying non-malleable witness and scriptSig to spend an
+    /// output controlled by the given descriptor if it possible to
+    /// construct one using the satisfier S.
+    pub fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,

@@ -44,7 +44,7 @@ pub use elements::pset as psbt;
 
 pub use self::finalizer::{finalize, finalize_input, interpreter_check, interpreter_inp_check};
 use crate::descriptor::CovSatisfier;
-use crate::{descriptor, util, Descriptor, DescriptorPublicKey, DescriptorTrait};
+use crate::{descriptor, util, Descriptor, DescriptorPublicKey};
 
 /// Error type for Pbst Input
 #[derive(Debug)]

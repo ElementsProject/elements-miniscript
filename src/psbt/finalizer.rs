@@ -25,7 +25,7 @@ use elements::taproot::LeafVersion;
 use elements::{self, confidential, Script, Transaction};
 
 use super::{sanity_check, Error, InputError, Psbt, PsbtInputSatisfier};
-use crate::descriptor::{CovSatisfier, CovenantDescriptor, DescriptorTrait};
+use crate::descriptor::{CovSatisfier, CovenantDescriptor};
 use crate::{
     interpreter, util, BareCtx, Descriptor, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0,
     Tap,

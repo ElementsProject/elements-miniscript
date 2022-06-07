@@ -34,8 +34,7 @@ use crate::expression::{self, FromTree};
 use crate::policy::{semantic, Liftable};
 use crate::{
     tweak_key, BtcDescriptor, BtcDescriptorTrait, BtcError, BtcFromTree, BtcLiftable, BtcPolicy,
-    BtcSatisfier, BtcTree, Descriptor, DescriptorTrait, Error, MiniscriptKey, ToPublicKey,
-    TranslatePk,
+    BtcSatisfier, BtcTree, Descriptor, Error, MiniscriptKey, ToPublicKey, TranslatePk,
 };
 
 /// New Pegin Descriptor with Miniscript support

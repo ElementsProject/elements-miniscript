@@ -21,10 +21,10 @@
 use std::fmt;
 use std::str::FromStr;
 
-use elements::{self, secp256k1_zkp, Script};
+use elements::{self, Script};
 
 use super::checksum::{desc_checksum, strip_checksum, verify_checksum};
-use super::{Descriptor, DescriptorTrait, ElementsTrait, TranslatePk};
+use super::{Descriptor, TranslatePk};
 use crate::expression::{self, FromTree};
 use crate::policy::{semantic, Liftable};
 use crate::{Error, MiniscriptKey, Satisfier, ToPublicKey};
@@ -128,57 +128,54 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Blinded<Pk> {
-    /// Overides the blinding key in descriptor with the one
-    /// provided in the argument.
-    fn blind_addr(
+impl<Pk: MiniscriptKey> Blinded<Pk> {
+    /// Sanity checks for the underlying descriptor.
+    pub fn sanity_check(&self) -> Result<(), Error> {
+        self.desc.sanity_check()?;
+        Ok(())
+    }
+
+    /// Obtains the blinded address for this descriptor.
+    pub fn address(
         &self,
-        blinder: Option<secp256k1_zkp::PublicKey>,
         params: &'static elements::AddressParams,
     ) -> Result<elements::Address, Error>
     where
         Pk: ToPublicKey,
     {
-        self.desc.blind_addr(blinder, params)
-    }
-}
-
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Blinded<Pk> {
-    fn sanity_check(&self) -> Result<(), Error> {
-        self.desc.sanity_check()?;
-        Ok(())
-    }
-
-    fn address(&self, params: &'static elements::AddressParams) -> Result<elements::Address, Error>
-    where
-        Pk: ToPublicKey,
-    {
         self.desc
-            .blind_addr(Some(self.blinder.to_public_key().inner), params)
+            .blinded_address(self.blinder.to_public_key().inner, params)
     }
 
-    fn script_pubkey(&self) -> Script
+    /// Obtains the script pubkey for this descriptor.
+    pub fn script_pubkey(&self) -> Script
     where
         Pk: ToPublicKey,
     {
         self.desc.script_pubkey()
     }
 
-    fn unsigned_script_sig(&self) -> Script
+    /// Computes the scriptSig that will be in place for an unsigned input
+    /// spending an output with this descriptor.
+    pub fn unsigned_script_sig(&self) -> Script
     where
         Pk: ToPublicKey,
     {
         self.desc.unsigned_script_sig()
     }
 
-    fn explicit_script(&self) -> Result<Script, Error>
+    /// Computes the the underlying script before any hashing is done.
+    pub fn explicit_script(&self) -> Result<Script, Error>
     where
         Pk: ToPublicKey,
     {
         self.desc.explicit_script()
     }
 
-    fn get_satisfaction<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
+    /// Returns satisfying non-malleable witness and scriptSig to spend an
+    /// output controlled by the given descriptor if it possible to
+    /// construct one using the satisfier S.
+    pub fn get_satisfaction<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
@@ -186,18 +183,24 @@ impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Blinded<Pk> {
         self.desc.get_satisfaction(satisfier)
     }
 
-    fn max_satisfaction_weight(&self) -> Result<usize, Error> {
+    /// Computes an upper bound on the weight of a satisfying witness to the
+    /// transaction.
+    pub fn max_satisfaction_weight(&self) -> Result<usize, Error> {
         self.desc.max_satisfaction_weight()
     }
 
-    fn script_code(&self) -> Result<Script, Error>
+    /// Computes the `scriptCode` of a transaction output.
+    pub fn script_code(&self) -> Result<Script, Error>
     where
         Pk: ToPublicKey,
     {
         self.desc.script_code()
     }
 
-    fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
+    /// Returns a possilbly mallable satisfying non-malleable witness and scriptSig to spend an
+    /// output controlled by the given descriptor if it possible to
+    /// construct one using the satisfier S.
+    pub fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
