@@ -152,7 +152,7 @@ use elements::secp256k1_zkp::Secp256k1;
 use elements::{opcodes, script, secp256k1_zkp};
 
 pub use crate::descriptor::{Descriptor, DescriptorPublicKey};
-use crate::extensions::{CovenantExt, Extension, NoExt};
+pub use crate::extensions::{CovenantExt, Extension, NoExt};
 pub use crate::interpreter::Interpreter;
 pub use crate::miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0, Tap};
 pub use crate::miniscript::decode::Terminal;
