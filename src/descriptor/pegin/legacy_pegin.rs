@@ -38,8 +38,7 @@ use crate::policy::{semantic, Liftable};
 use crate::util::varint_len;
 use crate::{
     tweak_key, BtcError, BtcFromTree, BtcLiftable, BtcMiniscript, BtcPolicy, BtcSatisfier,
-    BtcSegwitv0, BtcTerminal, BtcTree, Descriptor, DescriptorTrait, Error, MiniscriptKey,
-    ToPublicKey, TranslatePk,
+    BtcSegwitv0, BtcTerminal, BtcTree, Descriptor, Error, MiniscriptKey, ToPublicKey, TranslatePk,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

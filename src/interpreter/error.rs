@@ -131,77 +131,6 @@ pub enum Error {
     },
 }
 
-/// A type of representing which keys errored during interpreter checksig evaluation
-// Note that we can't use BitcoinKey because it is not public
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PkEvalErrInner {
-    /// Full Key
-    FullKey(bitcoin::PublicKey),
-    /// XOnly Key
-    XOnlyKey(bitcoin::XOnlyPublicKey),
-}
-
-impl From<BitcoinKey> for PkEvalErrInner {
-    fn from(pk: BitcoinKey) -> Self {
-        match pk {
-            BitcoinKey::Fullkey(pk) => PkEvalErrInner::FullKey(pk),
-            BitcoinKey::XOnlyPublicKey(xpk) => PkEvalErrInner::XOnlyKey(xpk),
-        }
-    }
-}
-
-impl fmt::Display for PkEvalErrInner {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PkEvalErrInner::FullKey(pk) => pk.fmt(f),
-            PkEvalErrInner::XOnlyKey(xpk) => xpk.fmt(f),
-        }
-    }
-}
-
-#[doc(hidden)]
-impl From<secp256k1_zkp::Error> for Error {
-    fn from(e: secp256k1_zkp::Error) -> Error {
-        Error::Secp(e)
-    }
-}
-
-#[doc(hidden)]
-impl From<elements::sighash::Error> for Error {
-    fn from(e: elements::sighash::Error) -> Error {
-        Error::SighashError(e)
-    }
-}
-
-#[doc(hidden)]
-impl From<elements::SchnorrSigError> for Error {
-    fn from(e: elements::SchnorrSigError) -> Error {
-        Error::SchnorrSig(e)
-    }
-}
-
-impl From<elements::secp256k1_zkp::UpstreamError> for Error {
-    fn from(e: elements::secp256k1_zkp::UpstreamError) -> Error {
-        Error::Secp(elements::secp256k1_zkp::Error::Upstream(e))
-    }
-}
-
-#[doc(hidden)]
-impl From<crate::Error> for Error {
-    fn from(e: crate::Error) -> Error {
-        Error::Miniscript(e)
-    }
-}
-
-impl error::Error for Error {
-    fn cause(&self) -> Option<&dyn error::Error> {
-        match *self {
-            Error::Secp(ref err) => Some(err),
-            ref x => Some(x),
-        }
-    }
-}
-
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
@@ -282,5 +211,115 @@ impl fmt::Display for Error {
                 pos, expected, actual
             ),
         }
+    }
+}
+
+impl error::Error for Error {
+    fn cause(&self) -> Option<&dyn error::Error> {
+        use self::Error::*;
+
+        match self {
+            AbsoluteLocktimeNotMet(_)
+            | CannotInferTrDescriptors
+            | ControlBlockVerificationError
+            | CouldNotEvaluate
+            | ExpectedPush
+            | HashPreimageLengthMismatch
+            | IncorrectPubkeyHash
+            | IncorrectScriptHash
+            | IncorrectWPubkeyHash
+            | IncorrectWScriptHash
+            | InsufficientSignaturesMultiSig
+            | InvalidEcdsaSignature(_)
+            | InvalidSchnorrSignature(_)
+            | InvalidSchnorrSigHashType(_)
+            | NonStandardSigHash(_)
+            | MissingExtraZeroMultiSig
+            | MultiSigEvaluationError
+            | NonEmptyWitness
+            | NonEmptyScriptSig
+            | PubkeyParseError
+            | XOnlyPublicKeyParseError
+            | PkEvaluationError(_)
+            | PkHashVerifyFail(_)
+            | RelativeLocktimeNotMet(_)
+            | ScriptSatisfactionError
+            | TapAnnexUnsupported
+            | UncompressedPubkey
+            | UnexpectedStackBoolean
+            | UnexpectedStackEnd
+            | UnexpectedStackElementPush
+            | VerifyFailed => None,
+            ControlBlockParse(e) => Some(e),
+            EcdsaSig(e) => Some(e),
+            Miniscript(e) => Some(e),
+            Secp(e) => Some(e),
+            SchnorrSig(e) => Some(e),
+            SighashError(e) => Some(e),
+            IncorrectCovenantWitness => None,
+            CovWitnessSizeErr { .. } => None,
+        }
+    }
+}
+
+#[doc(hidden)]
+impl From<secp256k1_zkp::Error> for Error {
+    fn from(e: secp256k1_zkp::Error) -> Error {
+        Error::Secp(e)
+    }
+}
+
+#[doc(hidden)]
+impl From<elements::SchnorrSigError> for Error {
+    fn from(e: elements::SchnorrSigError) -> Error {
+        Error::SchnorrSig(e)
+    }
+}
+
+/// A type of representing which keys errored during interpreter checksig evaluation
+// Note that we can't use BitcoinKey because it is not public
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PkEvalErrInner {
+    /// Full Key
+    FullKey(bitcoin::PublicKey),
+    /// XOnly Key
+    XOnlyKey(bitcoin::XOnlyPublicKey),
+}
+
+impl From<BitcoinKey> for PkEvalErrInner {
+    fn from(pk: BitcoinKey) -> Self {
+        match pk {
+            BitcoinKey::Fullkey(pk) => PkEvalErrInner::FullKey(pk),
+            BitcoinKey::XOnlyPublicKey(xpk) => PkEvalErrInner::XOnlyKey(xpk),
+        }
+    }
+}
+
+impl fmt::Display for PkEvalErrInner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PkEvalErrInner::FullKey(pk) => pk.fmt(f),
+            PkEvalErrInner::XOnlyKey(xpk) => xpk.fmt(f),
+        }
+    }
+}
+
+#[doc(hidden)]
+impl From<elements::sighash::Error> for Error {
+    fn from(e: elements::sighash::Error) -> Error {
+        Error::SighashError(e)
+    }
+}
+
+impl From<elements::secp256k1_zkp::UpstreamError> for Error {
+    fn from(e: elements::secp256k1_zkp::UpstreamError) -> Error {
+        Error::Secp(elements::secp256k1_zkp::Error::Upstream(e))
+    }
+}
+
+#[doc(hidden)]
+impl From<crate::Error> for Error {
+    fn from(e: crate::Error) -> Error {
+        Error::Miniscript(e)
     }
 }

@@ -63,7 +63,6 @@
 //! extern crate elements_miniscript as miniscript;
 //!
 //! use std::str::FromStr;
-//! use miniscript::{DescriptorTrait};
 //!
 //! fn main() {
 //!     // Elements descriptors are prefixed by string el
@@ -142,6 +141,7 @@ pub mod interpreter;
 pub mod miniscript;
 pub mod policy;
 pub mod psbt;
+pub mod timelock;
 
 mod util;
 
@@ -151,9 +151,7 @@ use elements::hashes::sha256;
 use elements::secp256k1_zkp::Secp256k1;
 use elements::{opcodes, script, secp256k1_zkp};
 
-pub use crate::descriptor::pretaproot::traits::PreTaprootDescriptorTrait;
-pub use crate::descriptor::pretaproot::PreTaprootDescriptor;
-pub use crate::descriptor::{Descriptor, DescriptorPublicKey, DescriptorTrait};
+pub use crate::descriptor::{Descriptor, DescriptorPublicKey};
 pub use crate::extensions::{CovenantExt, Extension, NoExt};
 pub use crate::interpreter::Interpreter;
 pub use crate::miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0, Tap};
@@ -407,15 +405,6 @@ fn errstr(s: &str) -> Error {
     Error::Unexpected(s.to_owned())
 }
 
-impl error::Error for Error {
-    fn cause(&self) -> Option<&dyn error::Error> {
-        match *self {
-            Error::BadPubkey(ref e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
 // https://github.com/sipa/miniscript/pull/5 for discussion on this number
 const MAX_RECURSION_DEPTH: u32 = 402;
 // https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki
@@ -489,7 +478,7 @@ impl fmt::Display for Error {
                 write!(f, "MultiA too many keys {}", k)
             }
             Error::TaprootSpendInfoUnavialable => {
-                write!(f, "Taproot Spend Info not computed. Hint: Did you call `compute_spend_info` before calling methods from DescriptorTrait")
+                write!(f, "Taproot Spend Info not computed.")
             }
             Error::TrNoScriptCode => {
                 write!(f, "No script code for Tr descriptors")
@@ -497,6 +486,59 @@ impl fmt::Display for Error {
             Error::TrNoExplicitScript => {
                 write!(f, "No script code for Tr descriptors")
             }
+        }
+    }
+}
+
+impl error::Error for Error {
+    fn cause(&self) -> Option<&dyn error::Error> {
+        use self::Error::*;
+
+        match self {
+            InvalidOpcode(_)
+            | NonMinimalVerify(_)
+            | InvalidPush(_)
+            | CmsTooManyKeys(_)
+            | MultiATooManyKeys(_)
+            | Unprintable(_)
+            | ExpectedChar(_)
+            | UnexpectedStart
+            | Unexpected(_)
+            | MultiColon(_)
+            | MultiAt(_)
+            | AtOutsideOr(_)
+            | LikelyFalse
+            | UnknownWrapper(_)
+            | NonTopLevel(_)
+            | Trailing(_)
+            | MissingHash(_)
+            | MissingSig(_)
+            | RelativeLocktimeNotMet(_)
+            | AbsoluteLocktimeNotMet(_)
+            | CouldNotSatisfy
+            | TypeCheck(_)
+            | BadDescriptor(_)
+            | MaxRecursiveDepthExceeded
+            | ScriptSizeTooLarge
+            | NonStandardBareScript
+            | ImpossibleSatisfaction
+            | BareDescriptorAddr
+            | TaprootSpendInfoUnavialable
+            | TrNoScriptCode
+            | TrNoExplicitScript => None,
+            BtcError(e) => Some(e),
+            CovError(e) => Some(e),
+            Script(_e) => None, // should be Some(e), but requires changes upstream
+            AddrError(e) => Some(e),
+            BadPubkey(e) => Some(e),
+            Secp(e) => Some(e),
+            #[cfg(feature = "compiler")]
+            CompilerError(e) => Some(e),
+            PolicyError(e) => Some(e),
+            LiftError(e) => Some(e),
+            ContextError(e) => Some(e),
+            AnalysisError(e) => Some(e),
+            PubKeyCtxError(e, _) => Some(e),
         }
     }
 }

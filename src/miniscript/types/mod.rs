@@ -104,21 +104,6 @@ pub struct Error<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk> = NoE
     pub error: ErrorKind,
 }
 
-impl<Pk, Ctx, Ext> error::Error for Error<Pk, Ctx, Ext>
-where
-    Pk: MiniscriptKey,
-    Ctx: ScriptContext,
-    Ext: Extension<Pk>,
-{
-    fn cause(&self) -> Option<&error::Error> {
-        None
-    }
-
-    fn description(&self) -> &str {
-        "description() is deprecated; use Display"
-    }
-}
-
 impl<Pk, Ctx, Ext> fmt::Display for Error<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
@@ -233,6 +218,12 @@ where
     }
 }
 
+impl<Pk: MiniscriptKey, Ctx: ScriptContext> error::Error for Error<Pk, Ctx> {
+    fn cause(&self) -> Option<&dyn error::Error> {
+        None
+    }
+}
+
 /// Structure representing the type of a Miniscript fragment, including all
 /// properties relevant to the main codebase
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -268,10 +259,10 @@ pub trait Property: Sized {
     fn from_false() -> Self;
 
     /// Type property of the `PkK` fragment
-    fn from_pk_k() -> Self;
+    fn from_pk_k<Ctx: ScriptContext>() -> Self;
 
     /// Type property of the `PkH` fragment
-    fn from_pk_h() -> Self;
+    fn from_pk_h<Ctx: ScriptContext>() -> Self;
 
     /// Type property of a `Multi` fragment
     fn from_multi(k: usize, n: usize) -> Self;
@@ -312,13 +303,13 @@ pub trait Property: Sized {
     /// Type property of a timelock
     fn from_time(t: u32) -> Self;
 
-    /// Type property of a relative timelock. Default implementation simply
+    /// Type property of an absolute timelock. Default implementation simply
     /// passes through to `from_time`
     fn from_after(t: u32) -> Self {
         Self::from_time(t)
     }
 
-    /// Type property of an absolute timelock. Default implementation simply
+    /// Type property of a relative timelock. Default implementation simply
     /// passes through to `from_time`
     fn from_older(t: u32) -> Self {
         Self::from_time(t)
@@ -429,8 +420,8 @@ pub trait Property: Sized {
         let ret = match *fragment {
             Terminal::True => Ok(Self::from_true()),
             Terminal::False => Ok(Self::from_false()),
-            Terminal::PkK(..) => Ok(Self::from_pk_k()),
-            Terminal::PkH(..) => Ok(Self::from_pk_h()),
+            Terminal::PkK(..) => Ok(Self::from_pk_k::<Ctx>()),
+            Terminal::PkH(..) => Ok(Self::from_pk_h::<Ctx>()),
             Terminal::Multi(k, ref pks) | Terminal::MultiA(k, ref pks) => {
                 if k == 0 {
                     return Err(Error {
@@ -579,17 +570,17 @@ impl Property for Type {
         }
     }
 
-    fn from_pk_k() -> Self {
+    fn from_pk_k<Ctx: ScriptContext>() -> Self {
         Type {
-            corr: Property::from_pk_k(),
-            mall: Property::from_pk_k(),
+            corr: Property::from_pk_k::<Ctx>(),
+            mall: Property::from_pk_k::<Ctx>(),
         }
     }
 
-    fn from_pk_h() -> Self {
+    fn from_pk_h<Ctx: ScriptContext>() -> Self {
         Type {
-            corr: Property::from_pk_h(),
-            mall: Property::from_pk_h(),
+            corr: Property::from_pk_h::<Ctx>(),
+            mall: Property::from_pk_h::<Ctx>(),
         }
     }
 
@@ -821,8 +812,8 @@ impl Property for Type {
         let ret = match *fragment {
             Terminal::True => Ok(Self::from_true()),
             Terminal::False => Ok(Self::from_false()),
-            Terminal::PkK(..) => Ok(Self::from_pk_k()),
-            Terminal::PkH(..) => Ok(Self::from_pk_h()),
+            Terminal::PkK(..) => Ok(Self::from_pk_k::<Ctx>()),
+            Terminal::PkH(..) => Ok(Self::from_pk_h::<Ctx>()),
             Terminal::Multi(k, ref pks) | Terminal::MultiA(k, ref pks) => {
                 if k == 0 {
                     return Err(Error {

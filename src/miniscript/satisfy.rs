@@ -29,7 +29,7 @@ use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, confidential, secp256k1_zkp, OutPoint, Script};
 
 use crate::miniscript::limits::{
-    HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
+    LOCKTIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
 use crate::util::witness_size;
 use crate::{Extension, Miniscript, MiniscriptKey, ScriptContext, Terminal, ToPublicKey};
@@ -229,7 +229,7 @@ pub struct After(pub u32);
 impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for After {
     fn check_after(&self, n: u32) -> bool {
         // if n > self.0; we will be returning false anyways
-        if n < HEIGHT_TIME_THRESHOLD && self.0 >= HEIGHT_TIME_THRESHOLD {
+        if n < LOCKTIME_THRESHOLD && self.0 >= LOCKTIME_THRESHOLD {
             false
         } else {
             n <= self.0

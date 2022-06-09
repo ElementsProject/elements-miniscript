@@ -69,10 +69,11 @@ mod tests {
 
     use super::cov::*;
     use super::*;
-    use crate::descriptor::{DescriptorTrait, DescriptorType};
+    use crate::descriptor::DescriptorType;
+    use crate::extensions::CovenantExt;
     use crate::interpreter::SatisfiedConstraint;
     use crate::util::{count_non_push_opcodes, witness_size};
-    use crate::{interpreter, CovenantExt, Descriptor, ElementsSig, Error, Interpreter, Satisfier};
+    use crate::{interpreter, Descriptor, ElementsSig, Error, Interpreter, Satisfier};
 
     const BTC_ASSET: [u8; 32] = [
         0x23, 0x0f, 0x4f, 0x5d, 0x4b, 0x7c, 0x6f, 0xa8, 0x45, 0x80, 0x6e, 0xe4, 0xf6, 0x77, 0x13,

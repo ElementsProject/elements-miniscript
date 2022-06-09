@@ -24,6 +24,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::{cmp, error, f64, fmt, hash, mem};
 
+use crate::miniscript::context::SigType;
 use crate::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
 use crate::miniscript::types::{self, ErrorKind, ExtData, Property, Type};
 use crate::miniscript::ScriptContext;
@@ -35,7 +36,7 @@ type PolicyCache<Pk, Ctx> =
 
 ///Ordered f64 for comparison
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
-struct OrdF64(f64);
+pub(crate) struct OrdF64(pub f64);
 
 impl Eq for OrdF64 {}
 impl Ord for OrdF64 {
@@ -61,8 +62,6 @@ pub enum CompilerError {
     PolicyError(policy::concrete::PolicyError),
 }
 
-impl error::Error for CompilerError {}
-
 impl fmt::Display for CompilerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
@@ -76,6 +75,17 @@ impl fmt::Display for CompilerError {
                 "At least one spending path has exceeded the standardness or consensus limits",
             ),
             CompilerError::PolicyError(ref e) => fmt::Display::fmt(e, f),
+        }
+    }
+}
+
+impl error::Error for CompilerError {
+    fn cause(&self) -> Option<&dyn error::Error> {
+        use self::CompilerError::*;
+
+        match self {
+            TopLevelNonSafe | ImpossibleNonMalleableCompilation | LimitsExceeded => None,
+            PolicyError(e) => Some(e),
         }
     }
 }
@@ -165,19 +175,30 @@ impl Property for CompilerExtData {
         }
     }
 
-    fn from_pk_k() -> Self {
+    fn from_pk_k<Ctx: ScriptContext>() -> Self {
         CompilerExtData {
             branch_prob: None,
-            sat_cost: 73.0,
+            sat_cost: match Ctx::sig_type() {
+                SigType::Ecdsa => 73.0,
+                SigType::Schnorr => 1.0 /* <var_int> */ + 64.0 /* sig */ + 1.0, /* <sighash_type> */
+            },
             dissat_cost: Some(1.0),
         }
     }
 
-    fn from_pk_h() -> Self {
+    fn from_pk_h<Ctx: ScriptContext>() -> Self {
         CompilerExtData {
             branch_prob: None,
-            sat_cost: 73.0 + 34.0,
-            dissat_cost: Some(1.0 + 34.0),
+            sat_cost: match Ctx::sig_type() {
+                SigType::Ecdsa => 73.0 + 34.0,
+                SigType::Schnorr => 66.0 + 33.0,
+            },
+            dissat_cost: Some(
+                1.0 + match Ctx::sig_type() {
+                    SigType::Ecdsa => 34.0,
+                    SigType::Schnorr => 33.0,
+                },
+            ),
         }
     }
 
@@ -186,6 +207,14 @@ impl Property for CompilerExtData {
             branch_prob: None,
             sat_cost: 1.0 + 73.0 * k as f64,
             dissat_cost: Some(1.0 * (k + 1) as f64),
+        }
+    }
+
+    fn from_multi_a(k: usize, n: usize) -> Self {
+        CompilerExtData {
+            branch_prob: None,
+            sat_cost: 66.0 * k as f64 + (n - k) as f64,
+            dissat_cost: Some(n as f64), /* <w_n> ... <w_1> := 0x00 ... 0x00 (n times) */
         }
     }
 
@@ -996,18 +1025,23 @@ where
                 })
                 .collect();
 
-            if key_vec.len() == subs.len() && subs.len() <= MAX_PUBKEYS_PER_MULTISIG {
-                insert_wrap!(AstElemExt::terminal(Terminal::Multi(k, key_vec)));
-            }
-            // Not a threshold, it's always more optimal to translate it to and()s as we save the
-            // resulting threshold check (N EQUAL) in any case.
-            else if k == subs.len() {
-                let mut policy = subs.first().expect("No sub policy in thresh() ?").clone();
-                for sub in &subs[1..] {
-                    policy = Concrete::And(vec![sub.clone(), policy]);
+            match Ctx::sig_type() {
+                SigType::Schnorr if key_vec.len() == subs.len() => {
+                    insert_wrap!(AstElemExt::terminal(Terminal::MultiA(k, key_vec)))
                 }
+                SigType::Ecdsa
+                    if key_vec.len() == subs.len() && subs.len() <= MAX_PUBKEYS_PER_MULTISIG =>
+                {
+                    insert_wrap!(AstElemExt::terminal(Terminal::Multi(k, key_vec)))
+                }
+                _ if k == subs.len() => {
+                    let mut it = subs.iter();
+                    let mut policy = it.next().expect("No sub policy in thresh() ?").clone();
+                    policy = it.fold(policy, |acc, pol| Concrete::And(vec![acc, pol.clone()]));
 
-                ret = best_compilations(policy_cache, &policy, sat_prob, dissat_prob)?;
+                    ret = best_compilations(policy_cache, &policy, sat_prob, dissat_prob)?;
+                }
+                _ => {}
             }
 
             // FIXME: Should we also optimize thresh(1, subs) ?
@@ -1268,7 +1302,7 @@ mod tests {
         let compilation: DummyTapAstElemExt =
             best_t(&mut BTreeMap::new(), &policy, 1.0, None).unwrap();
 
-        assert_eq!(compilation.cost_1d(1.0, None), 88.0 + 74.109375);
+        assert_eq!(compilation.cost_1d(1.0, None), 87.0 + 67.0390625);
         assert_eq!(
             policy.lift().unwrap().sorted(),
             compilation.ms.lift().unwrap().sorted()
@@ -1281,7 +1315,7 @@ mod tests {
         let compilation: DummyTapAstElemExt =
             best_t(&mut BTreeMap::new(), &policy, 1.0, None).unwrap();
 
-        assert_eq!(compilation.cost_1d(1.0, None), 438.0 + 299.4003295898438);
+        assert_eq!(compilation.cost_1d(1.0, None), 433.0 + 275.7909749348958);
         assert_eq!(
             policy.lift().unwrap().sorted(),
             compilation.ms.lift().unwrap().sorted()
@@ -1556,6 +1590,17 @@ mod tests {
                 policy::concrete::PolicyError::DuplicatePubKeys
             ))
         );
+    }
+
+    #[test]
+    fn compile_tr_thresh() {
+        for k in 1..4 {
+            let small_thresh: Concrete<String> =
+                policy_str!("{}", &format!("thresh({},pk(B),pk(C),pk(D))", k));
+            let small_thresh_ms: Miniscript<String, Tap> = small_thresh.compile().unwrap();
+            let small_thresh_ms_expected: Miniscript<String, Tap> = ms_str!("multi_a({},B,C,D)", k);
+            assert_eq!(small_thresh_ms, small_thresh_ms_expected);
+        }
     }
 }
 

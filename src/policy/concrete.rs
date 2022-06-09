@@ -20,16 +20,26 @@ use std::{error, fmt, str};
 
 use elements::hashes::hex::FromHex;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d};
+#[cfg(feature = "compiler")]
+use {
+    crate::descriptor::TapTree,
+    crate::miniscript::ScriptContext,
+    crate::policy::compiler::CompilerError,
+    crate::policy::compiler::OrdF64,
+    crate::policy::{compiler, Concrete, Liftable, Semantic},
+    crate::Descriptor,
+    crate::Miniscript,
+    crate::Tap,
+    std::cmp::Reverse,
+    std::collections::{BinaryHeap, HashMap},
+    std::sync::Arc,
+};
 
 use super::ENTAILMENT_MAX_TERMINALS;
 use crate::expression::{self, FromTree};
-use crate::miniscript::limits::{HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_TYPE_FLAG};
-use crate::miniscript::types::extra_props::TimeLockInfo;
+use crate::miniscript::limits::{LOCKTIME_THRESHOLD, SEQUENCE_LOCKTIME_TYPE_FLAG};
+use crate::miniscript::types::extra_props::TimelockInfo;
 use crate::{errstr, Error, ForEach, ForEachKey, MiniscriptKey};
-#[cfg(feature = "compiler")]
-use crate::{
-    miniscript::ScriptContext, policy::compiler, policy::compiler::CompilerError, Miniscript,
-};
 /// Concrete policy which corresponds directly to a Miniscript structure,
 /// and whose disjunctions are annotated with satisfaction probabilities
 /// to assist the compiler
@@ -83,12 +93,10 @@ pub enum PolicyError {
     EntailmentMaxTerminals,
     /// lifting error: Cannot lift policies that have
     /// a combination of height and timelocks.
-    HeightTimeLockCombination,
+    HeightTimelockCombination,
     /// Duplicate Public Keys
     DuplicatePubKeys,
 }
-
-impl error::Error for PolicyError {}
 
 impl fmt::Display for PolicyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -115,7 +123,7 @@ impl fmt::Display for PolicyError {
                 "Policy entailment only supports {} terminals",
                 ENTAILMENT_MAX_TERMINALS
             ),
-            PolicyError::HeightTimeLockCombination => {
+            PolicyError::HeightTimelockCombination => {
                 f.write_str("Cannot lift policies that have a heightlock and timelock combination")
             }
             PolicyError::DuplicatePubKeys => f.write_str("Policy contains duplicate keys"),
@@ -123,7 +131,156 @@ impl fmt::Display for PolicyError {
     }
 }
 
+impl error::Error for PolicyError {
+    fn cause(&self) -> Option<&dyn error::Error> {
+        use self::PolicyError::*;
+
+        match self {
+            NonBinaryArgAnd
+            | NonBinaryArgOr
+            | IncorrectThresh
+            | ZeroTime
+            | TimeTooFar
+            | InsufficientArgsforAnd
+            | InsufficientArgsforOr
+            | EntailmentMaxTerminals
+            | HeightTimelockCombination
+            | DuplicatePubKeys => None,
+        }
+    }
+}
+
 impl<Pk: MiniscriptKey> Policy<Pk> {
+    /// Flatten the [`Policy`] tree structure into a Vector of tuple `(leaf script, leaf probability)`
+    /// with leaf probabilities corresponding to odds for sub-branch in the policy.
+    /// We calculate the probability of selecting the sub-branch at every level and calculate the
+    /// leaf probabilities as the probability of traversing through required branches to reach the
+    /// leaf node, i.e. multiplication of the respective probabilities.
+    ///
+    /// For example, the policy tree:       OR
+    ///                                   /   \
+    ///                                  2     1            odds
+    ///                                /        \
+    ///                               A         OR
+    ///                                        /  \
+    ///                                       3    1        odds
+    ///                                     /       \
+    ///                                    B         C
+    ///
+    /// gives the vector [(2/3, A), (1/3 * 3/4, B), (1/3 * 1/4, C)].
+    #[cfg(feature = "compiler")]
+    fn to_tapleaf_prob_vec(&self, prob: f64) -> Vec<(f64, Policy<Pk>)> {
+        match *self {
+            Policy::Or(ref subs) => {
+                let total_odds: usize = subs.iter().map(|(ref k, _)| k).sum();
+                subs.iter()
+                    .map(|(k, ref policy)| {
+                        policy.to_tapleaf_prob_vec(prob * *k as f64 / total_odds as f64)
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>()
+            }
+            Policy::Threshold(k, ref subs) if k == 1 => {
+                let total_odds = subs.len();
+                subs.iter()
+                    .map(|policy| policy.to_tapleaf_prob_vec(prob / total_odds as f64))
+                    .flatten()
+                    .collect::<Vec<_>>()
+            }
+            ref x => vec![(prob, x.clone())],
+        }
+    }
+
+    /// Compile [`Policy::Or`] and [`Policy::Threshold`] according to odds
+    #[cfg(feature = "compiler")]
+    fn compile_tr_policy(&self) -> Result<TapTree<Pk>, Error> {
+        let leaf_compilations: Vec<_> = self
+            .to_tapleaf_prob_vec(1.0)
+            .into_iter()
+            .filter(|x| x.1 != Policy::Unsatisfiable)
+            .map(|(prob, ref policy)| (OrdF64(prob), compiler::best_compilation(policy).unwrap()))
+            .collect();
+        let taptree = with_huffman_tree::<Pk>(leaf_compilations).unwrap();
+        Ok(taptree)
+    }
+
+    /// Extract the internal_key from policy tree.
+    #[cfg(feature = "compiler")]
+    fn extract_key(self, unspendable_key: Option<Pk>) -> Result<(Pk, Policy<Pk>), Error> {
+        let mut internal_key: Option<Pk> = None;
+        {
+            let mut prob = 0.;
+            let semantic_policy = self.lift()?;
+            let concrete_keys = self.keys();
+            let key_prob_map: HashMap<_, _> = self
+                .to_tapleaf_prob_vec(1.0)
+                .into_iter()
+                .filter(|(_, ref pol)| match *pol {
+                    Concrete::Key(..) => true,
+                    _ => false,
+                })
+                .map(|(prob, key)| (key, prob))
+                .collect();
+
+            for key in concrete_keys.into_iter() {
+                if semantic_policy
+                    .clone()
+                    .satisfy_constraint(&Semantic::KeyHash(key.to_pubkeyhash()), true)
+                    == Semantic::Trivial
+                {
+                    match key_prob_map.get(&Concrete::Key(key.clone())) {
+                        Some(val) => {
+                            if *val > prob {
+                                prob = *val;
+                                internal_key = Some(key.clone());
+                            }
+                        }
+                        None => return Err(errstr("Key should have existed in the HashMap!")),
+                    }
+                }
+            }
+        }
+        match (internal_key, unspendable_key) {
+            (Some(ref key), _) => Ok((key.clone(), self.translate_unsatisfiable_pk(&key))),
+            (_, Some(key)) => Ok((key, self)),
+            _ => Err(errstr("No viable internal key found.")),
+        }
+    }
+
+    /// Compile the [`Policy`] into a [`Tr`][`Descriptor::Tr`] Descriptor.
+    ///
+    /// ### TapTree compilation
+    ///
+    /// The policy tree constructed by root-level disjunctions over [`Or`][`Policy::Or`] and
+    /// [`Thresh`][`Policy::Threshold`](1, ..) which is flattened into a vector (with respective
+    /// probabilities derived from odds) of policies.
+    /// For example, the policy `thresh(1,or(pk(A),pk(B)),and(or(pk(C),pk(D)),pk(E)))` gives the vector
+    /// `[pk(A),pk(B),and(or(pk(C),pk(D)),pk(E)))]`. Each policy in the vector is compiled into
+    /// the respective miniscripts. A Huffman Tree is created from this vector which optimizes over
+    /// the probabilitity of satisfaction for the respective branch in the TapTree.
+    // TODO: We might require other compile errors for Taproot.
+    #[cfg(feature = "compiler")]
+    pub fn compile_tr(&self, unspendable_key: Option<Pk>) -> Result<Descriptor<Pk>, Error> {
+        self.is_valid()?; // Check for validity
+        match self.is_safe_nonmalleable() {
+            (false, _) => Err(Error::from(CompilerError::TopLevelNonSafe)),
+            (_, false) => Err(Error::from(
+                CompilerError::ImpossibleNonMalleableCompilation,
+            )),
+            _ => {
+                let (internal_key, policy) = self.clone().extract_key(unspendable_key)?;
+                let tree = Descriptor::new_tr(
+                    internal_key,
+                    match policy {
+                        Policy::Trivial => None,
+                        policy => Some(policy.compile_tr_policy()?),
+                    },
+                )?;
+                Ok(tree)
+            }
+        }
+    }
+
     /// Compile the descriptor into an optimized `Miniscript` representation
     #[cfg(feature = "compiler")]
     pub fn compile<Ctx: ScriptContext>(&self) -> Result<Miniscript<Pk, Ctx>, CompilerError> {
@@ -224,6 +381,30 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
         }
     }
 
+    /// Translate `Concrete::Key(key)` to `Concrete::Unsatisfiable` when extracting TapKey
+    pub fn translate_unsatisfiable_pk(self, key: &Pk) -> Policy<Pk> {
+        match self {
+            Policy::Key(ref k) if k.clone() == *key => Policy::Unsatisfiable,
+            Policy::And(subs) => Policy::And(
+                subs.into_iter()
+                    .map(|sub| sub.translate_unsatisfiable_pk(key))
+                    .collect::<Vec<_>>(),
+            ),
+            Policy::Or(subs) => Policy::Or(
+                subs.into_iter()
+                    .map(|(k, sub)| (k, sub.translate_unsatisfiable_pk(key)))
+                    .collect::<Vec<_>>(),
+            ),
+            Policy::Threshold(k, subs) => Policy::Threshold(
+                k,
+                subs.into_iter()
+                    .map(|sub| sub.translate_unsatisfiable_pk(key))
+                    .collect::<Vec<_>>(),
+            ),
+            x => x,
+        }
+    }
+
     /// Get all keys in the policy
     pub fn keys(&self) -> Vec<&Pk> {
         match &*self {
@@ -261,7 +442,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     pub fn check_timelocks(&self) -> Result<(), PolicyError> {
         let timelocks = self.check_timelocks_helper();
         if timelocks.contains_combination {
-            Err(PolicyError::HeightTimeLockCombination)
+            Err(PolicyError::HeightTimelockCombination)
         } else {
             Ok(())
         }
@@ -269,7 +450,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 
     // Checks whether the given concrete policy contains a combination of
     // timelocks and heightlocks
-    fn check_timelocks_helper(&self) -> TimeLockInfo {
+    fn check_timelocks_helper(&self) -> TimelockInfo {
         // timelocks[csv_h, csv_t, cltv_h, cltv_t, combination]
         match *self {
             Policy::Unsatisfiable
@@ -278,15 +459,15 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             | Policy::Sha256(_)
             | Policy::Hash256(_)
             | Policy::Ripemd160(_)
-            | Policy::Hash160(_) => TimeLockInfo::default(),
-            Policy::After(t) => TimeLockInfo {
+            | Policy::Hash160(_) => TimelockInfo::default(),
+            Policy::After(t) => TimelockInfo {
                 csv_with_height: false,
                 csv_with_time: false,
-                cltv_with_height: t < HEIGHT_TIME_THRESHOLD,
-                cltv_with_time: t >= HEIGHT_TIME_THRESHOLD,
+                cltv_with_height: t < LOCKTIME_THRESHOLD,
+                cltv_with_time: t >= LOCKTIME_THRESHOLD,
                 contains_combination: false,
             },
-            Policy::Older(t) => TimeLockInfo {
+            Policy::Older(t) => TimelockInfo {
                 csv_with_height: (t & SEQUENCE_LOCKTIME_TYPE_FLAG) == 0,
                 csv_with_time: (t & SEQUENCE_LOCKTIME_TYPE_FLAG) != 0,
                 cltv_with_height: false,
@@ -295,17 +476,17 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             },
             Policy::Threshold(k, ref subs) => {
                 let iter = subs.iter().map(|sub| sub.check_timelocks_helper());
-                TimeLockInfo::combine_thresh_timelocks(k, iter)
+                TimelockInfo::combine_threshold(k, iter)
             }
             Policy::And(ref subs) => {
                 let iter = subs.iter().map(|sub| sub.check_timelocks_helper());
-                TimeLockInfo::combine_thresh_timelocks(subs.len(), iter)
+                TimelockInfo::combine_threshold(subs.len(), iter)
             }
             Policy::Or(ref subs) => {
                 let iter = subs
                     .iter()
                     .map(|&(ref _p, ref sub)| sub.check_timelocks_helper());
-                TimeLockInfo::combine_thresh_timelocks(1, iter)
+                TimelockInfo::combine_threshold(1, iter)
             }
         }
     }
@@ -642,4 +823,35 @@ where
     fn from_tree(top: &expression::Tree<'_>) -> Result<Policy<Pk>, Error> {
         Policy::from_tree_prob(top, false).map(|(_, result)| result)
     }
+}
+
+/// Create a Huffman Tree from compiled [Miniscript] nodes
+#[cfg(feature = "compiler")]
+fn with_huffman_tree<Pk: MiniscriptKey>(
+    ms: Vec<(OrdF64, Miniscript<Pk, Tap>)>,
+) -> Result<TapTree<Pk>, Error> {
+    let mut node_weights = BinaryHeap::<(Reverse<OrdF64>, TapTree<Pk>)>::new();
+    for (prob, script) in ms {
+        node_weights.push((Reverse(prob), TapTree::Leaf(Arc::new(script))));
+    }
+    if node_weights.is_empty() {
+        return Err(errstr("Empty Miniscript compilation"));
+    }
+    while node_weights.len() > 1 {
+        let (p1, s1) = node_weights.pop().expect("len must atleast be two");
+        let (p2, s2) = node_weights.pop().expect("len must atleast be two");
+
+        let p = (p1.0).0 + (p2.0).0;
+        node_weights.push((
+            Reverse(OrdF64(p)),
+            TapTree::Tree(Arc::from(s1), Arc::from(s2)),
+        ));
+    }
+
+    debug_assert!(node_weights.len() == 1);
+    let node = node_weights
+        .pop()
+        .expect("huffman tree algorithm is broken")
+        .1;
+    Ok(node)
 }

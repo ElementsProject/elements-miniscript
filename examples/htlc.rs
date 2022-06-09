@@ -14,14 +14,13 @@
 
 //! Example: Create an HTLC with miniscript using the policy compiler
 
-use {bitcoin, elements};
+use bitcoin;
 extern crate elements_miniscript as miniscript;
 
 use std::str::FromStr;
 
 use crate::miniscript::descriptor::Wsh;
 use crate::miniscript::policy::{Concrete, Liftable};
-use crate::miniscript::DescriptorTrait;
 
 fn main() {
     // HTLC policy with 10:1 odds for happy (co-operative) case compared to uncooperative case.
@@ -56,7 +55,7 @@ fn main() {
 
     // Get the scriptPpubkey for this Wsh descriptor.
     assert_eq!(
-        format!("{:x}", htlc_descriptor.spk()),
+        format!("{:x}", htlc_descriptor.script_pubkey()),
         "0020d853877af928a8d2a569c9c0ed14bd16f6a80ce9cccaf8a6150fd8f7f8867ae2"
     );
 
@@ -70,9 +69,7 @@ fn main() {
     assert_eq!(
         format!(
             "{}",
-            htlc_descriptor
-                .address(&elements::AddressParams::ELEMENTS)
-                .unwrap()
+            htlc_descriptor.address(None, &elements::AddressParams::ELEMENTS)
         ),
         "ert1qmpfcw7he9z5d9ftfe8qw699azmm2sr8fen903fs4plv007yx0t3qdt0h29"
     );

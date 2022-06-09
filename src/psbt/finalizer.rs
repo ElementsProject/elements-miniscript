@@ -25,7 +25,7 @@ use elements::taproot::LeafVersion;
 use elements::{self, confidential, Script, Transaction};
 
 use super::{sanity_check, Error, InputError, Psbt, PsbtInputSatisfier};
-use crate::descriptor::{CovSatisfier, CovenantDescriptor, DescriptorTrait};
+use crate::descriptor::{CovSatisfier, CovenantDescriptor};
 use crate::{
     interpreter, util, BareCtx, Descriptor, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0,
     Tap,
@@ -344,7 +344,7 @@ fn input_sanity_checks(psbt: &Psbt, index: usize) -> Result<(), super::Error> {
     let input = &psbt.inputs()[index];
     let target = input
         .ecdsa_hash_ty()
-        .ok_or(Error::InputError(InputError::NonStandardSigHashType, index))?;
+        .ok_or(Error::InputError(InputError::NonStandardSighashType, index))?;
     for (key, rawsig) in &input.partial_sigs {
         if rawsig.is_empty() {
             return Err(Error::InputError(
@@ -423,7 +423,7 @@ fn _finalize_inp(
                     &script_code,
                     psbt.inputs()[index]
                         .ecdsa_hash_ty()
-                        .ok_or(Error::InputError(InputError::NonStandardSigHashType, index))?,
+                        .ok_or(Error::InputError(InputError::NonStandardSighashType, index))?,
                 );
                 desc.get_satisfaction((psbt_sat, cov_sat))
                     .map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?

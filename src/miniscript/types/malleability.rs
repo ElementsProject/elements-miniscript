@@ -15,7 +15,7 @@
 //! Malleability-related Type properties
 
 use super::{ErrorKind, Property};
-use crate::{Extension, MiniscriptKey};
+use crate::{Extension, MiniscriptKey, ScriptContext};
 
 /// Whether the fragment has a dissatisfaction, and if so, whether
 /// it is unique. Affects both correctness and malleability-freeness,
@@ -95,7 +95,7 @@ impl Property for Malleability {
         }
     }
 
-    fn from_pk_k() -> Self {
+    fn from_pk_k<Ctx: ScriptContext>() -> Self {
         Malleability {
             dissat: Dissat::Unique,
             safe: true,
@@ -103,7 +103,7 @@ impl Property for Malleability {
         }
     }
 
-    fn from_pk_h() -> Self {
+    fn from_pk_h<Ctx: ScriptContext>() -> Self {
         Malleability {
             dissat: Dissat::Unique,
             safe: true,

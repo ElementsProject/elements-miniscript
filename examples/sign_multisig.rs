@@ -21,8 +21,6 @@ use std::str::FromStr;
 
 use elements::secp256k1_zkp;
 
-use crate::miniscript::DescriptorTrait;
-
 fn main() {
     // Avoid repeatedly typing a pretty-common descriptor type
     type BitcoinDescriptor = miniscript::Descriptor<bitcoin::PublicKey>;

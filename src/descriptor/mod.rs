@@ -32,7 +32,7 @@ use std::sync::Arc;
 pub mod pegin;
 
 use bitcoin::util::address::WitnessVersion;
-use elements::{secp256k1_zkp, Script};
+use elements::{secp256k1_zkp, Script, TxIn};
 use {bitcoin, elements};
 
 use self::checksum::verify_checksum;
@@ -41,9 +41,6 @@ use crate::{
     expression, miniscript, BareCtx, CovenantExt, Error, ForEach, ForEachKey, MiniscriptKey,
     Satisfier, ToPublicKey, TranslatePk, TranslatePk2,
 };
-
-// Directly export from lib.rs, exporting the trait here causes conflicts in this file
-pub(crate) mod pretaproot;
 
 mod bare;
 mod blinded;
@@ -78,122 +75,6 @@ pub type KeyMap = HashMap<DescriptorPublicKey, DescriptorSecretKey>;
 
 /// Elements Descriptor String Prefix
 pub const ELMTS_STR: &str = "el";
-/// Elements specific additional features that
-/// we want on DescriptorTrait from upstream.
-// Maintained as a separate trait to avoid conflicts.
-pub trait ElementsTrait<Pk: MiniscriptKey> {
-    /// Compute a blinded address
-    fn blind_addr(
-        &self,
-        blinder: Option<secp256k1_zkp::PublicKey>,
-        params: &'static elements::AddressParams,
-    ) -> Result<elements::Address, Error>
-    where
-        Pk: ToPublicKey;
-}
-
-/// A general trait for Bitcoin descriptor.
-/// Offers function for witness cost estimation, script pubkey creation
-/// satisfaction using the [Satisfier] trait.
-// Unfortunately, the translation function cannot be added to trait
-// because of traits cannot know underlying generic of Self.
-// Thus, we must implement additional trait for translate function
-pub trait DescriptorTrait<Pk: MiniscriptKey>: ElementsTrait<Pk> {
-    /// Whether the descriptor is safe
-    /// Checks whether all the spend paths in the descriptor are possible
-    /// on the bitcoin network under the current standardness and consensus rules
-    /// Also checks whether the descriptor requires signauture on all spend paths
-    /// And whether the script is malleable.
-    /// In general, all the guarantees of miniscript hold only for safe scripts.
-    /// All the analysis guarantees of miniscript only hold safe scripts.
-    /// The signer may not be able to find satisfactions even if one exists
-    fn sanity_check(&self) -> Result<(), Error>;
-
-    /// Computes the Bitcoin address of the descriptor, if one exists
-    /// Some descriptors like pk() don't have any address.
-    ///
-    /// Errors:
-    ///
-    /// - On raw/bare descriptors that don't have any address
-    /// - In Tr descriptors where the precomputed spend data is not available
-    fn address(&self, params: &'static elements::AddressParams) -> Result<elements::Address, Error>
-    where
-        Pk: ToPublicKey;
-
-    /// Computes the scriptpubkey of the descriptor
-    fn script_pubkey(&self) -> Script
-    where
-        Pk: ToPublicKey;
-
-    /// Computes the scriptSig that will be in place for an unsigned
-    /// input spending an output with this descriptor. For pre-segwit
-    /// descriptors, which use the scriptSig for signatures, this
-    /// returns the empty script.
-    ///
-    /// This is used in Segwit transactions to produce an unsigned
-    /// transaction whose txid will not change during signing (since
-    /// only the witness data will change).
-    fn unsigned_script_sig(&self) -> Script
-    where
-        Pk: ToPublicKey;
-
-    /// Computes the "witness script" of the descriptor, i.e. the underlying
-    /// script before any hashing is done. For `Bare`, `Pkh` and `Wpkh` this
-    /// is the scriptPubkey; for `ShWpkh` and `Sh` this is the redeemScript;
-    /// for the others it is the witness script.
-    /// For `Tr` descriptors, this will error as there is no underlying script
-    fn explicit_script(&self) -> Result<Script, Error>
-    where
-        Pk: ToPublicKey;
-
-    /// Returns satisfying non-malleable witness and scriptSig with minimum weight to spend an
-    /// output controlled by the given descriptor if it possible to
-    /// construct one using the satisfier S.
-    fn get_satisfaction<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
-    where
-        Pk: ToPublicKey,
-        S: Satisfier<Pk>;
-
-    /// Returns satisfying, possibly malleable witness and scriptSig to spend an
-    /// output controlled by the given descriptor if it possible to
-    /// construct one using the satisfier S.
-    fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
-    where
-        Pk: ToPublicKey,
-        S: Satisfier<Pk>;
-
-    /// Attempts to produce a non-malleable satisfying witness and scriptSig to spend an
-    /// output controlled by the given descriptor; add the data to a given
-    /// `TxIn` output.
-    fn satisfy<S>(&self, txin: &mut elements::TxIn, satisfier: S) -> Result<(), Error>
-    where
-        Pk: ToPublicKey,
-        S: Satisfier<Pk>,
-    {
-        // easy default implementation
-        let (witness, script_sig) = self.get_satisfaction(satisfier)?;
-        txin.witness.script_witness = witness;
-        txin.script_sig = script_sig;
-        Ok(())
-    }
-
-    /// Computes an upper bound on the weight of a satisfying witness to the
-    /// transaction. Assumes all ec-signatures are 73 bytes, including push opcode
-    /// and sighash suffix. Includes the weight of the VarInts encoding the
-    /// scriptSig and witness stack length.
-    /// Returns Error when the descriptor is impossible to safisfy (ex: sh(OP_FALSE))
-    fn max_satisfaction_weight(&self) -> Result<usize, Error>;
-
-    /// Get the `scriptCode` of a transaction output.
-    ///
-    /// The `scriptCode` is the Script of the previous transaction output being serialized in the
-    /// sighash when evaluating a `CHECKSIG` & co. OP code.
-    /// Errors:
-    /// - When the descriptor is Tr
-    fn script_code(&self) -> Result<Script, Error>
-    where
-        Pk: ToPublicKey;
-}
 
 /// Descriptor Type of the descriptor
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -586,122 +467,19 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
     pub fn to_string_no_chksum(&self) -> String {
         format!("{:?}", self)
     }
-    /// .
-    /// Convert a Descriptor into [`pretaproot::PreTaprootDescriptor`]
-    /// # Examples
+    /// Checks whether the descriptor is safe.
     ///
-    /// ```
-    /// use std::str::FromStr;
-    /// use elements_miniscript::descriptor::Descriptor;
-    /// use elements_miniscript::{PreTaprootDescriptor, PreTaprootDescriptorTrait};
-    /// use elements_miniscript::bitcoin;
+    /// Checks whether all the spend paths in the descriptor are possible on the
+    /// bitcoin network under the current standardness and consensus rules. Also
+    /// checks whether the descriptor requires signatures on all spend paths and
+    /// whether the script is malleable.
     ///
-    /// // A descriptor with a string generic
-    /// let desc = Descriptor::<bitcoin::PublicKey>::from_str("elwpkh(02e18f242c8b0b589bfffeac30e1baa80a60933a649c7fb0f1103e78fbf58aa0ed)")
-    ///     .expect("Valid segwitv0 descriptor");
-    /// let pre_tap_desc = desc.into_pre_taproot_desc().expect("Wsh is pre taproot");
-    ///
-    /// // Now the script code and explicit script no longer fail on longer fail
-    /// // on PreTaprootDescriptor using PreTaprootDescriptorTrait
-    /// let script_code = pre_tap_desc.script_code();
-    /// assert_eq!(script_code.to_string(),
-    ///     "Script(OP_DUP OP_HASH160 OP_PUSHBYTES_20 62107d047e8818b594303fe0657388cc4fc8771f OP_EQUALVERIFY OP_CHECKSIG)"
-    /// );
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if descriptor is not a pre taproot descriptor.
-    pub fn into_pre_taproot_desc(self) -> Result<pretaproot::PreTaprootDescriptor<Pk>, Self> {
-        match self {
-            Descriptor::Bare(bare) => Ok(pretaproot::PreTaprootDescriptor::Bare(bare)),
-            Descriptor::Pkh(pkh) => Ok(pretaproot::PreTaprootDescriptor::Pkh(pkh)),
-            Descriptor::Wpkh(wpkh) => Ok(pretaproot::PreTaprootDescriptor::Wpkh(wpkh)),
-            Descriptor::Sh(sh) => Ok(pretaproot::PreTaprootDescriptor::Sh(sh)),
-            Descriptor::Wsh(wsh) => Ok(pretaproot::PreTaprootDescriptor::Wsh(wsh)),
-            Descriptor::Tr(tr) => Err(Descriptor::Tr(tr)),
-            Descriptor::Cov(cov) => Err(Descriptor::Cov(cov)),
-        }
-    }
-}
-
-impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Descriptor<P> {
-    type Output = Descriptor<Q>;
-    /// Convert a descriptor using abstract keys to one using specific keys
-    /// This will panic if translatefpk returns an uncompressed key when
-    /// converting to a Segwit descriptor. To prevent this panic, ensure
-    /// translatefpk returns an error in this case instead.
-    fn translate_pk<Fpk, Fpkh, E>(
-        &self,
-        mut translatefpk: Fpk,
-        mut translatefpkh: Fpkh,
-    ) -> Result<Descriptor<Q>, E>
-    where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
-        Q: MiniscriptKey,
-    {
-        let desc = match *self {
-            Descriptor::Bare(ref bare) => {
-                Descriptor::Bare(bare.translate_pk(&mut translatefpk, &mut translatefpkh)?)
-            }
-            Descriptor::Pkh(ref pk) => {
-                Descriptor::Pkh(pk.translate_pk(&mut translatefpk, &mut translatefpkh)?)
-            }
-            Descriptor::Wpkh(ref pk) => {
-                Descriptor::Wpkh(pk.translate_pk(&mut translatefpk, &mut translatefpkh)?)
-            }
-            Descriptor::Sh(ref sh) => {
-                Descriptor::Sh(sh.translate_pk(&mut translatefpk, &mut translatefpkh)?)
-            }
-            Descriptor::Wsh(ref wsh) => {
-                Descriptor::Wsh(wsh.translate_pk(&mut translatefpk, &mut translatefpkh)?)
-            }
-            Descriptor::Cov(ref cov) => {
-                Descriptor::Cov(cov.translate_pk(&mut translatefpk, &mut translatefpkh)?)
-            }
-            Descriptor::Tr(ref tr) => {
-                Descriptor::Tr(tr.translate_pk(&mut translatefpk, &mut translatefpkh)?)
-            }
-        };
-        Ok(desc)
-    }
-}
-
-impl<Pk: MiniscriptKey> ElementsTrait<Pk> for Descriptor<Pk> {
-    fn blind_addr(
-        &self,
-        blinder: Option<secp256k1_zkp::PublicKey>,
-        params: &'static elements::AddressParams,
-    ) -> Result<elements::Address, Error>
-    where
-        Pk: ToPublicKey,
-    {
-        match *self {
-            Descriptor::Bare(ref bare) => bare.blind_addr(blinder, params),
-            Descriptor::Pkh(ref pkh) => pkh.blind_addr(blinder, params),
-            Descriptor::Wpkh(ref wpkh) => wpkh.blind_addr(blinder, params),
-            Descriptor::Wsh(ref wsh) => wsh.blind_addr(blinder, params),
-            Descriptor::Sh(ref sh) => sh.blind_addr(blinder, params),
-            Descriptor::Cov(ref cov) => cov.blind_addr(blinder, params),
-            Descriptor::Tr(ref tr) => tr.blind_addr(blinder, params),
-        }
-    }
-}
-
-impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Descriptor<Pk> {
-    /// Whether the descriptor is safe
-    /// Checks whether all the spend paths in the descriptor are possible
-    /// on the bitcoin network under the current standardness and consensus rules
-    /// Also checks whether the descriptor requires signauture on all spend paths
-    /// And whether the script is malleable.
     /// In general, all the guarantees of miniscript hold only for safe scripts.
-    /// All the analysis guarantees of miniscript only hold safe scripts.
-    /// The signer may not be able to find satisfactions even if one exists
-    fn sanity_check(&self) -> Result<(), Error> {
+    /// The signer may not be able to find satisfactions even if one exists.
+    pub fn sanity_check(&self) -> Result<(), Error> {
         match *self {
             Descriptor::Bare(ref bare) => bare.sanity_check(),
-            Descriptor::Pkh(ref pkh) => pkh.sanity_check(),
+            Descriptor::Pkh(_) => Ok(()),
             Descriptor::Wpkh(ref wpkh) => wpkh.sanity_check(),
             Descriptor::Wsh(ref wsh) => wsh.sanity_check(),
             Descriptor::Sh(ref sh) => sh.sanity_check(),
@@ -709,27 +487,78 @@ impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Descriptor<Pk> {
             Descriptor::Tr(ref tr) => tr.sanity_check(),
         }
     }
-    /// Computes the Bitcoin address of the descriptor, if one exists
-    fn address(&self, params: &'static elements::AddressParams) -> Result<elements::Address, Error>
+
+    /// Computes an upper bound on the weight of a satisfying witness to the
+    /// transaction.
+    ///
+    /// Assumes all ec-signatures are 73 bytes, including push opcode and
+    /// sighash suffix. Includes the weight of the VarInts encoding the
+    /// scriptSig and witness stack length.
+    ///
+    /// # Errors
+    /// When the descriptor is impossible to safisfy (ex: sh(OP_FALSE)).
+    pub fn max_satisfaction_weight(&self) -> Result<usize, Error> {
+        let weight = match *self {
+            Descriptor::Bare(ref bare) => bare.max_satisfaction_weight()?,
+            Descriptor::Pkh(ref pkh) => pkh.max_satisfaction_weight(),
+            Descriptor::Wpkh(ref wpkh) => wpkh.max_satisfaction_weight(),
+            Descriptor::Wsh(ref wsh) => wsh.max_satisfaction_weight()?,
+            Descriptor::Sh(ref sh) => sh.max_satisfaction_weight()?,
+            Descriptor::Cov(ref cov) => cov.max_satisfaction_weight()?,
+            Descriptor::Tr(ref tr) => tr.max_satisfaction_weight()?,
+        };
+        Ok(weight)
+    }
+}
+
+impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
+    ///
+    /// Obtains the blinded address for this descriptor
+    ///
+    /// # Errors
+    /// For raw/bare descriptors that don't have an address.
+    //
+    // Note: The address kept is kept without the blinder to avoid more conflicts with upstream
+    pub fn blinded_address(
+        &self,
+        blinder: secp256k1_zkp::PublicKey,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
     where
         Pk: ToPublicKey,
     {
         match *self {
-            Descriptor::Bare(ref bare) => bare.address(params),
-            Descriptor::Pkh(ref pkh) => pkh.address(params),
-            Descriptor::Wpkh(ref wpkh) => wpkh.address(params),
-            Descriptor::Wsh(ref wsh) => wsh.address(params),
-            Descriptor::Sh(ref sh) => sh.address(params),
-            Descriptor::Cov(ref cov) => cov.address(params),
-            Descriptor::Tr(ref tr) => tr.address(params),
+            Descriptor::Bare(_) => Err(Error::BareDescriptorAddr),
+            Descriptor::Pkh(ref pkh) => Ok(pkh.address(Some(blinder), params)),
+            Descriptor::Wpkh(ref wpkh) => Ok(wpkh.address(Some(blinder), params)),
+            Descriptor::Wsh(ref wsh) => Ok(wsh.address(Some(blinder), params)),
+            Descriptor::Sh(ref sh) => Ok(sh.address(Some(blinder), params)),
+            Descriptor::Cov(ref cov) => Ok(cov.address(Some(blinder), params)),
+            Descriptor::Tr(ref tr) => Ok(tr.address(Some(blinder), params)),
         }
     }
 
-    /// Computes the scriptpubkey of the descriptor
-    fn script_pubkey(&self) -> Script
+    /// Obtains an address for this descriptor. For blinding see [`Descriptor::blinded_address`]
+    pub fn address(
+        &self,
+        params: &'static elements::AddressParams,
+    ) -> Result<elements::Address, Error>
     where
         Pk: ToPublicKey,
     {
+        match *self {
+            Descriptor::Bare(_) => Err(Error::BareDescriptorAddr),
+            Descriptor::Pkh(ref pkh) => Ok(pkh.address(None, params)),
+            Descriptor::Wpkh(ref wpkh) => Ok(wpkh.address(None, params)),
+            Descriptor::Wsh(ref wsh) => Ok(wsh.address(None, params)),
+            Descriptor::Sh(ref sh) => Ok(sh.address(None, params)),
+            Descriptor::Cov(ref cov) => Ok(cov.address(None, params)),
+            Descriptor::Tr(ref tr) => Ok(tr.address(None, params)),
+        }
+    }
+
+    /// Computes the scriptpubkey of the descriptor.
+    pub fn script_pubkey(&self) -> Script {
         match *self {
             Descriptor::Bare(ref bare) => bare.script_pubkey(),
             Descriptor::Pkh(ref pkh) => pkh.script_pubkey(),
@@ -741,56 +570,67 @@ impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Descriptor<Pk> {
         }
     }
 
-    /// Computes the scriptSig that will be in place for an unsigned
-    /// input spending an output with this descriptor. For pre-segwit
-    /// descriptors, which use the scriptSig for signatures, this
-    /// returns the empty script.
+    /// Computes the scriptSig that will be in place for an unsigned input
+    /// spending an output with this descriptor. For pre-segwit descriptors,
+    /// which use the scriptSig for signatures, this returns the empty script.
     ///
-    /// This is used in Segwit transactions to produce an unsigned
-    /// transaction whose txid will not change during signing (since
-    /// only the witness data will change).
-    fn unsigned_script_sig(&self) -> Script
-    where
-        Pk: ToPublicKey,
-    {
+    /// This is used in Segwit transactions to produce an unsigned transaction
+    /// whose txid will not change during signing (since only the witness data
+    /// will change).
+    pub fn unsigned_script_sig(&self) -> Script {
         match *self {
-            Descriptor::Bare(ref bare) => bare.unsigned_script_sig(),
-            Descriptor::Pkh(ref pkh) => pkh.unsigned_script_sig(),
-            Descriptor::Wpkh(ref wpkh) => wpkh.unsigned_script_sig(),
-            Descriptor::Wsh(ref wsh) => wsh.unsigned_script_sig(),
+            Descriptor::Bare(_) => Script::new(),
+            Descriptor::Pkh(_) => Script::new(),
+            Descriptor::Wpkh(_) => Script::new(),
+            Descriptor::Wsh(_) => Script::new(),
             Descriptor::Sh(ref sh) => sh.unsigned_script_sig(),
-            Descriptor::Cov(ref cov) => cov.unsigned_script_sig(),
-            Descriptor::Tr(ref tr) => tr.unsigned_script_sig(),
+            Descriptor::Cov(_) => Script::new(),
+            Descriptor::Tr(_) => Script::new(),
         }
     }
 
-    /// Computes the "witness script" of the descriptor, i.e. the underlying
-    /// script before any hashing is done. For `Bare`, `Pkh` and `Wpkh` this
-    /// is the scriptPubkey; for `ShWpkh` and `Sh` this is the redeemScript;
-    /// for the others it is the witness script.
-    /// Errors:
-    /// - When the descriptor is Tr
-    fn explicit_script(&self) -> Result<Script, Error>
-    where
-        Pk: ToPublicKey,
-    {
+    /// Computes the the underlying script before any hashing is done. For
+    /// `Bare`, `Pkh` and `Wpkh` this is the scriptPubkey; for `ShWpkh` and `Sh`
+    /// this is the redeemScript; for the others it is the witness script.
+    ///
+    /// # Errors
+    /// If the descriptor is a taproot descriptor.
+    pub fn explicit_script(&self) -> Result<Script, Error> {
         match *self {
-            Descriptor::Bare(ref bare) => bare.explicit_script(),
-            Descriptor::Pkh(ref pkh) => pkh.explicit_script(),
-            Descriptor::Wpkh(ref wpkh) => wpkh.explicit_script(),
-            Descriptor::Wsh(ref wsh) => wsh.explicit_script(),
-            Descriptor::Sh(ref sh) => sh.explicit_script(),
-            Descriptor::Cov(ref cov) => cov.explicit_script(),
-            Descriptor::Tr(ref tr) => tr.explicit_script(),
+            Descriptor::Bare(ref bare) => Ok(bare.script_pubkey()),
+            Descriptor::Pkh(ref pkh) => Ok(pkh.script_pubkey()),
+            Descriptor::Wpkh(ref wpkh) => Ok(wpkh.script_pubkey()),
+            Descriptor::Wsh(ref wsh) => Ok(wsh.inner_script()),
+            Descriptor::Sh(ref sh) => Ok(sh.inner_script()),
+            Descriptor::Tr(_) => Err(Error::TrNoScriptCode),
+            Descriptor::Cov(ref cov) => Ok(cov.inner_script()),
+        }
+    }
+
+    /// Computes the `scriptCode` of a transaction output.
+    ///
+    /// The `scriptCode` is the Script of the previous transaction output being
+    /// serialized in the sighash when evaluating a `CHECKSIG` & co. OP code.
+    ///
+    /// # Errors
+    /// If the descriptor is a taproot descriptor.
+    pub fn script_code(&self) -> Result<Script, Error> {
+        match *self {
+            Descriptor::Bare(ref bare) => Ok(bare.ecdsa_sighash_script_code()),
+            Descriptor::Pkh(ref pkh) => Ok(pkh.ecdsa_sighash_script_code()),
+            Descriptor::Wpkh(ref wpkh) => Ok(wpkh.ecdsa_sighash_script_code()),
+            Descriptor::Wsh(ref wsh) => Ok(wsh.ecdsa_sighash_script_code()),
+            Descriptor::Sh(ref sh) => Ok(sh.ecdsa_sighash_script_code()),
+            Descriptor::Cov(ref cov) => Ok(cov.ecdsa_sighash_script_code()),
+            Descriptor::Tr(_) => Err(Error::TrNoScriptCode),
         }
     }
 
     /// Returns satisfying non-malleable witness and scriptSig to spend an
     /// output controlled by the given descriptor if it possible to
     /// construct one using the satisfier S.
-    fn get_satisfaction<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
+    pub fn get_satisfaction<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
     where
-        Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
         match *self {
@@ -807,9 +647,8 @@ impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Descriptor<Pk> {
     /// Returns a possilbly mallable satisfying non-malleable witness and scriptSig to spend an
     /// output controlled by the given descriptor if it possible to
     /// construct one using the satisfier S.
-    fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
+    pub fn get_satisfaction_mall<S>(&self, satisfier: S) -> Result<(Vec<Vec<u8>>, Script), Error>
     where
-        Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
         match *self {
@@ -823,40 +662,48 @@ impl<Pk: MiniscriptKey> DescriptorTrait<Pk> for Descriptor<Pk> {
         }
     }
 
-    /// Computes an upper bound on the weight of a satisfying witness to the
-    /// transaction. Assumes all signatures are 73 bytes, including push opcode
-    /// and sighash suffix. Includes the weight of the VarInts encoding the
-    /// scriptSig and witness stack length.
-    fn max_satisfaction_weight(&self) -> Result<usize, Error> {
-        match *self {
-            Descriptor::Bare(ref bare) => bare.max_satisfaction_weight(),
-            Descriptor::Pkh(ref pkh) => pkh.max_satisfaction_weight(),
-            Descriptor::Wpkh(ref wpkh) => wpkh.max_satisfaction_weight(),
-            Descriptor::Wsh(ref wsh) => wsh.max_satisfaction_weight(),
-            Descriptor::Sh(ref sh) => sh.max_satisfaction_weight(),
-            Descriptor::Cov(ref cov) => cov.max_satisfaction_weight(),
-            Descriptor::Tr(ref tr) => tr.max_satisfaction_weight(),
-        }
-    }
-
-    /// Get the `scriptCode` of a transaction output.
-    ///
-    /// The `scriptCode` is the Script of the previous transaction output being serialized in the
-    /// sighash when evaluating a `CHECKSIG` & co. OP code.
-    /// Returns Error for Tr descriptors
-    fn script_code(&self) -> Result<Script, Error>
+    /// Attempts to produce a non-malleable satisfying witness and scriptSig to spend an
+    /// output controlled by the given descriptor; add the data to a given
+    /// `TxIn` output.
+    pub fn satisfy<S>(&self, txin: &mut TxIn, satisfier: S) -> Result<(), Error>
     where
-        Pk: ToPublicKey,
+        S: Satisfier<Pk>,
     {
-        match *self {
-            Descriptor::Bare(ref bare) => bare.script_code(),
-            Descriptor::Pkh(ref pkh) => pkh.script_code(),
-            Descriptor::Wpkh(ref wpkh) => wpkh.script_code(),
-            Descriptor::Wsh(ref wsh) => wsh.script_code(),
-            Descriptor::Sh(ref sh) => sh.script_code(),
-            Descriptor::Cov(ref cov) => cov.script_code(),
-            Descriptor::Tr(ref tr) => tr.script_code(),
-        }
+        let (witness, script_sig) = self.get_satisfaction(satisfier)?;
+        txin.witness.script_witness = witness;
+        txin.script_sig = script_sig;
+        Ok(())
+    }
+}
+
+impl<P, Q> TranslatePk<P, Q> for Descriptor<P>
+where
+    P: MiniscriptKey,
+    Q: MiniscriptKey,
+{
+    type Output = Descriptor<Q>;
+    /// Converts a descriptor using abstract keys to one using specific keys.
+    ///
+    /// # Panics
+    ///
+    /// If `fpk` returns an uncompressed key when converting to a Segwit descriptor.
+    /// To prevent this panic, ensure `fpk` returns an error in this case instead.
+    fn translate_pk<Fpk, Fpkh, E>(&self, mut fpk: Fpk, mut fpkh: Fpkh) -> Result<Descriptor<Q>, E>
+    where
+        Fpk: FnMut(&P) -> Result<Q, E>,
+        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
+        Q: MiniscriptKey,
+    {
+        let desc = match *self {
+            Descriptor::Bare(ref bare) => Descriptor::Bare(bare.translate_pk(&mut fpk, &mut fpkh)?),
+            Descriptor::Pkh(ref pk) => Descriptor::Pkh(pk.translate_pk(&mut fpk, &mut fpkh)?),
+            Descriptor::Wpkh(ref pk) => Descriptor::Wpkh(pk.translate_pk(&mut fpk, &mut fpkh)?),
+            Descriptor::Sh(ref sh) => Descriptor::Sh(sh.translate_pk(&mut fpk, &mut fpkh)?),
+            Descriptor::Wsh(ref wsh) => Descriptor::Wsh(wsh.translate_pk(&mut fpk, &mut fpkh)?),
+            Descriptor::Tr(ref tr) => Descriptor::Tr(tr.translate_pk(&mut fpk, &mut fpkh)?),
+            Descriptor::Cov(ref cov) => Descriptor::Cov((cov.translate_pk(&mut fpk, &mut fpkh))?),
+        };
+        Ok(desc)
     }
 }
 
