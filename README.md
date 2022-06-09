@@ -2,7 +2,7 @@
 
 **Minimum Supported Rust Version:** 1.41.1
 
-*This crate uses "2015" edition
+*This crate uses "2018" edition
 
 # Elements Miniscript
 This library is a fork of [rust-miniscript](https://github.com/rust-bitcoin/rust-miniscript) for elements.
