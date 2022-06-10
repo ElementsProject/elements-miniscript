@@ -115,17 +115,16 @@ extern crate test;
 // It can be confusing to code when we have two miniscript libraries
 // As a rule, only import the library here and pub use all the required
 // items. Should help in faster code development in the long run
-extern crate miniscript as bitcoin_miniscript;
-pub(crate) use crate::bitcoin_miniscript::expression::{FromTree as BtcFromTree, Tree as BtcTree};
-pub(crate) use crate::bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
-pub(crate) use crate::bitcoin_miniscript::policy::Liftable as BtcLiftable;
-pub(crate) use crate::bitcoin_miniscript::{
+pub(crate) use bitcoin_miniscript::expression::{FromTree as BtcFromTree, Tree as BtcTree};
+pub(crate) use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
+pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
+pub(crate) use bitcoin_miniscript::{
     Descriptor as BtcDescriptor, DescriptorTrait as BtcDescriptorTrait, Error as BtcError,
     Miniscript as BtcMiniscript, Satisfier as BtcSatisfier, Segwitv0 as BtcSegwitv0,
     Terminal as BtcTerminal,
 };
 // re-export imports
-pub use crate::bitcoin_miniscript::{
+pub use bitcoin_miniscript::{
     DummyKey, DummyKeyHash, ForEach, ForEachKey, MiniscriptKey, ToPublicKey, TranslatePk,
     TranslatePk1, TranslatePk2, TranslatePk3,
 };

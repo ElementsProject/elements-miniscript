@@ -18,11 +18,13 @@ rand = ["bitcoin/rand"]
 [dependencies]
 bitcoin = "0.28.1"
 elements = "0.19.0"
-miniscript = {git = "https://github.com/rust-bitcoin/rust-miniscript", rev = "104eb55f13ce39c4043f24637f83411529a460ea"}
+bitcoin-miniscript = {package = "miniscript", git = "https://github.com/rust-bitcoin/rust-miniscript", rev = "104eb55f13ce39c4043f24637f83411529a460ea"}
 
 [dev-dependencies]
 serde_json = "<=1.0.44"
 ryu = "<1.0.5"
+elementsd = {version = "0.5.0", features=["0_21_0","bitcoind_22_0"]}
+actual-rand = { package = "rand", version = "0.8.4"}
 
 [dependencies.serde]
 version = "1.0"

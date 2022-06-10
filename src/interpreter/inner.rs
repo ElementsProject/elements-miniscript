@@ -22,6 +22,7 @@ use elements::{self, script};
 use super::{stack, BitcoinKey, Error, Stack, TypedHash160};
 use crate::descriptor::{CovOperations, CovenantDescriptor};
 use crate::miniscript::context::{NoChecks, ScriptContext};
+use crate::util::is_v1_p2tr;
 use crate::{BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, TranslatePk};
 
 /// Attempts to parse a slice as a Bitcoin public key, checking compressedness
@@ -260,9 +261,7 @@ where
             }
         }
     // ** pay to taproot **//
-    } else if false
-    /*spk.is_v1_p2tr(), implement this later*/
-    {
+    } else if is_v1_p2tr(&spk) {
         if !ssig_stack.is_empty() {
             Err(Error::NonEmptyScriptSig)
         } else {
