@@ -194,28 +194,26 @@ where
     /// ## Decode/Parse a miniscript from script hex
     ///
     /// ```rust
-    /// extern crate bitcoin;
-    /// extern crate miniscript;
     ///
-    /// use miniscript::Miniscript;
-    /// use miniscript::{Segwitv0, Tap};
-    /// use miniscript::bitcoin::secp256k1::XOnlyPublicKey;
+    /// use elements_miniscript::Miniscript;
+    /// use elements_miniscript::{Segwitv0, Tap};
+    /// use elements_miniscript::bitcoin::secp256k1::XOnlyPublicKey;
     /// type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0>;
     /// type TapScript = Miniscript<XOnlyPublicKey, Tap>;
     /// use bitcoin::hashes::hex::FromHex;
     /// fn main() {
     ///     // parse x-only miniscript in Taproot context
-    ///     let tapscript_ms = TapScript::parse(&bitcoin::Script::from(Vec::<u8>::from_hex(
+    ///     let tapscript_ms = TapScript::parse(&elements::Script::from(Vec::<u8>::from_hex(
     ///         "202788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
     ///     ).expect("Even length hex")))
     ///     .expect("Xonly keys are valid only in taproot context");
     ///     // tapscript fails decoding when we use them with compressed keys
-    ///     let err = TapScript::parse(&bitcoin::Script::from(Vec::<u8>::from_hex(
+    ///     let err = TapScript::parse(&elements::Script::from(Vec::<u8>::from_hex(
     ///         "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
     ///     ).expect("Even length hex")))
     ///     .expect_err("Compressed keys cannot be used in Taproot context");
     ///     // Segwitv0 succeeds decoding with full keys.
-    ///     Segwitv0Script::parse(&bitcoin::Script::from(Vec::<u8>::from_hex(
+    ///     Segwitv0Script::parse(&elements::Script::from(Vec::<u8>::from_hex(
     ///         "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
     ///     ).expect("Even length hex")))
     ///     .expect("Compressed keys are allowed in Segwit context");
