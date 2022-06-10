@@ -28,7 +28,7 @@ use elements::hashes::{hash160, ripemd160, sha256, sha256d};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::secp256k1_zkp::{self as secp256k1, Secp256k1};
 use elements::sighash::SigHashCache;
-use elements::taproot::{self, LeafVersion, TapLeafHash};
+use elements::taproot::{self, ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, EcdsaSigHashType, SchnorrSigHashType, Script};
 
 use crate::miniscript::iter::PkPkh;
@@ -309,6 +309,43 @@ impl<'psbt> PsbtInputSatisfier<'psbt> {
 }
 
 impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfier<'psbt> {
+    fn lookup_tap_key_spend_sig(&self) -> Option<elements::SchnorrSig> {
+        self.psbt.inputs()[self.index].tap_key_sig
+    }
+
+    fn lookup_tap_leaf_script_sig(
+        &self,
+        pk: &Pk,
+        lh: &TapLeafHash,
+    ) -> Option<elements::SchnorrSig> {
+        self.psbt.inputs()[self.index]
+            .tap_script_sigs
+            .get(&(pk.to_x_only_pubkey(), *lh))
+            .copied()
+    }
+
+    fn lookup_tap_control_block_map(
+        &self,
+    ) -> Option<&BTreeMap<ControlBlock, (elements::Script, LeafVersion)>> {
+        Some(&self.psbt.inputs()[self.index].tap_scripts)
+    }
+
+    fn lookup_pkh_tap_leaf_script_sig(
+        &self,
+        pkh: &(Pk::Hash, TapLeafHash),
+    ) -> Option<(
+        elements::secp256k1_zkp::XOnlyPublicKey,
+        elements::SchnorrSig,
+    )> {
+        self.psbt.inputs()[self.index]
+            .tap_script_sigs
+            .iter()
+            .find(|&((pubkey, lh), _sig)| {
+                pubkey.to_pubkeyhash() == Pk::hash_to_hash160(&pkh.0) && *lh == pkh.1
+            })
+            .map(|((x_only_pk, _leaf_hash), sig)| (*x_only_pk, *sig))
+    }
+
     fn lookup_ecdsa_sig(&self, pk: &Pk) -> Option<ElementsSig> {
         if let Some(rawsig) = self.psbt.inputs()[self.index]
             .partial_sigs
