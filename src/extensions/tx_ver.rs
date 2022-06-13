@@ -16,7 +16,7 @@ use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Mallea
 use crate::policy::{self, Liftable};
 use crate::{
     expression, interpreter, miniscript, util, Error, Extension, ForEach, MiniscriptKey, Satisfier,
-    ToPublicKey, TranslatePk,
+    ToPublicKey, TranslatePk, Translator,
 };
 
 /// Version struct
@@ -205,15 +205,9 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
 impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for VerEq {
     type Output = VerEq;
 
-    fn translate_pk<Fpk, Fpkh, E>(
-        &self,
-        mut _translatefpk: Fpk,
-        _translatefpkh: Fpkh,
-    ) -> Result<Self::Output, E>
+    fn translate_pk<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
-        Q: MiniscriptKey,
+        T: Translator<P, Q, E>,
     {
         Ok(Self { n: self.n })
     }

@@ -4,7 +4,7 @@ use std::{error, fmt};
 use bitcoin::util::bip32;
 use bitcoin::{self, XpubIdentifier};
 use elements::hashes::hex::FromHex;
-use elements::hashes::{hash160, Hash, HashEngine};
+use elements::hashes::{hash160, sha256, Hash, HashEngine};
 use elements::secp256k1_zkp::{Secp256k1, Signing, Verification};
 
 use crate::{MiniscriptKey, ToPublicKey};
@@ -717,6 +717,7 @@ impl<K: InnerXKey> DescriptorXKey<K> {
 impl MiniscriptKey for DescriptorPublicKey {
     // This allows us to be able to derive public keys even for PkH s
     type Hash = Self;
+    type Sha256 = bitcoin::hashes::sha256::Hash;
 
     fn is_uncompressed(&self) -> bool {
         match self {
@@ -782,6 +783,7 @@ impl fmt::Display for DerivedDescriptorKey {
 impl MiniscriptKey for DerivedDescriptorKey {
     // This allows us to be able to derive public keys even for PkH s
     type Hash = Self;
+    type Sha256 = bitcoin::hashes::sha256::Hash;
 
     fn is_uncompressed(&self) -> bool {
         self.key.is_uncompressed()
@@ -804,6 +806,10 @@ impl ToPublicKey for DerivedDescriptorKey {
 
     fn hash_to_hash160(hash: &Self) -> hash160::Hash {
         hash.to_public_key().to_pubkeyhash()
+    }
+
+    fn to_sha256(hash: &sha256::Hash) -> sha256::Hash {
+        *hash
     }
 }
 

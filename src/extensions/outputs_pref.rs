@@ -20,7 +20,7 @@ use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Mallea
 use crate::policy::{self, Liftable};
 use crate::{
     expression, interpreter, Error, Extension, ForEach, MiniscriptKey, Satisfier, ToPublicKey,
-    TranslatePk,
+    TranslatePk, Translator,
 };
 
 /// Prefix is initally encoded in the script pubkey
@@ -298,15 +298,9 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
 impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for OutputsPref {
     type Output = OutputsPref;
 
-    fn translate_pk<Fpk, Fpkh, E>(
-        &self,
-        mut _translatefpk: Fpk,
-        _translatefpkh: Fpkh,
-    ) -> Result<Self::Output, E>
+    fn translate_pk<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
-        Q: MiniscriptKey,
+        T: Translator<P, Q, E>,
     {
         Ok(Self {
             pref: self.pref.clone(),

@@ -16,6 +16,95 @@ macro_rules! policy_str {
     ($($arg:tt)*) => ($crate::policy::Concrete::from_str(&format!($($arg)*)).unwrap())
 }
 
+/// Macro for implementing FromTree trait. This avoids copying all the Pk::Associated type bounds
+/// throughout the codebase.
+macro_rules! impl_from_tree {
+    ($(;$gen:ident; $gen_con:ident, )*
+        $name: ty,
+        $(=> $ext:ident; $trt:ident, )?
+        $(#[$meta:meta])*
+        fn $fn:ident ( $($arg:ident : $type:ty),* ) -> $ret:ty
+        $body:block
+    ) => {
+        impl<Pk $(, $gen)* $(, $ext)?> $crate::expression::FromTree for $name
+        where
+            Pk: MiniscriptKey + core::str::FromStr,
+            Pk::Hash: core::str::FromStr,
+            Pk::Sha256: core::str::FromStr,
+            <Pk as core::str::FromStr>::Err: std::string::ToString,
+            <<Pk as MiniscriptKey>::Hash as core::str::FromStr>::Err: std::string::ToString,
+            <<Pk as MiniscriptKey>::Sha256 as core::str::FromStr>::Err: std::string::ToString,
+            $($gen : $gen_con,)*
+            $($ext: $trt<Pk>)?
+            {
+
+                $(#[$meta])*
+                fn $fn($($arg: $type)* ) -> $ret {
+                    $body
+                }
+            }
+    };
+}
+
+/// Macro for implementing FromStr trait. This avoids copying all the Pk::Associated type bounds
+/// throughout the codebase.
+macro_rules! impl_from_str {
+    ($(;$gen:ident; $gen_con:ident, )* $name: ty,
+        $(=> $ext:ident; $trt:ident, )?
+        type Err = $err_ty:ty;,
+        $(#[$meta:meta])*
+        fn $fn:ident ( $($arg:ident : $type:ty),* ) -> $ret:ty
+        $body:block
+    ) => {
+        impl<Pk $(, $gen)* $(, $ext)?> core::str::FromStr for $name
+        where
+            Pk: MiniscriptKey + core::str::FromStr,
+            Pk::Hash: core::str::FromStr,
+            Pk::Sha256: core::str::FromStr,
+            <Pk as core::str::FromStr>::Err: std::string::ToString,
+            <<Pk as MiniscriptKey>::Hash as core::str::FromStr>::Err: std::string::ToString,
+            <<Pk as MiniscriptKey>::Sha256 as core::str::FromStr>::Err: std::string::ToString,
+            $($gen : $gen_con,)*
+            $($ext: $trt<Pk>)?
+            {
+                type Err = $err_ty;
+
+                $(#[$meta])*
+                fn $fn($($arg: $type)* ) -> $ret {
+                    $body
+                }
+            }
+    };
+}
+
+/// Macro for impl Struct with associated bounds. This avoids copying all the Pk::Associated type bounds
+/// throughout the codebase.
+macro_rules! impl_block_str {
+    ($(;$gen:ident; $gen_con:ident, )* $name: ty,
+    $(=> $ext:ident; $trt:ident, )?
+        $(#[$meta:meta])*
+        $v:vis fn $fn:ident ( $($arg:ident : $type:ty, )* ) -> $ret:ty
+        $body:block
+    ) => {
+        impl<Pk $(, $gen)* $(, $ext)?> $name
+        where
+            Pk: MiniscriptKey + core::str::FromStr,
+            Pk::Hash: core::str::FromStr,
+            Pk::Sha256: core::str::FromStr,
+            <Pk as core::str::FromStr>::Err: std::string::ToString,
+            <<Pk as MiniscriptKey>::Hash as core::str::FromStr>::Err: std::string::ToString,
+            <<Pk as MiniscriptKey>::Sha256 as core::str::FromStr>::Err: std::string::ToString,
+            $($gen : $gen_con,)*
+            $($ext: $trt<Pk>)?
+            {
+                $(#[$meta])*
+                $v fn $fn($($arg: $type,)* ) -> $ret {
+                    $body
+                }
+            }
+    };
+}
+
 /// A macro that implements serde serialization and deserialization using the
 /// `fmt::Display` and `str::FromStr` traits.
 macro_rules! serde_string_impl_pk {
@@ -23,11 +112,14 @@ macro_rules! serde_string_impl_pk {
         #[cfg(feature = "serde")]
         impl<'de, Pk $(, $gen)* $(, $ext)*> serde::Deserialize<'de> for $name<Pk $(, $gen)* $(, $ext)* >
         where
-            Pk: MiniscriptKey + std::str::FromStr,
-            Pk::Hash: std::str::FromStr,
-            <Pk as std::str::FromStr>::Err: std::fmt::Display,
-            <<Pk as MiniscriptKey>::Hash as std::str::FromStr>::Err:
-                std::fmt::Display,
+            Pk: $crate::MiniscriptKey + core::str::FromStr,
+            Pk::Hash: core::str::FromStr,
+            Pk::Sha256: core::str::FromStr,
+            <Pk as core::str::FromStr>::Err: core::fmt::Display,
+            <<Pk as $crate::MiniscriptKey>::Hash as core::str::FromStr>::Err:
+                core::fmt::Display,
+            <<Pk as $crate::MiniscriptKey>::Sha256 as core::str::FromStr>::Err:
+                core::fmt::Display,
             $($gen : $gen_con,)*
             $($ext : $ext_bound<Pk>,)*
         {
@@ -43,11 +135,14 @@ macro_rules! serde_string_impl_pk {
                 struct Visitor<Pk $(, $gen)* $(, $ext)*>(PhantomData<(Pk $(, $gen)* $(, $ext)*)>);
                 impl<'de, Pk $(, $gen)* $(, $ext)*> serde::de::Visitor<'de> for Visitor<Pk $(, $gen)* $(, $ext)*>
                 where
-                    Pk: MiniscriptKey + std::str::FromStr,
-                    Pk::Hash: std::str::FromStr,
-                    <Pk as std::str::FromStr>::Err: std::fmt::Display,
-                    <<Pk as MiniscriptKey>::Hash as std::str::FromStr>::Err:
-                        std::fmt::Display,
+                    Pk: $crate::MiniscriptKey + core::str::FromStr,
+                    Pk::Hash: core::str::FromStr,
+                    Pk::Sha256: core::str::FromStr,
+                    <Pk as core::str::FromStr>::Err: core::fmt::Display,
+                    <<Pk as $crate::MiniscriptKey>::Hash as core::str::FromStr>::Err:
+                        core::fmt::Display,
+                    <<Pk as $crate::MiniscriptKey>::Sha256 as core::str::FromStr>::Err:
+                        core::fmt::Display,
                     $($gen: $gen_con,)*
                     $($ext : $ext_bound<Pk>,)*
                 {

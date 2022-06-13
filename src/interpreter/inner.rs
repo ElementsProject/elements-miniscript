@@ -23,7 +23,9 @@ use super::{stack, BitcoinKey, Error, Stack, TypedHash160};
 use crate::descriptor::{CovOperations, CovenantDescriptor};
 use crate::miniscript::context::{NoChecks, ScriptContext};
 use crate::util::is_v1_p2tr;
-use crate::{BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, TranslatePk};
+use crate::{
+    BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, PkTranslator, Segwitv0, Tap, TranslatePk,
+};
 
 /// Attempts to parse a slice as a Bitcoin public key, checking compressedness
 /// if asked to, but otherwise dropping it
@@ -453,12 +455,20 @@ where
     Ext: TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = ExtQ>,
 {
     fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks, ExtQ> {
-        // specify the () error type as this cannot error
-        self.real_translate_pk::<_, _, _, (), _>(
-            &mut |pk| Ok(BitcoinKey::Fullkey(*pk)),
-            &mut |pkh| Ok(TypedHash160::FullKey(*pkh)),
-        )
-        .expect("Translation should succeed")
+        struct TranslateFullPk;
+
+        impl PkTranslator<bitcoin::PublicKey, BitcoinKey, ()> for TranslateFullPk {
+            fn pk(&mut self, pk: &bitcoin::PublicKey) -> Result<BitcoinKey, ()> {
+                Ok(BitcoinKey::Fullkey(*pk))
+            }
+
+            fn pkh(&mut self, pkh: &hash160::Hash) -> Result<TypedHash160, ()> {
+                Ok(TypedHash160::FullKey(*pkh))
+            }
+        }
+
+        self.real_translate_pk(&mut TranslateFullPk)
+            .expect("Translation should succeed")
     }
 }
 
@@ -469,11 +479,19 @@ where
 {
     fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks, ExtQ> {
         // specify the () error type as this cannot error
-        self.real_translate_pk::<_, _, _, (), _>(
-            &mut |pk| Ok(BitcoinKey::XOnlyPublicKey(*pk)),
-            &mut |pkh| Ok(TypedHash160::XonlyKey(*pkh)),
-        )
-        .expect("Translation should succeed")
+        struct TranslateXOnlyPk;
+
+        impl PkTranslator<bitcoin::XOnlyPublicKey, BitcoinKey, ()> for TranslateXOnlyPk {
+            fn pk(&mut self, pk: &bitcoin::XOnlyPublicKey) -> Result<BitcoinKey, ()> {
+                Ok(BitcoinKey::XOnlyPublicKey(*pk))
+            }
+
+            fn pkh(&mut self, pkh: &hash160::Hash) -> Result<TypedHash160, ()> {
+                Ok(TypedHash160::XonlyKey(*pkh))
+            }
+        }
+        self.real_translate_pk(&mut TranslateXOnlyPk)
+            .expect("Translation should succeed")
     }
 }
 

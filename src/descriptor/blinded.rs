@@ -19,7 +19,6 @@
 //!
 
 use std::fmt;
-use std::str::FromStr;
 
 use elements::{self, Script};
 
@@ -27,7 +26,7 @@ use super::checksum::{desc_checksum, strip_checksum, verify_checksum};
 use super::{Descriptor, TranslatePk};
 use crate::expression::{self, FromTree};
 use crate::policy::{semantic, Liftable};
-use crate::{Error, MiniscriptKey, Satisfier, ToPublicKey};
+use crate::{Error, MiniscriptKey, Satisfier, ToPublicKey, Translator};
 
 /// Create a Bare Descriptor. That is descriptor that is
 /// not wrapped in sh or wsh. This covers the Pk descriptor
@@ -85,13 +84,8 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Blinded<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> FromTree for Blinded<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl_from_tree!(
+    Blinded<Pk>,
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "blinded" && top.args.len() == 2 {
             let blinder = expression::terminal(&top.args[0], |pk| Pk::from_str(pk))?;
@@ -110,23 +104,17 @@ where
             )))
         }
     }
-}
+);
 
-impl<Pk: MiniscriptKey> FromStr for Blinded<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
-    type Err = Error;
-
+impl_from_str!(
+    Blinded<Pk>,
+    type Err = Error;,
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         Self::from_tree(&top)
     }
-}
+);
 
 impl<Pk: MiniscriptKey> Blinded<Pk> {
     /// Sanity checks for the underlying descriptor.
@@ -212,20 +200,13 @@ impl<Pk: MiniscriptKey> Blinded<Pk> {
 impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Blinded<P> {
     type Output = Blinded<Q>;
 
-    fn translate_pk<Fpk, Fpkh, E>(
-        &self,
-        mut translatefpk: Fpk,
-        mut translatefpkh: Fpkh,
-    ) -> Result<Self::Output, E>
+    fn translate_pk<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
-        Q: MiniscriptKey,
+        T: Translator<P, Q, E>,
     {
         Ok(Blinded::new(
-            translatefpk(&self.blinder)?,
-            self.desc
-                .translate_pk(&mut translatefpk, &mut translatefpkh)?,
+            t.pk(&self.blinder)?,
+            self.desc.translate_pk(t)?,
         ))
     }
 }

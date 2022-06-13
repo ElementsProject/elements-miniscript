@@ -19,12 +19,12 @@
 //! encoding in Bitcoin script, as well as a datatype. Full details
 //! are given on the Miniscript website.
 
+use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::{fmt, str};
 
 use elements::hashes::hex::FromHex;
-use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
+use elements::hashes::{hash160, ripemd160, sha256d, Hash};
 use elements::{opcodes, script};
 
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
@@ -34,7 +34,7 @@ use crate::miniscript::ScriptContext;
 use crate::util::MsKeyBuilder;
 use crate::{
     errstr, expression, script_num_size, Error, Extension, ForEach, ForEachKey, Miniscript,
-    MiniscriptKey, Terminal, ToPublicKey, TranslatePk,
+    MiniscriptKey, Terminal, ToPublicKey, TranslatePk, Translator,
 };
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx, Ext> {
@@ -69,19 +69,12 @@ where
 {
     type Output = Terminal<Q, Ctx, <Ext as TranslatePk<Pk, Q>>::Output>;
 
-    /// Convert an AST element with one public key type to one of another
-    /// public key type .This will panic while converting to
-    /// Segwit Miniscript using uncompressed public keys
-    fn translate_pk<FPk, FPkh, FuncError>(
-        &self,
-        mut translatefpk: FPk,
-        mut translatefpkh: FPkh,
-    ) -> Result<Self::Output, FuncError>
+    /// Converts an AST element with one public key type to one of another public key type.
+    fn translate_pk<T, E>(&self, translate: &mut T) -> Result<Self::Output, E>
     where
-        FPk: FnMut(&Pk) -> Result<Q, FuncError>,
-        FPkh: FnMut(&Pk::Hash) -> Result<Q::Hash, FuncError>,
+        T: Translator<Pk, Q, E>,
     {
-        self.real_translate_pk(&mut translatefpk, &mut translatefpkh)
+        self.real_translate_pk(translate)
     }
 }
 
@@ -132,99 +125,83 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
             Terminal::Ext(ref e) => e.real_for_each_key(pred),
         }
     }
-    pub(super) fn real_translate_pk<FPk, FPkh, Q, Error, CtxQ>(
+
+    pub(super) fn real_translate_pk<Q, CtxQ, T, E>(
         &self,
-        translatefpk: &mut FPk,
-        translatefpkh: &mut FPkh,
-    ) -> Result<Terminal<Q, CtxQ, <Ext as TranslatePk<Pk, Q>>::Output>, Error>
+        t: &mut T,
+    ) -> Result<Terminal<Q, CtxQ, <Ext as TranslatePk<Pk, Q>>::Output>, E>
     where
-        FPk: FnMut(&Pk) -> Result<Q, Error>,
-        FPkh: FnMut(&Pk::Hash) -> Result<Q::Hash, Error>,
         Q: MiniscriptKey,
         CtxQ: ScriptContext,
+        T: Translator<Pk, Q, E>,
         Ext: TranslatePk<Pk, Q>,
         <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
     {
         let frag: Terminal<Q, CtxQ, _> = match *self {
-            Terminal::PkK(ref p) => Terminal::PkK(translatefpk(p)?),
-            Terminal::PkH(ref p) => Terminal::PkH(translatefpkh(p)?),
+            Terminal::PkK(ref p) => Terminal::PkK(t.pk(p)?),
+            Terminal::PkH(ref p) => Terminal::PkH(t.pkh(p)?),
             Terminal::After(n) => Terminal::After(n),
             Terminal::Older(n) => Terminal::Older(n),
-            Terminal::Sha256(x) => Terminal::Sha256(x),
+            Terminal::Sha256(ref x) => Terminal::Sha256(t.sha256(&x)?),
             Terminal::Hash256(x) => Terminal::Hash256(x),
             Terminal::Ripemd160(x) => Terminal::Ripemd160(x),
             Terminal::Hash160(x) => Terminal::Hash160(x),
             Terminal::True => Terminal::True,
             Terminal::False => Terminal::False,
-            Terminal::Alt(ref sub) => Terminal::Alt(Arc::new(
-                sub.real_translate_pk(translatefpk, translatefpkh)?,
-            )),
-            Terminal::Swap(ref sub) => Terminal::Swap(Arc::new(
-                sub.real_translate_pk(translatefpk, translatefpkh)?,
-            )),
-            Terminal::Check(ref sub) => Terminal::Check(Arc::new(
-                sub.real_translate_pk(translatefpk, translatefpkh)?,
-            )),
-            Terminal::DupIf(ref sub) => Terminal::DupIf(Arc::new(
-                sub.real_translate_pk(translatefpk, translatefpkh)?,
-            )),
-            Terminal::Verify(ref sub) => Terminal::Verify(Arc::new(
-                sub.real_translate_pk(translatefpk, translatefpkh)?,
-            )),
-            Terminal::NonZero(ref sub) => Terminal::NonZero(Arc::new(
-                sub.real_translate_pk(translatefpk, translatefpkh)?,
-            )),
-            Terminal::ZeroNotEqual(ref sub) => Terminal::ZeroNotEqual(Arc::new(
-                sub.real_translate_pk(translatefpk, translatefpkh)?,
-            )),
+            Terminal::Alt(ref sub) => Terminal::Alt(Arc::new(sub.real_translate_pk(t)?)),
+            Terminal::Swap(ref sub) => Terminal::Swap(Arc::new(sub.real_translate_pk(t)?)),
+            Terminal::Check(ref sub) => Terminal::Check(Arc::new(sub.real_translate_pk(t)?)),
+            Terminal::DupIf(ref sub) => Terminal::DupIf(Arc::new(sub.real_translate_pk(t)?)),
+            Terminal::Verify(ref sub) => Terminal::Verify(Arc::new(sub.real_translate_pk(t)?)),
+            Terminal::NonZero(ref sub) => Terminal::NonZero(Arc::new(sub.real_translate_pk(t)?)),
+            Terminal::ZeroNotEqual(ref sub) => {
+                Terminal::ZeroNotEqual(Arc::new(sub.real_translate_pk(t)?))
+            }
             Terminal::AndV(ref left, ref right) => Terminal::AndV(
-                Arc::new(left.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)?),
-                Arc::new(right.real_translate_pk(translatefpk, translatefpkh)?),
+                Arc::new(left.real_translate_pk(t)?),
+                Arc::new(right.real_translate_pk(t)?),
             ),
             Terminal::AndB(ref left, ref right) => Terminal::AndB(
-                Arc::new(left.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)?),
-                Arc::new(right.real_translate_pk(translatefpk, translatefpkh)?),
+                Arc::new(left.real_translate_pk(t)?),
+                Arc::new(right.real_translate_pk(t)?),
             ),
             Terminal::AndOr(ref a, ref b, ref c) => Terminal::AndOr(
-                Arc::new(a.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)?),
-                Arc::new(b.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)?),
-                Arc::new(c.real_translate_pk(translatefpk, translatefpkh)?),
+                Arc::new(a.real_translate_pk(t)?),
+                Arc::new(b.real_translate_pk(t)?),
+                Arc::new(c.real_translate_pk(t)?),
             ),
             Terminal::OrB(ref left, ref right) => Terminal::OrB(
-                Arc::new(left.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)?),
-                Arc::new(right.real_translate_pk(translatefpk, translatefpkh)?),
+                Arc::new(left.real_translate_pk(t)?),
+                Arc::new(right.real_translate_pk(t)?),
             ),
             Terminal::OrD(ref left, ref right) => Terminal::OrD(
-                Arc::new(left.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)?),
-                Arc::new(right.real_translate_pk(translatefpk, translatefpkh)?),
+                Arc::new(left.real_translate_pk(t)?),
+                Arc::new(right.real_translate_pk(t)?),
             ),
             Terminal::OrC(ref left, ref right) => Terminal::OrC(
-                Arc::new(left.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)?),
-                Arc::new(right.real_translate_pk(translatefpk, translatefpkh)?),
+                Arc::new(left.real_translate_pk(t)?),
+                Arc::new(right.real_translate_pk(t)?),
             ),
             Terminal::OrI(ref left, ref right) => Terminal::OrI(
-                Arc::new(left.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)?),
-                Arc::new(right.real_translate_pk(translatefpk, translatefpkh)?),
+                Arc::new(left.real_translate_pk(t)?),
+                Arc::new(right.real_translate_pk(t)?),
             ),
             Terminal::Thresh(k, ref subs) => {
                 let subs: Result<Vec<Arc<Miniscript<Q, _, _>>>, _> = subs
                     .iter()
-                    .map(|s| {
-                        s.real_translate_pk(&mut *translatefpk, &mut *translatefpkh)
-                            .map(Arc::new)
-                    })
+                    .map(|s| s.real_translate_pk(t).map(Arc::new))
                     .collect();
                 Terminal::Thresh(k, subs?)
             }
             Terminal::Multi(k, ref keys) => {
-                let keys: Result<Vec<Q>, _> = keys.iter().map(&mut *translatefpk).collect();
+                let keys: Result<Vec<Q>, _> = keys.iter().map(|k| t.pk(k)).collect();
                 Terminal::Multi(k, keys?)
             }
             Terminal::MultiA(k, ref keys) => {
-                let keys: Result<Vec<Q>, _> = keys.iter().map(&mut *translatefpk).collect();
+                let keys: Result<Vec<Q>, _> = keys.iter().map(|k| t.pk(k)).collect();
                 Terminal::MultiA(k, keys?)
             }
-            Terminal::Ext(ref e) => Terminal::Ext(e.translate_pk(translatefpk, translatefpkh)?),
+            Terminal::Ext(ref e) => Terminal::Ext(e.translate_pk(t)?),
         };
         Ok(frag)
     }
@@ -301,7 +278,7 @@ where
                 Terminal::PkH(ref pkh) => write!(f, "pk_h({:?})", pkh),
                 Terminal::After(t) => write!(f, "after({})", t),
                 Terminal::Older(t) => write!(f, "older({})", t),
-                Terminal::Sha256(h) => write!(f, "sha256({})", h),
+                Terminal::Sha256(ref h) => write!(f, "sha256({})", h),
                 Terminal::Hash256(h) => {
                     let mut x = h.into_inner();
                     x.reverse();
@@ -364,7 +341,7 @@ where
             Terminal::PkH(ref pkh) => write!(f, "pk_h({})", pkh),
             Terminal::After(t) => write!(f, "after({})", t),
             Terminal::Older(t) => write!(f, "older({})", t),
-            Terminal::Sha256(h) => write!(f, "sha256({})", h),
+            Terminal::Sha256(ref h) => write!(f, "sha256({})", h),
             Terminal::Hash256(h) => {
                 let mut x = h.into_inner();
                 x.reverse();
@@ -453,29 +430,19 @@ where
     }
 }
 
-impl<Pk, Ctx, Ext> expression::FromTree for Arc<Terminal<Pk, Ctx, Ext>>
-where
-    Pk: MiniscriptKey + str::FromStr,
-    Pk::Hash: str::FromStr,
-    Ctx: ScriptContext,
-    Ext: Extension<Pk>,
-    <Pk as str::FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
-{
+impl_from_tree!(
+    ;Ctx; ScriptContext,
+    Arc<Terminal<Pk, Ctx, Ext>>,
+    => Ext ; Extension,
     fn from_tree(top: &expression::Tree<'_>) -> Result<Arc<Terminal<Pk, Ctx, Ext>>, Error> {
         Ok(Arc::new(expression::FromTree::from_tree(top)?))
     }
-}
+);
 
-impl<Pk, Ctx, Ext> expression::FromTree for Terminal<Pk, Ctx, Ext>
-where
-    Pk: MiniscriptKey + str::FromStr,
-    Pk::Hash: str::FromStr,
-    Ctx: ScriptContext,
-    Ext: Extension<Pk>,
-    <Pk as str::FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
-{
+impl_from_tree!(
+    ;Ctx; ScriptContext,
+    Terminal<Pk, Ctx, Ext>,
+    => Ext ; Extension,
     fn from_tree(top: &expression::Tree<'_>) -> Result<Terminal<Pk, Ctx, Ext>, Error> {
         let mut aliased_wrap;
         let frag_name;
@@ -535,7 +502,7 @@ where
                 expression::parse_num(x).map(Terminal::Older)
             }),
             ("sha256", 1) => expression::terminal(&top.args[0], |x| {
-                sha256::Hash::from_hex(x).map(Terminal::Sha256)
+                Pk::Sha256::from_str(x).map(Terminal::Sha256)
             }),
             ("hash256", 1) => expression::terminal(&top.args[0], |x| {
                 sha256d::Hash::from_hex(x)
@@ -663,7 +630,7 @@ where
         Ctx::check_global_validity(&ms)?;
         Ok(ms.node)
     }
-}
+);
 
 /// Helper trait to add a `push_astelem` method to `script::Builder`
 trait PushAstElem<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
@@ -759,12 +726,12 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                 .push_int(t as i64)
                 .push_opcode(opcodes::all::OP_CLTV),
             Terminal::Older(t) => builder.push_int(t as i64).push_opcode(opcodes::all::OP_CSV),
-            Terminal::Sha256(h) => builder
+            Terminal::Sha256(ref h) => builder
                 .push_opcode(opcodes::all::OP_SIZE)
                 .push_int(32)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY)
                 .push_opcode(opcodes::all::OP_SHA256)
-                .push_slice(&h[..])
+                .push_slice(&Pk::to_sha256(&h))
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::Hash256(h) => builder
                 .push_opcode(opcodes::all::OP_SIZE)

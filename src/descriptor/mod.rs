@@ -32,14 +32,15 @@ use std::sync::Arc;
 pub mod pegin;
 
 use bitcoin::util::address::WitnessVersion;
-use elements::{secp256k1_zkp, Script, TxIn};
+use elements::hashes::sha256;
+use elements::{secp256k1_zkp as secp256k1, secp256k1_zkp, Script, TxIn};
 use {bitcoin, elements};
 
 use self::checksum::verify_checksum;
 use crate::miniscript::{Legacy, Miniscript, Segwitv0};
 use crate::{
     expression, miniscript, BareCtx, CovenantExt, Error, ForEach, ForEachKey, MiniscriptKey,
-    Satisfier, ToPublicKey, TranslatePk, TranslatePk2,
+    PkTranslator, Satisfier, ToPublicKey, TranslatePk, Translator,
 };
 
 mod bare;
@@ -202,23 +203,31 @@ impl DescriptorInfo {
     /// should use the method [DescriptorPublicKey::parse_descriptor] to obtain the
     /// Descriptor and a secret key to public key mapping
     pub fn from_desc_str(s: &str) -> Result<Self, Error> {
-        let is_secret_key = |s: &String, has_secret: &mut bool| -> String {
-            *has_secret = match DescriptorSecretKey::from_str(s) {
-                Ok(_sk) => true,
-                Err(_) => false,
-            };
-            String::from("")
-        };
+        struct HasSecrets(bool);
+
+        impl Translator<String, String, Error> for HasSecrets {
+            fn pk(&mut self, pk: &String) -> Result<String, Error> {
+                match DescriptorSecretKey::from_str(pk) {
+                    Ok(_sk) => true,
+                    Err(_) => false,
+                };
+                Ok(String::from(""))
+            }
+
+            fn pkh(&mut self, pkh: &String) -> Result<String, Error> {
+                self.pk(pkh)
+            }
+
+            fn sha256(&mut self, sha256: &String) -> Result<String, Error> {
+                Ok(sha256.to_string())
+            }
+        }
 
         // Parse as a string descriptor
-        let mut has_secret_pk = false;
-        let mut has_secret_pkh = false;
+        let mut has_secret_pk = HasSecrets(false);
         let descriptor = Descriptor::<String>::from_str(s)?;
-        let _d = descriptor.translate_pk_infallible(
-            |pk| is_secret_key(pk, &mut has_secret_pk),
-            |pkh| is_secret_key(pkh, &mut has_secret_pkh),
-        );
-        let has_secret = has_secret_pk || has_secret_pkh;
+        let _d = descriptor.translate_pk(&mut has_secret_pk)?;
+        let has_secret = has_secret_pk.0;
         let ty = DescriptorType::from_str(s)?;
         let is_pegin = match ty {
             DescriptorType::Pegin | DescriptorType::LegacyPegin => true,
@@ -682,26 +691,20 @@ where
     Q: MiniscriptKey,
 {
     type Output = Descriptor<Q>;
+
     /// Converts a descriptor using abstract keys to one using specific keys.
-    ///
-    /// # Panics
-    ///
-    /// If `fpk` returns an uncompressed key when converting to a Segwit descriptor.
-    /// To prevent this panic, ensure `fpk` returns an error in this case instead.
-    fn translate_pk<Fpk, Fpkh, E>(&self, mut fpk: Fpk, mut fpkh: Fpkh) -> Result<Descriptor<Q>, E>
+    fn translate_pk<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
-        Q: MiniscriptKey,
+        T: Translator<P, Q, E>,
     {
         let desc = match *self {
-            Descriptor::Bare(ref bare) => Descriptor::Bare(bare.translate_pk(&mut fpk, &mut fpkh)?),
-            Descriptor::Pkh(ref pk) => Descriptor::Pkh(pk.translate_pk(&mut fpk, &mut fpkh)?),
-            Descriptor::Wpkh(ref pk) => Descriptor::Wpkh(pk.translate_pk(&mut fpk, &mut fpkh)?),
-            Descriptor::Sh(ref sh) => Descriptor::Sh(sh.translate_pk(&mut fpk, &mut fpkh)?),
-            Descriptor::Wsh(ref wsh) => Descriptor::Wsh(wsh.translate_pk(&mut fpk, &mut fpkh)?),
-            Descriptor::Tr(ref tr) => Descriptor::Tr(tr.translate_pk(&mut fpk, &mut fpkh)?),
-            Descriptor::Cov(ref cov) => Descriptor::Cov((cov.translate_pk(&mut fpk, &mut fpkh))?),
+            Descriptor::Bare(ref bare) => Descriptor::Bare(bare.translate_pk(t)?),
+            Descriptor::Pkh(ref pk) => Descriptor::Pkh(pk.translate_pk(t)?),
+            Descriptor::Wpkh(ref pk) => Descriptor::Wpkh(pk.translate_pk(t)?),
+            Descriptor::Sh(ref sh) => Descriptor::Sh(sh.translate_pk(t)?),
+            Descriptor::Wsh(ref wsh) => Descriptor::Wsh(wsh.translate_pk(t)?),
+            Descriptor::Tr(ref tr) => Descriptor::Tr(tr.translate_pk(t)?),
+            Descriptor::Cov(ref cov) => Descriptor::Cov((cov.translate_pk(t))?),
         };
         Ok(desc)
     }
@@ -738,7 +741,19 @@ impl Descriptor<DescriptorPublicKey> {
     /// In most cases, you would want to use [`Self::derived_descriptor`] directly to obtain
     /// a [`Descriptor<bitcoin::PublicKey>`]
     pub fn derive(&self, index: u32) -> Descriptor<DerivedDescriptorKey> {
-        self.translate_pk2_infallible(|pk| pk.clone().derive(index))
+        struct Derivator(u32);
+
+        impl PkTranslator<DescriptorPublicKey, DerivedDescriptorKey, ()> for Derivator {
+            fn pk(&mut self, pk: &DescriptorPublicKey) -> Result<DerivedDescriptorKey, ()> {
+                Ok(pk.clone().derive(self.0))
+            }
+
+            fn pkh(&mut self, pkh: &DescriptorPublicKey) -> Result<DerivedDescriptorKey, ()> {
+                Ok(pkh.clone().derive(self.0))
+            }
+        }
+        self.translate_pk(&mut Derivator(index))
+            .expect("BIP 32 key index substitution cannot fail")
     }
 
     /// Derive a [`Descriptor`] with a concrete [`bitcoin::PublicKey`] at a given index
@@ -770,9 +785,28 @@ impl Descriptor<DescriptorPublicKey> {
         secp: &secp256k1_zkp::Secp256k1<C>,
         index: u32,
     ) -> Result<Descriptor<bitcoin::PublicKey>, ConversionError> {
-        let derived = self
-            .derive(index)
-            .translate_pk2(|xpk| xpk.derive_public_key(secp))?;
+        struct Derivator<'a, C: secp256k1::Verification>(&'a secp256k1::Secp256k1<C>);
+
+        impl<'a, C: secp256k1::Verification>
+            PkTranslator<DerivedDescriptorKey, bitcoin::PublicKey, ConversionError>
+            for Derivator<'a, C>
+        {
+            fn pk(
+                &mut self,
+                pk: &DerivedDescriptorKey,
+            ) -> Result<bitcoin::PublicKey, ConversionError> {
+                pk.derive_public_key(&self.0)
+            }
+
+            fn pkh(
+                &mut self,
+                pkh: &DerivedDescriptorKey,
+            ) -> Result<bitcoin::hashes::hash160::Hash, ConversionError> {
+                Ok(pkh.derive_public_key(&self.0)?.to_pubkeyhash())
+            }
+        }
+
+        let derived = self.derive(index).translate_pk(&mut Derivator(secp))?;
         Ok(derived)
     }
 
@@ -784,12 +818,22 @@ impl Descriptor<DescriptorPublicKey> {
         secp: &secp256k1_zkp::Secp256k1<C>,
         s: &str,
     ) -> Result<(Descriptor<DescriptorPublicKey>, KeyMap), Error> {
-        let parse_key = |s: &String,
-                         key_map: &mut KeyMap|
-         -> Result<DescriptorPublicKey, DescriptorKeyParseError> {
+        fn parse_key<C: secp256k1::Signing>(
+            s: &String,
+            key_map: &mut KeyMap,
+            secp: &secp256k1::Secp256k1<C>,
+        ) -> Result<DescriptorPublicKey, Error> {
             let (public_key, secret_key) = match DescriptorSecretKey::from_str(s) {
-                Ok(sk) => (sk.to_public(secp)?, Some(sk)),
-                Err(_) => (DescriptorPublicKey::from_str(s)?, None),
+                Ok(sk) => (
+                    sk.to_public(secp)
+                        .map_err(|e| Error::Unexpected(e.to_string()))?,
+                    Some(sk),
+                ),
+                Err(_) => (
+                    DescriptorPublicKey::from_str(s)
+                        .map_err(|e| Error::Unexpected(e.to_string()))?,
+                    None,
+                ),
             };
 
             if let Some(secret_key) = secret_key {
@@ -797,26 +841,56 @@ impl Descriptor<DescriptorPublicKey> {
             }
 
             Ok(public_key)
-        };
+        }
 
-        let mut keymap_pk = KeyMap::new();
-        let mut keymap_pkh = KeyMap::new();
+        let mut keymap_pk = KeyMapWrapper(HashMap::new(), secp);
+
+        struct KeyMapWrapper<'a, C: secp256k1::Signing>(KeyMap, &'a secp256k1::Secp256k1<C>);
+
+        impl<'a, C: secp256k1::Signing> Translator<String, DescriptorPublicKey, Error>
+            for KeyMapWrapper<'a, C>
+        {
+            fn pk(&mut self, pk: &String) -> Result<DescriptorPublicKey, Error> {
+                parse_key(pk, &mut self.0, self.1)
+            }
+
+            fn pkh(&mut self, pkh: &String) -> Result<DescriptorPublicKey, Error> {
+                parse_key(pkh, &mut self.0, self.1)
+            }
+
+            fn sha256(&mut self, sha256: &String) -> Result<sha256::Hash, Error> {
+                let hash =
+                    sha256::Hash::from_str(sha256).map_err(|e| Error::Unexpected(e.to_string()))?;
+                Ok(hash)
+            }
+        }
 
         let descriptor = Descriptor::<String>::from_str(s)?;
         let descriptor = descriptor
-            .translate_pk(
-                |pk| parse_key(pk, &mut keymap_pk),
-                |pkh| parse_key(pkh, &mut keymap_pkh),
-            )
+            .translate_pk(&mut keymap_pk)
             .map_err(|e| Error::Unexpected(e.to_string()))?;
 
-        keymap_pk.extend(keymap_pkh.into_iter());
-
-        Ok((descriptor, keymap_pk))
+        Ok((descriptor, keymap_pk.0))
     }
 
     /// Serialize a descriptor to string with its secret keys
     pub fn to_string_with_secret(&self, key_map: &KeyMap) -> String {
+        struct KeyMapLookUp<'a>(&'a KeyMap);
+
+        impl<'a> Translator<DescriptorPublicKey, String, ()> for KeyMapLookUp<'a> {
+            fn pk(&mut self, pk: &DescriptorPublicKey) -> Result<String, ()> {
+                key_to_string(pk, self.0)
+            }
+
+            fn pkh(&mut self, pkh: &DescriptorPublicKey) -> Result<String, ()> {
+                key_to_string(pkh, self.0)
+            }
+
+            fn sha256(&mut self, sha256: &sha256::Hash) -> Result<String, ()> {
+                Ok(sha256.to_string())
+            }
+        }
+
         fn key_to_string(pk: &DescriptorPublicKey, key_map: &KeyMap) -> Result<String, ()> {
             Ok(match key_map.get(pk) {
                 Some(secret) => secret.to_string(),
@@ -825,10 +899,7 @@ impl Descriptor<DescriptorPublicKey> {
         }
 
         let descriptor = self
-            .translate_pk::<_, _, ()>(
-                |pk| key_to_string(pk, key_map),
-                |pkh| key_to_string(pkh, key_map),
-            )
+            .translate_pk(&mut KeyMapLookUp(key_map))
             .expect("Translation to string cannot fail");
 
         descriptor.to_string()
@@ -861,15 +932,10 @@ impl Descriptor<DescriptorPublicKey> {
     }
 }
 
-impl<Pk> expression::FromTree for Descriptor<Pk>
-where
-    Pk: MiniscriptKey + str::FromStr,
-    Pk::Hash: str::FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
-    /// Parse an expression tree into a descriptor
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Descriptor<Pk>, Error> {
+impl_from_tree!(
+    Descriptor<Pk>,
+    /// Parse an expression tree into a descriptor.
+    fn from_tree(top: &expression::Tree) -> Result<Descriptor<Pk>, Error> {
         Ok(match (top.name, top.args.len() as u32) {
             ("elpkh", 1) => Descriptor::Pkh(Pkh::from_tree(top)?),
             ("elwpkh", 1) => Descriptor::Wpkh(Wpkh::from_tree(top)?),
@@ -880,17 +946,11 @@ where
             _ => Descriptor::Bare(Bare::from_tree(top)?),
         })
     }
-}
+);
 
-impl<Pk> FromStr for Descriptor<Pk>
-where
-    Pk: MiniscriptKey + str::FromStr,
-    Pk::Hash: str::FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
-    type Err = Error;
-
+impl_from_str!(
+    Descriptor<Pk>,
+    type Err = Error;,
     fn from_str(s: &str) -> Result<Descriptor<Pk>, Error> {
         if !s.starts_with(ELMTS_STR) {
             return Err(Error::BadDescriptor(String::from(
@@ -909,7 +969,7 @@ where
             expression::FromTree::from_tree(&top)
         }
     }
-}
+);
 
 impl<Pk: MiniscriptKey> fmt::Debug for Descriptor<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -964,7 +1024,7 @@ mod tests {
     use crate::miniscript::satisfy::ElementsSig;
     #[cfg(feature = "compiler")]
     use crate::policy;
-    use crate::{hex_script, Descriptor, DummyKey, Error, Miniscript, Satisfier, TranslatePk2};
+    use crate::{hex_script, Descriptor, DummyKey, Error, Miniscript, Satisfier};
 
     type StdDescriptor = Descriptor<PublicKey>;
     const TEST_PK: &'static str =
@@ -1688,19 +1748,14 @@ mod tests {
             assert_eq!(desc_one.to_string(), raw_desc_one);
             assert_eq!(desc_two.to_string(), raw_desc_two);
 
-            // Derive a child in case the descriptor is ranged. If it's not this won't have any
-            // effect
-            let desc_one = desc_one.derive(index);
-            let desc_two = desc_two.derive(index);
-
             // Same address
             let addr_one = desc_one
-                .translate_pk2(|xpk| xpk.derive_public_key(&secp_ctx))
+                .derived_descriptor(&secp_ctx, index)
                 .unwrap()
                 .address(&elements::AddressParams::ELEMENTS)
                 .unwrap();
             let addr_two = desc_two
-                .translate_pk2(|xpk| xpk.derive_public_key(&secp_ctx))
+                .derived_descriptor(&secp_ctx, index)
                 .unwrap()
                 .address(&elements::AddressParams::ELEMENTS)
                 .unwrap();

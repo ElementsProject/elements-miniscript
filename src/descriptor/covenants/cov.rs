@@ -41,7 +41,6 @@
 //! all the items using OP_CAT to obtain a Sighash on which we
 //! which we verify using CHECKSIGFROMSTACK
 use std::fmt;
-use std::str::FromStr;
 
 use bitcoin;
 use elements::encode::{serialize, Encodable};
@@ -60,7 +59,7 @@ use crate::miniscript::{decode, types};
 use crate::util::varint_len;
 use crate::{
     Error, Extension, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, ScriptContext,
-    Segwitv0, ToPublicKey, TranslatePk,
+    Segwitv0, ToPublicKey, TranslatePk, Translator,
 };
 
 // A simple utility function to serialize an array
@@ -286,14 +285,9 @@ impl<Ext: Extension<bitcoin::PublicKey>> CovenantDescriptor<bitcoin::PublicKey, 
     }
 }
 
-impl<Pk: MiniscriptKey, Ext> FromTree for CovenantDescriptor<Pk, Ext>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    Ext: Extension<Pk>,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl_from_tree!(
+    CovenantDescriptor<Pk, Ext>,
+    => Ext; Extension,
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "elcovwsh" && top.args.len() == 2 {
             let pk = expression::terminal(&top.args[0], |pk| Pk::from_str(pk))?;
@@ -309,7 +303,7 @@ where
             )))
         }
     }
-}
+);
 impl<Pk, Ext> fmt::Debug for CovenantDescriptor<Pk, Ext>
 where
     Pk: MiniscriptKey,
@@ -332,23 +326,17 @@ where
     }
 }
 
-impl<Pk, Ext> FromStr for CovenantDescriptor<Pk, Ext>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-    Pk: MiniscriptKey,
-    Ext: Extension<Pk>,
-{
-    type Err = Error;
+impl_from_str!(
+    CovenantDescriptor<Pk, Ext>,
+    => Ext; Extension,
+    type Err = Error;,
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         CovenantDescriptor::<Pk, Ext>::from_tree(&top)
     }
-}
+);
 
 impl<Pk, Ext> CovenantDescriptor<Pk, Ext>
 where
@@ -478,21 +466,13 @@ where
 {
     type Output = CovenantDescriptor<Q, <Ext as TranslatePk<P, Q>>::Output>;
 
-    fn translate_pk<Fpk, Fpkh, E>(
-        &self,
-        mut translatefpk: Fpk,
-        mut translatefpkh: Fpkh,
-    ) -> Result<Self::Output, E>
+    fn translate_pk<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
-        Q: MiniscriptKey,
+        T: Translator<P, Q, E>,
     {
         Ok(CovenantDescriptor {
-            pk: translatefpk(&self.pk)?,
-            ms: self
-                .ms
-                .translate_pk(&mut translatefpk, &mut translatefpkh)?,
+            pk: t.pk(&self.pk)?,
+            ms: self.ms.translate_pk(t)?,
         })
     }
 }
