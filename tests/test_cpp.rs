@@ -31,25 +31,23 @@ pub(crate) fn parse_miniscripts(
 ) -> Vec<Descriptor<bitcoin::PublicKey>> {
     // File must exist in current path before this produces output
     let mut desc_vec = vec![];
-    if let Ok(lines) = read_lines("./random_ms.txt") {
-        // Consumes the iterator, returns an (Optional) String
-        for line in lines {
-            let ms = test_util::parse_insane_ms(&line.unwrap(), pubdata);
-            let wsh = Descriptor::new_wsh(ms).unwrap();
-            desc_vec.push(wsh.derived_descriptor(secp, 0).unwrap());
-        }
+    // Consumes the iterator, returns an (Optional) String
+    for line in read_lines("tests/data/random_ms.txt") {
+        let ms = test_util::parse_insane_ms(&line.unwrap(), pubdata);
+        let wsh = Descriptor::new_wsh(ms).unwrap();
+        desc_vec.push(wsh.derived_descriptor(secp, 0).unwrap());
     }
     desc_vec
 }
 
 // The output is wrapped in a Result to allow matching on errors
 // Returns an Iterator to the Reader of the lines of the file.
-fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+fn read_lines<P>(filename: P) -> io::Lines<io::BufReader<File>>
 where
     P: AsRef<Path>,
 {
-    let file = File::open(filename)?;
-    Ok(io::BufReader::new(file).lines())
+    let file = File::open(filename).expect("File not found");
+    io::BufReader::new(file).lines()
 }
 
 // Find the Outpoint by value.
@@ -81,6 +79,7 @@ pub fn test_from_cpp_ms(cl: &ElementsD, testdata: &TestData) {
             &wsh.address(&PARAMS).unwrap(), // This is unblinded address
             "1",
         );
+        cl.generate(1);
         txids.push(txid);
     }
     // Wait for the funds to mature.
@@ -90,7 +89,8 @@ pub fn test_from_cpp_ms(cl: &ElementsD, testdata: &TestData) {
     let mut psbts = vec![];
     for (desc, txid) in desc_vec.iter().zip(txids) {
         let mut psbt = Psbt::new_v2();
-        // figure out the outpoint from the txid
+        psbt.global.tx_data.fallback_locktime = Some(1_603_866_330); // time at 10/28/2020 @ 6:25am (UTC)
+                                                                     // figure out the outpoint from the txid
         let (outpoint, witness_utxo) = get_vout(&cl, txid, 100_000_000);
         let txin = TxIn {
             previous_output: outpoint,
@@ -209,6 +209,12 @@ pub fn test_from_cpp_ms(cl: &ElementsD, testdata: &TestData) {
             .unwrap();
         assert!(num_conf > 0);
     }
+}
+
+#[test]
+fn test_setup() {
+    setup::setup(false);
+    setup::setup(true);
 }
 
 #[test]

@@ -425,12 +425,20 @@ fn _finalize_inp(
                         .ecdsa_hash_ty()
                         .ok_or(Error::InputError(InputError::NonStandardSighashType, index))?,
                 );
-                desc.get_satisfaction((psbt_sat, cov_sat))
-                    .map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?
+                let sat = if !allow_mall {
+                    desc.get_satisfaction((psbt_sat, cov_sat))
+                } else {
+                    desc.get_satisfaction_mall((psbt_sat, cov_sat))
+                };
+                sat.map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?
             } else {
                 //generate the satisfaction witness and scriptsig
-                desc.get_satisfaction(psbt_sat)
-                    .map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?
+                let sat = if !allow_mall {
+                    desc.get_satisfaction(psbt_sat)
+                } else {
+                    desc.get_satisfaction_mall(psbt_sat)
+                };
+                sat.map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?
             }
         }
     };
