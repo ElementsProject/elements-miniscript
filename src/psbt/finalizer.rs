@@ -297,7 +297,7 @@ pub fn _interpreter_inp_check<C: secp256k1_zkp::Verification>(
     let csv = psbt.inputs()[index].sequence.unwrap_or(0xffffffff);
     let _amt = get_amt(psbt, index).map_err(|e| Error::InputError(e, index))?;
 
-    let interpreter = interpreter::Interpreter::from_txdata(spk, script_sig, witness, cltv, csv)
+    let interpreter = interpreter::Interpreter::from_txdata(spk, script_sig, witness, csv, cltv)
         .map_err(|e| Error::InputError(InputError::Interpreter(e), index))?;
 
     let prevouts = prevouts(psbt)?;

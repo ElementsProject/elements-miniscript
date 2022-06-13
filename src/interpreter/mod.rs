@@ -47,7 +47,7 @@ pub struct Interpreter<'txin, Ext: Extension<BitcoinKey>> {
     /// is the leaf script; for key-spends it is `None`.
     script_code: Option<elements::Script>,
     age: u32,
-    height: u32,
+    lock_time: u32,
 }
 
 // A type representing functions for checking signatures that accept both
@@ -175,10 +175,10 @@ impl<'txin> Interpreter<'txin, CovenantExt> {
         spk: &elements::Script,
         script_sig: &'txin elements::Script,
         witness: &'txin [Vec<u8>],
-        age: u32,
-        height: u32,
+        age: u32,       // CSV, relative lock time.
+        lock_time: u32, // CLTV, absolute lock time.
     ) -> Result<Self, Error> {
-        Interpreter::from_txdata_ext(spk, script_sig, witness, age, height)
+        Interpreter::from_txdata_ext(spk, script_sig, witness, age, lock_time)
     }
 }
 
@@ -205,8 +205,8 @@ where
         spk: &elements::Script,
         script_sig: &'txin elements::Script,
         witness: &'txin [Vec<u8>],
-        age: u32,
-        height: u32,
+        age: u32,       // CSV, relative lock time.
+        lock_time: u32, // CLTV, absolute lock time.
     ) -> Result<Self, Error> {
         let (inner, stack, script_code) = inner::from_txdata(spk, script_sig, witness)?;
         Ok(Interpreter {
@@ -214,7 +214,7 @@ where
             stack,
             script_code,
             age,
-            height,
+            lock_time,
         })
     }
 
@@ -249,7 +249,7 @@ where
             // call interpreter.iter() without mutating interpreter
             stack: self.stack.clone(),
             age: self.age,
-            height: self.height,
+            lock_time: self.lock_time,
             cov: if let inner::Inner::CovScript(ref pk, ref _ms) = self.inner {
                 Some(pk)
             } else {
@@ -609,7 +609,7 @@ where
     state: Vec<NodeEvaluationState<'intp, Ext>>,
     stack: Stack<'txin>,
     age: u32,
-    height: u32,
+    lock_time: u32,
     cov: Option<&'intp BitcoinKey>,
     has_errored: bool,
 }
@@ -689,7 +689,7 @@ where
                 Terminal::After(ref n) => {
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_after(n, self.age);
+                    let res = self.stack.evaluate_after(n, self.lock_time);
                     if res.is_some() {
                         return res;
                     }
@@ -697,7 +697,7 @@ where
                 Terminal::Older(ref n) => {
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_older(n, self.height);
+                    let res = self.stack.evaluate_older(n, self.age);
                     if res.is_some() {
                         return res;
                     }
@@ -1285,7 +1285,7 @@ mod tests {
                     n_satisfied: 0,
                 }],
                 age: 1002,
-                height: 1002,
+                lock_time: 1002,
                 cov: None,
                 has_errored: false,
             }
