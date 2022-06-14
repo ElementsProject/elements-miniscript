@@ -46,7 +46,7 @@ mod cov;
 mod error;
 mod satisfy;
 mod script_internals;
-pub use self::cov::CovenantDescriptor;
+pub use self::cov::LegacyCSFSCov;
 pub use self::error::CovError;
 pub use self::satisfy::CovSatisfier;
 pub use self::script_internals::CovOperations;
@@ -103,7 +103,7 @@ mod tests {
         let script = desc.as_cov().expect("Parsed as cov").encode();
 
         let cov_desc =
-            CovenantDescriptor::<bitcoin::PublicKey, CovenantExt>::parse_insane(&script).unwrap();
+            LegacyCSFSCov::<bitcoin::PublicKey, CovenantExt>::parse_insane(&script).unwrap();
 
         assert_eq!(cov_desc.to_string(), desc.to_string());
     }

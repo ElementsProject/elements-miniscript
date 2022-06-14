@@ -1141,7 +1141,7 @@ fn update_input_with_descriptor_helper(
             },
             Descriptor::Wsh(wsh) => input.witness_script = Some(wsh.inner_script()),
             Descriptor::Tr(_) => unreachable!("Tr is dealt with separately"),
-            Descriptor::Cov(_) => {
+            Descriptor::LegacyCSFSCov(_) => {
                 // Information for covenants is available directly in the transaction itself
             }
         }

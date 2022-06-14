@@ -186,7 +186,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.lift(),
             Descriptor::Wsh(ref wsh) => wsh.lift(),
             Descriptor::Sh(ref sh) => sh.lift(),
-            Descriptor::Cov(ref _cov) => Err(Error::CovError(CovError::CovenantLift)),
+            Descriptor::LegacyCSFSCov(ref _cov) => Err(Error::CovError(CovError::CovenantLift)),
             Descriptor::Tr(ref tr) => tr.lift(),
         }
     }

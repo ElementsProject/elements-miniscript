@@ -20,7 +20,7 @@ use elements::taproot::ControlBlock;
 use elements::{self, script};
 
 use super::{stack, BitcoinKey, Error, Stack, TypedHash160};
-use crate::descriptor::{CovOperations, CovenantDescriptor};
+use crate::descriptor::{CovOperations, LegacyCSFSCov};
 use crate::miniscript::context::{NoChecks, ScriptContext};
 use crate::util::is_v1_p2tr;
 use crate::{
@@ -87,7 +87,7 @@ where
 {
     let (pk, ms) = match *elem {
         stack::Element::Push(sl) => {
-            CovenantDescriptor::<
+            LegacyCSFSCov::<
                 bitcoin::PublicKey,
                 <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
             >::parse_cov_components(&elements::Script::from(sl.to_owned()))

@@ -45,7 +45,7 @@ use crate::{
 
 mod bare;
 mod blinded;
-mod covenants;
+mod csfs_cov;
 mod segwitv0;
 mod sh;
 mod sortedmulti;
@@ -59,7 +59,7 @@ pub use self::sh::{Sh, ShInner};
 pub use self::sortedmulti::SortedMultiVec;
 mod checksum;
 mod key;
-pub use self::covenants::{CovError, CovOperations, CovSatisfier, CovenantDescriptor};
+pub use self::csfs_cov::{CovError, CovOperations, CovSatisfier, LegacyCSFSCov};
 pub use self::key::{
     ConversionError, DerivedDescriptorKey, DescriptorKeyParseError, DescriptorPublicKey,
     DescriptorSecretKey, DescriptorXKey, InnerXKey, SinglePriv, SinglePub, SinglePubKey, Wildcard,
@@ -240,7 +240,7 @@ pub enum Descriptor<Pk: MiniscriptKey> {
     Tr(Tr<Pk>),
     /// Covenant descriptor with all known extensions
     /// Downstream implementations of extensions should implement directly use descriptor API
-    Cov(CovenantDescriptor<Pk, CovenantExt>),
+    LegacyCSFSCov(LegacyCSFSCov<Pk, CovenantExt>),
 }
 
 impl<Pk: MiniscriptKey> From<Bare<Pk>> for Descriptor<Pk> {
@@ -285,10 +285,10 @@ impl<Pk: MiniscriptKey> From<Tr<Pk>> for Descriptor<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> From<CovenantDescriptor<Pk, CovenantExt>> for Descriptor<Pk> {
+impl<Pk: MiniscriptKey> From<LegacyCSFSCov<Pk, CovenantExt>> for Descriptor<Pk> {
     #[inline]
-    fn from(inner: CovenantDescriptor<Pk, CovenantExt>) -> Self {
-        Descriptor::Cov(inner)
+    fn from(inner: LegacyCSFSCov<Pk, CovenantExt>) -> Self {
+        Descriptor::LegacyCSFSCov(inner)
     }
 }
 
@@ -416,8 +416,8 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
     /// Create a new covenant descriptor
     // All extensions are supported in wsh descriptor
     pub fn new_cov_wsh(pk: Pk, ms: Miniscript<Pk, Segwitv0, CovenantExt>) -> Result<Self, Error> {
-        let cov = CovenantDescriptor::new(pk, ms)?;
-        Ok(Descriptor::Cov(cov))
+        let cov = LegacyCSFSCov::new(pk, ms)?;
+        Ok(Descriptor::LegacyCSFSCov(cov))
     }
 
     /// Get the [DescriptorType] of [Descriptor]
@@ -439,14 +439,14 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
                 WshInner::SortedMulti(ref _smv) => DescriptorType::WshSortedMulti,
                 WshInner::Ms(ref _ms) => DescriptorType::Wsh,
             },
-            Descriptor::Cov(ref _cov) => DescriptorType::Cov,
+            Descriptor::LegacyCSFSCov(ref _cov) => DescriptorType::Cov,
             Descriptor::Tr(ref _tr) => DescriptorType::Tr,
         }
     }
 
     /// Tries to convert descriptor as a covenant descriptor
-    pub fn as_cov(&self) -> Result<&CovenantDescriptor<Pk, CovenantExt>, Error> {
-        if let Descriptor::Cov(cov) = self {
+    pub fn as_cov(&self) -> Result<&LegacyCSFSCov<Pk, CovenantExt>, Error> {
+        if let Descriptor::LegacyCSFSCov(cov) = self {
             Ok(cov)
         } else {
             Err(Error::CovError(CovError::BadCovDescriptor))
@@ -473,7 +473,7 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.sanity_check(),
             Descriptor::Wsh(ref wsh) => wsh.sanity_check(),
             Descriptor::Sh(ref sh) => sh.sanity_check(),
-            Descriptor::Cov(ref cov) => cov.sanity_check(),
+            Descriptor::LegacyCSFSCov(ref cov) => cov.sanity_check(),
             Descriptor::Tr(ref tr) => tr.sanity_check(),
         }
     }
@@ -494,7 +494,7 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.max_satisfaction_weight(),
             Descriptor::Wsh(ref wsh) => wsh.max_satisfaction_weight()?,
             Descriptor::Sh(ref sh) => sh.max_satisfaction_weight()?,
-            Descriptor::Cov(ref cov) => cov.max_satisfaction_weight()?,
+            Descriptor::LegacyCSFSCov(ref cov) => cov.max_satisfaction_weight()?,
             Descriptor::Tr(ref tr) => tr.max_satisfaction_weight()?,
         };
         Ok(weight)
@@ -523,7 +523,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => Ok(wpkh.address(Some(blinder), params)),
             Descriptor::Wsh(ref wsh) => Ok(wsh.address(Some(blinder), params)),
             Descriptor::Sh(ref sh) => Ok(sh.address(Some(blinder), params)),
-            Descriptor::Cov(ref cov) => Ok(cov.address(Some(blinder), params)),
+            Descriptor::LegacyCSFSCov(ref cov) => Ok(cov.address(Some(blinder), params)),
             Descriptor::Tr(ref tr) => Ok(tr.address(Some(blinder), params)),
         }
     }
@@ -542,7 +542,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => Ok(wpkh.address(None, params)),
             Descriptor::Wsh(ref wsh) => Ok(wsh.address(None, params)),
             Descriptor::Sh(ref sh) => Ok(sh.address(None, params)),
-            Descriptor::Cov(ref cov) => Ok(cov.address(None, params)),
+            Descriptor::LegacyCSFSCov(ref cov) => Ok(cov.address(None, params)),
             Descriptor::Tr(ref tr) => Ok(tr.address(None, params)),
         }
     }
@@ -555,7 +555,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.script_pubkey(),
             Descriptor::Wsh(ref wsh) => wsh.script_pubkey(),
             Descriptor::Sh(ref sh) => sh.script_pubkey(),
-            Descriptor::Cov(ref cov) => cov.script_pubkey(),
+            Descriptor::LegacyCSFSCov(ref cov) => cov.script_pubkey(),
             Descriptor::Tr(ref tr) => tr.script_pubkey(),
         }
     }
@@ -574,7 +574,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(_) => Script::new(),
             Descriptor::Wsh(_) => Script::new(),
             Descriptor::Sh(ref sh) => sh.unsigned_script_sig(),
-            Descriptor::Cov(_) => Script::new(),
+            Descriptor::LegacyCSFSCov(_) => Script::new(),
             Descriptor::Tr(_) => Script::new(),
         }
     }
@@ -593,7 +593,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wsh(ref wsh) => Ok(wsh.inner_script()),
             Descriptor::Sh(ref sh) => Ok(sh.inner_script()),
             Descriptor::Tr(_) => Err(Error::TrNoScriptCode),
-            Descriptor::Cov(ref cov) => Ok(cov.inner_script()),
+            Descriptor::LegacyCSFSCov(ref cov) => Ok(cov.inner_script()),
         }
     }
 
@@ -611,7 +611,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => Ok(wpkh.ecdsa_sighash_script_code()),
             Descriptor::Wsh(ref wsh) => Ok(wsh.ecdsa_sighash_script_code()),
             Descriptor::Sh(ref sh) => Ok(sh.ecdsa_sighash_script_code()),
-            Descriptor::Cov(ref cov) => Ok(cov.ecdsa_sighash_script_code()),
+            Descriptor::LegacyCSFSCov(ref cov) => Ok(cov.ecdsa_sighash_script_code()),
             Descriptor::Tr(_) => Err(Error::TrNoScriptCode),
         }
     }
@@ -629,7 +629,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.get_satisfaction(satisfier),
             Descriptor::Wsh(ref wsh) => wsh.get_satisfaction(satisfier),
             Descriptor::Sh(ref sh) => sh.get_satisfaction(satisfier),
-            Descriptor::Cov(ref cov) => cov.get_satisfaction(satisfier),
+            Descriptor::LegacyCSFSCov(ref cov) => cov.get_satisfaction(satisfier),
             Descriptor::Tr(ref tr) => tr.get_satisfaction(satisfier),
         }
     }
@@ -647,7 +647,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.get_satisfaction_mall(satisfier),
             Descriptor::Wsh(ref wsh) => wsh.get_satisfaction_mall(satisfier),
             Descriptor::Sh(ref sh) => sh.get_satisfaction_mall(satisfier),
-            Descriptor::Cov(ref cov) => cov.get_satisfaction_mall(satisfier),
+            Descriptor::LegacyCSFSCov(ref cov) => cov.get_satisfaction_mall(satisfier),
             Descriptor::Tr(ref tr) => tr.get_satisfaction_mall(satisfier),
         }
     }
@@ -685,7 +685,7 @@ where
             Descriptor::Sh(ref sh) => Descriptor::Sh(sh.translate_pk(t)?),
             Descriptor::Wsh(ref wsh) => Descriptor::Wsh(wsh.translate_pk(t)?),
             Descriptor::Tr(ref tr) => Descriptor::Tr(tr.translate_pk(t)?),
-            Descriptor::Cov(ref cov) => Descriptor::Cov((cov.translate_pk(t))?),
+            Descriptor::LegacyCSFSCov(ref cov) => Descriptor::LegacyCSFSCov((cov.translate_pk(t))?),
         };
         Ok(desc)
     }
@@ -703,7 +703,7 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.for_each_key(pred),
             Descriptor::Wsh(ref wsh) => wsh.for_each_key(pred),
             Descriptor::Sh(ref sh) => sh.for_each_key(pred),
-            Descriptor::Cov(ref cov) => cov.for_any_key(pred),
+            Descriptor::LegacyCSFSCov(ref cov) => cov.for_any_key(pred),
             Descriptor::Tr(ref tr) => tr.for_each_key(pred),
         }
     }
@@ -921,7 +921,7 @@ impl_from_tree!(
             ("elpkh", 1) => Descriptor::Pkh(Pkh::from_tree(top)?),
             ("elwpkh", 1) => Descriptor::Wpkh(Wpkh::from_tree(top)?),
             ("elsh", 1) => Descriptor::Sh(Sh::from_tree(top)?),
-            ("elcovwsh", 2) => Descriptor::Cov(CovenantDescriptor::from_tree(top)?),
+            ("elcovwsh", 2) => Descriptor::LegacyCSFSCov(LegacyCSFSCov::from_tree(top)?),
             ("elwsh", 1) => Descriptor::Wsh(Wsh::from_tree(top)?),
             ("eltr", _) => Descriptor::Tr(Tr::from_tree(top)?),
             _ => Descriptor::Bare(Bare::from_tree(top)?),
@@ -960,7 +960,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => write!(f, "{:?}", wpkh),
             Descriptor::Sh(ref sub) => write!(f, "{:?}", sub),
             Descriptor::Wsh(ref sub) => write!(f, "{:?}", sub),
-            Descriptor::Cov(ref cov) => write!(f, "{:?}", cov),
+            Descriptor::LegacyCSFSCov(ref cov) => write!(f, "{:?}", cov),
             Descriptor::Tr(ref tr) => write!(f, "{:?}", tr),
         }
     }
@@ -974,7 +974,7 @@ impl<Pk: MiniscriptKey> fmt::Display for Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => write!(f, "{}", wpkh),
             Descriptor::Sh(ref sub) => write!(f, "{}", sub),
             Descriptor::Wsh(ref sub) => write!(f, "{}", sub),
-            Descriptor::Cov(ref cov) => write!(f, "{}", cov),
+            Descriptor::LegacyCSFSCov(ref cov) => write!(f, "{}", cov),
             Descriptor::Tr(ref tr) => write!(f, "{}", tr),
         }
     }
