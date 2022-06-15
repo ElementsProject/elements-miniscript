@@ -39,7 +39,7 @@ use {bitcoin, elements};
 use self::checksum::verify_checksum;
 use crate::miniscript::{Legacy, Miniscript, Segwitv0};
 use crate::{
-    expression, miniscript, BareCtx, CovenantExt, Error, ForEach, ForEachKey, MiniscriptKey,
+    expression, miniscript, BareCtx, CovenantExt, Error, ForEach, ForEachKey, MiniscriptKey, NoExt,
     PkTranslator, Satisfier, ToPublicKey, TranslatePk, Translator,
 };
 
@@ -65,7 +65,6 @@ pub use self::key::{
     DescriptorSecretKey, DescriptorXKey, InnerXKey, SinglePriv, SinglePub, SinglePubKey, Wildcard,
 };
 pub use self::tr::{TapTree, Tr};
-
 /// Alias type for a map of public key to secret key
 ///
 /// This map is returned whenever a descriptor that contains secrets is parsed using
@@ -237,7 +236,7 @@ pub enum Descriptor<Pk: MiniscriptKey> {
     /// Pay-to-Witness-ScriptHash with Segwitv0 context
     Wsh(Wsh<Pk>),
     /// Pay-to-Taproot
-    Tr(Tr<Pk>),
+    Tr(Tr<Pk, NoExt>),
     /// Covenant descriptor with all known extensions
     /// Downstream implementations of extensions should implement directly use descriptor API
     LegacyCSFSCov(LegacyCSFSCov<Pk, CovenantExt>),
@@ -278,9 +277,9 @@ impl<Pk: MiniscriptKey> From<Wsh<Pk>> for Descriptor<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> From<Tr<Pk>> for Descriptor<Pk> {
+impl<Pk: MiniscriptKey> From<Tr<Pk, NoExt>> for Descriptor<Pk> {
     #[inline]
-    fn from(inner: Tr<Pk>) -> Self {
+    fn from(inner: Tr<Pk, NoExt>) -> Self {
         Descriptor::Tr(inner)
     }
 }
@@ -409,7 +408,7 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
 
     /// Create new tr descriptor
     /// Errors when miniscript exceeds resource limits under Tap context
-    pub fn new_tr(key: Pk, script: Option<tr::TapTree<Pk>>) -> Result<Self, Error> {
+    pub fn new_tr(key: Pk, script: Option<tr::TapTree<Pk, NoExt>>) -> Result<Self, Error> {
         Ok(Descriptor::Tr(Tr::new(key, script)?))
     }
 
