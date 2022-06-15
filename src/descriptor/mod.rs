@@ -207,10 +207,8 @@ impl DescriptorInfo {
 
         impl Translator<String, String, Error> for HasSecrets {
             fn pk(&mut self, pk: &String) -> Result<String, Error> {
-                match DescriptorSecretKey::from_str(pk) {
-                    Ok(_sk) => true,
-                    Err(_) => false,
-                };
+                self.0 = DescriptorSecretKey::from_str(pk).is_ok();
+                // Replace the keys with empty keys
                 Ok(String::from(""))
             }
 
