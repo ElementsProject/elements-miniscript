@@ -203,29 +203,12 @@ impl DescriptorInfo {
     /// should use the method [DescriptorPublicKey::parse_descriptor] to obtain the
     /// Descriptor and a secret key to public key mapping
     pub fn from_desc_str(s: &str) -> Result<Self, Error> {
-        struct HasSecrets(bool);
-
-        impl Translator<String, String, Error> for HasSecrets {
-            fn pk(&mut self, pk: &String) -> Result<String, Error> {
-                self.0 = DescriptorSecretKey::from_str(pk).is_ok();
-                // Replace the keys with empty keys
-                Ok(String::from(""))
-            }
-
-            fn pkh(&mut self, pkh: &String) -> Result<String, Error> {
-                self.pk(pkh)
-            }
-
-            fn sha256(&mut self, sha256: &String) -> Result<String, Error> {
-                Ok(sha256.to_string())
-            }
-        }
-
         // Parse as a string descriptor
-        let mut has_secret_pk = HasSecrets(false);
         let descriptor = Descriptor::<String>::from_str(s)?;
-        let _d = descriptor.translate_pk(&mut has_secret_pk)?;
-        let has_secret = has_secret_pk.0;
+        let has_secret = descriptor.for_any_key(|pk| match pk {
+            ForEach::Key(key) => DescriptorSecretKey::from_str(key).is_ok(),
+            ForEach::Hash(key) => DescriptorSecretKey::from_str(key).is_ok(),
+        });
         let ty = DescriptorType::from_str(s)?;
         let is_pegin = match ty {
             DescriptorType::Pegin | DescriptorType::LegacyPegin => true,
