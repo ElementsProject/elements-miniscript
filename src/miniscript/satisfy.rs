@@ -192,6 +192,22 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
     fn lookup_sighashu32(&self) -> Option<u32> {
         None
     }
+
+    /// Lookup spending transaction. Required for introspection
+    // TODO: cleanup some of lookup_* methods as they are subsumed by this
+    fn lookup_tx(&self) -> Option<elements::Transaction> {
+        None
+    }
+
+    /// Lookup spent txouts. Required for introspection
+    fn lookup_spent_utxos(&self) -> Option<&[elements::TxOut]> {
+        None
+    }
+
+    /// Lookup sig for CSFS fragment
+    fn lookup_csfs_sig(&self, _pk: &Pk) -> Option<elements::SchnorrSig> {
+        None
+    }
 }
 
 // Allow use of `()` as a "no conditions available" satisfier
@@ -403,6 +419,18 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
     fn lookup_sighashu32(&self) -> Option<u32> {
         (**self).lookup_sighashu32()
     }
+
+    fn lookup_spent_utxos(&self) -> Option<&[elements::TxOut]> {
+        (**self).lookup_spent_utxos()
+    }
+
+    fn lookup_tx(&self) -> Option<elements::Transaction> {
+        (**self).lookup_tx()
+    }
+
+    fn lookup_csfs_sig(&self, pk: &Pk) -> Option<elements::SchnorrSig> {
+        (**self).lookup_csfs_sig(pk)
+    }
 }
 
 impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'a mut S {
@@ -505,6 +533,18 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
 
     fn lookup_sighashu32(&self) -> Option<u32> {
         (**self).lookup_sighashu32()
+    }
+
+    fn lookup_spent_utxos(&self) -> Option<&[elements::TxOut]> {
+        (**self).lookup_spent_utxos()
+    }
+
+    fn lookup_tx(&self) -> Option<elements::Transaction> {
+        (**self).lookup_tx()
+    }
+
+    fn lookup_csfs_sig(&self, pk: &Pk) -> Option<elements::SchnorrSig> {
+        (**self).lookup_csfs_sig(pk)
     }
 }
 
@@ -761,6 +801,36 @@ macro_rules! impl_tuple_satisfier {
                 let &($(ref $ty,)*) = self;
                 $(
                     if let Some(result) = $ty.lookup_sighashu32() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_spent_utxos(&self) -> Option<&[elements::TxOut]> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_spent_utxos() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_tx(&self) -> Option<elements::Transaction> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_tx() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_csfs_sig(&self, pk: &Pk) -> Option<elements::SchnorrSig> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_csfs_sig(pk) {
                         return Some(result);
                     }
                 )*
