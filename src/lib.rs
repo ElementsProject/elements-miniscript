@@ -119,14 +119,12 @@ pub(crate) use bitcoin_miniscript::expression::{FromTree as BtcFromTree, Tree as
 pub(crate) use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
 pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
 pub(crate) use bitcoin_miniscript::{
-    Descriptor as BtcDescriptor, DescriptorTrait as BtcDescriptorTrait, Error as BtcError,
-    Miniscript as BtcMiniscript, Satisfier as BtcSatisfier, Segwitv0 as BtcSegwitv0,
-    Terminal as BtcTerminal,
+    Descriptor as BtcDescriptor, Error as BtcError, Miniscript as BtcMiniscript,
+    Satisfier as BtcSatisfier, Segwitv0 as BtcSegwitv0, Terminal as BtcTerminal,
 };
 // re-export imports
 pub use bitcoin_miniscript::{
-    DummyKey, DummyKeyHash, ForEach, ForEachKey, MiniscriptKey, ToPublicKey, TranslatePk,
-    TranslatePk1, TranslatePk2, TranslatePk3,
+    DummyKey, DummyKeyHash, ForEach, ForEachKey, MiniscriptKey, ToPublicKey,
 };
 // End imports
 
@@ -142,6 +140,8 @@ pub mod policy;
 pub mod psbt;
 pub mod timelock;
 
+#[cfg(test)]
+mod test_utils;
 mod util;
 
 use std::{error, fmt, str};
@@ -159,7 +159,6 @@ pub use crate::miniscript::satisfy::{
     elementssig_from_rawsig, elementssig_to_rawsig, ElementsSig, Preimage32, Satisfier,
 };
 pub use crate::miniscript::Miniscript;
-
 // minimal implementation of contract hash module
 mod contracthash {
     use bitcoin::PublicKey;
@@ -191,38 +190,6 @@ mod contracthash {
     }
 }
 
-/// Same as upstream [`TranslatePk`] but with support for extensions
-pub trait TranslatePkExt<P: MiniscriptKey, Q: MiniscriptKey, QExt: Extension<Q>> {
-    /// The associated output type. This must be Self<Q>
-    type Output;
-
-    /// Translate a struct from one Generic to another where the
-    /// translation for Pk is provided by translatefpk, and translation for
-    /// PkH is provided by translatefpkh
-    fn translate_pk<Fpk, Fpkh, E>(
-        &self,
-        translatefpk: Fpk,
-        translatefpkh: Fpkh,
-    ) -> Result<Self::Output, E>
-    where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>;
-
-    /// Calls `translate_pk` with conversion functions that cannot fail
-    fn translate_pk_infallible<Fpk, Fpkh>(
-        &self,
-        mut translatefpk: Fpk,
-        mut translatefpkh: Fpkh,
-    ) -> Self::Output
-    where
-        Fpk: FnMut(&P) -> Q,
-        Fpkh: FnMut(&P::Hash) -> Q::Hash,
-    {
-        self.translate_pk::<_, _, ()>(|pk| Ok(translatefpk(pk)), |pkh| Ok(translatefpkh(pkh)))
-            .expect("infallible translation function")
-    }
-}
-
 /// Tweak a MiniscriptKey to obtain the tweaked key
 // Ideally, we want this in a trait, but doing so we cannot
 // use it in the implementation of DescriptorTrait from
@@ -237,6 +204,74 @@ where
 {
     let pk = pk.to_public_key();
     contracthash::tweak_key(secp, pk, contract)
+}
+
+/// Describes an object that can translate various keys and hashes from one key to the type
+/// associated with the other key. Used by the [`TranslatePk`] trait to do the actual translations.
+pub trait Translator<P, Q, E>
+where
+    P: MiniscriptKey,
+    Q: MiniscriptKey,
+{
+    /// Translates public keys P -> Q.
+    fn pk(&mut self, pk: &P) -> Result<Q, E>;
+
+    /// Translates public key hashes P::Hash -> Q::Hash.
+    fn pkh(&mut self, pkh: &P::Hash) -> Result<Q::Hash, E>;
+
+    /// Translates sha256 hashes from P::Sha256 -> Q::Sha256
+    fn sha256(&mut self, sha256: &P::Sha256) -> Result<Q::Sha256, E>;
+}
+
+/// Provides the conversion information required in [`TranslatePk`].
+/// Same as [`Translator`], but useful when all the associated types apart
+/// from Pk/Pkh don't change in translation
+pub trait PkTranslator<P, Q, E>
+where
+    P: MiniscriptKey,
+    Q: MiniscriptKey<Sha256 = P::Sha256>,
+{
+    /// Provides the translation public keys P -> Q
+    fn pk(&mut self, pk: &P) -> Result<Q, E>;
+
+    /// Provides the translation public keys hashes P::Hash -> Q::Hash
+    fn pkh(&mut self, pkh: &P::Hash) -> Result<Q::Hash, E>;
+}
+
+impl<P, Q, E, T> Translator<P, Q, E> for T
+where
+    T: PkTranslator<P, Q, E>,
+    P: MiniscriptKey,
+    Q: MiniscriptKey<Sha256 = P::Sha256>,
+{
+    fn pk(&mut self, pk: &P) -> Result<Q, E> {
+        <Self as PkTranslator<P, Q, E>>::pk(self, pk)
+    }
+
+    fn pkh(&mut self, pkh: &<P as MiniscriptKey>::Hash) -> Result<<Q as MiniscriptKey>::Hash, E> {
+        <Self as PkTranslator<P, Q, E>>::pkh(self, pkh)
+    }
+
+    fn sha256(&mut self, sha256: &<P as MiniscriptKey>::Sha256) -> Result<<Q>::Sha256, E> {
+        Ok(sha256.clone())
+    }
+}
+
+/// Converts a descriptor using abstract keys to one using specific keys. Uses translator `t` to do
+/// the actual translation function calls.
+pub trait TranslatePk<P, Q>
+where
+    P: MiniscriptKey,
+    Q: MiniscriptKey,
+{
+    /// The associated output type. This must be `Self<Q>`.
+    type Output;
+
+    /// Translates a struct from one generic to another where the translations
+    /// for Pk are provided by the given [`Translator`].
+    fn translate_pk<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
+    where
+        T: Translator<P, Q, E>;
 }
 /// Miniscript
 
@@ -473,18 +508,10 @@ impl fmt::Display for Error {
             Error::PubKeyCtxError(ref pk, ref ctx) => {
                 write!(f, "Pubkey error: {} under {} scriptcontext", pk, ctx)
             }
-            Error::MultiATooManyKeys(k) => {
-                write!(f, "MultiA too many keys {}", k)
-            }
-            Error::TaprootSpendInfoUnavialable => {
-                write!(f, "Taproot Spend Info not computed.")
-            }
-            Error::TrNoScriptCode => {
-                write!(f, "No script code for Tr descriptors")
-            }
-            Error::TrNoExplicitScript => {
-                write!(f, "No script code for Tr descriptors")
-            }
+            Error::MultiATooManyKeys(k) => write!(f, "MultiA too many keys {}", k),
+            Error::TaprootSpendInfoUnavialable => write!(f, "Taproot Spend Info not computed."),
+            Error::TrNoScriptCode => write!(f, "No script code for Tr descriptors"),
+            Error::TrNoExplicitScript => write!(f, "No script code for Tr descriptors"),
         }
     }
 }

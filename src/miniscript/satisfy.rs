@@ -24,7 +24,7 @@ use std::{cmp, i64, mem};
 
 use bitcoin;
 use bitcoin::secp256k1::XOnlyPublicKey;
-use elements::hashes::{hash160, ripemd160, sha256, sha256d};
+use elements::hashes::{hash160, ripemd160, sha256d};
 use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, confidential, secp256k1_zkp, OutPoint, Script};
 
@@ -108,7 +108,7 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
     }
 
     /// Given a SHA256 hash, look up its preimage
-    fn lookup_sha256(&self, _: sha256::Hash) -> Option<Preimage32> {
+    fn lookup_sha256(&self, _: &Pk::Sha256) -> Option<Preimage32> {
         None
     }
 
@@ -336,7 +336,7 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_tap_control_block_map()
     }
 
-    fn lookup_sha256(&self, h: sha256::Hash) -> Option<Preimage32> {
+    fn lookup_sha256(&self, h: &Pk::Sha256) -> Option<Preimage32> {
         (**self).lookup_sha256(h)
     }
 
@@ -439,7 +439,7 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_tap_control_block_map()
     }
 
-    fn lookup_sha256(&self, h: sha256::Hash) -> Option<Preimage32> {
+    fn lookup_sha256(&self, h: &Pk::Sha256) -> Option<Preimage32> {
         (**self).lookup_sha256(h)
     }
 
@@ -597,7 +597,7 @@ macro_rules! impl_tuple_satisfier {
                 None
             }
 
-            fn lookup_sha256(&self, h: sha256::Hash) -> Option<Preimage32> {
+            fn lookup_sha256(&self, h: &Pk::Sha256) -> Option<Preimage32> {
                 let &($(ref $ty,)*) = self;
                 $(
                     if let Some(result) = $ty.lookup_sha256(h) {
@@ -882,7 +882,7 @@ impl Witness {
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    pub fn sha256_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: sha256::Hash) -> Self {
+    pub fn sha256_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: &Pk::Sha256) -> Self {
         match sat.lookup_sha256(h) {
             Some(pre) => Witness::Stack(vec![pre.to_vec()]),
             // Note hash preimages are unavailable instead of impossible
@@ -1265,7 +1265,7 @@ impl Satisfaction {
                 stack: Witness::hash160_preimage(stfr, h),
                 has_sig: false,
             },
-            Terminal::Sha256(h) => Satisfaction {
+            Terminal::Sha256(ref h) => Satisfaction {
                 stack: Witness::sha256_preimage(stfr, h),
                 has_sig: false,
             },

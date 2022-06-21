@@ -21,20 +21,18 @@
 //! with these is easier.
 
 use std::fmt;
-use std::str::FromStr;
 
 use bitcoin::blockdata::script;
 use bitcoin::hashes::Hash;
 use bitcoin::{self, hashes, Script as BtcScript};
 use elements::secp256k1_zkp;
 
-use super::PeginTrait;
 use crate::descriptor::checksum::{desc_checksum, verify_checksum};
 use crate::expression::{self, FromTree};
 use crate::policy::{semantic, Liftable};
 use crate::{
-    tweak_key, BtcDescriptor, BtcDescriptorTrait, BtcError, BtcFromTree, BtcLiftable, BtcPolicy,
-    BtcSatisfier, BtcTree, Descriptor, Error, MiniscriptKey, ToPublicKey, TranslatePk,
+    BtcDescriptor, BtcError, BtcFromTree, BtcLiftable, BtcPolicy, BtcSatisfier, BtcTree,
+    Descriptor, Error, MiniscriptKey, ToPublicKey,
 };
 
 /// New Pegin Descriptor with Miniscript support
@@ -84,13 +82,8 @@ impl<Pk: MiniscriptKey> BtcLiftable<Pk> for Pegin<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> FromTree for Pegin<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
+impl_from_tree!(
+    Pegin<Pk>,
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "pegin" && top.args.len() == 2 {
             // a roundtrip hack to use FromTree from bitcoin::Miniscript from
@@ -111,32 +104,21 @@ where
             )))
         }
     }
-}
+);
 
-impl<Pk: MiniscriptKey> FromStr for Pegin<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
-    type Err = Error;
-
+impl_from_str!(
+    Pegin<Pk>,
+    type Err = Error;,
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         Self::from_tree(&top)
     }
-}
+);
 
-impl<Pk: MiniscriptKey> PeginTrait<Pk> for Pegin<Pk>
-where
-    Pk: FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
-    fn sanity_check(&self) -> Result<(), Error> {
+impl<Pk: MiniscriptKey> Pegin<Pk> {
+    /// Checks whether the descriptor is safe.
+    pub fn sanity_check(&self) -> Result<(), Error> {
         self.fed_desc
             .sanity_check()
             .map_err(|_| Error::Unexpected("Federation script sanity check failed".to_string()))?;
@@ -146,7 +128,9 @@ where
         Ok(())
     }
 
-    fn bitcoin_address<C: secp256k1_zkp::Verification>(
+    /// Computes the Bitcoin address of the pegin descriptor, if one exists.
+    /// Requires the secp context to compute the tweak
+    pub fn bitcoin_address<C: secp256k1_zkp::Verification>(
         &self,
         network: bitcoin::Network,
         secp: &secp256k1_zkp::Secp256k1<C>,
@@ -163,7 +147,9 @@ where
         ))
     }
 
-    fn bitcoin_script_pubkey<C: secp256k1_zkp::Verification>(
+    /// Computes the bitcoin scriptpubkey of the descriptor.
+    /// Requires the secp context to compute the tweak
+    pub fn bitcoin_script_pubkey<C: secp256k1_zkp::Verification>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> BtcScript
@@ -175,7 +161,16 @@ where
             .script_pubkey()
     }
 
-    fn bitcoin_unsigned_script_sig<C: secp256k1_zkp::Verification>(
+    /// Computes the scriptSig that will be in place for an unsigned
+    /// input spending an output with this descriptor. For pre-segwit
+    /// descriptors, which use the scriptSig for signatures, this
+    /// returns the empty script.
+    ///
+    /// This is used in Segwit transactions to produce an unsigned
+    /// transaction whose txid will not change during signing (since
+    /// only the witness data will change).
+    /// Requires the secp context to compute the tweak
+    pub fn bitcoin_unsigned_script_sig<C: secp256k1_zkp::Verification>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> BtcScript
@@ -190,9 +185,13 @@ where
             .into_script()
     }
 
-    fn bitcoin_witness_script<C: secp256k1_zkp::Verification>(
+    /// Computes the bitcoin "witness script" of the descriptor, i.e. the underlying
+    /// script before any hashing is done. For `Bare`, `Pkh` and `Wpkh` this
+    /// is the scriptPubkey; for `ShWpkh` and `Sh` this is the redeemScript;
+    /// for the others it is the witness script.
+    pub fn bitcoin_witness_script<C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1_zkp::Secp256k1<C>,
+        _secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> Result<BtcScript, Error>
     where
         Pk: ToPublicKey,
@@ -202,19 +201,45 @@ where
             .explicit_script()
             .expect("Tr pegins unknown yet")
             .into_bytes();
-        let tweak = hashes::sha256::Hash::hash(&tweak_vec);
-        let tweaked_desc = self.fed_desc.translate_pk_infallible(
-            |pk| tweak_key(pk, secp, tweak.as_inner()),
-            |_| unreachable!("No keyhashes in elements descriptors"),
-        );
-        // Hopefully, we never have to use this and dynafed is deployed
-        Ok(tweaked_desc.explicit_script()?)
+        let _tweak = hashes::sha256::Hash::hash(&tweak_vec);
+
+        unreachable!("TODO: After upstream Refactor for Translator trait")
+        // let derived = self.fed_desc.derive
+
+        // struct TranslateTweak<'a, C: secp256k1_zkp::Verification>(
+        //     hashes::sha256::Hash,
+        //     &'a secp256k1_zkp::Secp256k1<C>,
+        // );
+
+        // impl<'a, Pk, C> PkTranslator<Pk, bitcoin::PublicKey, ()> for TranslateTweak<'a, C>
+        // where
+        //     Pk: MiniscriptKey,
+        //     C: secp256k1_zkp::Verification,
+        // {
+        //     fn pk(&mut self, pk: &Pk) -> Result<bitcoin::PublicKey, ()> {
+        //         tweak_key(pk, self.1, self.0.as_inner())
+        //     }
+
+        //     fn pkh(
+        //         &mut self,
+        //         pkh: &<Pk as MiniscriptKey>::Hash,
+        //     ) -> Result<<bitcoin::PublicKey as MiniscriptKey>::Hash, ()> {
+        //         unreachable!("No keyhashes in elements descriptors")
+        //     }
+        // }
+        // let mut t = TranslateTweak(tweak, secp);
+
+        // let tweaked_desc = <bitcoin_miniscript::TranslatePk>::translate_pk(&self.fed_desc, t).expect("Tweaking must succeed"),
+        // Ok(tweaked_desc.explicit_script()?)
     }
 
-    fn get_bitcoin_satisfaction<S, C: secp256k1_zkp::Verification>(
+    /// Returns satisfying witness and scriptSig to spend an
+    /// output controlled by the given descriptor if it possible to
+    /// construct one using the satisfier S.
+    pub fn get_bitcoin_satisfaction<S, C: secp256k1_zkp::Verification>(
         &self,
-        secp: &secp256k1_zkp::Secp256k1<C>,
-        satisfier: S,
+        _secp: &secp256k1_zkp::Secp256k1<C>,
+        _satisfier: S,
     ) -> Result<(Vec<Vec<u8>>, BtcScript), Error>
     where
         S: BtcSatisfier<bitcoin::PublicKey>,
@@ -225,22 +250,35 @@ where
             .explicit_script()
             .expect("Tr pegins unknown yet")
             .into_bytes();
-        let tweak = hashes::sha256::Hash::hash(&tweak_vec);
-        let tweaked_desc = self.fed_desc.translate_pk_infallible(
-            |pk| tweak_key(pk, secp, tweak.as_inner()),
-            |_| unreachable!("No keyhashes in elements descriptors"),
-        );
-        let res = tweaked_desc.get_satisfaction(satisfier)?;
-        Ok(res)
+        let _tweak = hashes::sha256::Hash::hash(&tweak_vec);
+        unreachable!("TODO: After upstream refactor");
+        // let tweaked_desc = self.fed_desc.translate_pk_infallible(
+        //     |pk| tweak_key(pk, secp, tweak.as_inner()),
+        //     |_| unreachable!("No keyhashes in elements descriptors"),
+        // );
+        // let res = tweaked_desc.get_satisfaction(satisfier)?;
+        // Ok(res)
     }
 
-    fn max_satisfaction_weight(&self) -> Result<usize, Error> {
+    /// Computes an upper bound on the weight of a satisfying witness to the
+    /// transaction. Assumes all signatures are 73 bytes, including push opcode
+    /// and sighash suffix. Includes the weight of the VarInts encoding the
+    /// scriptSig and witness stack length.
+    // FIXME: the ToPublicKey bound here should not needed. Fix after upstream
+    pub fn max_satisfaction_weight(&self) -> Result<usize, Error>
+    where
+        Pk: ToPublicKey,
+    {
         // tweaking does not change max satisfaction weight
         let w = self.fed_desc.max_satisfaction_weight()?;
         Ok(w)
     }
 
-    fn script_code<C: secp256k1_zkp::Verification>(
+    /// Get the `scriptCode` of a transaction output.
+    ///
+    /// The `scriptCode` is the Script of the previous transaction output being serialized in the
+    /// sighash when evaluating a `CHECKSIG` & co. OP code.
+    pub fn script_code<C: secp256k1_zkp::Verification>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> Result<BtcScript, Error>
@@ -250,7 +288,11 @@ where
         self.bitcoin_witness_script(secp)
     }
 
-    fn into_user_descriptor(self) -> Descriptor<Pk> {
+    /// Get the corresponding elements descriptor that would be used
+    /// at redeem time by the user.
+    /// Users can use the DescrpitorTrait operations on the output Descriptor
+    /// to obtain the characteristics of the elements descriptor.
+    pub fn into_user_descriptor(self) -> Descriptor<Pk> {
         self.elem_desc
     }
 }

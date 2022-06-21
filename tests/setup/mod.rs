@@ -58,12 +58,6 @@ pub fn setup(validate_pegin: bool) -> (ElementsD, Option<BitcoinD>, elements::Bl
 
     (elementsd, bitcoind, genesis_hash)
 }
-
-#[test]
-fn test_setup() {
-    setup(false);
-}
-
 // Upstream all common methods later
 pub trait Call {
     fn call(&self, cmd: &str, args: &[Value]) -> Value;

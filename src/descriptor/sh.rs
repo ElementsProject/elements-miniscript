@@ -18,8 +18,7 @@
 //! sh(miniscript), and sh(wpkh)
 //!
 
-use std::fmt;
-use std::str::FromStr;
+use core::fmt;
 
 use elements::{self, script, secp256k1_zkp, Script};
 
@@ -31,7 +30,7 @@ use crate::policy::{semantic, Liftable};
 use crate::util::{varint_len, witness_to_scriptsig};
 use crate::{
     push_opcode_size, Error, ForEach, ForEachKey, Legacy, Miniscript, MiniscriptKey, Satisfier,
-    Segwitv0, ToPublicKey, TranslatePk,
+    Segwitv0, ToPublicKey, TranslatePk, Translator,
 };
 
 /// A Legacy p2sh Descriptor
@@ -90,14 +89,9 @@ impl<Pk: MiniscriptKey> fmt::Display for Sh<Pk> {
     }
 }
 
-impl<Pk> FromTree for Sh<Pk>
-where
-    Pk: MiniscriptKey + FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
+impl_from_tree!(
+    Sh<Pk>,
+    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
         if top.name == "elsh" && top.args.len() == 1 {
             let top = &top.args[0];
             let inner = match top.name {
@@ -119,22 +113,17 @@ where
             )))
         }
     }
-}
+);
 
-impl<Pk> FromStr for Sh<Pk>
-where
-    Pk: MiniscriptKey + FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
-    type Err = Error;
+impl_from_str!(
+    Sh<Pk>,
+    type Err = Error;,
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         Self::from_tree(&top)
     }
-}
+);
 
 impl<Pk: MiniscriptKey> Sh<Pk> {
     /// Get the Inner
@@ -401,29 +390,15 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Sh<Pk> {
 impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Sh<P> {
     type Output = Sh<Q>;
 
-    fn translate_pk<Fpk, Fpkh, E>(
-        &self,
-        mut translatefpk: Fpk,
-        mut translatefpkh: Fpkh,
-    ) -> Result<Self::Output, E>
+    fn translate_pk<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
-        Q: MiniscriptKey,
+        T: Translator<P, Q, E>,
     {
         let inner = match self.inner {
-            ShInner::Wsh(ref wsh) => {
-                ShInner::Wsh(wsh.translate_pk(&mut translatefpk, &mut translatefpkh)?)
-            }
-            ShInner::Wpkh(ref wpkh) => {
-                ShInner::Wpkh(wpkh.translate_pk(&mut translatefpk, &mut translatefpkh)?)
-            }
-            ShInner::SortedMulti(ref smv) => {
-                ShInner::SortedMulti(smv.translate_pk(&mut translatefpk)?)
-            }
-            ShInner::Ms(ref ms) => {
-                ShInner::Ms(ms.translate_pk(&mut translatefpk, &mut translatefpkh)?)
-            }
+            ShInner::Wsh(ref wsh) => ShInner::Wsh(wsh.translate_pk(t)?),
+            ShInner::Wpkh(ref wpkh) => ShInner::Wpkh(wpkh.translate_pk(t)?),
+            ShInner::SortedMulti(ref smv) => ShInner::SortedMulti(smv.translate_pk(t)?),
+            ShInner::Ms(ref ms) => ShInner::Ms(ms.translate_pk(t)?),
         };
         Ok(Sh { inner })
     }

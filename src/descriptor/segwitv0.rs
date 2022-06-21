@@ -16,7 +16,7 @@
 //! Implementation of Segwit Descriptors. Contains the implementation
 //! of wsh, wpkh and sortedmulti inside wsh.
 
-use std::fmt;
+use core::fmt;
 use std::str::FromStr;
 
 use elements::{self, secp256k1_zkp, Address, Script};
@@ -29,7 +29,7 @@ use crate::policy::{semantic, Liftable};
 use crate::util::varint_len;
 use crate::{
     elementssig_to_rawsig, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier,
-    Segwitv0, ToPublicKey, TranslatePk,
+    Segwitv0, ToPublicKey, TranslatePk, Translator,
 };
 /// A Segwitv0 wsh descriptor
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
@@ -112,14 +112,13 @@ impl<Pk: MiniscriptKey> Wsh<Pk> {
             varint_len(max_sat_elems) +
             max_sat_size)
     }
+}
 
+#[rustfmt::skip]
+impl_block_str!(
+    Wsh<Pk>,
     // Constructor for creating inner wsh for the sh fragment
-    pub(super) fn from_inner_tree(top: &expression::Tree<'_>) -> Result<Self, Error>
-    where
-        Pk: FromStr,
-        Pk::Hash: FromStr,
-        <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-        <Pk as FromStr>::Err: ToString,
+    pub(super) fn from_inner_tree(top: &expression::Tree<'_>, ) -> Result<Self, Error>
     {
         if top.name == "wsh" && top.args.len() == 1 {
             let top = &top.args[0];
@@ -141,7 +140,7 @@ impl<Pk: MiniscriptKey> Wsh<Pk> {
             )))
         }
     }
-}
+);
 
 impl<Pk: MiniscriptKey + ToPublicKey> Wsh<Pk> {
     /// Obtains the corresponding script pubkey for this descriptor.
@@ -230,14 +229,9 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Wsh<Pk> {
     }
 }
 
-impl<Pk> FromTree for Wsh<Pk>
-where
-    Pk: MiniscriptKey + FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
+impl_from_tree!(
+    Wsh<Pk>,
+    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
         if top.name == "elwsh" && top.args.len() == 1 {
             let top = &top.args[0];
             if top.name == "sortedmulti" {
@@ -258,7 +252,8 @@ where
             )))
         }
     }
-}
+);
+
 impl<Pk: MiniscriptKey> fmt::Debug for Wsh<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.inner {
@@ -276,21 +271,15 @@ impl<Pk: MiniscriptKey> fmt::Display for Wsh<Pk> {
     }
 }
 
-impl<Pk> FromStr for Wsh<Pk>
-where
-    Pk: MiniscriptKey + FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
-    type Err = Error;
-
+impl_from_str!(
+    Wsh<Pk>,
+    type Err = Error;,
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         Wsh::<Pk>::from_tree(&top)
     }
-}
+);
 
 impl<Pk: MiniscriptKey> ForEachKey<Pk> for Wsh<Pk> {
     fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: F) -> bool
@@ -308,23 +297,13 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Wsh<Pk> {
 impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Wsh<P> {
     type Output = Wsh<Q>;
 
-    fn translate_pk<Fpk, Fpkh, E>(
-        &self,
-        mut translatefpk: Fpk,
-        mut translatefpkh: Fpkh,
-    ) -> Result<Self::Output, E>
+    fn translate_pk<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
-        Q: MiniscriptKey,
+        T: Translator<P, Q, E>,
     {
         let inner = match self.inner {
-            WshInner::SortedMulti(ref smv) => {
-                WshInner::SortedMulti(smv.translate_pk(&mut translatefpk)?)
-            }
-            WshInner::Ms(ref ms) => {
-                WshInner::Ms(ms.translate_pk(&mut translatefpk, &mut translatefpkh)?)
-            }
+            WshInner::SortedMulti(ref smv) => WshInner::SortedMulti(smv.translate_pk(t)?),
+            WshInner::Ms(ref ms) => WshInner::Ms(ms.translate_pk(t)?),
         };
         Ok(Wsh { inner })
     }
@@ -493,14 +472,9 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Wpkh<Pk> {
     }
 }
 
-impl<Pk> FromTree for Wpkh<Pk>
-where
-    Pk: MiniscriptKey + FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
+impl_from_tree!(
+    Wpkh<Pk>,
+    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
         if top.name == "elwpkh" && top.args.len() == 1 {
             Ok(Wpkh::new(expression::terminal(&top.args[0], |pk| {
                 Pk::from_str(pk)
@@ -513,23 +487,17 @@ where
             )))
         }
     }
-}
+);
 
-impl<Pk> FromStr for Wpkh<Pk>
-where
-    Pk: MiniscriptKey + FromStr,
-    Pk::Hash: FromStr,
-    <Pk as FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as FromStr>::Err: ToString,
-{
-    type Err = Error;
-
+impl_from_str!(
+    Wpkh<Pk>,
+    type Err = Error;,
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
         Self::from_tree(&top)
     }
-}
+);
 
 impl<Pk: MiniscriptKey> ForEachKey<Pk> for Wpkh<Pk> {
     fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
@@ -544,16 +512,10 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Wpkh<Pk> {
 impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Wpkh<P> {
     type Output = Wpkh<Q>;
 
-    fn translate_pk<Fpk, Fpkh, E>(
-        &self,
-        mut translatefpk: Fpk,
-        _translatefpkh: Fpkh,
-    ) -> Result<Self::Output, E>
+    fn translate_pk<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
-        Q: MiniscriptKey,
+        T: Translator<P, Q, E>,
     {
-        Ok(Wpkh::new(translatefpk(&self.pk)?).expect("Uncompressed keys in Wpkh"))
+        Ok(Wpkh::new(t.pk(&self.pk)?).expect("Uncompressed keys in Wpkh"))
     }
 }

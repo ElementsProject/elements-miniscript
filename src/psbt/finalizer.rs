@@ -297,7 +297,7 @@ pub fn _interpreter_inp_check<C: secp256k1_zkp::Verification>(
     let csv = psbt.inputs()[index].sequence.unwrap_or(0xffffffff);
     let _amt = get_amt(psbt, index).map_err(|e| Error::InputError(e, index))?;
 
-    let interpreter = interpreter::Interpreter::from_txdata(spk, script_sig, witness, cltv, csv)
+    let interpreter = interpreter::Interpreter::from_txdata(spk, script_sig, witness, csv, cltv)
         .map_err(|e| Error::InputError(InputError::Interpreter(e), index))?;
 
     let prevouts = prevouts(psbt)?;
@@ -425,12 +425,20 @@ fn _finalize_inp(
                         .ecdsa_hash_ty()
                         .ok_or(Error::InputError(InputError::NonStandardSighashType, index))?,
                 );
-                desc.get_satisfaction((psbt_sat, cov_sat))
-                    .map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?
+                let sat = if !allow_mall {
+                    desc.get_satisfaction((psbt_sat, cov_sat))
+                } else {
+                    desc.get_satisfaction_mall((psbt_sat, cov_sat))
+                };
+                sat.map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?
             } else {
                 //generate the satisfaction witness and scriptsig
-                desc.get_satisfaction(psbt_sat)
-                    .map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?
+                let sat = if !allow_mall {
+                    desc.get_satisfaction(psbt_sat)
+                } else {
+                    desc.get_satisfaction_mall(psbt_sat)
+                };
+                sat.map_err(|e| Error::InputError(InputError::MiniscriptError(e), index))?
             }
         }
     };

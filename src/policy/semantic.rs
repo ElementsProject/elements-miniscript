@@ -18,11 +18,11 @@ use std::str::FromStr;
 use std::{fmt, str};
 
 use elements::hashes::hex::FromHex;
-use elements::hashes::{hash160, ripemd160, sha256, sha256d};
+use elements::hashes::{hash160, ripemd160, sha256d};
 
 use super::concrete::PolicyError;
 use super::ENTAILMENT_MAX_TERMINALS;
-use crate::{errstr, expression, timelock, Error, ForEach, ForEachKey, MiniscriptKey};
+use crate::{errstr, expression, timelock, Error, ForEach, ForEachKey, MiniscriptKey, Translator};
 
 /// Abstract policy which corresponds to the semantics of a Miniscript
 /// and which allows complex forms of analysis, e.g. filtering and
@@ -43,7 +43,7 @@ pub enum Policy<Pk: MiniscriptKey> {
     /// A relative locktime restriction
     Older(u32),
     /// A SHA256 whose preimage must be provided to satisfy the descriptor
-    Sha256(sha256::Hash),
+    Sha256(Pk::Sha256),
     /// A SHA256d whose preimage must be provided to satisfy the descriptor
     Hash256(sha256d::Hash),
     /// A RIPEMD160 whose preimage must be provided to satisfy the descriptor
@@ -81,49 +81,75 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// # Example
     ///
     /// ```
-    /// use elements_miniscript::{bitcoin::{hashes::hash160, PublicKey}, policy::semantic::Policy};
+    /// use elements_miniscript::{bitcoin::{hashes::hash160, PublicKey}, policy::semantic::Policy, Translator};
     /// use std::str::FromStr;
+    /// use std::collections::HashMap;
+    /// use elements_miniscript::bitcoin::hashes::sha256;
     /// let alice_pkh = "236ada020df3208d2517f4b0db03e16f92cd8cf1";
     /// let bob_pkh = "3e89b972416ae33870b4634d03b8cdc773200cac";
     /// let placeholder_policy = Policy::<String>::from_str("and(pkh(alice_pkh),pkh(bob_pkh))").unwrap();
     ///
-    /// let real_policy = placeholder_policy.translate_pkh(|placeholder| match placeholder.as_str() {
-    ///     "alice_pkh" => hash160::Hash::from_str(alice_pkh),
-    ///     "bob_pkh"   => hash160::Hash::from_str(bob_pkh),
-    ///     _ => panic!("unknown key hash!")
-    /// }).unwrap();
+    /// // Information to translator abstract String type keys to concrete bitcoin::PublicKey.
+    /// // In practice, wallets would map from String key names to BIP32 keys
+    /// struct StrPkTranslator {
+    ///     pk_map: HashMap<String, hash160::Hash>
+    /// }
     ///
-    /// let expected_policy = Policy::<PublicKey>::from_str(&format!("and(pkh({}),pkh({}))", alice_pkh, bob_pkh)).unwrap();
+    /// // If we also wanted to provide mapping of other associated types(sha256, older etc),
+    /// // we would use the general Translator Trait.
+    /// impl Translator<String, bitcoin::PublicKey, ()> for StrPkTranslator {
+    ///     fn pk(&mut self, pk: &String) -> Result<bitcoin::PublicKey, ()> {
+    ///         unreachable!("Policy does not contain any pk fragment");
+    ///     }
+    ///
+    ///     // Provides the translation public keys P::Hash -> Q::Hash
+    ///     // If our policy also contained other fragments, we could provide the translation here.
+    ///     fn pkh(&mut self, pkh: &String) -> Result<hash160::Hash, ()> {
+    ///         self.pk_map.get(pkh).copied().ok_or(()) // Dummy Err
+    ///     }
+    ///
+    ///     // If our policy also contained other fragments, we could provide the translation here.
+    ///     fn sha256(&mut self, sha256: &String) -> Result<sha256::Hash, ()> {
+    ///         unreachable!("Policy does not contain any sha256 fragment");
+    ///     }
+    /// }
+    ///
+    /// let mut pk_map = HashMap::new();
+    /// pk_map.insert(String::from("alice_pkh"), hash160::Hash::from_str(alice_pkh).unwrap());
+    /// pk_map.insert(String::from("bob_pkh"), hash160::Hash::from_str(bob_pkh).unwrap());
+    /// let mut t = StrPkTranslator { pk_map: pk_map };
+    ///
+    /// let real_policy = placeholder_policy.translate_pkh(&mut t).unwrap();
+    ///
+    /// let expected_policy = Policy::from_str(&format!("and(pkh({}),pkh({}))", alice_pkh, bob_pkh)).unwrap();
     /// assert_eq!(real_policy, expected_policy);
     /// ```
-    pub fn translate_pkh<Fpkh, Q, E>(&self, mut translatefpkh: Fpkh) -> Result<Policy<Q>, E>
+    pub fn translate_pkh<Q, E, T>(&self, t: &mut T) -> Result<Policy<Q>, E>
     where
-        Fpkh: FnMut(&Pk::Hash) -> Result<Q::Hash, E>,
+        T: Translator<Pk, Q, E>,
         Q: MiniscriptKey,
     {
-        self._translate_pkh(&mut translatefpkh)
+        self._translate_pkh(t)
     }
 
-    fn _translate_pkh<Fpkh, Q, E>(&self, translatefpkh: &mut Fpkh) -> Result<Policy<Q>, E>
+    fn _translate_pkh<Q, E, T>(&self, t: &mut T) -> Result<Policy<Q>, E>
     where
-        Fpkh: FnMut(&Pk::Hash) -> Result<Q::Hash, E>,
+        T: Translator<Pk, Q, E>,
         Q: MiniscriptKey,
     {
         match *self {
             Policy::Unsatisfiable => Ok(Policy::Unsatisfiable),
             Policy::Trivial => Ok(Policy::Trivial),
-            Policy::KeyHash(ref pkh) => translatefpkh(pkh).map(Policy::KeyHash),
-            Policy::Sha256(ref h) => Ok(Policy::Sha256(*h)),
+            Policy::KeyHash(ref pkh) => t.pkh(pkh).map(Policy::KeyHash),
+            Policy::Sha256(ref h) => t.sha256(h).map(Policy::Sha256),
             Policy::Hash256(ref h) => Ok(Policy::Hash256(*h)),
             Policy::Ripemd160(ref h) => Ok(Policy::Ripemd160(*h)),
             Policy::Hash160(ref h) => Ok(Policy::Hash160(*h)),
             Policy::After(n) => Ok(Policy::After(n)),
             Policy::Older(n) => Ok(Policy::Older(n)),
             Policy::Threshold(k, ref subs) => {
-                let new_subs: Result<Vec<Policy<Q>>, _> = subs
-                    .iter()
-                    .map(|sub| sub._translate_pkh(translatefpkh))
-                    .collect();
+                let new_subs: Result<Vec<Policy<Q>>, _> =
+                    subs.iter().map(|sub| sub._translate_pkh(t)).collect();
                 new_subs.map(|ok| Policy::Threshold(k, ok))
             }
         }
@@ -221,7 +247,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Policy<Pk> {
             Policy::KeyHash(ref pkh) => write!(f, "pkh({:?})", pkh),
             Policy::After(n) => write!(f, "after({})", n),
             Policy::Older(n) => write!(f, "older({})", n),
-            Policy::Sha256(h) => write!(f, "sha256({})", h),
+            Policy::Sha256(ref h) => write!(f, "sha256({})", h),
             Policy::Hash256(h) => write!(f, "hash256({})", h),
             Policy::Ripemd160(h) => write!(f, "ripemd160({})", h),
             Policy::Hash160(h) => write!(f, "hash160({})", h),
@@ -254,7 +280,7 @@ impl<Pk: MiniscriptKey> fmt::Display for Policy<Pk> {
             Policy::KeyHash(ref pkh) => write!(f, "pkh({})", pkh),
             Policy::After(n) => write!(f, "after({})", n),
             Policy::Older(n) => write!(f, "older({})", n),
-            Policy::Sha256(h) => write!(f, "sha256({})", h),
+            Policy::Sha256(ref h) => write!(f, "sha256({})", h),
             Policy::Hash256(h) => write!(f, "hash256({})", h),
             Policy::Ripemd160(h) => write!(f, "ripemd160({})", h),
             Policy::Hash160(h) => write!(f, "hash160({})", h),
@@ -279,15 +305,9 @@ impl<Pk: MiniscriptKey> fmt::Display for Policy<Pk> {
     }
 }
 
-impl<Pk> str::FromStr for Policy<Pk>
-where
-    Pk: MiniscriptKey + str::FromStr,
-    Pk::Hash: str::FromStr,
-    <Pk as str::FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
-{
-    type Err = Error;
-
+impl_from_str!(
+    Policy<Pk>,
+    type Err = Error;,
     fn from_str(s: &str) -> Result<Policy<Pk>, Error> {
         for ch in s.as_bytes() {
             if *ch < 20 || *ch > 127 {
@@ -298,18 +318,13 @@ where
         let tree = expression::Tree::from_str(s)?;
         expression::FromTree::from_tree(&tree)
     }
-}
+);
 
 serde_string_impl_pk!(Policy, "a miniscript semantic policy");
 
-impl<Pk> expression::FromTree for Policy<Pk>
-where
-    Pk: MiniscriptKey + str::FromStr,
-    Pk::Hash: str::FromStr,
-    <Pk as str::FromStr>::Err: ToString,
-    <<Pk as MiniscriptKey>::Hash as str::FromStr>::Err: ToString,
-{
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Policy<Pk>, Error> {
+impl_from_tree!(
+    Policy<Pk>,
+    fn from_tree(top: &expression::Tree) -> Result<Policy<Pk>, Error> {
         match (top.name, top.args.len()) {
             ("UNSATISFIABLE", 0) => Ok(Policy::Unsatisfiable),
             ("TRIVIAL", 0) => Ok(Policy::Trivial),
@@ -323,7 +338,7 @@ where
                 expression::parse_num(x).map(Policy::Older)
             }),
             ("sha256", 1) => expression::terminal(&top.args[0], |x| {
-                sha256::Hash::from_hex(x).map(Policy::Sha256)
+                Pk::Sha256::from_str(x).map(Policy::Sha256)
             }),
             ("hash256", 1) => expression::terminal(&top.args[0], |x| {
                 sha256d::Hash::from_hex(x).map(Policy::Hash256)
@@ -384,7 +399,7 @@ where
             _ => Err(errstr(top.name)),
         }
     }
-}
+);
 
 impl<Pk: MiniscriptKey> Policy<Pk> {
     /// Flatten out trees of `And`s and `Or`s; eliminate `Trivial` and
@@ -521,18 +536,18 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     }
 
     /// Filter a policy by eliminating relative timelock constraints
-    /// that are not satisfied at the given age.
-    pub fn at_age(mut self, time: u32) -> Policy<Pk> {
+    /// that are not satisfied at the given `age`.
+    pub fn at_age(mut self, age: u32) -> Policy<Pk> {
         self = match self {
             Policy::Older(t) => {
-                if t > time {
+                if t > age {
                     Policy::Unsatisfiable
                 } else {
                     Policy::Older(t)
                 }
             }
             Policy::Threshold(k, subs) => {
-                Policy::Threshold(k, subs.into_iter().map(|sub| sub.at_age(time)).collect())
+                Policy::Threshold(k, subs.into_iter().map(|sub| sub.at_age(age)).collect())
             }
             x => x,
         };
@@ -540,20 +555,20 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     }
 
     /// Filter a policy by eliminating absolute timelock constraints
-    /// that are not satisfied at the given age.
-    pub fn at_height(mut self, time: u32) -> Policy<Pk> {
+    /// that are not satisfied at the given `n` (`n OP_CHECKLOCKTIMEVERIFY`).
+    pub fn at_lock_time(mut self, n: u32) -> Policy<Pk> {
         self = match self {
             Policy::After(t) => {
-                if !timelock::absolute_timelocks_are_same_unit(t, time) {
+                if !timelock::absolute_timelocks_are_same_unit(t, n) {
                     Policy::Unsatisfiable
-                } else if t > time {
+                } else if t > n {
                     Policy::Unsatisfiable
                 } else {
                     Policy::After(t)
                 }
             }
             Policy::Threshold(k, subs) => {
-                Policy::Threshold(k, subs.into_iter().map(|sub| sub.at_height(time)).collect())
+                Policy::Threshold(k, subs.into_iter().map(|sub| sub.at_lock_time(n)).collect())
             }
             x => x,
         };
@@ -772,12 +787,15 @@ mod tests {
         assert_eq!(policy, Policy::After(1000));
         assert_eq!(policy.absolute_timelocks(), vec![1000]);
         assert!(policy.relative_timelocks().is_empty());
-        assert_eq!(policy.clone().at_height(0), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_height(999), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_height(1000), policy.clone());
-        assert_eq!(policy.clone().at_height(10000), policy.clone());
-        // Pass a UNIX timestamp to at_height while policy uses a block height.
-        assert_eq!(policy.clone().at_height(500_000_001), Policy::Unsatisfiable);
+        assert_eq!(policy.clone().at_lock_time(0), Policy::Unsatisfiable);
+        assert_eq!(policy.clone().at_lock_time(999), Policy::Unsatisfiable);
+        assert_eq!(policy.clone().at_lock_time(1000), policy.clone());
+        assert_eq!(policy.clone().at_lock_time(10000), policy.clone());
+        // Pass a UNIX timestamp to at_lock_time while policy uses a block height.
+        assert_eq!(
+            policy.clone().at_lock_time(500_000_001),
+            Policy::Unsatisfiable
+        );
         assert_eq!(policy.n_keys(), 0);
         assert_eq!(policy.minimum_n_keys(), Some(0));
 
@@ -786,16 +804,22 @@ mod tests {
         assert_eq!(policy, Policy::After(500_000_010));
         assert_eq!(policy.absolute_timelocks(), vec![500_000_010]);
         assert!(policy.relative_timelocks().is_empty());
-        // Pass a block height to at_height while policy uses a UNIX timestapm.
-        assert_eq!(policy.clone().at_height(0), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_height(999), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_height(1000), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_height(10000), Policy::Unsatisfiable);
-        // And now pass a UNIX timestamp to at_height while policy also uses a timestamp.
-        assert_eq!(policy.clone().at_height(500_000_000), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_height(500_000_001), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_height(500_000_010), policy.clone());
-        assert_eq!(policy.clone().at_height(500_000_012), policy.clone());
+        // Pass a block height to at_lock_time while policy uses a UNIX timestapm.
+        assert_eq!(policy.clone().at_lock_time(0), Policy::Unsatisfiable);
+        assert_eq!(policy.clone().at_lock_time(999), Policy::Unsatisfiable);
+        assert_eq!(policy.clone().at_lock_time(1000), Policy::Unsatisfiable);
+        assert_eq!(policy.clone().at_lock_time(10000), Policy::Unsatisfiable);
+        // And now pass a UNIX timestamp to at_lock_time while policy also uses a timestamp.
+        assert_eq!(
+            policy.clone().at_lock_time(500_000_000),
+            Policy::Unsatisfiable
+        );
+        assert_eq!(
+            policy.clone().at_lock_time(500_000_001),
+            Policy::Unsatisfiable
+        );
+        assert_eq!(policy.clone().at_lock_time(500_000_010), policy.clone());
+        assert_eq!(policy.clone().at_lock_time(500_000_012), policy.clone());
         assert_eq!(policy.n_keys(), 0);
         assert_eq!(policy.minimum_n_keys(), Some(0));
     }

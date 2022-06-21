@@ -13,7 +13,9 @@ use crate::miniscript::lex::TokenIter;
 use crate::miniscript::satisfy::Satisfaction;
 use crate::miniscript::types::{Correctness, ExtData, Malleability};
 use crate::policy::Liftable;
-use crate::{policy, Error, ForEach, MiniscriptKey, Satisfier, ToPublicKey, TranslatePk};
+use crate::{
+    policy, Error, ForEach, MiniscriptKey, Satisfier, ToPublicKey, TranslatePk, Translator,
+};
 mod outputs_pref;
 mod tx_ver;
 pub use self::outputs_pref::OutputsPref;
@@ -185,15 +187,9 @@ impl fmt::Display for NoExt {
 impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for NoExt {
     type Output = NoExt;
 
-    fn translate_pk<Fpk, Fpkh, E>(
-        &self,
-        mut _translatefpk: Fpk,
-        _translatefpkh: Fpkh,
-    ) -> Result<Self::Output, E>
+    fn translate_pk<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
-        Q: MiniscriptKey,
+        T: Translator<P, Q, E>,
     {
         match *self {}
     }
@@ -317,23 +313,13 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for CovenantExt {
 impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for CovenantExt {
     type Output = CovenantExt;
 
-    fn translate_pk<Fpk, Fpkh, E>(
-        &self,
-        translatefpk: Fpk,
-        translatefpkh: Fpkh,
-    ) -> Result<Self::Output, E>
+    fn translate_pk<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        Fpk: FnMut(&P) -> Result<Q, E>,
-        Fpkh: FnMut(&P::Hash) -> Result<Q::Hash, E>,
-        Q: MiniscriptKey,
+        T: Translator<P, Q, E>,
     {
         let ext = match self {
-            CovenantExt::VerEq(v) => {
-                CovenantExt::VerEq(v.translate_pk(translatefpk, translatefpkh)?)
-            }
-            CovenantExt::OutputsPref(p) => {
-                CovenantExt::OutputsPref(p.translate_pk(translatefpk, translatefpkh)?)
-            }
+            CovenantExt::VerEq(v) => CovenantExt::VerEq(v.translate_pk(t)?),
+            CovenantExt::OutputsPref(p) => CovenantExt::OutputsPref(p.translate_pk(t)?),
         };
         Ok(ext)
     }
