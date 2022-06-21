@@ -485,21 +485,21 @@ where
     }
 }
 
-impl<Pk, Ext, ExtQ> TranslateExt<Ext, ExtQ> for LegacyCSFSCov<Pk, Ext>
+impl<Pk, Ext, ExtQ, PArg, QArg> TranslateExt<Ext, ExtQ, PArg, QArg> for LegacyCSFSCov<Pk, Ext>
 where
     Pk: MiniscriptKey,
     Ext: Extension,
     ExtQ: Extension,
-    Ext: TranslateExt<Ext, ExtQ>,
-    <Ext as TranslateExt<Ext, ExtQ>>::Output: Extension,
+    Ext: TranslateExt<Ext, ExtQ, PArg, QArg>,
+    <Ext as TranslateExt<Ext, ExtQ, PArg, QArg>>::Output: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
 {
-    type Output = LegacyCSFSCov<Pk, <Ext as TranslateExt<Ext, ExtQ>>::Output>;
+    type Output = LegacyCSFSCov<Pk, <Ext as TranslateExt<Ext, ExtQ, PArg, QArg>>::Output>;
 
-    fn translate_ext<T, E, PArg, QArg>(&self, translator: &mut T) -> Result<Self::Output, E>
+    fn translate_ext<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
     where
         T: ExtTranslator<PArg, QArg, E>,
-        PArg: ExtParam,
-        QArg: ExtParam,
     {
         Ok(LegacyCSFSCov {
             pk: self.pk.clone(),

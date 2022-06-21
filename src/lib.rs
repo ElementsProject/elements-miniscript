@@ -253,21 +253,21 @@ where
 
 /// Converts a descriptor using abstract keys to one using specific keys. Uses translator `t` to do
 /// the actual translation function calls.
-pub trait TranslateExt<PExt, QExt>
+pub trait TranslateExt<PExt, QExt, PArg, QArg>
 where
     PExt: Extension,
     QExt: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
 {
     /// The associated output type.
     type Output;
 
     /// Translates a struct from one generic to another where the translations
     /// for Pk are provided by the given [`Translator`].
-    fn translate_ext<T, E, PArg, QArg>(&self, translator: &mut T) -> Result<Self::Output, E>
+    fn translate_ext<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
     where
-        T: ExtTranslator<PArg, QArg, E>,
-        PArg: ExtParam,
-        QArg: ExtParam;
+        T: ExtTranslator<PArg, QArg, E>;
 }
 
 /// Miniscript Error

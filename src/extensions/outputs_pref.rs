@@ -283,14 +283,18 @@ impl ParseableExt for OutputsPref {
     }
 }
 
-impl<PExt: Extension, QExt: Extension> TranslateExt<PExt, QExt> for OutputsPref {
+impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for OutputsPref
+where
+    PExt: Extension,
+    QExt: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
     type Output = OutputsPref;
 
-    fn translate_ext<T, E, PArg, QArg>(&self, _t: &mut T) -> Result<Self::Output, E>
+    fn translate_ext<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
         T: ExtTranslator<PArg, QArg, E>,
-        PArg: ExtParam,
-        QArg: ExtParam,
     {
         Ok(Self {
             pref: self.pref.clone(),

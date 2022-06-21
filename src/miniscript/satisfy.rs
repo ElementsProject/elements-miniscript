@@ -25,10 +25,11 @@ use std::{cmp, i64, mem};
 use bitcoin;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use elements::hashes::{hash160, ripemd160, sha256d};
+use elements::secp256k1_zkp::schnorr;
 use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, confidential, secp256k1_zkp, OutPoint, Script};
 
-use crate::extensions::ParseableExt;
+use crate::extensions::{CsfsMsg, ParseableExt};
 use crate::miniscript::limits::{
     LOCKTIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
@@ -205,8 +206,8 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
         None
     }
 
-    /// Lookup sig for CSFS fragment
-    fn lookup_csfs_sig(&self, _pk: &Pk) -> Option<elements::SchnorrSig> {
+    /// Lookup (msg, sig) for CSFS fragment
+    fn lookup_csfs_sig(&self, _pk: &XOnlyPublicKey, _msg: &CsfsMsg) -> Option<schnorr::Signature> {
         None
     }
 }
@@ -429,8 +430,8 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_tx()
     }
 
-    fn lookup_csfs_sig(&self, pk: &Pk) -> Option<elements::SchnorrSig> {
-        (**self).lookup_csfs_sig(pk)
+    fn lookup_csfs_sig(&self, pk: &XOnlyPublicKey, msg: &CsfsMsg) -> Option<schnorr::Signature> {
+        (**self).lookup_csfs_sig(pk, msg)
     }
 }
 
@@ -544,8 +545,8 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_tx()
     }
 
-    fn lookup_csfs_sig(&self, pk: &Pk) -> Option<elements::SchnorrSig> {
-        (**self).lookup_csfs_sig(pk)
+    fn lookup_csfs_sig(&self, pk: &XOnlyPublicKey, msg: &CsfsMsg) -> Option<schnorr::Signature> {
+        (**self).lookup_csfs_sig(pk, msg)
     }
 }
 
@@ -828,10 +829,10 @@ macro_rules! impl_tuple_satisfier {
                 None
             }
 
-            fn lookup_csfs_sig(&self, pk: &Pk) -> Option<elements::SchnorrSig> {
+            fn lookup_csfs_sig(&self, pk: &XOnlyPublicKey, msg: &CsfsMsg) -> Option<schnorr::Signature> {
                 let &($(ref $ty,)*) = self;
                 $(
-                    if let Some(result) = $ty.lookup_csfs_sig(pk) {
+                    if let Some(result) = $ty.lookup_csfs_sig(pk, msg) {
                         return Some(result);
                     }
                 )*

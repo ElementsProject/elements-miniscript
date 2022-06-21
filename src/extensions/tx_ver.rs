@@ -190,14 +190,18 @@ impl ParseableExt for VerEq {
     }
 }
 
-impl<PExt: Extension, QExt: Extension> TranslateExt<PExt, QExt> for VerEq {
+impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for VerEq
+where
+    PExt: Extension,
+    QExt: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
     type Output = VerEq;
 
-    fn translate_ext<T, E, PArg, QArg>(&self, _t: &mut T) -> Result<Self::Output, E>
+    fn translate_ext<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
         T: ExtTranslator<PArg, QArg, E>,
-        PArg: ExtParam,
-        QArg: ExtParam,
     {
         Ok(Self { n: self.n })
     }

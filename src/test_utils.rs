@@ -46,7 +46,7 @@ impl Translator<String, bitcoin::PublicKey, ()> for StrKeyTranslator {
 }
 
 /// Same as [`StrKeyTranslator`], but for [`bitcoin::XOnlyPublicKey`]
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct StrXOnlyKeyTranslator {
     pub pk_map: HashMap<String, bitcoin::XOnlyPublicKey>,
     pub pkh_map: HashMap<String, hash160::Hash>,

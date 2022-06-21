@@ -15,15 +15,35 @@ use crate::miniscript::satisfy::Satisfaction;
 use crate::miniscript::types::{Correctness, ExtData, Malleability};
 use crate::policy::Liftable;
 use crate::{policy, Error, ExtTranslator, MiniscriptKey, Satisfier, ToPublicKey, TranslateExt};
+
+mod csfs;
 mod outputs_pref;
 mod tx_ver;
+
+pub use csfs::{CheckSigFromStack, CsfsKey, CsfsMsg};
+
 pub use self::outputs_pref::OutputsPref;
 pub use self::tx_ver::VerEq;
 
+/// Trait for parsing extension arg from String
+/// Parse an argument from `s` given context of parent and argument position
+///
+/// When parsing all allowed parameters from string, we need to restrict where
+/// the parameters can be allowed. For example, csfs() should not have a txout
+/// parameter.
+///
+/// All parameters that should be parsed from extensions need to implement this
+pub trait ArgFromStr: Sized {
+    /// Parse an argument from `s` given context of parent and argument position
+    fn arg_from_str(s: &str, parent: &str, pos: usize) -> Result<Self, Error>;
+}
 /// Abstract parameter to Miniscript Extension
-pub trait ExtParam: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash + FromStr {}
+pub trait ExtParam: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash + ArgFromStr {}
 
-impl<T> ExtParam for T where T: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash + FromStr {}
+impl<T> ExtParam for T where
+    T: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash + ArgFromStr
+{
+}
 
 /// Extensions to elements-miniscript.
 /// Refer to implementations(unimplemented!) for example and tutorials
@@ -202,18 +222,18 @@ impl fmt::Display for NoExt {
     }
 }
 
-impl<PExt, QExt> TranslateExt<PExt, QExt> for NoExt
+impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for NoExt
 where
     PExt: Extension,
     QExt: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
 {
     type Output = NoExt;
 
-    fn translate_ext<T, E, PArg, QArg>(&self, _t: &mut T) -> Result<Self::Output, E>
+    fn translate_ext<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
         T: ExtTranslator<PArg, QArg, E>,
-        PArg: ExtParam,
-        QArg: ExtParam,
     {
         match *self {}
     }
@@ -226,6 +246,35 @@ pub enum CovenantExt {
     VerEq(VerEq),
     /// Outputs Prefix equal
     OutputsPref(OutputsPref),
+}
+
+/// All known Extension parameters/arguments
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
+pub enum CovExtArgs {
+    /// XOnlyPublicKey (in CSFS)
+    XOnlyKey(CsfsKey),
+    /// Message
+    CsfsMsg(CsfsMsg),
+}
+
+impl fmt::Display for CovExtArgs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CovExtArgs::XOnlyKey(x) => write!(f, "{}", x),
+            CovExtArgs::CsfsMsg(m) => write!(f, "{}", m),
+        }
+    }
+}
+
+impl ArgFromStr for CovExtArgs {
+    fn arg_from_str(s: &str, parent: &str, pos: usize) -> Result<Self, Error> {
+        let arg = match (parent, pos) {
+            ("csfs", 0) => CovExtArgs::XOnlyKey(CsfsKey::arg_from_str(s, parent, pos)?),
+            ("csfs", 1) => CovExtArgs::CsfsMsg(CsfsMsg::arg_from_str(s, parent, pos)?),
+            _ => return Err(Error::Unexpected(s.to_string())),
+        };
+        Ok(arg)
+    }
 }
 
 // Apply the function on each arm
@@ -322,25 +371,27 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for CovenantExt {
     }
 }
 
-impl<PExt, QExt> TranslateExt<PExt, QExt> for CovenantExt
+impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for CovenantExt
 where
     PExt: Extension,
     QExt: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
 {
     type Output = CovenantExt;
 
-    fn translate_ext<T, E, PArg, QArg>(&self, t: &mut T) -> Result<Self::Output, E>
+    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
         T: ExtTranslator<PArg, QArg, E>,
-        PArg: ExtParam,
-        QArg: ExtParam,
     {
         let ext = match self {
             CovenantExt::VerEq(v) => {
-                CovenantExt::VerEq(TranslateExt::<PExt, QExt>::translate_ext(v, t)?)
+                CovenantExt::VerEq(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(v, t)?)
             }
             CovenantExt::OutputsPref(p) => {
-                CovenantExt::OutputsPref(TranslateExt::<PExt, QExt>::translate_ext(p, t)?)
+                CovenantExt::OutputsPref(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(
+                    p, t,
+                )?)
             }
         };
         Ok(ext)
