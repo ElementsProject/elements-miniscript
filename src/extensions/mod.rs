@@ -92,13 +92,13 @@ pub trait Extension<Pk: MiniscriptKey>:
     /// Evaluate the fragment based on inputs from stack. If an implementation of this
     /// is provided the user can use the interpreter API to parse scripts from blockchain
     /// and check which constraints are satisfied
-    /// Output [`None`] when the ext fragment is dissatisfied, output Some(Err) when there is
-    /// an error in interpreter value. Finally, if the evaluation is successful output Some(Ok())
-    /// After taproot this should also access to the transaction data
+    /// Output Ok(true) when the ext fragment is satisfied.
+    /// Output Ok(false) when the ext fragment is dissatisfied,
+    /// Output Some(Err) when there is an error in interpreter value.
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut Stack<'txin>,
-    ) -> Option<Result<(), interpreter::Error>>;
+    ) -> Result<bool, interpreter::Error>;
 }
 
 /// No Extensions for elements-miniscript
@@ -167,7 +167,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
     fn evaluate<'intp, 'txin>(
         &'intp self,
         _stack: &mut Stack<'txin>,
-    ) -> Option<Result<(), interpreter::Error>> {
+    ) -> Result<bool, interpreter::Error> {
         match *self {}
     }
 }
@@ -287,7 +287,7 @@ where
         try_from_arms!(from_name_tree, name, children,)
     }
 
-    fn evaluate(&self, stack: &mut Stack) -> Option<Result<(), interpreter::Error>> {
+    fn evaluate(&self, stack: &mut Stack) -> Result<bool, interpreter::Error> {
         all_arms_fn!(self, evaluate, stack,)
     }
 }

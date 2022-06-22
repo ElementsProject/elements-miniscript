@@ -254,19 +254,16 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut interpreter::Stack<'txin>,
-    ) -> Option<Result<(), interpreter::Error>> {
+    ) -> Result<bool, interpreter::Error> {
         // Hash Outputs is at index 3
         let hash_outputs = stack[3];
-        if let Err(e) = hash_outputs.try_push() {
-            return Some(Err(e));
-        }
+        let hash_outputs = hash_outputs.try_push()?;
         // Maximum number of suffix elements
         let max_elems = MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE + 1;
-        let hash_outputs = hash_outputs.try_push().unwrap(); // TODO: refactor this later to avoid unwrap
         if hash_outputs.len() == 32 {
             // We want to cat the last 6 elements(5 cats) in suffix
             if stack.len() < max_elems {
-                return Some(Err(interpreter::Error::UnexpectedStackEnd));
+                return Err(interpreter::Error::UnexpectedStackEnd);
             }
             let mut outputs_builder = Vec::new();
             outputs_builder.extend(&self.pref);
@@ -281,16 +278,16 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
             }
             if sha256d::Hash::hash(&outputs_builder).as_inner() == hash_outputs {
                 stack.push(interpreter::Element::Satisfied);
-                Some(Ok(()))
+                Ok(true)
             } else {
-                None
+                Ok(false)
             }
         } else {
-            Some(Err(interpreter::Error::CovWitnessSizeErr {
+            Err(interpreter::Error::CovWitnessSizeErr {
                 pos: 9,
                 expected: 32,
                 actual: hash_outputs.len(),
-            }))
+            })
         }
     }
 }

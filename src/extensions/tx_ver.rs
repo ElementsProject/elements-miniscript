@@ -177,27 +177,24 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut interpreter::Stack<'txin>,
-    ) -> Option<Result<(), interpreter::Error>> {
+    ) -> Result<bool, interpreter::Error> {
         // Version is at index 11
         let ver = stack[11];
-        if let Err(e) = ver.try_push() {
-            return Some(Err(e));
-        }
-        let elem = ver.try_push().unwrap(); // TODO: refactor this later to avoid unwrap
+        let elem = ver.try_push()?;
         if elem.len() == 4 {
             let wit_ver = util::slice_to_u32_le(elem);
             if wit_ver == self.n {
                 stack.push(interpreter::Element::Satisfied);
-                Some(Ok(()))
+                Ok(true)
             } else {
-                None
+                Ok(false)
             }
         } else {
-            Some(Err(interpreter::Error::CovWitnessSizeErr {
+            Err(interpreter::Error::CovWitnessSizeErr {
                 pos: 1,
                 expected: 4,
                 actual: elem.len(),
-            }))
+            })
         }
     }
 }

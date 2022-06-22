@@ -737,13 +737,13 @@ where
                 Terminal::Ext(ref ext) => {
                     let res = ext.evaluate(&mut self.stack);
                     match res {
-                        Some(Ok(())) => {
+                        Ok(true) => {
                             return Some(Ok(SatisfiedConstraint::Ext {
                                 ext: Box::new(ext.clone()),
                             }))
                         }
-                        Some(Err(e)) => return Some(Err(e)),
-                        None => {}
+                        Err(e) => return Some(Err(e)),
+                        Ok(false) => {}
                     }
                 }
                 Terminal::Alt(ref sub) | Terminal::Swap(ref sub) | Terminal::Check(ref sub) => {
