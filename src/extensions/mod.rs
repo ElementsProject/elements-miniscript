@@ -2,7 +2,6 @@
 //! Users should implement the [`Extension`] trait to extend miniscript to have newer leaf nodes
 //! Look at examples for implementation of ver_eq fragment
 
-use std::str::FromStr;
 use std::{fmt, hash};
 
 use elements::script::Builder;
@@ -140,11 +139,10 @@ impl fmt::Display for NoExtParam {
     }
 }
 
-impl FromStr for NoExtParam {
-    type Err = ();
-
-    fn from_str(_s: &str) -> Result<Self, Self::Err> {
-        unreachable!("Called FromStr for NoExt")
+impl ArgFromStr for NoExtParam {
+    fn arg_from_str(_s: &str, _parent: &str, _pos: usize) -> Result<Self, Error> {
+        // This will be removed in a followup commit
+        unreachable!("Called ArgFromStr for NoExt")
     }
 }
 
@@ -241,11 +239,13 @@ where
 
 /// All known Extensions for elements-miniscript
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
-pub enum CovenantExt {
+pub enum CovenantExt<T: ExtParam> {
     /// Version Equal
     VerEq(VerEq),
     /// Outputs Prefix equal
     OutputsPref(OutputsPref),
+    /// CSFS
+    Csfs(CheckSigFromStack<T>),
 }
 
 /// All known Extension parameters/arguments
@@ -277,12 +277,21 @@ impl ArgFromStr for CovExtArgs {
     }
 }
 
+impl ArgFromStr for String {
+    fn arg_from_str(s: &str, _parent: &str, _pos: usize) -> Result<Self, Error> {
+        // Abstract strings are parsed without context as they don't contain any concrete
+        // information
+        Ok(String::from(s))
+    }
+}
+
 // Apply the function on each arm
 macro_rules! all_arms_fn {
     ($slf: ident, $trt: ident, $f: ident, $($args:ident, )* ) => {
         match $slf {
             CovenantExt::VerEq(v) => <VerEq as $trt>::$f(v, $($args, )*),
             CovenantExt::OutputsPref(p) => <OutputsPref as $trt>::$f(p, $($args, )*),
+            CovenantExt::Csfs(csfs) => csfs.$f($($args, )*),
         }
     };
 }
@@ -290,18 +299,20 @@ macro_rules! all_arms_fn {
 // try all extensions one by one
 // Self::$f(args)
 macro_rules! try_from_arms {
-    ( $trt: ident, $f: ident, $($args: ident, )*) => {
+    ( $trt: ident, $ext_arg: ident, $f: ident, $($args: ident, )*) => {
         if let Ok(v) = <VerEq as $trt>::$f($($args, )*) {
             Ok(CovenantExt::VerEq(v))
         } else if let Ok(v) = <OutputsPref as $trt>::$f($($args, )*) {
             Ok(CovenantExt::OutputsPref(v))
+        } else if let Ok(v) = <CheckSigFromStack<$ext_arg> as $trt>::$f($($args, )*) {
+            Ok(CovenantExt::Csfs(v))
         } else {
             Err(())
         }
     };
 }
 
-impl Extension for CovenantExt {
+impl<T: ExtParam> Extension for CovenantExt<T> {
     fn corr_prop(&self) -> Correctness {
         all_arms_fn!(self, Extension, corr_prop,)
     }
@@ -319,11 +330,11 @@ impl Extension for CovenantExt {
     }
 
     fn from_name_tree(name: &str, children: &[Tree<'_>]) -> Result<Self, ()> {
-        try_from_arms!(Extension, from_name_tree, name, children,)
+        try_from_arms!(Extension, T, from_name_tree, name, children,)
     }
 }
 
-impl ParseableExt for CovenantExt {
+impl ParseableExt for CovenantExt<CovExtArgs> {
     fn satisfy<Pk, S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
@@ -349,36 +360,28 @@ impl ParseableExt for CovenantExt {
     }
 
     fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
-        try_from_arms!(ParseableExt, from_token_iter, tokens,)
+        try_from_arms!(ParseableExt, CovExtArgs, from_token_iter, tokens,)
     }
 }
 
-impl fmt::Display for CovenantExt {
+impl<T: ExtParam> fmt::Display for CovenantExt<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CovenantExt::VerEq(v) => v.fmt(f),
             CovenantExt::OutputsPref(p) => p.fmt(f),
+            CovenantExt::Csfs(c) => c.fmt(f),
         }
     }
 }
 
-impl<Pk: MiniscriptKey> Liftable<Pk> for CovenantExt {
-    fn lift(&self) -> Result<policy::Semantic<Pk>, Error> {
-        match self {
-            CovenantExt::VerEq(v) => v.lift(),
-            CovenantExt::OutputsPref(p) => p.lift(),
-        }
-    }
-}
-
-impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for CovenantExt
+impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for CovenantExt<PArg>
 where
     PExt: Extension,
     QExt: Extension,
     PArg: ExtParam,
     QArg: ExtParam,
 {
-    type Output = CovenantExt;
+    type Output = CovenantExt<QArg>;
 
     fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
@@ -392,6 +395,9 @@ where
                 CovenantExt::OutputsPref(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(
                     p, t,
                 )?)
+            }
+            CovenantExt::Csfs(c) => {
+                CovenantExt::Csfs(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(c, t)?)
             }
         };
         Ok(ext)

@@ -514,22 +514,23 @@ mod tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use bitcoin;
+    use bitcoin::{self, XOnlyPublicKey};
     use elements::hashes::{hash160, sha256, Hash};
     use elements::taproot::TapLeafHash;
     use elements::{self, secp256k1_zkp};
 
     use super::{Miniscript, ScriptContext, Segwitv0, Tap};
+    use crate::extensions::CovExtArgs;
     use crate::miniscript::types::{self, ExtData, Property, Type};
     use crate::miniscript::Terminal;
     use crate::policy::Liftable;
     use crate::test_utils::{StrKeyTranslator, StrXOnlyKeyTranslator};
     use crate::{
-        hex_script, CovenantExt, DummyKey, DummyKeyHash, Satisfier, ToPublicKey, TranslatePk,
+        hex_script, CovenantExt, DummyKey, DummyKeyHash, NoExt, Satisfier, ToPublicKey, TranslatePk,
     };
 
-    type Tapscript = Miniscript<bitcoin::secp256k1::XOnlyPublicKey, Tap, CovenantExt>;
-    type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt>;
+    type Tapscript = Miniscript<XOnlyPublicKey, Tap, NoExt>;
+    type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt<CovExtArgs>>;
 
     fn pubkeys(n: usize) -> Vec<bitcoin::PublicKey> {
         let mut ret = Vec::with_capacity(n);
@@ -552,11 +553,7 @@ mod tests {
         ret
     }
 
-    fn string_rtt<Ctx: ScriptContext>(
-        script: Miniscript<bitcoin::PublicKey, Ctx, CovenantExt>,
-        expected_debug: &str,
-        expected_display: &str,
-    ) {
+    fn string_rtt(script: Segwitv0Script, expected_debug: &str, expected_display: &str) {
         assert_eq!(script.ty.corr.base, types::Base::B);
         let debug = format!("{:?}", script);
         let display = format!("{}", script);
@@ -571,7 +568,7 @@ mod tests {
     }
 
     fn dummy_string_rtt<Ctx: ScriptContext>(
-        script: Miniscript<DummyKey, Ctx, CovenantExt>,
+        script: Miniscript<DummyKey, Ctx, NoExt>,
         expected_debug: &str,
         expected_display: &str,
     ) {
@@ -682,7 +679,7 @@ mod tests {
 
     #[test]
     fn recursive_key_parsing() {
-        type MsStr = Miniscript<String, Segwitv0, CovenantExt>;
+        type MsStr = Miniscript<String, Segwitv0, NoExt>;
         assert!(MsStr::from_str("pk(slip77(k))").is_ok());
         assert!(MsStr::from_str("pk(musig(a))").is_ok());
         assert!(MsStr::from_str("pk(musig(a,b))").is_ok());
@@ -706,7 +703,7 @@ mod tests {
         .unwrap();
         let hash = hash160::Hash::from_inner([17; 20]);
 
-        let pkk_ms: Miniscript<DummyKey, Segwitv0, CovenantExt> = Miniscript {
+        let pkk_ms: Miniscript<DummyKey, Segwitv0> = Miniscript {
             node: Terminal::Check(Arc::new(Miniscript {
                 node: Terminal::PkK(DummyKey),
                 ty: Type::from_pk_k::<Segwitv0>(),
@@ -719,7 +716,7 @@ mod tests {
         };
         dummy_string_rtt(pkk_ms, "[B/onduesm]c:[K/onduesm]pk_k(DummyKey)", "pk()");
 
-        let pkh_ms: Miniscript<DummyKey, Segwitv0, CovenantExt> = Miniscript {
+        let pkh_ms: Miniscript<DummyKey, Segwitv0> = Miniscript {
             node: Terminal::Check(Arc::new(Miniscript {
                 node: Terminal::PkH(DummyKeyHash),
                 ty: Type::from_pk_h::<Segwitv0>(),

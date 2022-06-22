@@ -465,10 +465,10 @@ pub mod test {
 
     use super::{Miniscript, PkPkh};
     use crate::miniscript::context::Segwitv0;
-    use crate::CovenantExt;
+    use crate::NoExt;
 
     pub type TestData = (
-        Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt>,
+        Miniscript<bitcoin::PublicKey, Segwitv0, NoExt>,
         Vec<bitcoin::PublicKey>,
         Vec<hash160::Hash>,
         bool, // Indicates that the top-level contains public key or hashes

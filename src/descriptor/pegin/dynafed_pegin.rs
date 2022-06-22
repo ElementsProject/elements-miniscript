@@ -29,6 +29,7 @@ use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{desc_checksum, verify_checksum};
 use crate::expression::{self, FromTree};
+use crate::extensions::CovExtArgs;
 use crate::policy::{semantic, Liftable};
 use crate::{
     BtcDescriptor, BtcError, BtcFromTree, BtcLiftable, BtcPolicy, BtcSatisfier, BtcTree,
@@ -42,12 +43,14 @@ pub struct Pegin<Pk: MiniscriptKey> {
     /// The untweaked pegin bitcoin descriptor
     pub fed_desc: BtcDescriptor<Pk>,
     /// The redeem elements descriptor
-    pub elem_desc: Descriptor<Pk>,
+    ///
+    /// TODO: Allow pegin redeem descriptor with extensions
+    pub elem_desc: Descriptor<Pk, CovExtArgs>,
 }
 
 impl<Pk: MiniscriptKey> Pegin<Pk> {
     /// Create a new LegacyPegin descriptor
-    pub fn new(fed_desc: BtcDescriptor<Pk>, elem_desc: Descriptor<Pk>) -> Self {
+    pub fn new(fed_desc: BtcDescriptor<Pk>, elem_desc: Descriptor<Pk, CovExtArgs>) -> Self {
         Self {
             fed_desc,
             elem_desc,
@@ -94,7 +97,7 @@ impl_from_tree!(
             // TODO: Confirm with Andrew about the descriptor type for dynafed
             // Assuming sh(wsh) for now.
             let fed_desc = BtcDescriptor::<Pk>::from_tree(&ms_expr)?;
-            let elem_desc = Descriptor::<Pk>::from_tree(&top.args[1])?;
+            let elem_desc = Descriptor::<Pk, CovExtArgs>::from_tree(&top.args[1])?;
             Ok(Pegin::new(fed_desc, elem_desc))
         } else {
             Err(Error::Unexpected(format!(
@@ -292,7 +295,7 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
     /// at redeem time by the user.
     /// Users can use the DescrpitorTrait operations on the output Descriptor
     /// to obtain the characteristics of the elements descriptor.
-    pub fn into_user_descriptor(self) -> Descriptor<Pk> {
+    pub fn into_user_descriptor(self) -> Descriptor<Pk, CovExtArgs> {
         self.elem_desc
     }
 }

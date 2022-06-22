@@ -26,6 +26,7 @@ use elements::{self, confidential, Script, Transaction};
 
 use super::{sanity_check, Error, InputError, Psbt, PsbtInputSatisfier};
 use crate::descriptor::{CovSatisfier, LegacyCSFSCov};
+use crate::extensions::CovExtArgs;
 use crate::{
     interpreter, util, BareCtx, Descriptor, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0,
     Tap,
@@ -146,7 +147,7 @@ pub(super) fn prevouts(psbt: &Psbt) -> Result<Vec<elements::TxOut>, super::Error
 pub(super) fn get_descriptor(
     psbt: &Psbt,
     index: usize,
-) -> Result<Descriptor<PublicKey>, InputError> {
+) -> Result<Descriptor<PublicKey, CovExtArgs>, InputError> {
     // Figure out Scriptpubkey
     let script_pubkey = get_scriptpubkey(psbt, index)?;
     let inp = &psbt.inputs()[index];

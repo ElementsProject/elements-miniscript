@@ -23,6 +23,7 @@ use elements::hashes::{hash160, ripemd160, sha256d};
 #[cfg(feature = "compiler")]
 use {
     crate::descriptor::TapTree,
+    crate::extensions::NoExtParam,
     crate::miniscript::ScriptContext,
     crate::policy::compiler::CompilerError,
     crate::policy::compiler::OrdF64,
@@ -262,7 +263,10 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// the probabilitity of satisfaction for the respective branch in the TapTree.
     // TODO: We might require other compile errors for Taproot.
     #[cfg(feature = "compiler")]
-    pub fn compile_tr(&self, unspendable_key: Option<Pk>) -> Result<Descriptor<Pk>, Error> {
+    pub fn compile_tr(
+        &self,
+        unspendable_key: Option<Pk>,
+    ) -> Result<Descriptor<Pk, NoExtParam>, Error> {
         self.is_valid()?; // Check for validity
         match self.is_safe_nonmalleable() {
             (false, _) => Err(Error::from(CompilerError::TopLevelNonSafe)),

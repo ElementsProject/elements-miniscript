@@ -26,7 +26,7 @@ use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine};
 use elements::{self, secp256k1_zkp, sighash, EcdsaSigHashType, SigHash};
 
-use crate::extensions::ParseableExt;
+use crate::extensions::{CovExtArgs, ParseableExt};
 use crate::miniscript::context::NoChecks;
 use crate::miniscript::ScriptContext;
 use crate::{util, Descriptor, ElementsSig, Miniscript, Terminal, ToPublicKey};
@@ -181,7 +181,7 @@ impl MiniscriptKey for BitcoinKey {
     }
 }
 
-impl<'txin> Interpreter<'txin, CovenantExt> {
+impl<'txin> Interpreter<'txin, CovenantExt<CovExtArgs>> {
     /// Constructs an interpreter from the data of a spending transaction
     ///
     /// Accepts a signature-validating function. If you are willing to trust
@@ -506,7 +506,9 @@ where
     /// since it cannot distinguish between sorted and unsorted multisigs (and anyway
     /// it can only see the final keys, keyorigin info is lost in serializing to Bitcoin).
     /// x-only keys are translated to [`bitcoin::PublicKey`] with 0x02 prefix.
-    pub fn inferred_descriptor(&self) -> Result<Descriptor<bitcoin::PublicKey>, crate::Error> {
+    pub fn inferred_descriptor(
+        &self,
+    ) -> Result<Descriptor<bitcoin::PublicKey, CovExtArgs>, crate::Error> {
         Descriptor::from_str(&self.inferred_descriptor_string())
     }
 }
