@@ -189,6 +189,7 @@ impl<Pk: MiniscriptKey, T: ExtParam> Liftable<Pk> for Descriptor<Pk, T> {
             Descriptor::Sh(ref sh) => sh.lift(),
             Descriptor::LegacyCSFSCov(ref _cov) => Err(Error::CovError(CovError::CovenantLift)),
             Descriptor::Tr(ref tr) => tr.lift(),
+            Descriptor::TrExt(ref tr) => tr.lift(),
         }
     }
 }

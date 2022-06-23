@@ -238,6 +238,8 @@ pub enum Descriptor<Pk: MiniscriptKey, T: ExtParam = CovExtArgs> {
     Wsh(Wsh<Pk>),
     /// Pay-to-Taproot
     Tr(Tr<Pk, NoExt>),
+    /// Pay-to-Taproot
+    TrExt(Tr<Pk, CovenantExt<T>>),
     /// Covenant descriptor with all known extensions
     /// Downstream implementations of extensions should implement directly use descriptor API
     LegacyCSFSCov(LegacyCSFSCov<Pk, CovenantExt<T>>),
@@ -413,6 +415,15 @@ impl<Pk: MiniscriptKey, T: ExtParam> Descriptor<Pk, T> {
         Ok(Descriptor::Tr(Tr::new(key, script)?))
     }
 
+    /// Create new tr descriptor
+    /// Errors when miniscript exceeds resource limits under Tap context
+    pub fn new_tr_ext(
+        key: Pk,
+        script: Option<tr::TapTree<Pk, CovenantExt<T>>>,
+    ) -> Result<Self, Error> {
+        Ok(Descriptor::TrExt(Tr::new(key, script)?))
+    }
+
     /// Get the [DescriptorType] of [Descriptor]
     pub fn desc_type(&self) -> DescriptorType {
         match *self {
@@ -434,6 +445,7 @@ impl<Pk: MiniscriptKey, T: ExtParam> Descriptor<Pk, T> {
             },
             Descriptor::LegacyCSFSCov(ref _cov) => DescriptorType::Cov,
             Descriptor::Tr(ref _tr) => DescriptorType::Tr,
+            Descriptor::TrExt(ref _tr) => DescriptorType::Cov,
         }
     }
 
@@ -459,6 +471,7 @@ impl<Pk: MiniscriptKey, T: ExtParam> Descriptor<Pk, T> {
             Descriptor::Sh(ref sh) => sh.sanity_check(),
             Descriptor::LegacyCSFSCov(ref cov) => cov.sanity_check(),
             Descriptor::Tr(ref tr) => tr.sanity_check(),
+            Descriptor::TrExt(ref tr) => tr.sanity_check(),
         }
     }
 
@@ -480,6 +493,7 @@ impl<Pk: MiniscriptKey, T: ExtParam> Descriptor<Pk, T> {
             Descriptor::Sh(ref sh) => sh.max_satisfaction_weight()?,
             Descriptor::LegacyCSFSCov(ref cov) => cov.max_satisfaction_weight()?,
             Descriptor::Tr(ref tr) => tr.max_satisfaction_weight()?,
+            Descriptor::TrExt(ref tr) => tr.max_satisfaction_weight()?,
         };
         Ok(weight)
     }
@@ -530,6 +544,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk, CovExtArgs> {
             Descriptor::Sh(ref sh) => Ok(sh.address(Some(blinder), params)),
             Descriptor::LegacyCSFSCov(ref cov) => Ok(cov.address(Some(blinder), params)),
             Descriptor::Tr(ref tr) => Ok(tr.address(Some(blinder), params)),
+            Descriptor::TrExt(ref tr) => Ok(tr.address(Some(blinder), params)),
         }
     }
 
@@ -549,6 +564,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk, CovExtArgs> {
             Descriptor::Sh(ref sh) => Ok(sh.address(None, params)),
             Descriptor::LegacyCSFSCov(ref cov) => Ok(cov.address(None, params)),
             Descriptor::Tr(ref tr) => Ok(tr.address(None, params)),
+            Descriptor::TrExt(ref tr) => Ok(tr.address(None, params)),
         }
     }
 
@@ -562,6 +578,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk, CovExtArgs> {
             Descriptor::Sh(ref sh) => sh.script_pubkey(),
             Descriptor::LegacyCSFSCov(ref cov) => cov.script_pubkey(),
             Descriptor::Tr(ref tr) => tr.script_pubkey(),
+            Descriptor::TrExt(ref tr) => tr.script_pubkey(),
         }
     }
 
@@ -581,6 +598,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk, CovExtArgs> {
             Descriptor::Sh(ref sh) => sh.unsigned_script_sig(),
             Descriptor::LegacyCSFSCov(_) => Script::new(),
             Descriptor::Tr(_) => Script::new(),
+            Descriptor::TrExt(_) => Script::new(),
         }
     }
 
@@ -598,6 +616,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk, CovExtArgs> {
             Descriptor::Wsh(ref wsh) => Ok(wsh.inner_script()),
             Descriptor::Sh(ref sh) => Ok(sh.inner_script()),
             Descriptor::Tr(_) => Err(Error::TrNoScriptCode),
+            Descriptor::TrExt(_) => Err(Error::TrNoScriptCode),
             Descriptor::LegacyCSFSCov(ref cov) => Ok(cov.inner_script()),
         }
     }
@@ -618,6 +637,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk, CovExtArgs> {
             Descriptor::Sh(ref sh) => Ok(sh.ecdsa_sighash_script_code()),
             Descriptor::LegacyCSFSCov(ref cov) => Ok(cov.ecdsa_sighash_script_code()),
             Descriptor::Tr(_) => Err(Error::TrNoScriptCode),
+            Descriptor::TrExt(_) => Err(Error::TrNoScriptCode),
         }
     }
 
@@ -636,6 +656,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk, CovExtArgs> {
             Descriptor::Sh(ref sh) => sh.get_satisfaction(satisfier),
             Descriptor::LegacyCSFSCov(ref cov) => cov.get_satisfaction(satisfier),
             Descriptor::Tr(ref tr) => tr.get_satisfaction(satisfier),
+            Descriptor::TrExt(ref tr) => tr.get_satisfaction(satisfier),
         }
     }
 
@@ -654,6 +675,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk, CovExtArgs> {
             Descriptor::Sh(ref sh) => sh.get_satisfaction_mall(satisfier),
             Descriptor::LegacyCSFSCov(ref cov) => cov.get_satisfaction_mall(satisfier),
             Descriptor::Tr(ref tr) => tr.get_satisfaction_mall(satisfier),
+            Descriptor::TrExt(ref tr) => tr.get_satisfaction_mall(satisfier),
         }
     }
 
@@ -691,6 +713,9 @@ where
             Descriptor::Sh(ref sh) => Descriptor::Sh(sh.translate_pk(t)?),
             Descriptor::Wsh(ref wsh) => Descriptor::Wsh(wsh.translate_pk(t)?),
             Descriptor::Tr(ref tr) => Descriptor::Tr(tr.translate_pk(t)?),
+            Descriptor::TrExt(ref _tr) => {
+                panic!("Tried to convert an extensions descriptor into NoExt")
+            }
             Descriptor::LegacyCSFSCov(ref _cov) => {
                 // Translation in descriptors at high level cannot work with extensions
                 // as we cannot abstract over extensions. Covenants have CovenantExt and
@@ -719,6 +744,7 @@ impl<Pk: MiniscriptKey, T: ExtParam> ForEachKey<Pk> for Descriptor<Pk, T> {
             Descriptor::Sh(ref sh) => sh.for_each_key(pred),
             Descriptor::LegacyCSFSCov(ref cov) => cov.for_any_key(pred),
             Descriptor::Tr(ref tr) => tr.for_each_key(pred),
+            Descriptor::TrExt(ref tr) => tr.for_each_key(pred),
         }
     }
 }
@@ -968,8 +994,15 @@ impl_from_str!(
         // Tr::from_str will check the checksum
         // match "tr(" to handle more extensibly
         if s.starts_with(&format!("{}tr", ELMTS_STR)) {
-            let tr = Tr::from_str(s)?;
-            Ok(Descriptor::Tr(tr))
+            // First try parsing without extensions
+            match Tr::<Pk, NoExt>::from_str(s) {
+                Ok(tr) => Ok(Descriptor::Tr(tr)),
+                Err(_) => {
+                    // Try parsing with extensions
+                    let tr = Tr::<Pk, CovenantExt<T>>::from_str(s)?;
+                    Ok(Descriptor::TrExt(tr))
+                }
+            }
         } else {
             let desc_str = verify_checksum(s)?;
             let top = expression::Tree::from_str(desc_str)?;
@@ -988,6 +1021,7 @@ impl<Pk: MiniscriptKey, T: ExtParam> fmt::Debug for Descriptor<Pk, T> {
             Descriptor::Wsh(ref sub) => write!(f, "{:?}", sub),
             Descriptor::LegacyCSFSCov(ref cov) => write!(f, "{:?}", cov),
             Descriptor::Tr(ref tr) => write!(f, "{:?}", tr),
+            Descriptor::TrExt(ref tr) => write!(f, "{:?}", tr),
         }
     }
 }
@@ -1002,6 +1036,7 @@ impl<Pk: MiniscriptKey, T: ExtParam> fmt::Display for Descriptor<Pk, T> {
             Descriptor::Wsh(ref sub) => write!(f, "{}", sub),
             Descriptor::LegacyCSFSCov(ref cov) => write!(f, "{}", cov),
             Descriptor::Tr(ref tr) => write!(f, "{}", tr),
+            Descriptor::TrExt(ref tr) => write!(f, "{}", tr),
         }
     }
 }
