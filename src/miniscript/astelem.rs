@@ -59,21 +59,20 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
     }
 }
 
-impl<Pk, Q, Ctx, Ext> TranslatePk<Pk, Q> for Terminal<Pk, Ctx, Ext>
+impl<Pk, Q, Ctx, Ext, QExt> TranslatePk<Pk, Q, Ext, QExt> for Terminal<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Q: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk> + Extension<Q> + TranslatePk<Pk, Q>,
-    Ext: TranslatePk<Pk, Q>,
-    <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
+    Ext: Extension<Pk>,
+    QExt: Extension<Q>,
 {
-    type Output = Terminal<Q, Ctx, <Ext as TranslatePk<Pk, Q>>::Output>;
+    type Output = Terminal<Q, Ctx, QExt>;
 
     /// Converts an AST element with one public key type to one of another public key type.
     fn translate_pk<T, E>(&self, translate: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<Pk, Q, E>,
+        T: Translator<Pk, Q, E, Ext, QExt>,
     {
         self.real_translate_pk(translate)
     }
@@ -127,16 +126,15 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
         }
     }
 
-    pub(super) fn real_translate_pk<Q, CtxQ, T, E>(
+    pub(super) fn real_translate_pk<Q, CtxQ, QExt, T, E>(
         &self,
         t: &mut T,
-    ) -> Result<Terminal<Q, CtxQ, <Ext as TranslatePk<Pk, Q>>::Output>, E>
+    ) -> Result<Terminal<Q, CtxQ, QExt>, E>
     where
         Q: MiniscriptKey,
         CtxQ: ScriptContext,
-        T: Translator<Pk, Q, E>,
-        Ext: TranslatePk<Pk, Q>,
-        <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
+        T: Translator<Pk, Q, E, Ext, QExt>,
+        QExt: Extension<Q>,
     {
         let frag: Terminal<Q, CtxQ, _> = match *self {
             Terminal::PkK(ref p) => Terminal::PkK(t.pk(p)?),
@@ -202,7 +200,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
                 let keys: Result<Vec<Q>, _> = keys.iter().map(|k| t.pk(k)).collect();
                 Terminal::MultiA(k, keys?)
             }
-            Terminal::Ext(ref e) => Terminal::Ext(e.translate_pk(t)?),
+            Terminal::Ext(ref e) => Terminal::Ext(t.ext(e)?),
         };
         Ok(frag)
     }

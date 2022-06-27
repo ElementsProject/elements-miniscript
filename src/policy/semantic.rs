@@ -81,7 +81,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// # Example
     ///
     /// ```
-    /// use elements_miniscript::{bitcoin::{hashes::hash160, PublicKey}, policy::semantic::Policy, Translator};
+    /// use elements_miniscript::{bitcoin::{hashes::hash160, PublicKey}, policy::semantic::Policy, Translator, NoExt};
     /// use std::str::FromStr;
     /// use std::collections::HashMap;
     /// use elements_miniscript::bitcoin::hashes::sha256;
@@ -112,6 +112,11 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     ///     fn sha256(&mut self, sha256: &String) -> Result<sha256::Hash, ()> {
     ///         unreachable!("Policy does not contain any sha256 fragment");
     ///     }
+    ///
+    ///     // No extensions in policy
+    ///     fn ext(&mut self, sha256: &NoExt) -> Result<NoExt, ()> {
+    ///         unreachable!("No extensions in policy");
+    ///     }
     /// }
     ///
     /// let mut pk_map = HashMap::new();
@@ -126,7 +131,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// ```
     pub fn translate_pkh<Q, E, T>(&self, t: &mut T) -> Result<Policy<Q>, E>
     where
-        T: Translator<Pk, Q, E>,
+        T: Translator<Pk, Q, E>, // no extensions in policy yet
         Q: MiniscriptKey,
     {
         self._translate_pkh(t)

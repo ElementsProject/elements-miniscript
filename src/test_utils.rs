@@ -6,7 +6,7 @@ use std::str::FromStr;
 use bitcoin::hashes::{hash160, sha256};
 use bitcoin::secp256k1;
 
-use crate::{MiniscriptKey, Translator};
+use crate::{MiniscriptKey, NoExt, Translator};
 
 /// Translate from a String MiniscriptKey type to bitcoin::PublicKey
 /// If the hashmap is populated, this will lookup for keys in HashMap
@@ -43,6 +43,10 @@ impl Translator<String, bitcoin::PublicKey, ()> for StrKeyTranslator {
         .unwrap();
         Ok(hash)
     }
+
+    fn ext(&mut self, _e: &NoExt) -> Result<NoExt, ()> {
+        panic!("No Extensions translated in this test")
+    }
 }
 
 /// Same as [`StrKeyTranslator`], but for [`bitcoin::XOnlyPublicKey`]
@@ -77,6 +81,10 @@ impl Translator<String, bitcoin::XOnlyPublicKey, ()> for StrXOnlyKeyTranslator {
         )
         .unwrap();
         Ok(hash)
+    }
+
+    fn ext(&mut self, _e: &NoExt) -> Result<NoExt, ()> {
+        panic!("No Extensions translated in this test")
     }
 }
 

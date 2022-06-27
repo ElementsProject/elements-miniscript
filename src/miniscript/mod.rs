@@ -298,21 +298,21 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> ForEachKey<Pk>
     }
 }
 
-impl<Pk, Q, Ctx, Ext> TranslatePk<Pk, Q> for Miniscript<Pk, Ctx, Ext>
+impl<Pk, Q, Ctx, Ext, QExt> TranslatePk<Pk, Q, Ext, QExt> for Miniscript<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Q: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk> + TranslatePk<Pk, Q>,
-    <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
+    Ext: Extension<Pk>,
+    QExt: Extension<Q>,
 {
-    type Output = Miniscript<Q, Ctx, <Ext as TranslatePk<Pk, Q>>::Output>;
+    type Output = Miniscript<Q, Ctx, QExt>;
 
     /// Translates a struct from one generic to another where the translation
     /// for Pk is provided by [`Translator`]
     fn translate_pk<T, E>(&self, translate: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<Pk, Q, E>,
+        T: Translator<Pk, Q, E, Ext, QExt>,
     {
         self.real_translate_pk(translate)
     }
@@ -327,16 +327,17 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
         self.node.real_for_each_key(pred)
     }
 
-    pub(super) fn real_translate_pk<Q, CtxQ, T, FuncError>(
+    pub(super) fn real_translate_pk<Q, CtxQ, QExt, T, FuncError>(
         &self,
         t: &mut T,
-    ) -> Result<Miniscript<Q, CtxQ, <Ext as TranslatePk<Pk, Q>>::Output>, FuncError>
+    ) -> Result<Miniscript<Q, CtxQ, QExt>, FuncError>
     where
         Q: MiniscriptKey,
         CtxQ: ScriptContext,
-        T: Translator<Pk, Q, FuncError>,
-        Ext: TranslatePk<Pk, Q>,
-        <Ext as TranslatePk<Pk, Q>>::Output: Extension<Q>,
+        T: Translator<Pk, Q, FuncError, Ext, QExt>,
+        Ctx: ScriptContext,
+        Ext: Extension<Pk>,
+        QExt: Extension<Q>,
     {
         let inner = self.node.real_translate_pk(t)?;
         let ms = Miniscript {

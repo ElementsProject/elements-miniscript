@@ -24,6 +24,7 @@ use std::ops::Deref;
 use std::{error, fmt};
 
 use bitcoin;
+use bitcoin::hashes::sha256;
 use elements::hashes::{hash160, ripemd160, sha256d};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::secp256k1_zkp::{self as secp256k1, Secp256k1};
@@ -35,8 +36,8 @@ use crate::miniscript::iter::PkPkh;
 use crate::miniscript::limits::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crate::miniscript::satisfy::{elementssig_from_rawsig, After, Older};
 use crate::{
-    descriptor, interpreter, Descriptor, DescriptorPublicKey, ElementsSig, MiniscriptKey,
-    PkTranslator, Preimage32, Satisfier, ToPublicKey, TranslatePk,
+    descriptor, interpreter, Descriptor, DescriptorPublicKey, ElementsSig, MiniscriptKey, NoExt,
+    Preimage32, Satisfier, ToPublicKey, TranslatePk, Translator,
 };
 
 mod finalizer;
@@ -981,7 +982,7 @@ struct XOnlyHashLookUp(
     pub secp256k1::Secp256k1<secp256k1::VerifyOnly>,
 );
 
-impl PkTranslator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionError>
+impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionError>
     for XOnlyHashLookUp
 {
     fn pk(
@@ -1001,6 +1002,17 @@ impl PkTranslator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::Conversio
         self.0.insert(hash, xonly);
         Ok(hash)
     }
+
+    fn sha256(
+        &mut self,
+        sha256: &sha256::Hash,
+    ) -> Result<sha256::Hash, descriptor::ConversionError> {
+        Ok(*sha256)
+    }
+
+    fn ext(&mut self, e: &NoExt) -> Result<NoExt, descriptor::ConversionError> {
+        Ok(e.clone())
+    }
 }
 
 // Traverse the pkh lookup while maintaining a reverse map for storing the map
@@ -1010,7 +1022,7 @@ struct KeySourceLookUp(
     pub secp256k1::Secp256k1<secp256k1::VerifyOnly>,
 );
 
-impl PkTranslator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionError>
+impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionError>
     for KeySourceLookUp
 {
     fn pk(
@@ -1030,6 +1042,17 @@ impl PkTranslator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::Conversio
         xpk: &DescriptorPublicKey,
     ) -> Result<hash160::Hash, descriptor::ConversionError> {
         Ok(self.pk(xpk)?.to_pubkeyhash())
+    }
+
+    fn sha256(
+        &mut self,
+        sha256: &sha256::Hash,
+    ) -> Result<sha256::Hash, descriptor::ConversionError> {
+        Ok(*sha256)
+    }
+
+    fn ext(&mut self, e: &NoExt) -> Result<NoExt, descriptor::ConversionError> {
+        Ok(e.clone())
     }
 }
 

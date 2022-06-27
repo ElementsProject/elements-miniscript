@@ -25,7 +25,7 @@ use crate::extensions::ParseableExt;
 use crate::miniscript::context::{NoChecks, ScriptContext};
 use crate::util::is_v1_p2tr;
 use crate::{
-    BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, PkTranslator, Segwitv0, Tap, TranslatePk,
+    BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, TranslatePk, Translator,
 };
 
 /// Attempts to parse a slice as a Bitcoin public key, checking compressedness
@@ -458,13 +458,25 @@ where
     fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks, ExtQ> {
         struct TranslateFullPk;
 
-        impl PkTranslator<bitcoin::PublicKey, BitcoinKey, ()> for TranslateFullPk {
+        impl<Ext: Extension<bitcoin::PublicKey>, ExtQ: Extension<BitcoinKey>>
+            Translator<bitcoin::PublicKey, BitcoinKey, (), Ext, ExtQ> for TranslateFullPk
+        where
+            Ext: TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = ExtQ>,
+        {
             fn pk(&mut self, pk: &bitcoin::PublicKey) -> Result<BitcoinKey, ()> {
                 Ok(BitcoinKey::Fullkey(*pk))
             }
 
             fn pkh(&mut self, pkh: &hash160::Hash) -> Result<TypedHash160, ()> {
                 Ok(TypedHash160::FullKey(*pkh))
+            }
+
+            fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
+                Ok(*sha256)
+            }
+
+            fn ext(&mut self, e: &Ext) -> Result<ExtQ, ()> {
+                e.translate_pk(self)
             }
         }
 
@@ -482,13 +494,25 @@ where
         // specify the () error type as this cannot error
         struct TranslateXOnlyPk;
 
-        impl PkTranslator<bitcoin::XOnlyPublicKey, BitcoinKey, ()> for TranslateXOnlyPk {
+        impl<Ext: Extension<bitcoin::XOnlyPublicKey>, ExtQ: Extension<BitcoinKey>>
+            Translator<bitcoin::XOnlyPublicKey, BitcoinKey, (), Ext, ExtQ> for TranslateXOnlyPk
+        where
+            Ext: TranslatePk<bitcoin::XOnlyPublicKey, BitcoinKey, Output = ExtQ>,
+        {
             fn pk(&mut self, pk: &bitcoin::XOnlyPublicKey) -> Result<BitcoinKey, ()> {
                 Ok(BitcoinKey::XOnlyPublicKey(*pk))
             }
 
             fn pkh(&mut self, pkh: &hash160::Hash) -> Result<TypedHash160, ()> {
                 Ok(TypedHash160::XonlyKey(*pkh))
+            }
+
+            fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
+                Ok(*sha256)
+            }
+
+            fn ext(&mut self, e: &Ext) -> Result<ExtQ, ()> {
+                e.translate_pk(self)
             }
         }
         self.real_translate_pk(&mut TranslateXOnlyPk)

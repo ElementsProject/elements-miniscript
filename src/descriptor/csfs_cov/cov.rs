@@ -466,18 +466,18 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> ForEachKey<Pk> for LegacyCSFSCov<Pk,
     }
 }
 
-impl<P, Q, Ext> TranslatePk<P, Q> for LegacyCSFSCov<P, Ext>
+impl<P, Q, Ext, QExt> TranslatePk<P, Q, Ext, QExt> for LegacyCSFSCov<P, Ext>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
-    Ext: Extension<P> + TranslatePk<P, Q>,
-    <Ext as TranslatePk<P, Q>>::Output: Extension<Q>,
+    Ext: Extension<P>,
+    QExt: Extension<Q>,
 {
-    type Output = LegacyCSFSCov<Q, <Ext as TranslatePk<P, Q>>::Output>;
+    type Output = LegacyCSFSCov<Q, QExt>;
 
     fn translate_pk<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<P, Q, E>,
+        T: Translator<P, Q, E, Ext, QExt>,
     {
         Ok(LegacyCSFSCov {
             pk: t.pk(&self.pk)?,

@@ -208,10 +208,12 @@ where
 
 /// Describes an object that can translate various keys and hashes from one key to the type
 /// associated with the other key. Used by the [`TranslatePk`] trait to do the actual translations.
-pub trait Translator<P, Q, E>
+pub trait Translator<P, Q, E, PExt = NoExt, QExt = NoExt>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
+    PExt: Extension<P>,
+    QExt: Extension<Q>,
 {
     /// Translates public keys P -> Q.
     fn pk(&mut self, pk: &P) -> Result<Q, E>;
@@ -221,48 +223,19 @@ where
 
     /// Translates sha256 hashes from P::Sha256 -> Q::Sha256
     fn sha256(&mut self, sha256: &P::Sha256) -> Result<Q::Sha256, E>;
-}
 
-/// Provides the conversion information required in [`TranslatePk`].
-/// Same as [`Translator`], but useful when all the associated types apart
-/// from Pk/Pkh don't change in translation
-pub trait PkTranslator<P, Q, E>
-where
-    P: MiniscriptKey,
-    Q: MiniscriptKey<Sha256 = P::Sha256>,
-{
-    /// Provides the translation public keys P -> Q
-    fn pk(&mut self, pk: &P) -> Result<Q, E>;
-
-    /// Provides the translation public keys hashes P::Hash -> Q::Hash
-    fn pkh(&mut self, pkh: &P::Hash) -> Result<Q::Hash, E>;
-}
-
-impl<P, Q, E, T> Translator<P, Q, E> for T
-where
-    T: PkTranslator<P, Q, E>,
-    P: MiniscriptKey,
-    Q: MiniscriptKey<Sha256 = P::Sha256>,
-{
-    fn pk(&mut self, pk: &P) -> Result<Q, E> {
-        <Self as PkTranslator<P, Q, E>>::pk(self, pk)
-    }
-
-    fn pkh(&mut self, pkh: &<P as MiniscriptKey>::Hash) -> Result<<Q as MiniscriptKey>::Hash, E> {
-        <Self as PkTranslator<P, Q, E>>::pkh(self, pkh)
-    }
-
-    fn sha256(&mut self, sha256: &<P as MiniscriptKey>::Sha256) -> Result<<Q>::Sha256, E> {
-        Ok(sha256.clone())
-    }
+    /// Translates one extension to another
+    fn ext(&mut self, e: &PExt) -> Result<QExt, E>;
 }
 
 /// Converts a descriptor using abstract keys to one using specific keys. Uses translator `t` to do
 /// the actual translation function calls.
-pub trait TranslatePk<P, Q>
+pub trait TranslatePk<P, Q, PExt = NoExt, QExt = NoExt>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
+    PExt: Extension<P>,
+    QExt: Extension<Q>,
 {
     /// The associated output type. This must be `Self<Q>`.
     type Output;
@@ -271,7 +244,7 @@ where
     /// for Pk are provided by the given [`Translator`].
     fn translate_pk<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<P, Q, E>;
+        T: Translator<P, Q, E, PExt, QExt>;
 }
 /// Miniscript
 

@@ -40,7 +40,7 @@ use self::checksum::verify_checksum;
 use crate::miniscript::{Legacy, Miniscript, Segwitv0};
 use crate::{
     expression, miniscript, BareCtx, CovenantExt, Error, ForEach, ForEachKey, MiniscriptKey, NoExt,
-    PkTranslator, Satisfier, ToPublicKey, TranslatePk, Translator,
+    Satisfier, ToPublicKey, TranslatePk, Translator,
 };
 
 mod bare;
@@ -665,7 +665,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
     }
 }
 
-impl<P, Q> TranslatePk<P, Q> for Descriptor<P>
+impl<P, Q> TranslatePk<P, Q, NoExt, NoExt> for Descriptor<P>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
@@ -684,7 +684,15 @@ where
             Descriptor::Sh(ref sh) => Descriptor::Sh(sh.translate_pk(t)?),
             Descriptor::Wsh(ref wsh) => Descriptor::Wsh(wsh.translate_pk(t)?),
             Descriptor::Tr(ref tr) => Descriptor::Tr(tr.translate_pk(t)?),
-            Descriptor::LegacyCSFSCov(ref cov) => Descriptor::LegacyCSFSCov((cov.translate_pk(t))?),
+            Descriptor::LegacyCSFSCov(ref _cov) => {
+                // Translation in descriptors at high level cannot work with extensions
+                // as we cannot abstract over extensions. Covenants have CovenantExt and
+                // others have NoExt.
+                // This can only happen when the user gives a conversion function having a NoExt
+                // for covenant descriptor.
+                // To avoid this panic, we would need to change the translate API into result<option> or Option<result>
+                panic!("Tried to convert an extensions descriptor into NoExt")
+            }
         };
         Ok(desc)
     }
@@ -723,13 +731,21 @@ impl Descriptor<DescriptorPublicKey> {
     pub fn derive(&self, index: u32) -> Descriptor<DerivedDescriptorKey> {
         struct Derivator(u32);
 
-        impl PkTranslator<DescriptorPublicKey, DerivedDescriptorKey, ()> for Derivator {
+        impl Translator<DescriptorPublicKey, DerivedDescriptorKey, ()> for Derivator {
             fn pk(&mut self, pk: &DescriptorPublicKey) -> Result<DerivedDescriptorKey, ()> {
                 Ok(pk.clone().derive(self.0))
             }
 
             fn pkh(&mut self, pkh: &DescriptorPublicKey) -> Result<DerivedDescriptorKey, ()> {
                 Ok(pkh.clone().derive(self.0))
+            }
+
+            fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
+                Ok(*sha256)
+            }
+
+            fn ext(&mut self, e: &NoExt) -> Result<NoExt, ()> {
+                Ok(e.clone())
             }
         }
         self.translate_pk(&mut Derivator(index))
@@ -768,7 +784,7 @@ impl Descriptor<DescriptorPublicKey> {
         struct Derivator<'a, C: secp256k1::Verification>(&'a secp256k1::Secp256k1<C>);
 
         impl<'a, C: secp256k1::Verification>
-            PkTranslator<DerivedDescriptorKey, bitcoin::PublicKey, ConversionError>
+            Translator<DerivedDescriptorKey, bitcoin::PublicKey, ConversionError>
             for Derivator<'a, C>
         {
             fn pk(
@@ -783,6 +799,14 @@ impl Descriptor<DescriptorPublicKey> {
                 pkh: &DerivedDescriptorKey,
             ) -> Result<bitcoin::hashes::hash160::Hash, ConversionError> {
                 Ok(pkh.derive_public_key(&self.0)?.to_pubkeyhash())
+            }
+
+            fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ConversionError> {
+                Ok(*sha256)
+            }
+
+            fn ext(&mut self, e: &NoExt) -> Result<NoExt, ConversionError> {
+                Ok(e.clone())
             }
         }
 
@@ -843,6 +867,10 @@ impl Descriptor<DescriptorPublicKey> {
                     sha256::Hash::from_str(sha256).map_err(|e| Error::Unexpected(e.to_string()))?;
                 Ok(hash)
             }
+
+            fn ext(&mut self, e: &NoExt) -> Result<NoExt, Error> {
+                Ok(*e)
+            }
         }
 
         let descriptor = Descriptor::<String>::from_str(s)?;
@@ -868,6 +896,10 @@ impl Descriptor<DescriptorPublicKey> {
 
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<String, ()> {
                 Ok(sha256.to_string())
+            }
+
+            fn ext(&mut self, e: &NoExt) -> Result<NoExt, ()> {
+                Ok(*e)
             }
         }
 
