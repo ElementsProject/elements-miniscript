@@ -7,6 +7,7 @@ use std::fmt;
 use elements::encode::serialize;
 use elements::{self};
 
+use super::ParseableExt;
 use crate::descriptor::CovError;
 use crate::miniscript::astelem::StackCtxOperations;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -89,6 +90,22 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         }
     }
 
+    fn script_size(&self) -> usize {
+        4 + 1 + 1 + 4 // opcodes + push opcodes + target size
+    }
+
+    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
+        if children.len() == 1 && name == "ver_eq" {
+            let n = expression::terminal(&children[0], expression::parse_num).map_err(|_| ())?;
+            Ok(Self { n })
+        } else {
+            // Correct error handling while parsing fromtree
+            Err(())
+        }
+    }
+}
+
+impl<Pk: ToPublicKey> ParseableExt<Pk> for VerEq {
     fn satisfy<S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
@@ -139,10 +156,6 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         builder.check_item_eq(12, &serialize(&self.n))
     }
 
-    fn script_size(&self) -> usize {
-        4 + 1 + 1 + 4 // opcodes + push opcodes + target size
-    }
-
     fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
         let ver = {
             let sl = tokens.peek_slice(5).ok_or(())?;
@@ -162,16 +175,6 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         };
         tokens.advance(5).expect("Size checked previously");
         Ok(ver)
-    }
-
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
-        if children.len() == 1 && name == "ver_eq" {
-            let n = expression::terminal(&children[0], expression::parse_num).map_err(|_| ())?;
-            Ok(Self { n })
-        } else {
-            // Correct error handling while parsing fromtree
-            Err(())
-        }
     }
 
     fn evaluate<'intp, 'txin>(

@@ -47,6 +47,7 @@ use std::sync::Arc;
 
 use self::lex::{lex, TokenIter};
 use self::types::Property;
+use crate::extensions::ParseableExt;
 pub use crate::miniscript::context::ScriptContext;
 use crate::miniscript::decode::Terminal;
 use crate::miniscript::types::extra_props::ExtData;
@@ -159,7 +160,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
 impl<Ctx, Ext> Miniscript<Ctx::Key, Ctx, Ext>
 where
     Ctx: ScriptContext,
-    Ext: Extension<Ctx::Key>,
+    Ext: ParseableExt<Ctx::Key>,
 {
     /// Attempt to parse an insane(scripts don't clear sanity checks)
     /// script into a Miniscript representation.
@@ -236,6 +237,7 @@ where
     pub fn encode(&self) -> script::Script
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt<Pk>,
     {
         self.node.encode(script::Builder::new()).into_script()
     }
@@ -374,13 +376,10 @@ impl_block_str!(
     }
 );
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
+impl<Pk: ToPublicKey, Ctx: ScriptContext, Ext: ParseableExt<Pk>> Miniscript<Pk, Ctx, Ext> {
     /// Attempt to produce non-malleable satisfying witness for the
     /// witness script represented by the parse tree
-    pub fn satisfy<S: satisfy::Satisfier<Pk>>(&self, satisfier: S) -> Result<Vec<Vec<u8>>, Error>
-    where
-        Pk: ToPublicKey,
-    {
+    pub fn satisfy<S: satisfy::Satisfier<Pk>>(&self, satisfier: S) -> Result<Vec<Vec<u8>>, Error> {
         // Only satisfactions for default versions (0xc0) are allowed.
         let leaf_hash = TapLeafHash::from_script(&self.encode(), LeafVersion::default());
         match satisfy::Satisfaction::satisfy(&self.node, &satisfier, self.ty.mall.safe, &leaf_hash)
@@ -401,10 +400,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
     pub fn satisfy_malleable<S: satisfy::Satisfier<Pk>>(
         &self,
         satisfier: S,
-    ) -> Result<Vec<Vec<u8>>, Error>
-    where
-        Pk: ToPublicKey,
-    {
+    ) -> Result<Vec<Vec<u8>>, Error> {
         let leaf_hash = TapLeafHash::from_script(&self.encode(), LeafVersion::default());
         match satisfy::Satisfaction::satisfy_mall(
             &self.node,

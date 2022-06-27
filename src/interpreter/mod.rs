@@ -26,6 +26,7 @@ use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine};
 use elements::{self, secp256k1_zkp, sighash, EcdsaSigHashType, SigHash};
 
+use crate::extensions::ParseableExt;
 use crate::miniscript::context::NoChecks;
 use crate::miniscript::ScriptContext;
 use crate::{util, Descriptor, ElementsSig, Miniscript, Terminal, ToPublicKey, TranslatePk};
@@ -101,6 +102,23 @@ pub enum BitcoinKey {
     Fullkey(bitcoin::PublicKey),
     /// Xonly key
     XOnlyPublicKey(bitcoin::XOnlyPublicKey),
+}
+
+impl ToPublicKey for BitcoinKey {
+    fn to_public_key(&self) -> bitcoin::PublicKey {
+        match self {
+            BitcoinKey::Fullkey(key) => *key,
+            BitcoinKey::XOnlyPublicKey(xpk) => xpk.to_public_key(),
+        }
+    }
+
+    fn hash_to_hash160(hash: &<Self as MiniscriptKey>::Hash) -> hash160::Hash {
+        hash.hash160()
+    }
+
+    fn to_sha256(hash: &<Self as MiniscriptKey>::Sha256) -> sha256::Hash {
+        *hash
+    }
 }
 
 // Displayed in full 33 byte representation. X-only keys are displayed with 0x02 prefix
@@ -184,14 +202,14 @@ impl<'txin> Interpreter<'txin, CovenantExt> {
 
 impl<'txin, Ext> Interpreter<'txin, Ext>
 where
-    Ext: Extension<BitcoinKey>,
+    Ext: ParseableExt<BitcoinKey>,
     Ext: TranslatePk<BitcoinKey, bitcoin::PublicKey>,
-    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output: Extension<bitcoin::PublicKey>,
+    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output: ParseableExt<bitcoin::PublicKey>,
     <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output:
         TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = Ext>,
     Ext: TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>,
     <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
-        Extension<bitcoin::XOnlyPublicKey>,
+        ParseableExt<bitcoin::XOnlyPublicKey>,
     <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
         TranslatePk<bitcoin::XOnlyPublicKey, BitcoinKey, Output = Ext>,
 {
@@ -618,7 +636,7 @@ where
 impl<'intp, 'txin: 'intp, Ext> Iterator for Iter<'intp, 'txin, Ext>
 where
     NoChecks: ScriptContext,
-    Ext: Extension<BitcoinKey>,
+    Ext: ParseableExt<BitcoinKey>,
 {
     type Item = Result<SatisfiedConstraint<Ext>, Error>;
 
@@ -639,7 +657,7 @@ where
 impl<'intp, 'txin: 'intp, Ext> Iter<'intp, 'txin, Ext>
 where
     NoChecks: ScriptContext,
-    Ext: Extension<BitcoinKey>,
+    Ext: ParseableExt<BitcoinKey>,
 {
     /// Helper function to push a NodeEvaluationState on state stack
     fn push_evaluation_state(

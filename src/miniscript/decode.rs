@@ -23,6 +23,7 @@ use std::{error, fmt};
 
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 
+use crate::extensions::ParseableExt;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::limits::{MAX_BLOCK_WEIGHT, MAX_PUBKEYS_PER_MULTISIG};
 use crate::miniscript::types::extra_props::ExtData;
@@ -266,7 +267,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> TerminalStack<Pk
 
 /// Parse a script fragment into an `Miniscript`
 #[allow(unreachable_patterns)]
-pub fn parse<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
+pub fn parse<Ctx: ScriptContext, Ext: ParseableExt<Ctx::Key>>(
     tokens: &mut TokenIter<'_>,
 ) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
     let mut non_term = Vec::with_capacity(tokens.len());

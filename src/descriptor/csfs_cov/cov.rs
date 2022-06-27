@@ -51,6 +51,7 @@ use super::super::checksum::{desc_checksum, verify_checksum};
 use super::super::ELMTS_STR;
 use super::{CovError, CovOperations};
 use crate::expression::{self, FromTree};
+use crate::extensions::ParseableExt;
 use crate::miniscript::lex::{lex, Token as Tk, TokenIter};
 use crate::miniscript::limits::{
     MAX_OPS_PER_SCRIPT, MAX_SCRIPT_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE,
@@ -129,6 +130,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> LegacyCSFSCov<Pk, Ext> {
     pub fn encode(&self) -> Script
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt<Pk>,
     {
         let builder = self.ms.node.encode(script::Builder::new());
         builder.verify_cov(&self.pk.to_public_key()).into_script()
@@ -138,6 +140,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> LegacyCSFSCov<Pk, Ext> {
     pub fn satisfy<S: Satisfier<Pk>>(&self, s: S, allow_mall: bool) -> Result<Vec<Vec<u8>>, Error>
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt<Pk>,
     {
         let mut wit = {
             use crate::descriptor::CovError::MissingSighashItem;
@@ -200,7 +203,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> LegacyCSFSCov<Pk, Ext> {
     }
 }
 
-impl<Ext: Extension<bitcoin::PublicKey>> LegacyCSFSCov<bitcoin::PublicKey, Ext> {
+impl<Ext: ParseableExt<bitcoin::PublicKey>> LegacyCSFSCov<bitcoin::PublicKey, Ext> {
     /// Check if the given script is a covenant descriptor
     /// Consumes the iterator so that only remaining miniscript
     /// needs to be parsed from the iterator
@@ -257,7 +260,7 @@ impl<Ext: Extension<bitcoin::PublicKey>> LegacyCSFSCov<bitcoin::PublicKey, Ext> 
         Error,
     >
     where
-        Ext: Extension<bitcoin::PublicKey>,
+        Ext: ParseableExt<bitcoin::PublicKey>,
     {
         let tokens = lex(script)?;
         let mut iter = TokenIter::new(tokens);
@@ -363,6 +366,7 @@ where
     ) -> elements::Address
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt<Pk>,
     {
         elements::Address::p2wsh(&self.encode(), blinder, params)
     }
@@ -371,6 +375,7 @@ where
     pub fn script_pubkey(&self) -> Script
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt<Pk>,
     {
         self.encode().to_v0_p2wsh()
     }
@@ -388,6 +393,7 @@ where
     pub fn inner_script(&self) -> Script
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt<Pk>,
     {
         self.encode()
     }
@@ -399,6 +405,7 @@ where
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
+        Ext: ParseableExt<Pk>,
     {
         let mut witness = self.satisfy(satisfier, /*allow_mall*/ false)?;
         witness.push(self.encode().into_bytes());
@@ -428,6 +435,7 @@ where
     pub fn ecdsa_sighash_script_code(&self) -> Script
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt<Pk>,
     {
         self.inner_script()
     }
@@ -439,6 +447,7 @@ where
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
+        Ext: ParseableExt<Pk>,
     {
         let mut witness = self.satisfy(satisfier, /*allow_mall*/ true)?;
         witness.push(self.encode().into_bytes());

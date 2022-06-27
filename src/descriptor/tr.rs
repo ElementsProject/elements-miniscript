@@ -14,6 +14,7 @@ use elements::{self, opcodes, secp256k1_zkp, Script};
 use super::checksum::{desc_checksum, verify_checksum};
 use super::ELMTS_STR;
 use crate::expression::{self, FromTree};
+use crate::extensions::ParseableExt;
 use crate::miniscript::Miniscript;
 use crate::policy::semantic::Policy;
 use crate::policy::Liftable;
@@ -218,6 +219,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> Tr<Pk, Ext> {
     pub fn spend_info(&self) -> Arc<TaprootSpendInfo>
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt<Pk>,
     {
         // If the value is already cache, read it
         // read only panics if the lock is poisoned (meaning other thread having a lock panicked)
@@ -313,7 +315,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> Tr<Pk, Ext> {
     }
 }
 
-impl<Pk: MiniscriptKey + ToPublicKey, Ext: Extension<Pk>> Tr<Pk, Ext> {
+impl<Pk: MiniscriptKey + ToPublicKey, Ext: ParseableExt<Pk>> Tr<Pk, Ext> {
     /// Obtains the corresponding script pubkey for this descriptor.
     pub fn script_pubkey(&self) -> Script {
         let output_key = self.spend_info().output_key();
@@ -648,7 +650,7 @@ fn best_tap_spend<Pk, S, Ext>(
 where
     Pk: ToPublicKey,
     S: Satisfier<Pk>,
-    Ext: Extension<Pk>,
+    Ext: ParseableExt<Pk>,
 {
     let spend_info = desc.spend_info();
     // First try the key spend path

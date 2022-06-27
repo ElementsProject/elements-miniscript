@@ -21,6 +21,7 @@ use elements::{self, script};
 
 use super::{stack, BitcoinKey, Error, Stack, TypedHash160};
 use crate::descriptor::{CovOperations, LegacyCSFSCov};
+use crate::extensions::ParseableExt;
 use crate::miniscript::context::{NoChecks, ScriptContext};
 use crate::util::is_v1_p2tr;
 use crate::{
@@ -55,7 +56,7 @@ fn pk_from_stack_elem(
 
 // Parse the script with appropriate context to check for context errors like
 // correct usage of x-only keys or multi_a
-fn script_from_stack_elem<Ctx: ScriptContext, Ext: Extension<Ctx::Key>>(
+fn script_from_stack_elem<Ctx: ScriptContext, Ext: ParseableExt<Ctx::Key>>(
     elem: &stack::Element,
 ) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
     match *elem {
@@ -80,8 +81,8 @@ fn cov_components_from_stackelem<Ext>(
     Miniscript<super::BitcoinKey, NoChecks, Ext>,
 )>
 where
-    Ext: TranslatePk<BitcoinKey, bitcoin::PublicKey> + Extension<BitcoinKey>,
-    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output: Extension<bitcoin::PublicKey>,
+    Ext: TranslatePk<BitcoinKey, bitcoin::PublicKey> + ParseableExt<BitcoinKey>,
+    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output: ParseableExt<bitcoin::PublicKey>,
     <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output:
         TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = Ext>,
 {
@@ -146,19 +147,19 @@ pub enum Inner<Ext: Extension<super::BitcoinKey>> {
 /// Parses an `Inner` and appropriate `Stack` from completed transaction data,
 /// as well as the script that should be used as a scriptCode in a sighash
 /// Tr outputs don't have script code and return None.
-pub fn from_txdata<'txin, Ext: Extension<BitcoinKey>>(
+pub fn from_txdata<'txin, Ext: ParseableExt<BitcoinKey>>(
     spk: &elements::Script,
     script_sig: &'txin elements::Script,
     witness: &'txin [Vec<u8>],
 ) -> Result<(Inner<Ext>, Stack<'txin>, Option<elements::Script>), Error>
 where
     Ext: TranslatePk<BitcoinKey, bitcoin::PublicKey>,
-    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output: Extension<bitcoin::PublicKey>,
+    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output: ParseableExt<bitcoin::PublicKey>,
     <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output:
         TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = Ext>,
     Ext: TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>,
     <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
-        Extension<bitcoin::XOnlyPublicKey>,
+        ParseableExt<bitcoin::XOnlyPublicKey>,
     <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
         TranslatePk<bitcoin::XOnlyPublicKey, BitcoinKey, Output = Ext>,
 {

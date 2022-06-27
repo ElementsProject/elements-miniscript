@@ -38,6 +38,66 @@ pub trait Extension<Pk: MiniscriptKey>:
     /// See current implementation for different fragments in extra_props.rs
     fn extra_prop(&self) -> ExtData;
 
+    /// Check if the predicate holds for all keys
+    fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a;
+
+    /// Get the script size of the current fragment
+    fn script_size(&self) -> usize;
+
+    /// Validity rules for fragment in segwit context
+    fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError> {
+        Ok(())
+    }
+
+    /// Validity rules for fragment in tap context
+    fn tap_ctx_checks(&self) -> Result<(), ScriptContextError> {
+        Ok(())
+    }
+
+    /// Create an instance of this object from a Tree with root name and children as
+    /// Vec<Tree>.
+    // Ideally, we would want a FromTree implementation here, but that is not possible
+    // as we would need to create a new Tree by removing wrappers from root.
+    fn from_name_tree(_name: &str, children: &[Tree<'_>]) -> Result<Self, ()>;
+}
+
+/// Support for parsing/serializing/satisfaction of extensions.
+/// [`Extension`] trait reasons about extension in abstract way whereas
+/// this trait reasons about the concrete data structures.
+/// Extension is similar to [`MiniscriptKey`], whereas ParseableExt is similar to
+/// [`ToPublicKey`].
+//
+// Come up with better name for this trait
+pub trait ParseableExt<Pk>:
+    Extension<Pk> + Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash + Liftable<Pk>
+where
+    Pk: MiniscriptKey + ToPublicKey,
+{
+    /// Parse the terminal from [`TokenIter`]. Implementers of this trait are responsible
+    /// for making sure tokens is mutated correctly. If parsing is not successful, the tokens
+    /// should not be consumed.
+    fn from_token_iter(_tokens: &mut TokenIter<'_>) -> Result<Self, ()>;
+
+    /// Interpreter support
+    /// Evaluate the fragment based on inputs from stack. If an implementation of this
+    /// is provided the user can use the interpreter API to parse scripts from blockchain
+    /// and check which constraints are satisfied
+    /// Output Ok(true) when the ext fragment is satisfied.
+    /// Output Ok(false) when the ext fragment is dissatisfied,
+    /// Output Some(Err) when there is an error in interpreter value.
+    fn evaluate<'intp, 'txin>(
+        &'intp self,
+        stack: &mut Stack<'txin>,
+    ) -> Result<bool, interpreter::Error>;
+
+    /// Encoding of the current fragment
+    fn push_to_builder(&self, builder: Builder) -> Builder
+    where
+        Pk: ToPublicKey;
+
     /// Produce a satisfaction for this from satisfier.
     /// See satisfaction code in satisfy.rs for example
     /// Note that the [`Satisfaction`] struct also covers the case when
@@ -55,53 +115,6 @@ pub trait Extension<Pk: MiniscriptKey>:
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>;
-
-    /// Check if the predicate holds for all keys
-    fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
-    where
-        Pk: 'a,
-        Pk::Hash: 'a;
-
-    /// Encoding of the current fragment
-    fn push_to_builder(&self, builder: Builder) -> Builder
-    where
-        Pk: ToPublicKey;
-
-    /// Get the script size of the current fragment
-    fn script_size(&self) -> usize;
-
-    /// Validity rules for fragment in segwit context
-    fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError> {
-        Ok(())
-    }
-
-    /// Validity rules for fragment in tap context
-    fn tap_ctx_checks(&self) -> Result<(), ScriptContextError> {
-        Ok(())
-    }
-
-    /// Parse the terminal from [`TokenIter`]. Implementers of this trait are responsible
-    /// for making sure tokens is mutated correctly. If parsing is not successful, the tokens
-    /// should not be consumed.
-    fn from_token_iter(_tokens: &mut TokenIter<'_>) -> Result<Self, ()>;
-
-    /// Create an instance of this object from a Tree with root name and children as
-    /// Vec<Tree>.
-    // Ideally, we would want a FromTree implementation here, but that is not possible
-    // as we would need to create a new Tree by removing wrappers from root.
-    fn from_name_tree(_name: &str, children: &[Tree<'_>]) -> Result<Self, ()>;
-
-    /// Interpreter support
-    /// Evaluate the fragment based on inputs from stack. If an implementation of this
-    /// is provided the user can use the interpreter API to parse scripts from blockchain
-    /// and check which constraints are satisfied
-    /// Output Ok(true) when the ext fragment is satisfied.
-    /// Output Ok(false) when the ext fragment is dissatisfied,
-    /// Output Some(Err) when there is an error in interpreter value.
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        stack: &mut Stack<'txin>,
-    ) -> Result<bool, interpreter::Error>;
 }
 
 /// No Extensions for elements-miniscript
@@ -122,6 +135,25 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
         match *self {}
     }
 
+    fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
+    where
+        Pk: 'a,
+        Pk::Hash: 'a,
+    {
+        match *self {}
+    }
+
+    fn script_size(&self) -> usize {
+        match *self {}
+    }
+
+    fn from_name_tree(_name: &str, _children: &[Tree<'_>]) -> Result<Self, ()> {
+        // No extensions should not parse any extensions from String
+        Err(())
+    }
+}
+
+impl<Pk: MiniscriptKey + ToPublicKey> ParseableExt<Pk> for NoExt {
     fn satisfy<S>(&self, _sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
@@ -138,11 +170,10 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
         match *self {}
     }
 
-    fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
-    where
-        Pk: 'a,
-        Pk::Hash: 'a,
-    {
+    fn evaluate<'intp, 'txin>(
+        &'intp self,
+        _stack: &mut Stack<'txin>,
+    ) -> Result<bool, interpreter::Error> {
         match *self {}
     }
 
@@ -153,25 +184,9 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
         match *self {}
     }
 
-    fn script_size(&self) -> usize {
-        match *self {}
-    }
-
     fn from_token_iter(_tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
         // No extensions should return Err on parsing
         Err(())
-    }
-
-    fn from_name_tree(_name: &str, _children: &[Tree<'_>]) -> Result<Self, ()> {
-        // No extensions should not parse any extensions from String
-        Err(())
-    }
-
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        _stack: &mut Stack<'txin>,
-    ) -> Result<bool, interpreter::Error> {
-        match *self {}
     }
 }
 
@@ -209,10 +224,10 @@ pub enum CovenantExt {
 
 // Apply the function on each arm
 macro_rules! all_arms_fn {
-    ($slf: ident, $f: ident, $($args:ident, )* ) => {
+    ($slf: ident, $trt: ident, $f: ident, $($args:ident, )* ) => {
         match $slf {
-            CovenantExt::VerEq(v) => <VerEq as Extension<Pk>>::$f(v, $($args, )*),
-            CovenantExt::OutputsPref(p) => <OutputsPref as Extension<Pk>>::$f(p, $($args, )*),
+            CovenantExt::VerEq(v) => <VerEq as $trt<Pk>>::$f(v, $($args, )*),
+            CovenantExt::OutputsPref(p) => <OutputsPref as $trt<Pk>>::$f(p, $($args, )*),
         }
     };
 }
@@ -220,10 +235,10 @@ macro_rules! all_arms_fn {
 // try all extensions one by one
 // Self::$f(args)
 macro_rules! try_from_arms {
-    ($f: ident, $($args: ident, )*) => {
-        if let Ok(v) = <VerEq as Extension<Pk>>::$f($($args, )*) {
+    ( $trt: ident, $f: ident, $($args: ident, )*) => {
+        if let Ok(v) = <VerEq as $trt<Pk>>::$f($($args, )*) {
             Ok(CovenantExt::VerEq(v))
-        } else if let Ok(v) = <OutputsPref as Extension<Pk>>::$f($($args, )*) {
+        } else if let Ok(v) = <OutputsPref as $trt<Pk>>::$f($($args, )*) {
             Ok(CovenantExt::OutputsPref(v))
         } else {
             Err(())
@@ -236,31 +251,15 @@ where
     Pk: MiniscriptKey,
 {
     fn corr_prop(&self) -> Correctness {
-        all_arms_fn!(self, corr_prop,)
+        all_arms_fn!(self, Extension, corr_prop,)
     }
 
     fn mall_prop(&self) -> Malleability {
-        all_arms_fn!(self, mall_prop,)
+        all_arms_fn!(self, Extension, mall_prop,)
     }
 
     fn extra_prop(&self) -> ExtData {
-        all_arms_fn!(self, extra_prop,)
-    }
-
-    fn satisfy<S>(&self, sat: &S) -> Satisfaction
-    where
-        Pk: ToPublicKey,
-        S: Satisfier<Pk>,
-    {
-        all_arms_fn!(self, satisfy, sat,)
-    }
-
-    fn dissatisfy<S>(&self, sat: &S) -> Satisfaction
-    where
-        Pk: ToPublicKey,
-        S: Satisfier<Pk>,
-    {
-        all_arms_fn!(self, dissatisfy, sat,)
+        all_arms_fn!(self, Extension, extra_prop,)
     }
 
     fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: &mut F) -> bool
@@ -268,30 +267,48 @@ where
         Pk: 'a,
         Pk::Hash: 'a,
     {
-        all_arms_fn!(self, real_for_each_key, pred,)
+        all_arms_fn!(self, Extension, real_for_each_key, pred,)
+    }
+
+    fn script_size(&self) -> usize {
+        all_arms_fn!(self, Extension, script_size,)
+    }
+
+    fn from_name_tree(name: &str, children: &[Tree<'_>]) -> Result<Self, ()> {
+        try_from_arms!(Extension, from_name_tree, name, children,)
+    }
+}
+
+impl<Pk: MiniscriptKey + ToPublicKey> ParseableExt<Pk> for CovenantExt {
+    fn satisfy<S>(&self, sat: &S) -> Satisfaction
+    where
+        Pk: ToPublicKey,
+        S: Satisfier<Pk>,
+    {
+        all_arms_fn!(self, ParseableExt, satisfy, sat,)
+    }
+
+    fn dissatisfy<S>(&self, sat: &S) -> Satisfaction
+    where
+        Pk: ToPublicKey,
+        S: Satisfier<Pk>,
+    {
+        all_arms_fn!(self, ParseableExt, dissatisfy, sat,)
+    }
+
+    fn evaluate(&self, stack: &mut Stack) -> Result<bool, interpreter::Error> {
+        all_arms_fn!(self, ParseableExt, evaluate, stack,)
     }
 
     fn push_to_builder(&self, builder: Builder) -> Builder
     where
         Pk: ToPublicKey,
     {
-        all_arms_fn!(self, push_to_builder, builder,)
-    }
-
-    fn script_size(&self) -> usize {
-        all_arms_fn!(self, script_size,)
+        all_arms_fn!(self, ParseableExt, push_to_builder, builder,)
     }
 
     fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
-        try_from_arms!(from_token_iter, tokens,)
-    }
-
-    fn from_name_tree(name: &str, children: &[Tree<'_>]) -> Result<Self, ()> {
-        try_from_arms!(from_name_tree, name, children,)
-    }
-
-    fn evaluate(&self, stack: &mut Stack) -> Result<bool, interpreter::Error> {
-        all_arms_fn!(self, evaluate, stack,)
+        try_from_arms!(ParseableExt, from_token_iter, tokens,)
     }
 }
 

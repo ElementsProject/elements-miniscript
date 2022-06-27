@@ -28,6 +28,7 @@ use elements::hashes::{hash160, ripemd160, sha256d, Hash};
 use elements::{opcodes, script};
 
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
+use crate::extensions::ParseableExt;
 use crate::miniscript::context::SigType;
 use crate::miniscript::types::{self, Property};
 use crate::miniscript::ScriptContext;
@@ -633,19 +634,14 @@ impl_from_tree!(
 );
 
 /// Helper trait to add a `push_astelem` method to `script::Builder`
-trait PushAstElem<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> {
-    fn push_astelem(self, ast: &Miniscript<Pk, Ctx, Ext>) -> Self
-    where
-        Pk: ToPublicKey;
+trait PushAstElem<Pk: ToPublicKey, Ctx: ScriptContext, Ext: ParseableExt<Pk>> {
+    fn push_astelem(self, ast: &Miniscript<Pk, Ctx, Ext>) -> Self;
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> PushAstElem<Pk, Ctx, Ext>
+impl<Pk: ToPublicKey, Ctx: ScriptContext, Ext: ParseableExt<Pk>> PushAstElem<Pk, Ctx, Ext>
     for script::Builder
 {
-    fn push_astelem(self, ast: &Miniscript<Pk, Ctx, Ext>) -> Self
-    where
-        Pk: ToPublicKey,
-    {
+    fn push_astelem(self, ast: &Miniscript<Pk, Ctx, Ext>) -> Self {
         ast.node.encode(self)
     }
 }
@@ -714,6 +710,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
     pub fn encode(&self, mut builder: script::Builder) -> script::Builder
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt<Pk>,
     {
         match *self {
             Terminal::PkK(ref pk) => builder.push_ms_key::<_, Ctx>(pk),

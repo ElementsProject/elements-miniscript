@@ -28,11 +28,12 @@ use elements::hashes::{hash160, ripemd160, sha256d};
 use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, confidential, secp256k1_zkp, OutPoint, Script};
 
+use crate::extensions::ParseableExt;
 use crate::miniscript::limits::{
     LOCKTIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
 use crate::util::witness_size;
-use crate::{Extension, Miniscript, MiniscriptKey, ScriptContext, Terminal, ToPublicKey};
+use crate::{Miniscript, MiniscriptKey, ScriptContext, Terminal, ToPublicKey};
 
 /// Type alias for a signature/hashtype pair
 pub type ElementsSig = (secp256k1_zkp::ecdsa::Signature, elements::EcdsaSigHashType);
@@ -1028,7 +1029,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: Extension<Pk>,
+        Ext: ParseableExt<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
     {
         let mut sats = subs
@@ -1147,7 +1148,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: Extension<Pk>,
+        Ext: ParseableExt<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
     {
         let mut sats = subs
@@ -1276,7 +1277,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: Extension<Pk>,
+        Ext: ParseableExt<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
         G: FnMut(
             usize,
@@ -1586,7 +1587,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: Extension<Pk>,
+        Ext: ParseableExt<Pk>,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
         G: FnMut(
             usize,
@@ -1756,7 +1757,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: Extension<Pk>,
+        Ext: ParseableExt<Pk>,
     {
         Self::satisfy_helper(
             term,
@@ -1773,7 +1774,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: Extension<Pk>,
+        Ext: ParseableExt<Pk>,
     >(
         term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,

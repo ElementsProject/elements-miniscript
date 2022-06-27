@@ -9,6 +9,7 @@ use elements::hashes::hex::{FromHex, ToHex};
 use elements::hashes::{sha256d, Hash};
 use elements::{self};
 
+use super::ParseableExt;
 use crate::descriptor::CovError;
 use crate::miniscript::astelem::StackCtxOperations;
 use crate::miniscript::context::ScriptContextError;
@@ -110,6 +111,25 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
         }
     }
 
+    fn script_size(&self) -> usize {
+        // CAT CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
+        // HASH256 DEPTH <10> SUB PICK EQUAL
+        8 + self.pref.len() + 1 /* line1 opcodes + pref.push */
+                + 6 /* line 2 */
+    }
+
+    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
+        if children.len() == 1 && name == "outputs_pref" {
+            let pref = expression::terminal(&children[0], Vec::<u8>::from_hex).map_err(|_| ())?;
+            Ok(Self { pref })
+        } else {
+            // Correct error handling while parsing fromtree
+            Err(())
+        }
+    }
+}
+
+impl<Pk: ToPublicKey> ParseableExt<Pk> for OutputsPref {
     fn satisfy<S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
@@ -204,13 +224,6 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
         builder.check_item_pref(4, &self.pref)
     }
 
-    fn script_size(&self) -> usize {
-        // CAT CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
-        // HASH256 DEPTH <10> SUB PICK EQUAL
-        8 + self.pref.len() + 1 /* line1 opcodes + pref.push */
-                + 6 /* line 2 */
-    }
-
     fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
         let outputs_pref = {
             let sl = tokens.peek_slice(15).ok_or(())?;
@@ -239,16 +252,6 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
         };
         tokens.advance(15).expect("Size checked previously");
         Ok(outputs_pref)
-    }
-
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
-        if children.len() == 1 && name == "outputs_pref" {
-            let pref = expression::terminal(&children[0], Vec::<u8>::from_hex).map_err(|_| ())?;
-            Ok(Self { pref })
-        } else {
-            // Correct error handling while parsing fromtree
-            Err(())
-        }
     }
 
     fn evaluate<'intp, 'txin>(
