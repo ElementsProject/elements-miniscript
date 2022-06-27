@@ -672,6 +672,10 @@ impl ScriptContext for Tap {
                 Ok(())
             }
             Terminal::Multi(..) => Err(ScriptContextError::TaprootMultiDisabled),
+            Terminal::Ext(ref e) => {
+                e.tap_ctx_checks()?;
+                Ok(())
+            }
             _ => Ok(()),
         }
     }

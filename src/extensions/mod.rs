@@ -75,7 +75,10 @@ pub trait Extension<Pk: MiniscriptKey>:
         Ok(())
     }
 
-    //unimplemented: Add checks after we introduce Tap ctx
+    /// Validity rules for fragment in tap context
+    fn tap_ctx_checks(&self) -> Result<(), ScriptContextError> {
+        Ok(())
+    }
 
     /// Parse the terminal from [`TokenIter`]. Implementers of this trait are responsible
     /// for making sure tokens is mutated correctly. If parsing is not successful, the tokens
