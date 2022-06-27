@@ -55,10 +55,10 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for OutputsPref {
     }
 }
 
-impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
-    fn real_for_each_key<'a, F>(&'a self, _pred: &mut F) -> bool
+impl Extension for OutputsPref {
+    fn real_for_each_key<'a, Pk, F>(&'a self, _pred: &mut F) -> bool
     where
-        Pk: 'a,
+        Pk: 'a + MiniscriptKey,
         Pk::Hash: 'a,
         F: FnMut(ForEach<'a, Pk>) -> bool,
     {
@@ -129,8 +129,8 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
     }
 }
 
-impl<Pk: ToPublicKey> ParseableExt<Pk> for OutputsPref {
-    fn satisfy<S>(&self, sat: &S) -> Satisfaction
+impl ParseableExt for OutputsPref {
+    fn satisfy<Pk, S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
@@ -176,7 +176,7 @@ impl<Pk: ToPublicKey> ParseableExt<Pk> for OutputsPref {
         }
     }
 
-    fn dissatisfy<S>(&self, sat: &S) -> Satisfaction
+    fn dissatisfy<Pk, S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
@@ -217,10 +217,7 @@ impl<Pk: ToPublicKey> ParseableExt<Pk> for OutputsPref {
         }
     }
 
-    fn push_to_builder(&self, builder: elements::script::Builder) -> elements::script::Builder
-    where
-        Pk: ToPublicKey,
-    {
+    fn push_to_builder(&self, builder: elements::script::Builder) -> elements::script::Builder {
         builder.check_item_pref(4, &self.pref)
     }
 

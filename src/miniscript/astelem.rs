@@ -38,7 +38,7 @@ use crate::{
     MiniscriptKey, Terminal, ToPublicKey, TranslatePk, Translator,
 };
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx, Ext> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ext> {
     /// Internal helper function for displaying wrapper types; returns
     /// a character to display before the `:` as well as a reference
     /// to the wrapped type to allow easy recursion
@@ -64,8 +64,8 @@ where
     Pk: MiniscriptKey,
     Q: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk>,
-    QExt: Extension<Q>,
+    Ext: Extension,
+    QExt: Extension,
 {
     type Output = Terminal<Q, Ctx, QExt>;
 
@@ -78,7 +78,7 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx, Ext> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ext> {
     pub(super) fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(
         &'a self,
         pred: &mut F,
@@ -134,7 +134,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx
         Q: MiniscriptKey,
         CtxQ: ScriptContext,
         T: Translator<Pk, Q, E, Ext, QExt>,
-        QExt: Extension<Q>,
+        QExt: Extension,
     {
         let frag: Terminal<Q, CtxQ, _> = match *self {
             Terminal::PkK(ref p) => Terminal::PkK(t.pk(p)?),
@@ -210,7 +210,7 @@ impl<Pk, Ctx, Ext> ForEachKey<Pk> for Terminal<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
     where
@@ -225,7 +225,7 @@ impl<Pk, Ctx, Ext> fmt::Debug for Terminal<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("[")?;
@@ -332,7 +332,7 @@ impl<Pk, Ctx, Ext> fmt::Display for Terminal<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
@@ -632,11 +632,11 @@ impl_from_tree!(
 );
 
 /// Helper trait to add a `push_astelem` method to `script::Builder`
-trait PushAstElem<Pk: ToPublicKey, Ctx: ScriptContext, Ext: ParseableExt<Pk>> {
+trait PushAstElem<Pk: ToPublicKey, Ctx: ScriptContext, Ext: ParseableExt> {
     fn push_astelem(self, ast: &Miniscript<Pk, Ctx, Ext>) -> Self;
 }
 
-impl<Pk: ToPublicKey, Ctx: ScriptContext, Ext: ParseableExt<Pk>> PushAstElem<Pk, Ctx, Ext>
+impl<Pk: ToPublicKey, Ctx: ScriptContext, Ext: ParseableExt> PushAstElem<Pk, Ctx, Ext>
     for script::Builder
 {
     fn push_astelem(self, ast: &Miniscript<Pk, Ctx, Ext>) -> Self {
@@ -701,14 +701,14 @@ impl StackCtxOperations for script::Builder {
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Terminal<Pk, Ctx, Ext> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ext> {
     /// Encode the element as a fragment of Bitcoin Script. The inverse
     /// function, from Script to an AST element, is implemented in the
     /// `parse` module.
     pub fn encode(&self, mut builder: script::Builder) -> script::Builder
     where
         Pk: ToPublicKey,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
     {
         match *self {
             Terminal::PkK(ref pk) => builder.push_ms_key::<_, Ctx>(pk),

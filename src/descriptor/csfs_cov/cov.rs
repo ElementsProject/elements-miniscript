@@ -76,7 +76,7 @@ pub(crate) const COV_SCRIPT_SIZE: usize = 120;
 pub(crate) const COV_SCRIPT_OPCODE_COST: usize = 74;
 /// The covenant descriptor
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LegacyCSFSCov<Pk: MiniscriptKey, Ext: Extension<Pk>> {
+pub struct LegacyCSFSCov<Pk: MiniscriptKey, Ext: Extension> {
     /// the pk constraining the Covenant
     /// The key over which we want CHECKSIGFROMSTACK
     pub(crate) pk: Pk,
@@ -86,7 +86,7 @@ pub struct LegacyCSFSCov<Pk: MiniscriptKey, Ext: Extension<Pk>> {
     pub(crate) ms: Miniscript<Pk, Segwitv0, Ext>,
 }
 
-impl<Pk: MiniscriptKey, Ext: Extension<Pk>> LegacyCSFSCov<Pk, Ext> {
+impl<Pk: MiniscriptKey, Ext: Extension> LegacyCSFSCov<Pk, Ext> {
     /// Get the pk from covenant
     pub fn pk(&self) -> &Pk {
         &self.pk
@@ -130,7 +130,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> LegacyCSFSCov<Pk, Ext> {
     pub fn encode(&self) -> Script
     where
         Pk: ToPublicKey,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
     {
         let builder = self.ms.node.encode(script::Builder::new());
         builder.verify_cov(&self.pk.to_public_key()).into_script()
@@ -140,7 +140,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> LegacyCSFSCov<Pk, Ext> {
     pub fn satisfy<S: Satisfier<Pk>>(&self, s: S, allow_mall: bool) -> Result<Vec<Vec<u8>>, Error>
     where
         Pk: ToPublicKey,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
     {
         let mut wit = {
             use crate::descriptor::CovError::MissingSighashItem;
@@ -203,7 +203,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> LegacyCSFSCov<Pk, Ext> {
     }
 }
 
-impl<Ext: ParseableExt<bitcoin::PublicKey>> LegacyCSFSCov<bitcoin::PublicKey, Ext> {
+impl<Ext: ParseableExt> LegacyCSFSCov<bitcoin::PublicKey, Ext> {
     /// Check if the given script is a covenant descriptor
     /// Consumes the iterator so that only remaining miniscript
     /// needs to be parsed from the iterator
@@ -260,7 +260,7 @@ impl<Ext: ParseableExt<bitcoin::PublicKey>> LegacyCSFSCov<bitcoin::PublicKey, Ex
         Error,
     >
     where
-        Ext: ParseableExt<bitcoin::PublicKey>,
+        Ext: ParseableExt,
     {
         let tokens = lex(script)?;
         let mut iter = TokenIter::new(tokens);
@@ -310,7 +310,7 @@ impl_from_tree!(
 impl<Pk, Ext> fmt::Debug for LegacyCSFSCov<Pk, Ext>
 where
     Pk: MiniscriptKey,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}covwsh({},{})", ELMTS_STR, self.pk, self.ms)
@@ -320,7 +320,7 @@ where
 impl<Pk, Ext> fmt::Display for LegacyCSFSCov<Pk, Ext>
 where
     Pk: MiniscriptKey,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = format!("{}covwsh({},{})", ELMTS_STR, self.pk, self.ms);
@@ -344,7 +344,7 @@ impl_from_str!(
 impl<Pk, Ext> LegacyCSFSCov<Pk, Ext>
 where
     Pk: MiniscriptKey,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     /// Sanity checks for this covenant descriptor
     pub fn sanity_check(&self) -> Result<(), Error> {
@@ -366,7 +366,7 @@ where
     ) -> elements::Address
     where
         Pk: ToPublicKey,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
     {
         elements::Address::p2wsh(&self.encode(), blinder, params)
     }
@@ -375,7 +375,7 @@ where
     pub fn script_pubkey(&self) -> Script
     where
         Pk: ToPublicKey,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
     {
         self.encode().to_v0_p2wsh()
     }
@@ -393,7 +393,7 @@ where
     pub fn inner_script(&self) -> Script
     where
         Pk: ToPublicKey,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
     {
         self.encode()
     }
@@ -405,7 +405,7 @@ where
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
     {
         let mut witness = self.satisfy(satisfier, /*allow_mall*/ false)?;
         witness.push(self.encode().into_bytes());
@@ -435,7 +435,7 @@ where
     pub fn ecdsa_sighash_script_code(&self) -> Script
     where
         Pk: ToPublicKey,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
     {
         self.inner_script()
     }
@@ -447,7 +447,7 @@ where
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
     {
         let mut witness = self.satisfy(satisfier, /*allow_mall*/ true)?;
         witness.push(self.encode().into_bytes());
@@ -456,7 +456,7 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey, Ext: Extension<Pk>> ForEachKey<Pk> for LegacyCSFSCov<Pk, Ext> {
+impl<Pk: MiniscriptKey, Ext: Extension> ForEachKey<Pk> for LegacyCSFSCov<Pk, Ext> {
     fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
@@ -470,8 +470,8 @@ impl<P, Q, Ext, QExt> TranslatePk<P, Q, Ext, QExt> for LegacyCSFSCov<P, Ext>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
-    Ext: Extension<P>,
-    QExt: Extension<Q>,
+    Ext: Extension,
+    QExt: Extension,
 {
     type Output = LegacyCSFSCov<Q, QExt>;
 

@@ -24,9 +24,7 @@ use crate::descriptor::{CovOperations, LegacyCSFSCov};
 use crate::extensions::ParseableExt;
 use crate::miniscript::context::{NoChecks, ScriptContext};
 use crate::util::is_v1_p2tr;
-use crate::{
-    BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, TranslatePk, Translator,
-};
+use crate::{BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, Translator};
 
 /// Attempts to parse a slice as a Bitcoin public key, checking compressedness
 /// if asked to, but otherwise dropping it
@@ -56,7 +54,7 @@ fn pk_from_stack_elem(
 
 // Parse the script with appropriate context to check for context errors like
 // correct usage of x-only keys or multi_a
-fn script_from_stack_elem<Ctx: ScriptContext, Ext: ParseableExt<Ctx::Key>>(
+fn script_from_stack_elem<Ctx: ScriptContext, Ext: ParseableExt>(
     elem: &stack::Element,
 ) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
     match *elem {
@@ -81,19 +79,13 @@ fn cov_components_from_stackelem<Ext>(
     Miniscript<super::BitcoinKey, NoChecks, Ext>,
 )>
 where
-    Ext: TranslatePk<BitcoinKey, bitcoin::PublicKey> + ParseableExt<BitcoinKey>,
-    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output: ParseableExt<bitcoin::PublicKey>,
-    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output:
-        TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = Ext>,
+    Ext: ParseableExt,
 {
     let (pk, ms) = match *elem {
-        stack::Element::Push(sl) => {
-            LegacyCSFSCov::<
-                bitcoin::PublicKey,
-                <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
-            >::parse_cov_components(&elements::Script::from(sl.to_owned()))
-            .ok()?
-        }
+        stack::Element::Push(sl) => LegacyCSFSCov::<bitcoin::PublicKey, Ext>::parse_cov_components(
+            &elements::Script::from(sl.to_owned()),
+        )
+        .ok()?,
         _ => return None,
     };
     Some((super::BitcoinKey::Fullkey(pk), ms.to_no_checks_ms()))
@@ -121,7 +113,7 @@ pub enum ScriptType {
 
 /// Structure representing a script under evaluation as a Miniscript
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Inner<Ext: Extension<super::BitcoinKey>> {
+pub enum Inner<Ext: Extension> {
     /// The script being evaluated is a simple public key check (pay-to-pk,
     /// pay-to-pkhash or pay-to-witness-pkhash)
     // Technically, this allows representing a (XonlyKey, Sh) output but we make sure
@@ -147,22 +139,11 @@ pub enum Inner<Ext: Extension<super::BitcoinKey>> {
 /// Parses an `Inner` and appropriate `Stack` from completed transaction data,
 /// as well as the script that should be used as a scriptCode in a sighash
 /// Tr outputs don't have script code and return None.
-pub fn from_txdata<'txin, Ext: ParseableExt<BitcoinKey>>(
+pub fn from_txdata<'txin, Ext: ParseableExt>(
     spk: &elements::Script,
     script_sig: &'txin elements::Script,
     witness: &'txin [Vec<u8>],
-) -> Result<(Inner<Ext>, Stack<'txin>, Option<elements::Script>), Error>
-where
-    Ext: TranslatePk<BitcoinKey, bitcoin::PublicKey>,
-    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output: ParseableExt<bitcoin::PublicKey>,
-    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output:
-        TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = Ext>,
-    Ext: TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>,
-    <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
-        ParseableExt<bitcoin::XOnlyPublicKey>,
-    <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
-        TranslatePk<bitcoin::XOnlyPublicKey, BitcoinKey, Output = Ext>,
-{
+) -> Result<(Inner<Ext>, Stack<'txin>, Option<elements::Script>), Error> {
     let mut ssig_stack: Stack<'_> = script_sig
         .instructions_minimal()
         .map(stack::Element::from_instruction)
@@ -242,10 +223,7 @@ where
                             script::Builder::new().post_codesep_script().into_script();
                         return Ok((Inner::CovScript(pk, ms), wit_stack, Some(script_code)));
                     }
-                    let miniscript = script_from_stack_elem::<
-                        Segwitv0,
-                        <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
-                    >(&elem)?;
+                    let miniscript = script_from_stack_elem::<Segwitv0, Ext>(&elem)?;
                     let script = miniscript.encode();
                     let miniscript =
                         <Miniscript<_, _, _> as ToNoChecks<_>>::to_no_checks_ms(&miniscript);
@@ -296,10 +274,7 @@ where
                     let tap_script = wit_stack.pop().ok_or(Error::UnexpectedStackEnd)?;
                     let ctrl_blk =
                         ControlBlock::from_slice(ctrl_blk).map_err(Error::ControlBlockParse)?;
-                    let tap_script = script_from_stack_elem::<
-                        Tap,
-                        <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output,
-                    >(&tap_script)?;
+                    let tap_script = script_from_stack_elem::<Tap, Ext>(&tap_script)?;
                     let ms = tap_script.to_no_checks_ms();
                     // Creating new contexts is cheap
                     let secp = bitcoin::secp256k1::Secp256k1::verification_only();
@@ -373,7 +348,8 @@ where
                                     Err(Error::NonEmptyScriptSig)
                                 } else {
                                     // parse wsh with Segwitv0 context
-                                    let miniscript = script_from_stack_elem::<Segwitv0,                         <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,>(&elem)?;
+                                    let miniscript =
+                                        script_from_stack_elem::<Segwitv0, Ext>(&elem)?;
                                     let script = miniscript.encode();
                                     let miniscript = miniscript.to_no_checks_ms();
                                     let scripthash = sha256::Hash::hash(&script[..]);
@@ -395,10 +371,7 @@ where
                     }
                 }
                 // normal p2sh parsed in Legacy context
-                let miniscript = script_from_stack_elem::<
-                    Legacy,
-                    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
-                >(&elem)?;
+                let miniscript = script_from_stack_elem::<Legacy, Ext>(&elem)?;
                 let script = miniscript.encode();
                 let miniscript = miniscript.to_no_checks_ms();
                 if wit_stack.is_empty() {
@@ -421,11 +394,7 @@ where
     // ** bare script **
     } else if wit_stack.is_empty() {
         // Bare script parsed in BareCtx
-        let miniscript = Miniscript::<
-            bitcoin::PublicKey,
-            BareCtx,
-            <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output,
-        >::parse_insane(spk)?;
+        let miniscript = Miniscript::<bitcoin::PublicKey, BareCtx, Ext>::parse_insane(spk)?;
         let miniscript = miniscript.to_no_checks_ms();
         Ok((
             Inner::Script(miniscript, ScriptType::Bare),
@@ -446,23 +415,17 @@ where
 // While executing Pkh(<hash>) in NoChecks, we need to pop a public key from stack
 // However, NoChecks context does not know whether to parse the key as 33 bytes or 32 bytes
 // While converting into NoChecks we store explicitly in TypedHash160 enum.
-pub(super) trait ToNoChecks<ExtQ: Extension<BitcoinKey>> {
+pub(super) trait ToNoChecks<ExtQ: Extension> {
     fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks, ExtQ>;
 }
 
-impl<Ctx: ScriptContext, Ext: Extension<bitcoin::PublicKey>, ExtQ: Extension<BitcoinKey>>
-    ToNoChecks<ExtQ> for Miniscript<bitcoin::PublicKey, Ctx, Ext>
-where
-    Ext: TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = ExtQ>,
+impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
+    for Miniscript<bitcoin::PublicKey, Ctx, Ext>
 {
-    fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks, ExtQ> {
+    fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks, Ext> {
         struct TranslateFullPk;
 
-        impl<Ext: Extension<bitcoin::PublicKey>, ExtQ: Extension<BitcoinKey>>
-            Translator<bitcoin::PublicKey, BitcoinKey, (), Ext, ExtQ> for TranslateFullPk
-        where
-            Ext: TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = ExtQ>,
-        {
+        impl<Ext: Extension> Translator<bitcoin::PublicKey, BitcoinKey, (), Ext, Ext> for TranslateFullPk {
             fn pk(&mut self, pk: &bitcoin::PublicKey) -> Result<BitcoinKey, ()> {
                 Ok(BitcoinKey::Fullkey(*pk))
             }
@@ -475,8 +438,8 @@ where
                 Ok(*sha256)
             }
 
-            fn ext(&mut self, e: &Ext) -> Result<ExtQ, ()> {
-                e.translate_pk(self)
+            fn ext(&mut self, e: &Ext) -> Result<Ext, ()> {
+                Ok(e.clone())
             }
         }
 
@@ -485,19 +448,15 @@ where
     }
 }
 
-impl<Ctx: ScriptContext, Ext: Extension<bitcoin::XOnlyPublicKey>, ExtQ: Extension<BitcoinKey>>
-    ToNoChecks<ExtQ> for Miniscript<bitcoin::XOnlyPublicKey, Ctx, Ext>
-where
-    Ext: TranslatePk<bitcoin::XOnlyPublicKey, BitcoinKey, Output = ExtQ>,
+impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
+    for Miniscript<bitcoin::XOnlyPublicKey, Ctx, Ext>
 {
-    fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks, ExtQ> {
+    fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks, Ext> {
         // specify the () error type as this cannot error
         struct TranslateXOnlyPk;
 
-        impl<Ext: Extension<bitcoin::XOnlyPublicKey>, ExtQ: Extension<BitcoinKey>>
-            Translator<bitcoin::XOnlyPublicKey, BitcoinKey, (), Ext, ExtQ> for TranslateXOnlyPk
-        where
-            Ext: TranslatePk<bitcoin::XOnlyPublicKey, BitcoinKey, Output = ExtQ>,
+        impl<Ext: Extension> Translator<bitcoin::XOnlyPublicKey, BitcoinKey, (), Ext, Ext>
+            for TranslateXOnlyPk
         {
             fn pk(&mut self, pk: &bitcoin::XOnlyPublicKey) -> Result<BitcoinKey, ()> {
                 Ok(BitcoinKey::XOnlyPublicKey(*pk))
@@ -511,8 +470,8 @@ where
                 Ok(*sha256)
             }
 
-            fn ext(&mut self, e: &Ext) -> Result<ExtQ, ()> {
-                e.translate_pk(self)
+            fn ext(&mut self, e: &Ext) -> Result<Ext, ()> {
+                Ok(e.clone())
             }
         }
         self.real_translate_pk(&mut TranslateXOnlyPk)

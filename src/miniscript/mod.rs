@@ -60,7 +60,7 @@ use crate::{
 mod ms_tests;
 /// Top-level script AST type
 #[derive(Clone)]
-pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk> = NoExt> {
+pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension = NoExt> {
     ///A node in the Abstract Syntax Tree(
     pub node: Terminal<Pk, Ctx, Ext>,
     ///The correctness and malleability type information for the AST node
@@ -74,7 +74,7 @@ pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk> 
 /// `PartialOrd` of `Miniscript` must depend only on node and not the type information.
 /// The type information and extra_properties can be deterministically determined
 /// by the ast.
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> PartialOrd
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> PartialOrd
     for Miniscript<Pk, Ctx, Ext>
 {
     fn partial_cmp(&self, other: &Miniscript<Pk, Ctx, Ext>) -> Option<cmp::Ordering> {
@@ -85,7 +85,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> PartialOrd
 /// `Ord` of `Miniscript` must depend only on node and not the type information.
 /// The type information and extra_properties can be deterministically determined
 /// by the ast.
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Ord for Miniscript<Pk, Ctx, Ext> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Ord for Miniscript<Pk, Ctx, Ext> {
     fn cmp(&self, other: &Miniscript<Pk, Ctx, Ext>) -> cmp::Ordering {
         self.node.cmp(&other.node)
     }
@@ -94,15 +94,13 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Ord for Miniscri
 /// `PartialEq` of `Miniscript` must depend only on node and not the type information.
 /// The type information and extra_properties can be deterministically determined
 /// by the ast.
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> PartialEq
-    for Miniscript<Pk, Ctx, Ext>
-{
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> PartialEq for Miniscript<Pk, Ctx, Ext> {
     fn eq(&self, other: &Miniscript<Pk, Ctx, Ext>) -> bool {
         self.node.eq(&other.node)
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> ::std::hash::Hash
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> ::std::hash::Hash
     for Miniscript<Pk, Ctx, Ext>
 {
     fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
@@ -113,9 +111,9 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> ::std::hash::Has
 /// `Eq` of `Miniscript` must depend only on node and not the type information.
 /// The type information and extra_properties can be deterministically determined
 /// by the ast.
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Eq for Miniscript<Pk, Ctx, Ext> {}
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Eq for Miniscript<Pk, Ctx, Ext> {}
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> fmt::Debug
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> fmt::Debug
     for Miniscript<Pk, Ctx, Ext>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -123,7 +121,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> fmt::Debug
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Miniscript<Pk, Ctx, Ext> {
     /// Add type information(Type and Extdata) to Miniscript based on
     /// `AstElem` fragment. Dependent on display and clone because of Error
     /// Display code of type_check.
@@ -137,7 +135,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> fmt::Display
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> fmt::Display
     for Miniscript<Pk, Ctx, Ext>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -145,7 +143,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> fmt::Display
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Miniscript<Pk, Ctx, Ext> {
     /// Extracts the `AstElem` representing the root of the miniscript
     pub fn into_inner(self) -> Terminal<Pk, Ctx, Ext> {
         self.node
@@ -160,7 +158,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
 impl<Ctx, Ext> Miniscript<Ctx::Key, Ctx, Ext>
 where
     Ctx: ScriptContext,
-    Ext: ParseableExt<Ctx::Key>,
+    Ext: ParseableExt,
 {
     /// Attempt to parse an insane(scripts don't clear sanity checks)
     /// script into a Miniscript representation.
@@ -231,13 +229,13 @@ impl<Pk, Ctx, Ext> Miniscript<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     /// Encode as a Bitcoin script
     pub fn encode(&self) -> script::Script
     where
         Pk: ToPublicKey,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
     {
         self.node.encode(script::Builder::new()).into_script()
     }
@@ -254,7 +252,7 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Miniscript<Pk, Ctx, Ext> {
     /// Maximum number of witness elements used to satisfy the Miniscript
     /// fragment, including the witness script itself. Used to estimate
     /// the weight of the `VarInt` that specifies this number in a serialized
@@ -286,7 +284,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> ForEachKey<Pk>
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> ForEachKey<Pk>
     for Miniscript<Pk, Ctx, Ext>
 {
     fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
@@ -303,8 +301,8 @@ where
     Pk: MiniscriptKey,
     Q: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk>,
-    QExt: Extension<Q>,
+    Ext: Extension,
+    QExt: Extension,
 {
     type Output = Miniscript<Q, Ctx, QExt>;
 
@@ -318,7 +316,7 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Miniscript<Pk, Ctx, Ext> {
     fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: &mut F) -> bool
     where
         Pk: 'a,
@@ -336,8 +334,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
         CtxQ: ScriptContext,
         T: Translator<Pk, Q, FuncError, Ext, QExt>,
         Ctx: ScriptContext,
-        Ext: Extension<Pk>,
-        QExt: Extension<Q>,
+        Ext: Extension,
+        QExt: Extension,
     {
         let inner = self.node.real_translate_pk(t)?;
         let ms = Miniscript {
@@ -377,7 +375,7 @@ impl_block_str!(
     }
 );
 
-impl<Pk: ToPublicKey, Ctx: ScriptContext, Ext: ParseableExt<Pk>> Miniscript<Pk, Ctx, Ext> {
+impl<Pk: ToPublicKey, Ctx: ScriptContext, Ext: ParseableExt> Miniscript<Pk, Ctx, Ext> {
     /// Attempt to produce non-malleable satisfying witness for the
     /// witness script represented by the parse tree
     pub fn satisfy<S: satisfy::Satisfier<Pk>>(&self, satisfier: S) -> Result<Vec<Vec<u8>>, Error> {

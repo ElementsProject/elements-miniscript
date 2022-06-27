@@ -89,7 +89,7 @@ impl error::Error for LiftError {
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Miniscript<Pk, Ctx, Ext> {
     /// Lifting corresponds conversion of miniscript into Policy
     /// [policy.semantic.Policy] for human readable or machine analysis.
     /// However, naively lifting miniscripts can result in incorrect
@@ -109,7 +109,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Liftable<Pk>
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Liftable<Pk>
     for Miniscript<Pk, Ctx, Ext>
 {
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
@@ -124,7 +124,7 @@ impl<Pk, Ctx, Ext> Liftable<Pk> for Terminal<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
         let ret = match *self {
@@ -171,7 +171,7 @@ where
                     .map(|k| Semantic::KeyHash(k.to_pubkeyhash()))
                     .collect(),
             ),
-            Terminal::Ext(ref e) => e.lift()?,
+            Terminal::Ext(ref _e) => Err(Error::CovError(CovError::CovenantLift))?,
         }
         .normalized();
         Ok(ret)

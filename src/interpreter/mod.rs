@@ -29,7 +29,7 @@ use elements::{self, secp256k1_zkp, sighash, EcdsaSigHashType, SigHash};
 use crate::extensions::ParseableExt;
 use crate::miniscript::context::NoChecks;
 use crate::miniscript::ScriptContext;
-use crate::{util, Descriptor, ElementsSig, Miniscript, Terminal, ToPublicKey, TranslatePk};
+use crate::{util, Descriptor, ElementsSig, Miniscript, Terminal, ToPublicKey};
 
 mod error;
 mod inner;
@@ -41,7 +41,7 @@ pub use self::stack::{Element, Stack};
 use crate::{elementssig_from_rawsig, CovenantExt, Extension, MiniscriptKey};
 
 /// An iterable Miniscript-structured representation of the spending of a coin
-pub struct Interpreter<'txin, Ext: Extension<BitcoinKey>> {
+pub struct Interpreter<'txin, Ext: Extension> {
     inner: inner::Inner<Ext>,
     stack: Stack<'txin>,
     /// For non-Taproot spends, the scriptCode; for Taproot script-spends, this
@@ -202,16 +202,7 @@ impl<'txin> Interpreter<'txin, CovenantExt> {
 
 impl<'txin, Ext> Interpreter<'txin, Ext>
 where
-    Ext: ParseableExt<BitcoinKey>,
-    Ext: TranslatePk<BitcoinKey, bitcoin::PublicKey>,
-    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output: ParseableExt<bitcoin::PublicKey>,
-    <Ext as TranslatePk<BitcoinKey, bitcoin::PublicKey>>::Output:
-        TranslatePk<bitcoin::PublicKey, BitcoinKey, Output = Ext>,
-    Ext: TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>,
-    <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
-        ParseableExt<bitcoin::XOnlyPublicKey>,
-    <Ext as TranslatePk<BitcoinKey, bitcoin::XOnlyPublicKey>>::Output:
-        TranslatePk<bitcoin::XOnlyPublicKey, BitcoinKey, Output = Ext>,
+    Ext: ParseableExt,
 {
     /// Constructs an interpreter from the data of a spending transaction
     ///
@@ -537,7 +528,7 @@ pub enum HashLockType {
 /// 'intp represents the lifetime of descriptor and `stack represents
 /// the lifetime of witness
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SatisfiedConstraint<Ext: Extension<BitcoinKey>> {
+pub enum SatisfiedConstraint<Ext: Extension> {
     ///Public key and corresponding signature
     PublicKey {
         /// KeySig pair
@@ -597,7 +588,7 @@ pub enum SatisfiedConstraint<Ext: Extension<BitcoinKey>> {
 ///depending on evaluation of the children.
 struct NodeEvaluationState<'intp, Ext>
 where
-    Ext: Extension<BitcoinKey>,
+    Ext: Extension,
 {
     ///The node which is being evaluated
     node: &'intp Miniscript<BitcoinKey, NoChecks, Ext>,
@@ -620,7 +611,7 @@ where
 /// before ultimately returning an error.
 pub struct Iter<'intp, 'txin: 'intp, Ext>
 where
-    Ext: Extension<BitcoinKey>,
+    Ext: Extension,
 {
     verify_sig: Box<dyn FnMut(&KeySigPair) -> bool + 'intp>,
     public_key: Option<&'intp BitcoinKey>,
@@ -636,7 +627,7 @@ where
 impl<'intp, 'txin: 'intp, Ext> Iterator for Iter<'intp, 'txin, Ext>
 where
     NoChecks: ScriptContext,
-    Ext: ParseableExt<BitcoinKey>,
+    Ext: ParseableExt,
 {
     type Item = Result<SatisfiedConstraint<Ext>, Error>;
 
@@ -657,7 +648,7 @@ where
 impl<'intp, 'txin: 'intp, Ext> Iter<'intp, 'txin, Ext>
 where
     NoChecks: ScriptContext,
-    Ext: ParseableExt<BitcoinKey>,
+    Ext: ParseableExt,
 {
     /// Helper function to push a NodeEvaluationState on state stack
     fn push_evaluation_state(

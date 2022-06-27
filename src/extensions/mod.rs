@@ -23,9 +23,7 @@ pub use self::tx_ver::VerEq;
 
 /// Extensions to elements-miniscript.
 /// Refer to implementations(unimplemented!) for example and tutorials
-pub trait Extension<Pk: MiniscriptKey>:
-    Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash + Liftable<Pk>
-{
+pub trait Extension: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash {
     /// Calculate the correctness property for the leaf fragment.
     /// See miniscript reference for more info on different types
     fn corr_prop(&self) -> Correctness;
@@ -39,9 +37,12 @@ pub trait Extension<Pk: MiniscriptKey>:
     fn extra_prop(&self) -> ExtData;
 
     /// Check if the predicate holds for all keys
-    fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
+    fn real_for_each_key<'a, Pk, F: FnMut(ForEach<'a, Pk>) -> bool>(
+        &'a self,
+        _pred: &mut F,
+    ) -> bool
     where
-        Pk: 'a,
+        Pk: 'a + MiniscriptKey,
         Pk::Hash: 'a;
 
     /// Get the script size of the current fragment
@@ -71,10 +72,8 @@ pub trait Extension<Pk: MiniscriptKey>:
 /// [`ToPublicKey`].
 //
 // Come up with better name for this trait
-pub trait ParseableExt<Pk>:
-    Extension<Pk> + Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash + Liftable<Pk>
-where
-    Pk: MiniscriptKey + ToPublicKey,
+pub trait ParseableExt:
+    Extension + Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash
 {
     /// Parse the terminal from [`TokenIter`]. Implementers of this trait are responsible
     /// for making sure tokens is mutated correctly. If parsing is not successful, the tokens
@@ -94,15 +93,13 @@ where
     ) -> Result<bool, interpreter::Error>;
 
     /// Encoding of the current fragment
-    fn push_to_builder(&self, builder: Builder) -> Builder
-    where
-        Pk: ToPublicKey;
+    fn push_to_builder(&self, builder: Builder) -> Builder;
 
     /// Produce a satisfaction for this from satisfier.
     /// See satisfaction code in satisfy.rs for example
     /// Note that the [`Satisfaction`] struct also covers the case when
     /// satisfaction is impossible/unavailable
-    fn satisfy<S>(&self, _sat: &S) -> Satisfaction
+    fn satisfy<Pk, S>(&self, _sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>;
@@ -111,7 +108,7 @@ where
     /// See satisfaction code in satisfy.rs for example
     /// Note that the [`Satisfaction`] struct also covers the case when
     /// dissatisfaction is impossible/unavailable
-    fn dissatisfy<S>(&self, _sat: &S) -> Satisfaction
+    fn dissatisfy<Pk, S>(&self, _sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>;
@@ -122,7 +119,7 @@ where
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub enum NoExt {}
 
-impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
+impl Extension for NoExt {
     fn corr_prop(&self) -> Correctness {
         match *self {}
     }
@@ -135,9 +132,9 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
         match *self {}
     }
 
-    fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
+    fn real_for_each_key<'a, Pk, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
     where
-        Pk: 'a,
+        Pk: 'a + MiniscriptKey,
         Pk::Hash: 'a,
     {
         match *self {}
@@ -153,8 +150,8 @@ impl<Pk: MiniscriptKey> Extension<Pk> for NoExt {
     }
 }
 
-impl<Pk: MiniscriptKey + ToPublicKey> ParseableExt<Pk> for NoExt {
-    fn satisfy<S>(&self, _sat: &S) -> Satisfaction
+impl ParseableExt for NoExt {
+    fn satisfy<Pk, S>(&self, _sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
@@ -162,7 +159,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> ParseableExt<Pk> for NoExt {
         match *self {}
     }
 
-    fn dissatisfy<S>(&self, _sat: &S) -> Satisfaction
+    fn dissatisfy<Pk, S>(&self, _sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
@@ -177,10 +174,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> ParseableExt<Pk> for NoExt {
         match *self {}
     }
 
-    fn push_to_builder(&self, _builder: Builder) -> Builder
-    where
-        Pk: ToPublicKey,
-    {
+    fn push_to_builder(&self, _builder: Builder) -> Builder {
         match *self {}
     }
 
@@ -226,8 +220,8 @@ pub enum CovenantExt {
 macro_rules! all_arms_fn {
     ($slf: ident, $trt: ident, $f: ident, $($args:ident, )* ) => {
         match $slf {
-            CovenantExt::VerEq(v) => <VerEq as $trt<Pk>>::$f(v, $($args, )*),
-            CovenantExt::OutputsPref(p) => <OutputsPref as $trt<Pk>>::$f(p, $($args, )*),
+            CovenantExt::VerEq(v) => <VerEq as $trt>::$f(v, $($args, )*),
+            CovenantExt::OutputsPref(p) => <OutputsPref as $trt>::$f(p, $($args, )*),
         }
     };
 }
@@ -236,9 +230,9 @@ macro_rules! all_arms_fn {
 // Self::$f(args)
 macro_rules! try_from_arms {
     ( $trt: ident, $f: ident, $($args: ident, )*) => {
-        if let Ok(v) = <VerEq as $trt<Pk>>::$f($($args, )*) {
+        if let Ok(v) = <VerEq as $trt>::$f($($args, )*) {
             Ok(CovenantExt::VerEq(v))
-        } else if let Ok(v) = <OutputsPref as $trt<Pk>>::$f($($args, )*) {
+        } else if let Ok(v) = <OutputsPref as $trt>::$f($($args, )*) {
             Ok(CovenantExt::OutputsPref(v))
         } else {
             Err(())
@@ -246,10 +240,7 @@ macro_rules! try_from_arms {
     };
 }
 
-impl<Pk> Extension<Pk> for CovenantExt
-where
-    Pk: MiniscriptKey,
-{
+impl Extension for CovenantExt {
     fn corr_prop(&self) -> Correctness {
         all_arms_fn!(self, Extension, corr_prop,)
     }
@@ -262,9 +253,9 @@ where
         all_arms_fn!(self, Extension, extra_prop,)
     }
 
-    fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: &mut F) -> bool
+    fn real_for_each_key<'a, Pk, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: &mut F) -> bool
     where
-        Pk: 'a,
+        Pk: 'a + MiniscriptKey,
         Pk::Hash: 'a,
     {
         all_arms_fn!(self, Extension, real_for_each_key, pred,)
@@ -279,8 +270,8 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey + ToPublicKey> ParseableExt<Pk> for CovenantExt {
-    fn satisfy<S>(&self, sat: &S) -> Satisfaction
+impl ParseableExt for CovenantExt {
+    fn satisfy<Pk, S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
@@ -288,7 +279,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> ParseableExt<Pk> for CovenantExt {
         all_arms_fn!(self, ParseableExt, satisfy, sat,)
     }
 
-    fn dissatisfy<S>(&self, sat: &S) -> Satisfaction
+    fn dissatisfy<Pk, S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
@@ -300,10 +291,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> ParseableExt<Pk> for CovenantExt {
         all_arms_fn!(self, ParseableExt, evaluate, stack,)
     }
 
-    fn push_to_builder(&self, builder: Builder) -> Builder
-    where
-        Pk: ToPublicKey,
-    {
+    fn push_to_builder(&self, builder: Builder) -> Builder {
         all_arms_fn!(self, ParseableExt, push_to_builder, builder,)
     }
 

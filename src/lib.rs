@@ -212,8 +212,8 @@ pub trait Translator<P, Q, E, PExt = NoExt, QExt = NoExt>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
-    PExt: Extension<P>,
-    QExt: Extension<Q>,
+    PExt: Extension,
+    QExt: Extension,
 {
     /// Translates public keys P -> Q.
     fn pk(&mut self, pk: &P) -> Result<Q, E>;
@@ -234,8 +234,8 @@ pub trait TranslatePk<P, Q, PExt = NoExt, QExt = NoExt>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
-    PExt: Extension<P>,
-    QExt: Extension<Q>,
+    PExt: Extension,
+    QExt: Extension,
 {
     /// The associated output type. This must be `Self<Q>`.
     type Output;
@@ -346,7 +346,7 @@ impl<Pk, Ctx, Ext> From<miniscript::types::Error<Pk, Ctx, Ext>> for Error
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     fn from(e: miniscript::types::Error<Pk, Ctx, Ext>) -> Error {
         Error::TypeCheck(e.to_string())

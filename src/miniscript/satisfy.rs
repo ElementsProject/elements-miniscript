@@ -1029,7 +1029,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
     {
         let mut sats = subs
@@ -1148,7 +1148,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
     {
         let mut sats = subs
@@ -1277,7 +1277,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
         G: FnMut(
             usize,
@@ -1587,7 +1587,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
         G: FnMut(
             usize,
@@ -1757,7 +1757,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
     {
         Self::satisfy_helper(
             term,
@@ -1774,7 +1774,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: ParseableExt<Pk>,
+        Ext: ParseableExt,
     >(
         term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,

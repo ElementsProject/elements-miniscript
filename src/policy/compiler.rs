@@ -234,7 +234,7 @@ impl Property for CompilerExtData {
         }
     }
 
-    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(_e: &E) -> Self {
+    fn from_ext<E: Extension>(_e: &E) -> Self {
         unreachable!("NoExt context should not have extensions")
     }
 
