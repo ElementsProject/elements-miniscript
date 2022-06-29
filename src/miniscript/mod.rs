@@ -47,14 +47,14 @@ use std::sync::Arc;
 
 use self::lex::{lex, TokenIter};
 use self::types::Property;
-use crate::extensions::ParseableExt;
+use crate::extensions::{ExtParam, ParseableExt};
 pub use crate::miniscript::context::ScriptContext;
 use crate::miniscript::decode::Terminal;
 use crate::miniscript::types::extra_props::ExtData;
 use crate::miniscript::types::Type;
 use crate::{
-    expression, Error, Extension, ForEach, ForEachKey, MiniscriptKey, NoExt, ToPublicKey,
-    TranslatePk, Translator,
+    expression, Error, ExtTranslator, Extension, ForEach, ForEachKey, MiniscriptKey, NoExt,
+    ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 #[cfg(test)]
 mod ms_tests;
@@ -296,23 +296,42 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> ForEachKey<Pk>
     }
 }
 
-impl<Pk, Q, Ctx, Ext, QExt> TranslatePk<Pk, Q, Ext, QExt> for Miniscript<Pk, Ctx, Ext>
+impl<Pk, Q, Ctx, Ext> TranslatePk<Pk, Q> for Miniscript<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Q: MiniscriptKey,
     Ctx: ScriptContext,
     Ext: Extension,
-    QExt: Extension,
 {
-    type Output = Miniscript<Q, Ctx, QExt>;
+    type Output = Miniscript<Q, Ctx, Ext>;
 
     /// Translates a struct from one generic to another where the translation
     /// for Pk is provided by [`Translator`]
     fn translate_pk<T, E>(&self, translate: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<Pk, Q, E, Ext, QExt>,
+        T: Translator<Pk, Q, E>,
     {
         self.real_translate_pk(translate)
+    }
+}
+
+impl<Pk, Ctx, Ext, ExtQ> TranslateExt<Ext, ExtQ> for Miniscript<Pk, Ctx, Ext>
+where
+    Pk: MiniscriptKey,
+    Ctx: ScriptContext,
+    Ext: Extension + TranslateExt<Ext, ExtQ>,
+    ExtQ: Extension,
+    <Ext as TranslateExt<Ext, ExtQ>>::Output: Extension,
+{
+    type Output = Miniscript<Pk, Ctx, <Ext as TranslateExt<Ext, ExtQ>>::Output>;
+
+    fn translate_ext<T, E, PArg, QArg>(&self, t: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtTranslator<PArg, QArg, E>,
+        PArg: ExtParam,
+        QArg: ExtParam,
+    {
+        self.real_translate_ext(t)
     }
 }
 
@@ -325,19 +344,42 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Miniscript<Pk, Ctx, 
         self.node.real_for_each_key(pred)
     }
 
-    pub(super) fn real_translate_pk<Q, CtxQ, QExt, T, FuncError>(
+    pub(super) fn real_translate_pk<Q, CtxQ, T, FuncError>(
         &self,
         t: &mut T,
-    ) -> Result<Miniscript<Q, CtxQ, QExt>, FuncError>
+    ) -> Result<Miniscript<Q, CtxQ, Ext>, FuncError>
     where
         Q: MiniscriptKey,
         CtxQ: ScriptContext,
-        T: Translator<Pk, Q, FuncError, Ext, QExt>,
+        T: Translator<Pk, Q, FuncError>,
         Ctx: ScriptContext,
         Ext: Extension,
-        QExt: Extension,
     {
         let inner = self.node.real_translate_pk(t)?;
+        let ms = Miniscript {
+            //directly copying the type and ext is safe because translating public
+            //key should not change any properties
+            ty: self.ty,
+            ext: self.ext,
+            node: inner,
+            phantom: PhantomData,
+        };
+        Ok(ms)
+    }
+
+    pub(super) fn real_translate_ext<T, FuncError, ExtQ, PArg, QArg>(
+        &self,
+        t: &mut T,
+    ) -> Result<Miniscript<Pk, Ctx, <Ext as TranslateExt<Ext, ExtQ>>::Output>, FuncError>
+    where
+        ExtQ: Extension,
+        T: ExtTranslator<PArg, QArg, FuncError>,
+        PArg: ExtParam,
+        QArg: ExtParam,
+        Ext: TranslateExt<Ext, ExtQ>,
+        <Ext as TranslateExt<Ext, ExtQ>>::Output: Extension,
+    {
+        let inner = self.node.real_translate_ext(t)?;
         let ms = Miniscript {
             //directly copying the type and ext is safe because translating public
             //key should not change any properties

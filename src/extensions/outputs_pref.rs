@@ -9,7 +9,7 @@ use elements::hashes::hex::{FromHex, ToHex};
 use elements::hashes::{sha256d, Hash};
 use elements::{self};
 
-use super::ParseableExt;
+use super::{ExtParam, ParseableExt};
 use crate::descriptor::CovError;
 use crate::miniscript::astelem::StackCtxOperations;
 use crate::miniscript::context::ScriptContextError;
@@ -20,8 +20,8 @@ use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::policy::{self, Liftable};
 use crate::{
-    expression, interpreter, Error, Extension, ForEach, MiniscriptKey, Satisfier, ToPublicKey,
-    TranslatePk, Translator,
+    expression, interpreter, Error, ExtTranslator, Extension, MiniscriptKey, Satisfier,
+    ToPublicKey, TranslateExt,
 };
 
 /// Prefix is initally encoded in the script pubkey
@@ -56,15 +56,6 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for OutputsPref {
 }
 
 impl Extension for OutputsPref {
-    fn real_for_each_key<'a, Pk, F>(&'a self, _pred: &mut F) -> bool
-    where
-        Pk: 'a + MiniscriptKey,
-        Pk::Hash: 'a,
-        F: FnMut(ForEach<'a, Pk>) -> bool,
-    {
-        true
-    }
-
     fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError> {
         if self.pref.len() > MAX_SCRIPT_ELEMENT_SIZE {
             Err(ScriptContextError::CovElementSizeExceeded)
@@ -292,12 +283,14 @@ impl ParseableExt for OutputsPref {
     }
 }
 
-impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for OutputsPref {
+impl<PExt: Extension, QExt: Extension> TranslateExt<PExt, QExt> for OutputsPref {
     type Output = OutputsPref;
 
-    fn translate_pk<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
+    fn translate_ext<T, E, PArg, QArg>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<P, Q, E>,
+        T: ExtTranslator<PArg, QArg, E>,
+        PArg: ExtParam,
+        QArg: ExtParam,
     {
         Ok(Self {
             pref: self.pref.clone(),

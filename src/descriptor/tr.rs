@@ -129,12 +129,11 @@ impl<Pk: MiniscriptKey, Ext: Extension> TapTree<Pk, Ext> {
     }
 
     // Helper function to translate keys
-    fn translate_helper<T, Q, QExt, Error>(&self, t: &mut T) -> Result<TapTree<Q, QExt>, Error>
+    fn translate_helper<T, Q, Error>(&self, t: &mut T) -> Result<TapTree<Q, Ext>, Error>
     where
-        T: Translator<Pk, Q, Error, Ext, QExt>,
+        T: Translator<Pk, Q, Error>,
         Q: MiniscriptKey,
         Ext: Extension,
-        QExt: Extension,
     {
         let frag = match self {
             TapTree::Tree(l, r) => TapTree::Tree(
@@ -607,18 +606,17 @@ impl<Pk: MiniscriptKey, Ext: Extension> ForEachKey<Pk> for Tr<Pk, Ext> {
     }
 }
 
-impl<P, Q, Ext, QExt> TranslatePk<P, Q, Ext, QExt> for Tr<P, Ext>
+impl<P, Q, Ext> TranslatePk<P, Q> for Tr<P, Ext>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
     Ext: Extension,
-    QExt: Extension,
 {
-    type Output = Tr<Q, QExt>;
+    type Output = Tr<Q, Ext>;
 
     fn translate_pk<T, E>(&self, translate: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<P, Q, E, Ext, QExt>,
+        T: Translator<P, Q, E>,
     {
         let translate_desc = Tr {
             internal_key: translate.pk(&self.internal_key)?,

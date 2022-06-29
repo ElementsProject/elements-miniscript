@@ -665,7 +665,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
     }
 }
 
-impl<P, Q> TranslatePk<P, Q, NoExt, NoExt> for Descriptor<P>
+impl<P, Q> TranslatePk<P, Q> for Descriptor<P>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
@@ -743,10 +743,6 @@ impl Descriptor<DescriptorPublicKey> {
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
                 Ok(*sha256)
             }
-
-            fn ext(&mut self, e: &NoExt) -> Result<NoExt, ()> {
-                Ok(e.clone())
-            }
         }
         self.translate_pk(&mut Derivator(index))
             .expect("BIP 32 key index substitution cannot fail")
@@ -803,10 +799,6 @@ impl Descriptor<DescriptorPublicKey> {
 
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ConversionError> {
                 Ok(*sha256)
-            }
-
-            fn ext(&mut self, e: &NoExt) -> Result<NoExt, ConversionError> {
-                Ok(e.clone())
             }
         }
 
@@ -867,10 +859,6 @@ impl Descriptor<DescriptorPublicKey> {
                     sha256::Hash::from_str(sha256).map_err(|e| Error::Unexpected(e.to_string()))?;
                 Ok(hash)
             }
-
-            fn ext(&mut self, e: &NoExt) -> Result<NoExt, Error> {
-                Ok(*e)
-            }
         }
 
         let descriptor = Descriptor::<String>::from_str(s)?;
@@ -896,10 +884,6 @@ impl Descriptor<DescriptorPublicKey> {
 
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<String, ()> {
                 Ok(sha256.to_string())
-            }
-
-            fn ext(&mut self, e: &NoExt) -> Result<NoExt, ()> {
-                Ok(*e)
             }
         }
 

@@ -51,7 +51,7 @@ use super::super::checksum::{desc_checksum, verify_checksum};
 use super::super::ELMTS_STR;
 use super::{CovError, CovOperations};
 use crate::expression::{self, FromTree};
-use crate::extensions::ParseableExt;
+use crate::extensions::{ExtParam, ParseableExt};
 use crate::miniscript::lex::{lex, Token as Tk, TokenIter};
 use crate::miniscript::limits::{
     MAX_OPS_PER_SCRIPT, MAX_SCRIPT_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE,
@@ -59,8 +59,8 @@ use crate::miniscript::limits::{
 use crate::miniscript::{decode, types};
 use crate::util::varint_len;
 use crate::{
-    Error, Extension, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, ScriptContext,
-    Segwitv0, ToPublicKey, TranslatePk, Translator,
+    Error, ExtTranslator, Extension, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier,
+    ScriptContext, Segwitv0, ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
 // A simple utility function to serialize an array
@@ -466,22 +466,44 @@ impl<Pk: MiniscriptKey, Ext: Extension> ForEachKey<Pk> for LegacyCSFSCov<Pk, Ext
     }
 }
 
-impl<P, Q, Ext, QExt> TranslatePk<P, Q, Ext, QExt> for LegacyCSFSCov<P, Ext>
+impl<P, Q, Ext> TranslatePk<P, Q> for LegacyCSFSCov<P, Ext>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
     Ext: Extension,
-    QExt: Extension,
 {
-    type Output = LegacyCSFSCov<Q, QExt>;
+    type Output = LegacyCSFSCov<Q, Ext>;
 
     fn translate_pk<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<P, Q, E, Ext, QExt>,
+        T: Translator<P, Q, E>,
     {
         Ok(LegacyCSFSCov {
             pk: t.pk(&self.pk)?,
             ms: self.ms.translate_pk(t)?,
+        })
+    }
+}
+
+impl<Pk, Ext, ExtQ> TranslateExt<Ext, ExtQ> for LegacyCSFSCov<Pk, Ext>
+where
+    Pk: MiniscriptKey,
+    Ext: Extension,
+    ExtQ: Extension,
+    Ext: TranslateExt<Ext, ExtQ>,
+    <Ext as TranslateExt<Ext, ExtQ>>::Output: Extension,
+{
+    type Output = LegacyCSFSCov<Pk, <Ext as TranslateExt<Ext, ExtQ>>::Output>;
+
+    fn translate_ext<T, E, PArg, QArg>(&self, translator: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtTranslator<PArg, QArg, E>,
+        PArg: ExtParam,
+        QArg: ExtParam,
+    {
+        Ok(LegacyCSFSCov {
+            pk: self.pk.clone(),
+            ms: self.ms.translate_ext(translator)?,
         })
     }
 }

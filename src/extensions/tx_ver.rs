@@ -7,7 +7,7 @@ use std::fmt;
 use elements::encode::serialize;
 use elements::{self};
 
-use super::ParseableExt;
+use super::{ExtParam, ParseableExt};
 use crate::descriptor::CovError;
 use crate::miniscript::astelem::StackCtxOperations;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -16,8 +16,8 @@ use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::policy::{self, Liftable};
 use crate::{
-    expression, interpreter, miniscript, util, Error, Extension, ForEach, MiniscriptKey, Satisfier,
-    ToPublicKey, TranslatePk, Translator,
+    expression, interpreter, miniscript, util, Error, ExtTranslator, Extension, MiniscriptKey,
+    Satisfier, ToPublicKey, TranslateExt,
 };
 
 /// Version struct
@@ -41,15 +41,6 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for VerEq {
 }
 
 impl Extension for VerEq {
-    fn real_for_each_key<'a, Pk, F>(&'a self, _pred: &mut F) -> bool
-    where
-        Pk: 'a + MiniscriptKey,
-        Pk::Hash: 'a,
-        F: FnMut(ForEach<'a, Pk>) -> bool,
-    {
-        true
-    }
-
     fn segwit_ctx_checks(&self) -> Result<(), miniscript::context::ScriptContextError> {
         Ok(())
     }
@@ -199,12 +190,14 @@ impl ParseableExt for VerEq {
     }
 }
 
-impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for VerEq {
+impl<PExt: Extension, QExt: Extension> TranslateExt<PExt, QExt> for VerEq {
     type Output = VerEq;
 
-    fn translate_pk<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
+    fn translate_ext<T, E, PArg, QArg>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<P, Q, E>,
+        T: ExtTranslator<PArg, QArg, E>,
+        PArg: ExtParam,
+        QArg: ExtParam,
     {
         Ok(Self { n: self.n })
     }

@@ -113,10 +113,6 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     ///         unreachable!("Policy does not contain any sha256 fragment");
     ///     }
     ///
-    ///     // No extensions in policy
-    ///     fn ext(&mut self, sha256: &NoExt) -> Result<NoExt, ()> {
-    ///         unreachable!("No extensions in policy");
-    ///     }
     /// }
     ///
     /// let mut pk_map = HashMap::new();
@@ -131,7 +127,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// ```
     pub fn translate_pkh<Q, E, T>(&self, t: &mut T) -> Result<Policy<Q>, E>
     where
-        T: Translator<Pk, Q, E>, // no extensions in policy yet
+        T: Translator<Pk, Q, E>,
         Q: MiniscriptKey,
     {
         self._translate_pkh(t)

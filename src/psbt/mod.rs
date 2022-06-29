@@ -36,7 +36,7 @@ use crate::miniscript::iter::PkPkh;
 use crate::miniscript::limits::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crate::miniscript::satisfy::{elementssig_from_rawsig, After, Older};
 use crate::{
-    descriptor, interpreter, Descriptor, DescriptorPublicKey, ElementsSig, MiniscriptKey, NoExt,
+    descriptor, interpreter, Descriptor, DescriptorPublicKey, ElementsSig, MiniscriptKey,
     Preimage32, Satisfier, ToPublicKey, TranslatePk, Translator,
 };
 
@@ -1009,10 +1009,6 @@ impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionE
     ) -> Result<sha256::Hash, descriptor::ConversionError> {
         Ok(*sha256)
     }
-
-    fn ext(&mut self, e: &NoExt) -> Result<NoExt, descriptor::ConversionError> {
-        Ok(e.clone())
-    }
 }
 
 // Traverse the pkh lookup while maintaining a reverse map for storing the map
@@ -1049,10 +1045,6 @@ impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionE
         sha256: &sha256::Hash,
     ) -> Result<sha256::Hash, descriptor::ConversionError> {
         Ok(*sha256)
-    }
-
-    fn ext(&mut self, e: &NoExt) -> Result<NoExt, descriptor::ConversionError> {
-        Ok(e.clone())
     }
 }
 

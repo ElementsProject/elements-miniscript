@@ -425,7 +425,7 @@ impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
     fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks, Ext> {
         struct TranslateFullPk;
 
-        impl<Ext: Extension> Translator<bitcoin::PublicKey, BitcoinKey, (), Ext, Ext> for TranslateFullPk {
+        impl Translator<bitcoin::PublicKey, BitcoinKey, ()> for TranslateFullPk {
             fn pk(&mut self, pk: &bitcoin::PublicKey) -> Result<BitcoinKey, ()> {
                 Ok(BitcoinKey::Fullkey(*pk))
             }
@@ -436,10 +436,6 @@ impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
 
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
                 Ok(*sha256)
-            }
-
-            fn ext(&mut self, e: &Ext) -> Result<Ext, ()> {
-                Ok(e.clone())
             }
         }
 
@@ -455,9 +451,7 @@ impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
         // specify the () error type as this cannot error
         struct TranslateXOnlyPk;
 
-        impl<Ext: Extension> Translator<bitcoin::XOnlyPublicKey, BitcoinKey, (), Ext, Ext>
-            for TranslateXOnlyPk
-        {
+        impl Translator<bitcoin::XOnlyPublicKey, BitcoinKey, ()> for TranslateXOnlyPk {
             fn pk(&mut self, pk: &bitcoin::XOnlyPublicKey) -> Result<BitcoinKey, ()> {
                 Ok(BitcoinKey::XOnlyPublicKey(*pk))
             }
@@ -468,10 +462,6 @@ impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
 
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
                 Ok(*sha256)
-            }
-
-            fn ext(&mut self, e: &Ext) -> Result<Ext, ()> {
-                Ok(e.clone())
             }
         }
         self.real_translate_pk(&mut TranslateXOnlyPk)

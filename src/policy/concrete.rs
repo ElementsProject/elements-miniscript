@@ -357,10 +357,6 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     ///         unreachable!("Policy does not contain any sha256 fragment");
     ///     }
     ///
-    ///     // No extensions in policy
-    ///     fn ext(&mut self, sha256: &NoExt) -> Result<NoExt, ()> {
-    ///         unreachable!("No extensions in policy");
-    ///     }
     /// }
     ///
     /// let mut pk_map = HashMap::new();

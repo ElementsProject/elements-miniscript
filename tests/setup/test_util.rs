@@ -25,7 +25,7 @@ use bitcoin::secp256k1;
 use elements::{AddressParams, BlockHash};
 use miniscript::descriptor::{SinglePub, SinglePubKey};
 use miniscript::{
-    Descriptor, DescriptorPublicKey, Miniscript, NoExt, ScriptContext, TranslatePk, Translator,
+    Descriptor, DescriptorPublicKey, Miniscript, ScriptContext, TranslatePk, Translator,
 };
 use rand::RngCore;
 use {actual_rand as rand, elements_miniscript as miniscript};
@@ -203,10 +203,6 @@ impl<'a> Translator<String, DescriptorPublicKey, ()> for StrDescPubKeyTranslator
         let sha = sha256::Hash::from_str(sha256).unwrap();
         Ok(sha)
     }
-
-    fn ext(&mut self, e: &NoExt) -> Result<NoExt, ()> {
-        Ok(e.clone())
-    }
 }
 
 // Translate Str to DescriptorPublicKey
@@ -252,10 +248,6 @@ impl<'a> Translator<String, DescriptorPublicKey, ()> for StrTranslatorLoose<'a> 
     fn sha256(&mut self, sha256: &String) -> Result<sha256::Hash, ()> {
         let sha = sha256::Hash::from_str(sha256).unwrap();
         Ok(sha)
-    }
-
-    fn ext(&mut self, e: &NoExt) -> Result<NoExt, ()> {
-        Ok(e.clone())
     }
 }
 

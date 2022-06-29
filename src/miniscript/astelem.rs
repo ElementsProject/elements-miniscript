@@ -28,14 +28,14 @@ use elements::hashes::{hash160, ripemd160, sha256d, Hash};
 use elements::{opcodes, script};
 
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
-use crate::extensions::ParseableExt;
+use crate::extensions::{ExtParam, ParseableExt};
 use crate::miniscript::context::SigType;
 use crate::miniscript::types::{self, Property};
 use crate::miniscript::ScriptContext;
 use crate::util::MsKeyBuilder;
 use crate::{
-    errstr, expression, script_num_size, Error, Extension, ForEach, ForEachKey, Miniscript,
-    MiniscriptKey, Terminal, ToPublicKey, TranslatePk, Translator,
+    errstr, expression, script_num_size, Error, ExtTranslator, Extension, ForEach, ForEachKey,
+    Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ext> {
@@ -59,22 +59,42 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
     }
 }
 
-impl<Pk, Q, Ctx, Ext, QExt> TranslatePk<Pk, Q, Ext, QExt> for Terminal<Pk, Ctx, Ext>
+impl<Pk, Q, Ctx, Ext> TranslatePk<Pk, Q> for Terminal<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Q: MiniscriptKey,
     Ctx: ScriptContext,
     Ext: Extension,
-    QExt: Extension,
 {
-    type Output = Terminal<Q, Ctx, QExt>;
+    type Output = Terminal<Q, Ctx, Ext>;
 
     /// Converts an AST element with one public key type to one of another public key type.
     fn translate_pk<T, E>(&self, translate: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<Pk, Q, E, Ext, QExt>,
+        T: Translator<Pk, Q, E>,
     {
         self.real_translate_pk(translate)
+    }
+}
+
+impl<Pk, Ctx, Ext, QExt> TranslateExt<Ext, QExt> for Terminal<Pk, Ctx, Ext>
+where
+    Pk: MiniscriptKey,
+    Ctx: ScriptContext,
+    Ext: Extension,
+    QExt: Extension,
+    Ext: TranslateExt<Ext, QExt>,
+    <Ext as TranslateExt<Ext, QExt>>::Output: Extension,
+{
+    type Output = Terminal<Pk, Ctx, <Ext as TranslateExt<Ext, QExt>>::Output>;
+
+    fn translate_ext<T, E, PArg, QArg>(&self, translator: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtTranslator<PArg, QArg, E>,
+        PArg: ExtParam,
+        QArg: ExtParam,
+    {
+        self.real_translate_ext(translator)
     }
 }
 
@@ -122,19 +142,18 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
             Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => {
                 keys.iter().all(|key| pred(ForEach::Key(key)))
             }
-            Terminal::Ext(ref e) => e.real_for_each_key(pred),
+            Terminal::Ext(ref _e) => true,
         }
     }
 
-    pub(super) fn real_translate_pk<Q, CtxQ, QExt, T, E>(
+    pub(super) fn real_translate_pk<Q, CtxQ, T, E>(
         &self,
         t: &mut T,
-    ) -> Result<Terminal<Q, CtxQ, QExt>, E>
+    ) -> Result<Terminal<Q, CtxQ, Ext>, E>
     where
         Q: MiniscriptKey,
         CtxQ: ScriptContext,
-        T: Translator<Pk, Q, E, Ext, QExt>,
-        QExt: Extension,
+        T: Translator<Pk, Q, E>,
     {
         let frag: Terminal<Q, CtxQ, _> = match *self {
             Terminal::PkK(ref p) => Terminal::PkK(t.pk(p)?),
@@ -200,7 +219,84 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
                 let keys: Result<Vec<Q>, _> = keys.iter().map(|k| t.pk(k)).collect();
                 Terminal::MultiA(k, keys?)
             }
-            Terminal::Ext(ref e) => Terminal::Ext(t.ext(e)?),
+            // Translate Pk does not translate extensions
+            // use TranslateExt
+            Terminal::Ext(ref e) => Terminal::Ext(e.clone()),
+        };
+        Ok(frag)
+    }
+
+    pub(super) fn real_translate_ext<T, E, ExtQ, PArg, QArg>(
+        &self,
+        t: &mut T,
+    ) -> Result<Terminal<Pk, Ctx, <Ext as TranslateExt<Ext, ExtQ>>::Output>, E>
+    where
+        ExtQ: Extension,
+        T: ExtTranslator<PArg, QArg, E>,
+        Ext: TranslateExt<Ext, ExtQ>,
+        PArg: ExtParam,
+        QArg: ExtParam,
+        <Ext as TranslateExt<Ext, ExtQ>>::Output: Extension,
+    {
+        let frag: Terminal<Pk, Ctx, <Ext as TranslateExt<Ext, ExtQ>>::Output> = match *self {
+            Terminal::PkK(ref p) => Terminal::PkK(p.clone()),
+            Terminal::PkH(ref p) => Terminal::PkH(p.clone()),
+            Terminal::After(n) => Terminal::After(n),
+            Terminal::Older(n) => Terminal::Older(n),
+            Terminal::Sha256(ref x) => Terminal::Sha256(x.clone()),
+            Terminal::Hash256(x) => Terminal::Hash256(x),
+            Terminal::Ripemd160(x) => Terminal::Ripemd160(x),
+            Terminal::Hash160(x) => Terminal::Hash160(x),
+            Terminal::True => Terminal::True,
+            Terminal::False => Terminal::False,
+            Terminal::Alt(ref sub) => Terminal::Alt(Arc::new(sub.real_translate_ext(t)?)),
+            Terminal::Swap(ref sub) => Terminal::Swap(Arc::new(sub.real_translate_ext(t)?)),
+            Terminal::Check(ref sub) => Terminal::Check(Arc::new(sub.real_translate_ext(t)?)),
+            Terminal::DupIf(ref sub) => Terminal::DupIf(Arc::new(sub.real_translate_ext(t)?)),
+            Terminal::Verify(ref sub) => Terminal::Verify(Arc::new(sub.real_translate_ext(t)?)),
+            Terminal::NonZero(ref sub) => Terminal::NonZero(Arc::new(sub.real_translate_ext(t)?)),
+            Terminal::ZeroNotEqual(ref sub) => {
+                Terminal::ZeroNotEqual(Arc::new(sub.real_translate_ext(t)?))
+            }
+            Terminal::AndV(ref left, ref right) => Terminal::AndV(
+                Arc::new(left.real_translate_ext(t)?),
+                Arc::new(right.real_translate_ext(t)?),
+            ),
+            Terminal::AndB(ref left, ref right) => Terminal::AndB(
+                Arc::new(left.real_translate_ext(t)?),
+                Arc::new(right.real_translate_ext(t)?),
+            ),
+            Terminal::AndOr(ref a, ref b, ref c) => Terminal::AndOr(
+                Arc::new(a.real_translate_ext(t)?),
+                Arc::new(b.real_translate_ext(t)?),
+                Arc::new(c.real_translate_ext(t)?),
+            ),
+            Terminal::OrB(ref left, ref right) => Terminal::OrB(
+                Arc::new(left.real_translate_ext(t)?),
+                Arc::new(right.real_translate_ext(t)?),
+            ),
+            Terminal::OrD(ref left, ref right) => Terminal::OrD(
+                Arc::new(left.real_translate_ext(t)?),
+                Arc::new(right.real_translate_ext(t)?),
+            ),
+            Terminal::OrC(ref left, ref right) => Terminal::OrC(
+                Arc::new(left.real_translate_ext(t)?),
+                Arc::new(right.real_translate_ext(t)?),
+            ),
+            Terminal::OrI(ref left, ref right) => Terminal::OrI(
+                Arc::new(left.real_translate_ext(t)?),
+                Arc::new(right.real_translate_ext(t)?),
+            ),
+            Terminal::Thresh(k, ref subs) => {
+                let subs: Result<Vec<Arc<Miniscript<Pk, _, _>>>, _> = subs
+                    .iter()
+                    .map(|s| s.real_translate_ext(t).map(Arc::new))
+                    .collect();
+                Terminal::Thresh(k, subs?)
+            }
+            Terminal::Multi(k, ref keys) => Terminal::Multi(k, keys.clone()),
+            Terminal::MultiA(k, ref keys) => Terminal::MultiA(k, keys.clone()),
+            Terminal::Ext(ref e) => Terminal::Ext(e.translate_ext(t)?),
         };
         Ok(frag)
     }

@@ -126,6 +126,7 @@ pub(crate) use bitcoin_miniscript::{
 pub use bitcoin_miniscript::{
     DummyKey, DummyKeyHash, ForEach, ForEachKey, MiniscriptKey, ToPublicKey,
 };
+use extensions::ExtParam;
 // End imports
 
 #[macro_use]
@@ -208,12 +209,10 @@ where
 
 /// Describes an object that can translate various keys and hashes from one key to the type
 /// associated with the other key. Used by the [`TranslatePk`] trait to do the actual translations.
-pub trait Translator<P, Q, E, PExt = NoExt, QExt = NoExt>
+pub trait Translator<P, Q, E>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
-    PExt: Extension,
-    QExt: Extension,
 {
     /// Translates public keys P -> Q.
     fn pk(&mut self, pk: &P) -> Result<Q, E>;
@@ -223,19 +222,24 @@ where
 
     /// Translates sha256 hashes from P::Sha256 -> Q::Sha256
     fn sha256(&mut self, sha256: &P::Sha256) -> Result<Q::Sha256, E>;
+}
 
+/// Trait for translation Extensions
+pub trait ExtTranslator<PArg, QArg, E>
+where
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
     /// Translates one extension to another
-    fn ext(&mut self, e: &PExt) -> Result<QExt, E>;
+    fn ext(&mut self, e: &PArg) -> Result<QArg, E>;
 }
 
 /// Converts a descriptor using abstract keys to one using specific keys. Uses translator `t` to do
 /// the actual translation function calls.
-pub trait TranslatePk<P, Q, PExt = NoExt, QExt = NoExt>
+pub trait TranslatePk<P, Q>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
-    PExt: Extension,
-    QExt: Extension,
 {
     /// The associated output type. This must be `Self<Q>`.
     type Output;
@@ -244,10 +248,29 @@ where
     /// for Pk are provided by the given [`Translator`].
     fn translate_pk<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<P, Q, E, PExt, QExt>;
+        T: Translator<P, Q, E>;
 }
-/// Miniscript
 
+/// Converts a descriptor using abstract keys to one using specific keys. Uses translator `t` to do
+/// the actual translation function calls.
+pub trait TranslateExt<PExt, QExt>
+where
+    PExt: Extension,
+    QExt: Extension,
+{
+    /// The associated output type.
+    type Output;
+
+    /// Translates a struct from one generic to another where the translations
+    /// for Pk are provided by the given [`Translator`].
+    fn translate_ext<T, E, PArg, QArg>(&self, translator: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtTranslator<PArg, QArg, E>,
+        PArg: ExtParam,
+        QArg: ExtParam;
+}
+
+/// Miniscript Error
 #[derive(Debug, PartialEq)]
 pub enum Error {
     /// Opcode appeared which is not part of the script subset

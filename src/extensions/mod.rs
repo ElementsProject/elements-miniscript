@@ -2,6 +2,7 @@
 //! Users should implement the [`Extension`] trait to extend miniscript to have newer leaf nodes
 //! Look at examples for implementation of ver_eq fragment
 
+use std::str::FromStr;
 use std::{fmt, hash};
 
 use elements::script::Builder;
@@ -13,13 +14,16 @@ use crate::miniscript::lex::TokenIter;
 use crate::miniscript::satisfy::Satisfaction;
 use crate::miniscript::types::{Correctness, ExtData, Malleability};
 use crate::policy::Liftable;
-use crate::{
-    policy, Error, ForEach, MiniscriptKey, Satisfier, ToPublicKey, TranslatePk, Translator,
-};
+use crate::{policy, Error, ExtTranslator, MiniscriptKey, Satisfier, ToPublicKey, TranslateExt};
 mod outputs_pref;
 mod tx_ver;
 pub use self::outputs_pref::OutputsPref;
 pub use self::tx_ver::VerEq;
+
+/// Abstract parameter to Miniscript Extension
+pub trait ExtParam: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash + FromStr {}
+
+impl<T> ExtParam for T where T: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash + FromStr {}
 
 /// Extensions to elements-miniscript.
 /// Refer to implementations(unimplemented!) for example and tutorials
@@ -35,15 +39,6 @@ pub trait Extension: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash {
     /// Calculate the Extra properties property for the leaf fragment.
     /// See current implementation for different fragments in extra_props.rs
     fn extra_prop(&self) -> ExtData;
-
-    /// Check if the predicate holds for all keys
-    fn real_for_each_key<'a, Pk, F: FnMut(ForEach<'a, Pk>) -> bool>(
-        &'a self,
-        _pred: &mut F,
-    ) -> bool
-    where
-        Pk: 'a + MiniscriptKey,
-        Pk::Hash: 'a;
 
     /// Get the script size of the current fragment
     fn script_size(&self) -> usize;
@@ -117,6 +112,25 @@ pub trait ParseableExt:
 /// No Extensions for elements-miniscript
 /// All the implementations for the this function are unreachable
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+pub enum NoExtParam {}
+
+impl fmt::Display for NoExtParam {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {}
+    }
+}
+
+impl FromStr for NoExtParam {
+    type Err = ();
+
+    fn from_str(_s: &str) -> Result<Self, Self::Err> {
+        unreachable!("Called FromStr for NoExt")
+    }
+}
+
+/// No Extensions for elements-miniscript
+/// All the implementations for the this function are unreachable
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub enum NoExt {}
 
 impl Extension for NoExt {
@@ -129,14 +143,6 @@ impl Extension for NoExt {
     }
 
     fn extra_prop(&self) -> ExtData {
-        match *self {}
-    }
-
-    fn real_for_each_key<'a, Pk, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, _pred: &mut F) -> bool
-    where
-        Pk: 'a + MiniscriptKey,
-        Pk::Hash: 'a,
-    {
         match *self {}
     }
 
@@ -196,12 +202,18 @@ impl fmt::Display for NoExt {
     }
 }
 
-impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for NoExt {
+impl<PExt, QExt> TranslateExt<PExt, QExt> for NoExt
+where
+    PExt: Extension,
+    QExt: Extension,
+{
     type Output = NoExt;
 
-    fn translate_pk<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
+    fn translate_ext<T, E, PArg, QArg>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<P, Q, E>,
+        T: ExtTranslator<PArg, QArg, E>,
+        PArg: ExtParam,
+        QArg: ExtParam,
     {
         match *self {}
     }
@@ -251,14 +263,6 @@ impl Extension for CovenantExt {
 
     fn extra_prop(&self) -> ExtData {
         all_arms_fn!(self, Extension, extra_prop,)
-    }
-
-    fn real_for_each_key<'a, Pk, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: &mut F) -> bool
-    where
-        Pk: 'a + MiniscriptKey,
-        Pk::Hash: 'a,
-    {
-        all_arms_fn!(self, Extension, real_for_each_key, pred,)
     }
 
     fn script_size(&self) -> usize {
@@ -318,16 +322,26 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for CovenantExt {
     }
 }
 
-impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for CovenantExt {
+impl<PExt, QExt> TranslateExt<PExt, QExt> for CovenantExt
+where
+    PExt: Extension,
+    QExt: Extension,
+{
     type Output = CovenantExt;
 
-    fn translate_pk<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
+    fn translate_ext<T, E, PArg, QArg>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<P, Q, E>,
+        T: ExtTranslator<PArg, QArg, E>,
+        PArg: ExtParam,
+        QArg: ExtParam,
     {
         let ext = match self {
-            CovenantExt::VerEq(v) => CovenantExt::VerEq(v.translate_pk(t)?),
-            CovenantExt::OutputsPref(p) => CovenantExt::OutputsPref(p.translate_pk(t)?),
+            CovenantExt::VerEq(v) => {
+                CovenantExt::VerEq(TranslateExt::<PExt, QExt>::translate_ext(v, t)?)
+            }
+            CovenantExt::OutputsPref(p) => {
+                CovenantExt::OutputsPref(TranslateExt::<PExt, QExt>::translate_ext(p, t)?)
+            }
         };
         Ok(ext)
     }
