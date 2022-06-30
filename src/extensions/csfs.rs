@@ -321,13 +321,16 @@ mod tests {
     use bitcoin::XOnlyPublicKey;
 
     use super::*;
-    use crate::{Miniscript, Segwitv0, Tap};
+    use crate::test_utils::{StrExtTransalator, StrXOnlyKeyTranslator};
+    use crate::{Miniscript, Segwitv0, Tap, TranslatePk};
 
     #[test]
     fn test_csfs() {
         type MsExtCsfs = Miniscript<XOnlyPublicKey, Tap, CheckSigFromStack<CovExtArgs>>;
         type MsExtCsfsSegwitv0 =
             Miniscript<XOnlyPublicKey, Segwitv0, CheckSigFromStack<CovExtArgs>>;
+
+        type MsExtStr = Miniscript<String, Tap, CheckSigFromStack<String>>;
 
         // Make sure that parsing this errors in segwit context
         assert!(MsExtCsfsSegwitv0::from_str_insane(
@@ -349,5 +352,34 @@ mod tests {
 
         // Test translate
         // Translation tests to be added in upcoming commits
+
+        let ms = MsExtStr::from_str_insane("and_v(v:csfs(A,msg),pk(B))").unwrap();
+        let mut t = StrXOnlyKeyTranslator::default();
+        t.pk_map.insert(
+            "B".to_string(),
+            bitcoin::XOnlyPublicKey::from_str(
+                "9064b3ac01fb4cb648e8899723ee4d50433920ae558c572e96d945805e0bc3ec",
+            )
+            .unwrap(),
+        );
+        let mut ext_t = StrExtTransalator::default();
+        ext_t.ext_map.insert(
+            "msg".to_string(),
+            CovExtArgs::CsfsMsg(CsfsMsg::from_slice(&[0xab; 32]).unwrap()),
+        );
+        ext_t.ext_map.insert(
+            "A".to_string(),
+            CovExtArgs::XOnlyKey(CsfsKey(
+                bitcoin::XOnlyPublicKey::from_str(
+                    "26d137d15e2ae24f2d5158663d190d1269ad6b1a6ce330aa825ba502e7519d44",
+                )
+                .unwrap(),
+            )),
+        );
+
+        let ms_translated = ms.translate_pk(&mut t).unwrap();
+        let ms_translated = ms_translated.translate_ext(&mut ext_t).unwrap();
+
+        assert_eq!(ms_translated.to_string(), "and_v(v:csfs(26d137d15e2ae24f2d5158663d190d1269ad6b1a6ce330aa825ba502e7519d44,abababababababababababababababababababababababababababababababab),pk(9064b3ac01fb4cb648e8899723ee4d50433920ae558c572e96d945805e0bc3ec))");
     }
 }

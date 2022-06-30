@@ -6,7 +6,8 @@ use std::str::FromStr;
 use bitcoin::hashes::{hash160, sha256};
 use bitcoin::secp256k1;
 
-use crate::{MiniscriptKey, Translator};
+use crate::extensions::CovExtArgs;
+use crate::{ExtTranslator, MiniscriptKey, Translator};
 
 /// Translate from a String MiniscriptKey type to bitcoin::PublicKey
 /// If the hashmap is populated, this will lookup for keys in HashMap
@@ -146,5 +147,18 @@ impl StrXOnlyKeyTranslator {
             pkh_map,
             sha256_map: HashMap::new(),
         }
+    }
+}
+
+/// Translate Abstract Str to Consensus Extensions
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
+pub struct StrExtTransalator {
+    pub ext_map: HashMap<String, CovExtArgs>,
+}
+
+impl ExtTranslator<String, CovExtArgs, ()> for StrExtTransalator {
+    fn ext(&mut self, e: &String) -> Result<CovExtArgs, ()> {
+        let x = self.ext_map.get(e).expect("Ext Mapping not found");
+        Ok(x.clone())
     }
 }
