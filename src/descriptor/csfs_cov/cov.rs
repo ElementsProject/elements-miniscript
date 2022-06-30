@@ -490,12 +490,11 @@ where
     Pk: MiniscriptKey,
     Ext: Extension,
     ExtQ: Extension,
-    Ext: TranslateExt<Ext, ExtQ, PArg, QArg>,
-    <Ext as TranslateExt<Ext, ExtQ, PArg, QArg>>::Output: Extension,
+    Ext: TranslateExt<Ext, ExtQ, PArg, QArg, Output = ExtQ>,
     PArg: ExtParam,
     QArg: ExtParam,
 {
-    type Output = LegacyCSFSCov<Pk, <Ext as TranslateExt<Ext, ExtQ, PArg, QArg>>::Output>;
+    type Output = LegacyCSFSCov<Pk, ExtQ>;
 
     fn translate_ext<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
     where

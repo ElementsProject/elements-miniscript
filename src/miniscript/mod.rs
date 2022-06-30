@@ -320,13 +320,12 @@ impl<Pk, Ctx, Ext, ExtQ, PArg, QArg> TranslateExt<Ext, ExtQ, PArg, QArg>
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension + TranslateExt<Ext, ExtQ, PArg, QArg>,
+    Ext: Extension + TranslateExt<Ext, ExtQ, PArg, QArg, Output = ExtQ>,
     ExtQ: Extension,
-    <Ext as TranslateExt<Ext, ExtQ, PArg, QArg>>::Output: Extension,
     PArg: ExtParam,
     QArg: ExtParam,
 {
-    type Output = Miniscript<Pk, Ctx, <Ext as TranslateExt<Ext, ExtQ, PArg, QArg>>::Output>;
+    type Output = Miniscript<Pk, Ctx, ExtQ>;
 
     fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
@@ -371,14 +370,13 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Miniscript<Pk, Ctx, 
     pub(super) fn real_translate_ext<T, FuncError, ExtQ, PArg, QArg>(
         &self,
         t: &mut T,
-    ) -> Result<Miniscript<Pk, Ctx, <Ext as TranslateExt<Ext, ExtQ, PArg, QArg>>::Output>, FuncError>
+    ) -> Result<Miniscript<Pk, Ctx, ExtQ>, FuncError>
     where
         ExtQ: Extension,
         T: ExtTranslator<PArg, QArg, FuncError>,
         PArg: ExtParam,
         QArg: ExtParam,
-        Ext: TranslateExt<Ext, ExtQ, PArg, QArg>,
-        <Ext as TranslateExt<Ext, ExtQ, PArg, QArg>>::Output: Extension,
+        Ext: TranslateExt<Ext, ExtQ, PArg, QArg, Output = ExtQ>,
     {
         let inner = self.node.real_translate_ext(t)?;
         let ms = Miniscript {

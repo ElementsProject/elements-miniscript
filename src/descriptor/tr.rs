@@ -14,14 +14,14 @@ use elements::{self, opcodes, secp256k1_zkp, Script};
 use super::checksum::{desc_checksum, verify_checksum};
 use super::ELMTS_STR;
 use crate::expression::{self, FromTree};
-use crate::extensions::ParseableExt;
+use crate::extensions::{ExtParam, ParseableExt};
 use crate::miniscript::Miniscript;
 use crate::policy::semantic::Policy;
 use crate::policy::Liftable;
 use crate::util::{varint_len, witness_size};
 use crate::{
     errstr, Error, Extension, ForEach, ForEachKey, MiniscriptKey, NoExt, Satisfier, Tap,
-    ToPublicKey, TranslatePk, Translator,
+    ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
 /// A Taproot Tree representation.
@@ -141,6 +141,29 @@ impl<Pk: MiniscriptKey, Ext: Extension> TapTree<Pk, Ext> {
                 Arc::new(r.translate_helper(t)?),
             ),
             TapTree::Leaf(ms) => TapTree::Leaf(Arc::new(ms.translate_pk(t)?)),
+        };
+        Ok(frag)
+    }
+
+    // Helper function to translate extensions
+    fn translate_ext_helper<T, QExt, PArg, QArg, Error>(
+        &self,
+        t: &mut T,
+    ) -> Result<TapTree<Pk, QExt>, Error>
+    where
+        T: crate::ExtTranslator<PArg, QArg, Error>,
+        QExt: Extension,
+        Ext: Extension,
+        PArg: ExtParam,
+        QArg: ExtParam,
+        Ext: TranslateExt<Ext, QExt, PArg, QArg, Output = QExt>,
+    {
+        let frag = match self {
+            TapTree::Tree(l, r) => TapTree::Tree(
+                Arc::new(l.translate_ext_helper(t)?),
+                Arc::new(r.translate_ext_helper(t)?),
+            ),
+            TapTree::Leaf(ms) => TapTree::Leaf(Arc::new(ms.translate_ext(t)?)),
         };
         Ok(frag)
     }
@@ -622,6 +645,33 @@ where
             internal_key: translate.pk(&self.internal_key)?,
             tree: match &self.tree {
                 Some(tree) => Some(tree.translate_helper(translate)?),
+                None => None,
+            },
+            spend_info: Mutex::new(None),
+        };
+        Ok(translate_desc)
+    }
+}
+
+impl<PExt, QExt, PArg, QArg, Pk> TranslateExt<PExt, QExt, PArg, QArg> for Tr<Pk, PExt>
+where
+    PExt: Extension,
+    QExt: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
+    Pk: MiniscriptKey,
+    PExt: TranslateExt<PExt, QExt, PArg, QArg, Output = QExt>,
+{
+    type Output = Tr<Pk, QExt>;
+
+    fn translate_ext<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
+    where
+        T: crate::ExtTranslator<PArg, QArg, E>,
+    {
+        let translate_desc = Tr {
+            internal_key: self.internal_key.clone(),
+            tree: match &self.tree {
+                Some(tree) => Some(tree.translate_ext_helper(translator)?),
                 None => None,
             },
             spend_info: Mutex::new(None),

@@ -40,8 +40,8 @@ use self::checksum::verify_checksum;
 use crate::extensions::{CovExtArgs, ExtParam, NoExtParam};
 use crate::miniscript::{Legacy, Miniscript, Segwitv0};
 use crate::{
-    expression, miniscript, BareCtx, CovenantExt, Error, ForEach, ForEachKey, MiniscriptKey, NoExt,
-    Satisfier, ToPublicKey, TranslatePk, Translator,
+    expression, miniscript, BareCtx, CovenantExt, Error, ExtTranslator, ForEach, ForEachKey,
+    MiniscriptKey, NoExt, Satisfier, ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
 mod bare;
@@ -713,17 +713,56 @@ where
             Descriptor::Sh(ref sh) => Descriptor::Sh(sh.translate_pk(t)?),
             Descriptor::Wsh(ref wsh) => Descriptor::Wsh(wsh.translate_pk(t)?),
             Descriptor::Tr(ref tr) => Descriptor::Tr(tr.translate_pk(t)?),
-            Descriptor::TrExt(ref _tr) => {
-                panic!("Tried to convert an extensions descriptor into NoExt")
-            }
-            Descriptor::LegacyCSFSCov(ref _cov) => {
-                // Translation in descriptors at high level cannot work with extensions
-                // as we cannot abstract over extensions. Covenants have CovenantExt and
-                // others have NoExt.
-                // This can only happen when the user gives a conversion function having a NoExt
-                // for covenant descriptor.
-                // To avoid this panic, we would need to change the translate API into result<option> or Option<result>
-                panic!("Tried to convert an extensions descriptor into NoExt")
+            Descriptor::TrExt(ref tr) => Descriptor::TrExt(tr.translate_pk(t)?),
+            Descriptor::LegacyCSFSCov(ref cov) => Descriptor::LegacyCSFSCov(cov.translate_pk(t)?),
+        };
+        Ok(desc)
+    }
+}
+
+impl<PArg, QArg, Pk> TranslateExt<CovenantExt<PArg>, CovenantExt<QArg>, PArg, QArg>
+    for Descriptor<Pk, PArg>
+where
+    PArg: ExtParam,
+    QArg: ExtParam,
+    Pk: MiniscriptKey,
+    // PExt: TranslateExt<PExt, QExt, PArg, QArg, Output = QExt>,
+    // Tr<Pk, CovenantExt<PArg>>: TranslateExt<PExt, QExt, PArg, QArg,>
+{
+    type Output = Descriptor<Pk, QArg>;
+
+    /// Converts a descriptor using abstract keys to one using specific keys.
+    #[rustfmt::skip]
+    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtTranslator<PArg, QArg, E>,
+    {
+        let desc = match *self {
+            Descriptor::Bare(ref bare) => Descriptor::Bare(
+                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(bare, t)?,
+            ),
+            Descriptor::Pkh(ref pk) => Descriptor::Pkh(
+                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(pk, t)?,
+            ),
+            Descriptor::Wpkh(ref pk) => Descriptor::Wpkh(
+                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(pk, t)?,
+            ),
+            Descriptor::Sh(ref sh) => Descriptor::Sh(
+                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(sh, t)?,
+            ),
+            Descriptor::Wsh(ref wsh) => Descriptor::Wsh(
+                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(wsh, t)?,
+            ),
+            Descriptor::Tr(ref tr) => Descriptor::Tr(
+                TranslateExt::<NoExt, NoExt, _, _>::translate_ext(tr, t)?,
+            ),
+            Descriptor::TrExt(ref tr) => Descriptor::TrExt(
+                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(tr, t)?,
+            ),
+            Descriptor::LegacyCSFSCov(ref cov) => {
+                Descriptor::LegacyCSFSCov(TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(
+                    cov, t,
+                )?)
             }
         };
         Ok(desc)
