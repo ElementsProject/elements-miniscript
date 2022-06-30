@@ -21,8 +21,8 @@ mod tx_ver;
 
 pub use csfs::{CheckSigFromStack, CsfsKey, CsfsMsg};
 
-pub use self::outputs_pref::OutputsPref;
-pub use self::tx_ver::VerEq;
+pub use self::outputs_pref::LegacyOutputsPref;
+pub use self::tx_ver::LegacyVerEq;
 
 /// Trait for parsing extension arg from String
 /// Parse an argument from `s` given context of parent and argument position
@@ -241,9 +241,9 @@ where
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub enum CovenantExt<T: ExtParam> {
     /// Version Equal
-    VerEq(VerEq),
+    LegacyVerEq(LegacyVerEq),
     /// Outputs Prefix equal
-    OutputsPref(OutputsPref),
+    LegacyOutputsPref(LegacyOutputsPref),
     /// CSFS
     Csfs(CheckSigFromStack<T>),
 }
@@ -289,8 +289,8 @@ impl ArgFromStr for String {
 macro_rules! all_arms_fn {
     ($slf: ident, $trt: ident, $f: ident, $($args:ident, )* ) => {
         match $slf {
-            CovenantExt::VerEq(v) => <VerEq as $trt>::$f(v, $($args, )*),
-            CovenantExt::OutputsPref(p) => <OutputsPref as $trt>::$f(p, $($args, )*),
+            CovenantExt::LegacyVerEq(v) => <LegacyVerEq as $trt>::$f(v, $($args, )*),
+            CovenantExt::LegacyOutputsPref(p) => <LegacyOutputsPref as $trt>::$f(p, $($args, )*),
             CovenantExt::Csfs(csfs) => csfs.$f($($args, )*),
         }
     };
@@ -300,10 +300,10 @@ macro_rules! all_arms_fn {
 // Self::$f(args)
 macro_rules! try_from_arms {
     ( $trt: ident, $ext_arg: ident, $f: ident, $($args: ident, )*) => {
-        if let Ok(v) = <VerEq as $trt>::$f($($args, )*) {
-            Ok(CovenantExt::VerEq(v))
-        } else if let Ok(v) = <OutputsPref as $trt>::$f($($args, )*) {
-            Ok(CovenantExt::OutputsPref(v))
+        if let Ok(v) = <LegacyVerEq as $trt>::$f($($args, )*) {
+            Ok(CovenantExt::LegacyVerEq(v))
+        } else if let Ok(v) = <LegacyOutputsPref as $trt>::$f($($args, )*) {
+            Ok(CovenantExt::LegacyOutputsPref(v))
         } else if let Ok(v) = <CheckSigFromStack<$ext_arg> as $trt>::$f($($args, )*) {
             Ok(CovenantExt::Csfs(v))
         } else {
@@ -367,8 +367,8 @@ impl ParseableExt for CovenantExt<CovExtArgs> {
 impl<T: ExtParam> fmt::Display for CovenantExt<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CovenantExt::VerEq(v) => v.fmt(f),
-            CovenantExt::OutputsPref(p) => p.fmt(f),
+            CovenantExt::LegacyVerEq(v) => v.fmt(f),
+            CovenantExt::LegacyOutputsPref(p) => p.fmt(f),
             CovenantExt::Csfs(c) => c.fmt(f),
         }
     }
@@ -387,19 +387,20 @@ where
     where
         T: ExtTranslator<PArg, QArg, E>,
     {
-        let ext = match self {
-            CovenantExt::VerEq(v) => {
-                CovenantExt::VerEq(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(v, t)?)
-            }
-            CovenantExt::OutputsPref(p) => {
-                CovenantExt::OutputsPref(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(
-                    p, t,
-                )?)
-            }
-            CovenantExt::Csfs(c) => {
-                CovenantExt::Csfs(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(c, t)?)
-            }
-        };
+        let ext =
+            match self {
+                CovenantExt::LegacyVerEq(v) => {
+                    CovenantExt::LegacyVerEq(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(
+                        v, t,
+                    )?)
+                }
+                CovenantExt::LegacyOutputsPref(p) => CovenantExt::LegacyOutputsPref(
+                    TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(p, t)?,
+                ),
+                CovenantExt::Csfs(c) => {
+                    CovenantExt::Csfs(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(c, t)?)
+                }
+            };
         Ok(ext)
     }
 }

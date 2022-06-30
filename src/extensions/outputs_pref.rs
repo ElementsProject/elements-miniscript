@@ -38,24 +38,24 @@ use crate::{
 /// HASH256
 /// DEPTH <10> SUB PICK EQUALVERIFY
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
-pub struct OutputsPref {
+pub struct LegacyOutputsPref {
     /// the version of transaction
     pub pref: Vec<u8>,
 }
 
-impl fmt::Display for OutputsPref {
+impl fmt::Display for LegacyOutputsPref {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "outputs_pref({})", self.pref.to_hex())
     }
 }
 
-impl<Pk: MiniscriptKey> Liftable<Pk> for OutputsPref {
+impl<Pk: MiniscriptKey> Liftable<Pk> for LegacyOutputsPref {
     fn lift(&self) -> Result<policy::Semantic<Pk>, Error> {
         Err(Error::CovError(CovError::CovenantLift))
     }
 }
 
-impl Extension for OutputsPref {
+impl Extension for LegacyOutputsPref {
     fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError> {
         if self.pref.len() > MAX_SCRIPT_ELEMENT_SIZE {
             Err(ScriptContextError::CovElementSizeExceeded)
@@ -120,7 +120,7 @@ impl Extension for OutputsPref {
     }
 }
 
-impl ParseableExt for OutputsPref {
+impl ParseableExt for LegacyOutputsPref {
     fn satisfy<Pk, S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
@@ -283,14 +283,14 @@ impl ParseableExt for OutputsPref {
     }
 }
 
-impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for OutputsPref
+impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for LegacyOutputsPref
 where
     PExt: Extension,
     QExt: Extension,
     PArg: ExtParam,
     QArg: ExtParam,
 {
-    type Output = OutputsPref;
+    type Output = LegacyOutputsPref;
 
     fn translate_ext<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
@@ -311,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_outputs_pref() {
-        type MsExtVer = Miniscript<PublicKey, Segwitv0, OutputsPref>;
+        type MsExtVer = Miniscript<PublicKey, Segwitv0, LegacyOutputsPref>;
 
         let ms = MsExtVer::from_str_insane("outputs_pref(aa)").unwrap();
         // test string rtt

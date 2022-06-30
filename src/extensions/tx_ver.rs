@@ -23,24 +23,24 @@ use crate::{
 /// Version struct
 /// `DEPTH <12> SUB PICK <num> EQUAL`
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Clone, Copy)]
-pub struct VerEq {
+pub struct LegacyVerEq {
     /// the version of transaction
     pub n: u32, // it's i32 in bitcoin core
 }
 
-impl fmt::Display for VerEq {
+impl fmt::Display for LegacyVerEq {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ver_eq({})", self.n)
     }
 }
 
-impl<Pk: MiniscriptKey> Liftable<Pk> for VerEq {
+impl<Pk: MiniscriptKey> Liftable<Pk> for LegacyVerEq {
     fn lift(&self) -> Result<policy::Semantic<Pk>, Error> {
         Err(Error::CovError(CovError::CovenantLift))
     }
 }
 
-impl Extension for VerEq {
+impl Extension for LegacyVerEq {
     fn segwit_ctx_checks(&self) -> Result<(), miniscript::context::ScriptContextError> {
         Ok(())
     }
@@ -96,7 +96,7 @@ impl Extension for VerEq {
     }
 }
 
-impl ParseableExt for VerEq {
+impl ParseableExt for LegacyVerEq {
     fn satisfy<Pk, S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
@@ -190,14 +190,14 @@ impl ParseableExt for VerEq {
     }
 }
 
-impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for VerEq
+impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for LegacyVerEq
 where
     PExt: Extension,
     QExt: Extension,
     PArg: ExtParam,
     QArg: ExtParam,
 {
-    type Output = VerEq;
+    type Output = LegacyVerEq;
 
     fn translate_ext<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_ver_eq() {
-        type MsExtVer = Miniscript<PublicKey, Segwitv0, VerEq>;
+        type MsExtVer = Miniscript<PublicKey, Segwitv0, LegacyVerEq>;
 
         let ms = MsExtVer::from_str_insane("ver_eq(8)").unwrap();
         // test string rtt
