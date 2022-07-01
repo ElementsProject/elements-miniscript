@@ -754,7 +754,7 @@ impl_block_str!(
                 if !allow_prob {
                     return Err(Error::AtOutsideOr(top.name.to_owned()));
                 }
-                frag_prob = expression::parse_num(prob)? as usize;
+                frag_prob = expression::parse_num::<u32>(prob)? as usize;
                 frag_name = name;
             }
             (Some(_), Some(_), Some(_)) => {
@@ -820,7 +820,7 @@ impl_block_str!(
                     return Err(Error::PolicyError(PolicyError::IncorrectThresh));
                 }
 
-                let thresh = expression::parse_num(top.args[0].name)?;
+                let thresh = expression::parse_num::<u32>(top.args[0].name)?;
                 if thresh >= nsubs || thresh == 0 {
                     return Err(Error::PolicyError(PolicyError::IncorrectThresh));
                 }

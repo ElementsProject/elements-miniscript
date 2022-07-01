@@ -333,10 +333,10 @@ impl_from_tree!(
                 Pk::Hash::from_str(pk).map(Policy::KeyHash)
             }),
             ("after", 1) => expression::terminal(&top.args[0], |x| {
-                expression::parse_num(x).map(Policy::After)
+                expression::parse_num::<u32>(x).map(Policy::After)
             }),
             ("older", 1) => expression::terminal(&top.args[0], |x| {
-                expression::parse_num(x).map(Policy::Older)
+                expression::parse_num::<u32>(x).map(Policy::Older)
             }),
             ("sha256", 1) => expression::terminal(&top.args[0], |x| {
                 Pk::Sha256::from_str(x).map(Policy::Sha256)
@@ -379,7 +379,7 @@ impl_from_tree!(
                     return Err(errstr(top.args[0].args[0].name));
                 }
 
-                let thresh = expression::parse_num(top.args[0].name)?;
+                let thresh = expression::parse_num::<u32>(top.args[0].name)?;
 
                 // thresh(1) and thresh(n) are disallowed in semantic policies
                 if thresh <= 1 || thresh >= (nsubs as u32 - 1) {

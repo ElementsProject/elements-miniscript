@@ -589,10 +589,10 @@ impl_from_tree!(
                 expression::terminal(&top.args[0], |x| Pk::Hash::from_str(x).map(Terminal::PkH))
             }
             ("after", 1) => expression::terminal(&top.args[0], |x| {
-                expression::parse_num(x).map(Terminal::After)
+                expression::parse_num::<u32>(x).map(Terminal::After)
             }),
             ("older", 1) => expression::terminal(&top.args[0], |x| {
-                expression::parse_num(x).map(Terminal::Older)
+                expression::parse_num::<u32>(x).map(Terminal::Older)
             }),
             ("sha256", 1) => expression::terminal(&top.args[0], |x| {
                 Pk::Sha256::from_str(x).map(Terminal::Sha256)
@@ -634,7 +634,7 @@ impl_from_tree!(
                 if n == 0 {
                     return Err(errstr("no arguments given"));
                 }
-                let k = expression::terminal(&top.args[0], expression::parse_num)? as usize;
+                let k = expression::terminal(&top.args[0], expression::parse_num::<u32>)? as usize;
                 if k > n - 1 {
                     return Err(errstr("higher threshold than there are subexpressions"));
                 }
@@ -653,7 +653,7 @@ impl_from_tree!(
                 if n == 0 {
                     return Err(errstr("no arguments given"));
                 }
-                let k = expression::terminal(&top.args[0], expression::parse_num)? as usize;
+                let k = expression::terminal(&top.args[0], expression::parse_num::<u32>)? as usize;
                 if k > n - 1 {
                     return Err(errstr("higher threshold than there were keys in multi"));
                 }
