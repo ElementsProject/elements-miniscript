@@ -233,6 +233,13 @@ impl<'a> Tree<'a> {
 pub fn parse_num<T: FromStr>(s: &str) -> Result<T, Error> {
     if s.len() > 1 {
         let ch = s.chars().next().unwrap();
+        let ch = if ch == '-' {
+            s.chars().nth(1).ok_or(Error::Unexpected(
+                "Negative number must follow dash sign".to_string(),
+            ))?
+        } else {
+            ch
+        };
         if !('1'..='9').contains(&ch) {
             return Err(Error::Unexpected(
                 "Number must start with a digit 1-9".to_string(),

@@ -20,6 +20,7 @@ use elements::{secp256k1_zkp, taproot};
 use {bitcoin, elements};
 
 use super::BitcoinKey;
+use crate::extensions::EvalError;
 
 /// Detailed Error type for Interpreter
 #[derive(Debug)]
@@ -129,6 +130,8 @@ pub enum Error {
         /// Actual size
         actual: usize,
     },
+    /// Errors related to extensions.
+    ArithError(EvalError),
 }
 
 impl fmt::Display for Error {
@@ -210,6 +213,7 @@ impl fmt::Display for Error {
                 "At script code item position{}: Expected size{}, got size {}",
                 pos, expected, actual
             ),
+            Error::ArithError(ref e) => write!(f, "{}", e),
         }
     }
 }
@@ -258,6 +262,7 @@ impl error::Error for Error {
             SighashError(e) => Some(e),
             IncorrectCovenantWitness => None,
             CovWitnessSizeErr { .. } => None,
+            ArithError(..) => None,
         }
     }
 }

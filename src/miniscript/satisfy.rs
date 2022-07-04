@@ -197,7 +197,7 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
 
     /// Lookup spending transaction. Required for introspection
     // TODO: cleanup some of lookup_* methods as they are subsumed by this
-    fn lookup_tx(&self) -> Option<elements::Transaction> {
+    fn lookup_tx(&self) -> Option<&elements::Transaction> {
         None
     }
 
@@ -426,7 +426,7 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_spent_utxos()
     }
 
-    fn lookup_tx(&self) -> Option<elements::Transaction> {
+    fn lookup_tx(&self) -> Option<&elements::Transaction> {
         (**self).lookup_tx()
     }
 
@@ -541,7 +541,7 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_spent_utxos()
     }
 
-    fn lookup_tx(&self) -> Option<elements::Transaction> {
+    fn lookup_tx(&self) -> Option<&elements::Transaction> {
         (**self).lookup_tx()
     }
 
@@ -819,7 +819,7 @@ macro_rules! impl_tuple_satisfier {
                 None
             }
 
-            fn lookup_tx(&self) -> Option<elements::Transaction> {
+            fn lookup_tx(&self) -> Option<&elements::Transaction> {
                 let &($(ref $ty,)*) = self;
                 $(
                     if let Some(result) = $ty.lookup_tx() {

@@ -59,18 +59,13 @@ impl<'tx, 'ptx> CovSatisfier<'tx, 'ptx> {
     /// 1) if number of spent_utxos is not equal to
     /// number of transaction inputs.
     /// 2) if idx is out of bounds
-    pub fn new_taproot(
-        tx: &'tx Transaction,
-        spent_utxos: &'ptx [TxOut],
-        idx: u32,
-        hash_type: EcdsaSigHashType,
-    ) -> Self {
+    pub fn new_taproot(tx: &'tx Transaction, spent_utxos: &'ptx [TxOut], idx: u32) -> Self {
         assert!(spent_utxos.len() == tx.input.len());
         assert!((idx as usize) < spent_utxos.len());
         Self {
             tx,
             idx,
-            hash_type,
+            hash_type: EcdsaSigHashType::All, // This is not used in taproot. Update PsbtSigHashType later
             script_code: None,
             value: None,
             spent_utxos: Some(spent_utxos),
@@ -112,6 +107,14 @@ impl<'tx, 'ptx> CovSatisfier<'tx, 'ptx> {
 }
 
 impl<'tx, 'ptx, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for CovSatisfier<'tx, 'ptx> {
+    fn lookup_spent_utxos(&self) -> Option<&[elements::TxOut]> {
+        self.spent_utxos
+    }
+
+    fn lookup_tx(&self) -> Option<&elements::Transaction> {
+        Some(self.tx)
+    }
+
     fn lookup_nversion(&self) -> Option<u32> {
         Some(self.tx.version)
     }

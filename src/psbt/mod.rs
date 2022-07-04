@@ -300,7 +300,7 @@ pub struct PsbtInputSatisfier<'psbt> {
 /// Psbt Input Satisfier with Covenant support. Users should be
 /// using the high level [`finalizer::finalize`] API.
 /// The [`CovSatisfier`] should be consistent with the extracted transaction.
-pub struct PsbtCovInputSatisfier<'psbt>(PsbtInputSatisfier<'psbt>, CovSatisfier<'psbt, 'psbt>);
+pub type PsbtCovInputSatisfier<'psbt> = (PsbtInputSatisfier<'psbt>, CovSatisfier<'psbt, 'psbt>);
 
 impl<'psbt> PsbtInputSatisfier<'psbt> {
     /// create a new PsbtInputsatisfier from

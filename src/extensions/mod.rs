@@ -17,10 +17,13 @@ use crate::miniscript::types::{Correctness, ExtData, Malleability};
 use crate::policy::Liftable;
 use crate::{policy, Error, ExtTranslator, MiniscriptKey, Satisfier, ToPublicKey, TranslateExt};
 
+#[allow(unused_imports)]
+mod arith;
 mod csfs;
 mod outputs_pref;
 mod tx_ver;
 
+pub use arith::{Arith, EvalError, Expr, ExprInner};
 pub use csfs::{CheckSigFromStack, CsfsKey, CsfsMsg};
 
 pub use self::outputs_pref::LegacyOutputsPref;
@@ -252,6 +255,8 @@ pub enum CovenantExt<T: ExtParam> {
     LegacyOutputsPref(LegacyOutputsPref),
     /// CSFS
     Csfs(CheckSigFromStack<T>),
+    /// Arith opcodes
+    Arith(Arith),
 }
 
 /// All known Extension parameters/arguments
@@ -298,6 +303,7 @@ macro_rules! all_arms_fn {
             CovenantExt::LegacyVerEq(v) => <LegacyVerEq as $trt>::$f(v, $($args, )*),
             CovenantExt::LegacyOutputsPref(p) => <LegacyOutputsPref as $trt>::$f(p, $($args, )*),
             CovenantExt::Csfs(csfs) => csfs.$f($($args, )*),
+            CovenantExt::Arith(e) => e.$f($($args, )*),
         }
     };
 }
@@ -312,6 +318,8 @@ macro_rules! try_from_arms {
             Ok(CovenantExt::LegacyOutputsPref(v))
         } else if let Ok(v) = <CheckSigFromStack<$ext_arg> as $trt>::$f($($args, )*) {
             Ok(CovenantExt::Csfs(v))
+        } else if let Ok(v) = <Arith as $trt>::$f($($args, )*) {
+            Ok(CovenantExt::Arith(v))
         } else {
             Err(())
         }
@@ -381,6 +389,7 @@ impl<T: ExtParam> fmt::Display for CovenantExt<T> {
             CovenantExt::LegacyVerEq(v) => v.fmt(f),
             CovenantExt::LegacyOutputsPref(p) => p.fmt(f),
             CovenantExt::Csfs(c) => c.fmt(f),
+            CovenantExt::Arith(e) => e.fmt(f),
         }
     }
 }
@@ -410,6 +419,9 @@ where
                 ),
                 CovenantExt::Csfs(c) => {
                     CovenantExt::Csfs(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(c, t)?)
+                }
+                CovenantExt::Arith(e) => {
+                    CovenantExt::Arith(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(e, t)?)
                 }
             };
         Ok(ext)
