@@ -97,7 +97,7 @@ pub enum ErrorKind {
 
 /// Error type for typechecking
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct Error<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk> = NoExt> {
+pub struct Error<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension = NoExt> {
     /// The fragment that failed typecheck
     pub fragment: Terminal<Pk, Ctx, Ext>,
     /// The reason that typechecking failed
@@ -108,7 +108,7 @@ impl<Pk, Ctx, Ext> fmt::Display for Error<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.error {
@@ -390,7 +390,7 @@ pub trait Property: Sized {
     /// Compute the type of an extension
     /// Extensions are always leaf, they should have a fixed type property and hence
     /// should not fail
-    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(e: &E) -> Self;
+    fn from_ext<E: Extension>(e: &E) -> Self;
 
     /// Compute the type of a fragment, given a function to look up
     /// the types of its children, if available and relevant for the
@@ -403,7 +403,7 @@ pub trait Property: Sized {
         C: FnMut(usize) -> Option<Self>,
         Pk: MiniscriptKey,
         Ctx: ScriptContext,
-        Ext: Extension<Pk>,
+        Ext: Extension,
     {
         let mut get_child = |sub, n| {
             child(n)
@@ -783,7 +783,7 @@ impl Property for Type {
         })
     }
 
-    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(e: &E) -> Self {
+    fn from_ext<E: Extension>(e: &E) -> Self {
         Type {
             corr: Property::from_ext(e),
             mall: Property::from_ext(e),
@@ -800,7 +800,7 @@ impl Property for Type {
         C: FnMut(usize) -> Option<Self>,
         Pk: MiniscriptKey,
         Ctx: ScriptContext,
-        Ext: Extension<Pk>,
+        Ext: Extension,
     {
         let wrap_err = |result: Result<Self, ErrorKind>| {
             result.map_err(|kind| Error {

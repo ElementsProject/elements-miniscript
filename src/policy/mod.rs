@@ -21,6 +21,7 @@
 //! The format represents EC public keys abstractly to allow wallets to replace
 //! these with BIP32 paths, pay-to-contract instructions, etc.
 //!
+use crate::extensions::ExtParam;
 use crate::{error, fmt};
 
 #[cfg(feature = "compiler")]
@@ -89,7 +90,7 @@ impl error::Error for LiftError {
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Miniscript<Pk, Ctx, Ext> {
     /// Lifting corresponds conversion of miniscript into Policy
     /// [policy.semantic.Policy] for human readable or machine analysis.
     /// However, naively lifting miniscripts can result in incorrect
@@ -109,7 +110,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, C
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Liftable<Pk>
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Liftable<Pk>
     for Miniscript<Pk, Ctx, Ext>
 {
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
@@ -124,7 +125,7 @@ impl<Pk, Ctx, Ext> Liftable<Pk> for Terminal<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
         let ret = match *self {
@@ -171,14 +172,14 @@ where
                     .map(|k| Semantic::KeyHash(k.to_pubkeyhash()))
                     .collect(),
             ),
-            Terminal::Ext(ref e) => e.lift()?,
+            Terminal::Ext(ref _e) => Err(Error::CovError(CovError::CovenantLift))?,
         }
         .normalized();
         Ok(ret)
     }
 }
 
-impl<Pk: MiniscriptKey> Liftable<Pk> for Descriptor<Pk> {
+impl<Pk: MiniscriptKey, T: ExtParam> Liftable<Pk> for Descriptor<Pk, T> {
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
         match *self {
             Descriptor::Bare(ref bare) => bare.lift(),
@@ -186,8 +187,9 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.lift(),
             Descriptor::Wsh(ref wsh) => wsh.lift(),
             Descriptor::Sh(ref sh) => sh.lift(),
-            Descriptor::Cov(ref _cov) => Err(Error::CovError(CovError::CovenantLift)),
+            Descriptor::LegacyCSFSCov(ref _cov) => Err(Error::CovError(CovError::CovenantLift)),
             Descriptor::Tr(ref tr) => tr.lift(),
+            Descriptor::TrExt(ref tr) => tr.lift(),
         }
     }
 }

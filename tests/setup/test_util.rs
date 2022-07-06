@@ -24,8 +24,10 @@ use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use bitcoin::secp256k1;
 use elements::{AddressParams, BlockHash};
 use miniscript::descriptor::{SinglePub, SinglePubKey};
+use miniscript::extensions::{CovExtArgs, CsfsKey, CsfsMsg};
 use miniscript::{
-    Descriptor, DescriptorPublicKey, Miniscript, ScriptContext, TranslatePk, Translator,
+    Descriptor, DescriptorPublicKey, ExtTranslator, Miniscript, ScriptContext, TranslateExt,
+    TranslatePk, Translator,
 };
 use rand::RngCore;
 use {actual_rand as rand, elements_miniscript as miniscript};
@@ -41,6 +43,7 @@ pub struct PubData {
     pub ripemd160: ripemd160::Hash,
     pub hash160: hash160::Hash,
     pub genesis_hash: elements::BlockHash,
+    pub msg: CsfsMsg,
 }
 
 #[derive(Debug, Clone)]
@@ -110,6 +113,8 @@ impl TestData {
         let ripemd160_pre = [0x78 as u8; 32];
         let ripemd160 = ripemd160::Hash::hash(&ripemd160_pre);
 
+        let msg = CsfsMsg::from_slice(&[0x9a; 32]).unwrap();
+
         let pubdata = PubData {
             pks,
             sha256,
@@ -118,6 +123,7 @@ impl TestData {
             hash160,
             x_only_pks,
             genesis_hash,
+            msg,
         };
         let secretdata = SecretData {
             sks,
@@ -163,6 +169,23 @@ pub fn parse_insane_ms<Ctx: ScriptContext>(
     let mut translator = StrTranslatorLoose(0, pubdata);
     let ms = ms.translate_pk(&mut translator).unwrap();
     ms
+}
+
+/// Translate Abstract Str to Consensus Extensions
+struct StrExtTransalator<'a>(usize, &'a PubData);
+
+impl<'a> ExtTranslator<String, CovExtArgs, ()> for StrExtTransalator<'a> {
+    fn ext(&mut self, e: &String) -> Result<CovExtArgs, ()> {
+        if e.starts_with("msg") {
+            Ok(CovExtArgs::CsfsMsg(self.1.msg.clone()))
+        } else if e.starts_with("X") {
+            let csfs_pk = CovExtArgs::XOnlyKey(CsfsKey(self.1.x_only_pks[self.0]));
+            self.0 = self.0 + 1;
+            Ok(csfs_pk)
+        } else {
+            panic!("CSFS msg must be string 'msg'")
+        }
+    }
 }
 
 // Translate Str to DescriptorPublicKey
@@ -255,11 +278,14 @@ impl<'a> Translator<String, DescriptorPublicKey, ()> for StrTranslatorLoose<'a> 
 // https://github.com/rust-lang/rust/issues/46379. The code is pub fn and integration test, but still shows warnings
 pub fn parse_test_desc(desc: &str, pubdata: &PubData) -> Descriptor<DescriptorPublicKey> {
     let desc = subs_hash_frag(desc, pubdata);
-    let desc =
-        Descriptor::<String>::from_str(&desc).expect("only parsing valid and sane descriptors");
+    let desc = Descriptor::<String, String>::from_str(&desc)
+        .expect("only parsing valid and sane descriptors");
     let mut translator = StrDescPubKeyTranslator(0, pubdata);
+    let mut ext_trans = StrExtTransalator(0, pubdata);
     let desc: Result<_, ()> = desc.translate_pk(&mut translator);
-    desc.expect("Translate must succeed")
+    let desc = desc.expect("Translate Keys must succeed");
+    let desc: Result<_, ()> = desc.translate_ext(&mut ext_trans);
+    desc.expect("Ext translation must succeed")
 }
 
 // substitute hash fragments in the string as the per rules

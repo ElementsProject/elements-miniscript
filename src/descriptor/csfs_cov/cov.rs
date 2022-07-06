@@ -51,6 +51,7 @@ use super::super::checksum::{desc_checksum, verify_checksum};
 use super::super::ELMTS_STR;
 use super::{CovError, CovOperations};
 use crate::expression::{self, FromTree};
+use crate::extensions::{ExtParam, ParseableExt};
 use crate::miniscript::lex::{lex, Token as Tk, TokenIter};
 use crate::miniscript::limits::{
     MAX_OPS_PER_SCRIPT, MAX_SCRIPT_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE,
@@ -58,8 +59,8 @@ use crate::miniscript::limits::{
 use crate::miniscript::{decode, types};
 use crate::util::varint_len;
 use crate::{
-    Error, Extension, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier, ScriptContext,
-    Segwitv0, ToPublicKey, TranslatePk, Translator,
+    Error, ExtTranslator, Extension, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier,
+    ScriptContext, Segwitv0, ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
 // A simple utility function to serialize an array
@@ -75,7 +76,7 @@ pub(crate) const COV_SCRIPT_SIZE: usize = 120;
 pub(crate) const COV_SCRIPT_OPCODE_COST: usize = 74;
 /// The covenant descriptor
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct CovenantDescriptor<Pk: MiniscriptKey, Ext: Extension<Pk>> {
+pub struct LegacyCSFSCov<Pk: MiniscriptKey, Ext: Extension> {
     /// the pk constraining the Covenant
     /// The key over which we want CHECKSIGFROMSTACK
     pub(crate) pk: Pk,
@@ -85,7 +86,7 @@ pub struct CovenantDescriptor<Pk: MiniscriptKey, Ext: Extension<Pk>> {
     pub(crate) ms: Miniscript<Pk, Segwitv0, Ext>,
 }
 
-impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
+impl<Pk: MiniscriptKey, Ext: Extension> LegacyCSFSCov<Pk, Ext> {
     /// Get the pk from covenant
     pub fn pk(&self) -> &Pk {
         &self.pk
@@ -129,6 +130,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
     pub fn encode(&self) -> Script
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt,
     {
         let builder = self.ms.node.encode(script::Builder::new());
         builder.verify_cov(&self.pk.to_public_key()).into_script()
@@ -138,6 +140,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
     pub fn satisfy<S: Satisfier<Pk>>(&self, s: S, allow_mall: bool) -> Result<Vec<Vec<u8>>, Error>
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt,
     {
         let mut wit = {
             use crate::descriptor::CovError::MissingSighashItem;
@@ -200,7 +203,7 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> CovenantDescriptor<Pk, Ext> {
     }
 }
 
-impl<Ext: Extension<bitcoin::PublicKey>> CovenantDescriptor<bitcoin::PublicKey, Ext> {
+impl<Ext: ParseableExt> LegacyCSFSCov<bitcoin::PublicKey, Ext> {
     /// Check if the given script is a covenant descriptor
     /// Consumes the iterator so that only remaining miniscript
     /// needs to be parsed from the iterator
@@ -257,12 +260,12 @@ impl<Ext: Extension<bitcoin::PublicKey>> CovenantDescriptor<bitcoin::PublicKey, 
         Error,
     >
     where
-        Ext: Extension<bitcoin::PublicKey>,
+        Ext: ParseableExt,
     {
         let tokens = lex(script)?;
         let mut iter = TokenIter::new(tokens);
 
-        let pk = CovenantDescriptor::<bitcoin::PublicKey, Ext>::check_cov_script(&mut iter)?;
+        let pk = LegacyCSFSCov::<bitcoin::PublicKey, Ext>::check_cov_script(&mut iter)?;
         let ms = decode::parse(&mut iter)?;
         Segwitv0::check_global_validity(&ms)?;
         if ms.ty.corr.base != types::Base::B {
@@ -286,7 +289,7 @@ impl<Ext: Extension<bitcoin::PublicKey>> CovenantDescriptor<bitcoin::PublicKey, 
 }
 
 impl_from_tree!(
-    CovenantDescriptor<Pk, Ext>,
+    LegacyCSFSCov<Pk, Ext>,
     => Ext; Extension,
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "elcovwsh" && top.args.len() == 2 {
@@ -294,7 +297,7 @@ impl_from_tree!(
             let top = &top.args[1];
             let sub = Miniscript::from_tree(top)?;
             Segwitv0::top_level_checks(&sub)?;
-            Ok(CovenantDescriptor { pk, ms: sub })
+            Ok(LegacyCSFSCov { pk, ms: sub })
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing elcovwsh descriptor",
@@ -304,20 +307,20 @@ impl_from_tree!(
         }
     }
 );
-impl<Pk, Ext> fmt::Debug for CovenantDescriptor<Pk, Ext>
+impl<Pk, Ext> fmt::Debug for LegacyCSFSCov<Pk, Ext>
 where
     Pk: MiniscriptKey,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}covwsh({},{})", ELMTS_STR, self.pk, self.ms)
     }
 }
 
-impl<Pk, Ext> fmt::Display for CovenantDescriptor<Pk, Ext>
+impl<Pk, Ext> fmt::Display for LegacyCSFSCov<Pk, Ext>
 where
     Pk: MiniscriptKey,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = format!("{}covwsh({},{})", ELMTS_STR, self.pk, self.ms);
@@ -327,21 +330,21 @@ where
 }
 
 impl_from_str!(
-    CovenantDescriptor<Pk, Ext>,
+    LegacyCSFSCov<Pk, Ext>,
     => Ext; Extension,
     type Err = Error;,
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
-        CovenantDescriptor::<Pk, Ext>::from_tree(&top)
+        LegacyCSFSCov::<Pk, Ext>::from_tree(&top)
     }
 );
 
-impl<Pk, Ext> CovenantDescriptor<Pk, Ext>
+impl<Pk, Ext> LegacyCSFSCov<Pk, Ext>
 where
     Pk: MiniscriptKey,
-    Ext: Extension<Pk>,
+    Ext: Extension,
 {
     /// Sanity checks for this covenant descriptor
     pub fn sanity_check(&self) -> Result<(), Error> {
@@ -363,6 +366,7 @@ where
     ) -> elements::Address
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt,
     {
         elements::Address::p2wsh(&self.encode(), blinder, params)
     }
@@ -371,6 +375,7 @@ where
     pub fn script_pubkey(&self) -> Script
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt,
     {
         self.encode().to_v0_p2wsh()
     }
@@ -388,6 +393,7 @@ where
     pub fn inner_script(&self) -> Script
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt,
     {
         self.encode()
     }
@@ -399,6 +405,7 @@ where
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
+        Ext: ParseableExt,
     {
         let mut witness = self.satisfy(satisfier, /*allow_mall*/ false)?;
         witness.push(self.encode().into_bytes());
@@ -428,6 +435,7 @@ where
     pub fn ecdsa_sighash_script_code(&self) -> Script
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt,
     {
         self.inner_script()
     }
@@ -439,6 +447,7 @@ where
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
+        Ext: ParseableExt,
     {
         let mut witness = self.satisfy(satisfier, /*allow_mall*/ true)?;
         witness.push(self.encode().into_bytes());
@@ -447,7 +456,7 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey, Ext: Extension<Pk>> ForEachKey<Pk> for CovenantDescriptor<Pk, Ext> {
+impl<Pk: MiniscriptKey, Ext: Extension> ForEachKey<Pk> for LegacyCSFSCov<Pk, Ext> {
     fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
@@ -457,22 +466,43 @@ impl<Pk: MiniscriptKey, Ext: Extension<Pk>> ForEachKey<Pk> for CovenantDescripto
     }
 }
 
-impl<P, Q, Ext> TranslatePk<P, Q> for CovenantDescriptor<P, Ext>
+impl<P, Q, Ext> TranslatePk<P, Q> for LegacyCSFSCov<P, Ext>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
-    Ext: Extension<P> + TranslatePk<P, Q>,
-    <Ext as TranslatePk<P, Q>>::Output: Extension<Q>,
+    Ext: Extension,
 {
-    type Output = CovenantDescriptor<Q, <Ext as TranslatePk<P, Q>>::Output>;
+    type Output = LegacyCSFSCov<Q, Ext>;
 
     fn translate_pk<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
         T: Translator<P, Q, E>,
     {
-        Ok(CovenantDescriptor {
+        Ok(LegacyCSFSCov {
             pk: t.pk(&self.pk)?,
             ms: self.ms.translate_pk(t)?,
+        })
+    }
+}
+
+impl<Pk, Ext, ExtQ, PArg, QArg> TranslateExt<Ext, ExtQ, PArg, QArg> for LegacyCSFSCov<Pk, Ext>
+where
+    Pk: MiniscriptKey,
+    Ext: Extension,
+    ExtQ: Extension,
+    Ext: TranslateExt<Ext, ExtQ, PArg, QArg, Output = ExtQ>,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    type Output = LegacyCSFSCov<Pk, ExtQ>;
+
+    fn translate_ext<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtTranslator<PArg, QArg, E>,
+    {
+        Ok(LegacyCSFSCov {
+            pk: self.pk.clone(),
+            ms: self.ms.translate_ext(translator)?,
         })
     }
 }

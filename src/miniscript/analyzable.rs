@@ -79,7 +79,7 @@ impl error::Error for AnalysisError {
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension<Pk>> Miniscript<Pk, Ctx, Ext> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Miniscript<Pk, Ctx, Ext> {
     /// Whether all spend paths of miniscript require a signature
     pub fn requires_sig(&self) -> bool {
         self.ty.mall.safe

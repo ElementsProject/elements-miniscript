@@ -34,6 +34,7 @@ use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{desc_checksum, verify_checksum};
 use crate::expression::{self, FromTree};
+use crate::extensions::CovExtArgs;
 use crate::policy::{semantic, Liftable};
 use crate::util::varint_len;
 use crate::{
@@ -124,7 +125,9 @@ pub struct LegacyPegin<Pk: MiniscriptKey> {
     /// csv timelock
     pub timelock: u32,
     /// The elements descriptor required to redeem
-    pub desc: Descriptor<Pk>,
+    ///
+    /// TODO: Allow extension user descriptors when claiming pegins
+    pub desc: Descriptor<Pk, CovExtArgs>,
     // Representation of federation policy as a miniscript
     // Allows for easier implementation
     ms: BtcMiniscript<LegacyPeginKey, BtcSegwitv0>,
@@ -138,7 +141,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         emer_pks: Vec<LegacyPeginKey>,
         emer_k: usize,
         timelock: u32,
-        desc: Descriptor<Pk>,
+        desc: Descriptor<Pk, CovExtArgs>,
     ) -> Self {
         let fed_ms = BtcMiniscript::from_ast(BtcTerminal::Multi(fed_k, fed_pks.clone()))
             .expect("Multi type check can't fail");
@@ -166,7 +169,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
     // Internal function to set the fields of Self according to
     // miniscript
     fn from_ms_and_desc(
-        desc: Descriptor<Pk>,
+        desc: Descriptor<Pk, CovExtArgs>,
         ms: BtcMiniscript<LegacyPeginKey, BtcSegwitv0>,
     ) -> Self {
         // Miniscript is a bunch of Arc's. So, cloning is not as bad.
@@ -276,7 +279,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
 
     /// Create a new descriptor with hard coded values for the
     /// legacy federation and emergency keys
-    pub fn new_legacy_fed(user_desc: Descriptor<Pk>) -> Self {
+    pub fn new_legacy_fed(user_desc: Descriptor<Pk, CovExtArgs>) -> Self {
         // Taken from functionary codebase
         // TODO: Verify the keys are correct
         let pks = "
@@ -350,7 +353,7 @@ impl_from_tree!(
             let ms_expr = BtcTree::from_str(&ms_str)?;
             //
             let ms = BtcMiniscript::<LegacyPeginKey, BtcSegwitv0>::from_tree(&ms_expr);
-            let desc = Descriptor::<Pk>::from_tree(&top.args[1]);
+            let desc = Descriptor::<Pk, CovExtArgs>::from_tree(&top.args[1]);
             Ok(LegacyPegin::from_ms_and_desc(desc?, ms?))
         } else {
             Err(Error::Unexpected(format!(
@@ -530,7 +533,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
     /// at redeem time by the user.
     /// Users can use the DescrpitorTrait operations on the output Descriptor
     /// to obtain the characteristics of the elements descriptor.
-    pub fn into_user_descriptor(self) -> Descriptor<Pk> {
+    pub fn into_user_descriptor(self) -> Descriptor<Pk, CovExtArgs> {
         self.desc
     }
 }

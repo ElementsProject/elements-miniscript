@@ -23,12 +23,14 @@ use elements::hashes::{hash160, ripemd160, sha256d};
 #[cfg(feature = "compiler")]
 use {
     crate::descriptor::TapTree,
+    crate::extensions::NoExtParam,
     crate::miniscript::ScriptContext,
     crate::policy::compiler::CompilerError,
     crate::policy::compiler::OrdF64,
     crate::policy::{compiler, Concrete, Liftable, Semantic},
     crate::Descriptor,
     crate::Miniscript,
+    crate::NoExt,
     crate::Tap,
     std::cmp::Reverse,
     std::collections::{BinaryHeap, HashMap},
@@ -194,7 +196,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 
     /// Compile [`Policy::Or`] and [`Policy::Threshold`] according to odds
     #[cfg(feature = "compiler")]
-    fn compile_tr_policy(&self) -> Result<TapTree<Pk>, Error> {
+    fn compile_tr_policy(&self) -> Result<TapTree<Pk, NoExt>, Error> {
         let leaf_compilations: Vec<_> = self
             .to_tapleaf_prob_vec(1.0)
             .into_iter()
@@ -261,7 +263,10 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// the probabilitity of satisfaction for the respective branch in the TapTree.
     // TODO: We might require other compile errors for Taproot.
     #[cfg(feature = "compiler")]
-    pub fn compile_tr(&self, unspendable_key: Option<Pk>) -> Result<Descriptor<Pk>, Error> {
+    pub fn compile_tr(
+        &self,
+        unspendable_key: Option<Pk>,
+    ) -> Result<Descriptor<Pk, NoExtParam>, Error> {
         self.is_valid()?; // Check for validity
         match self.is_safe_nonmalleable() {
             (false, _) => Err(Error::from(CompilerError::TopLevelNonSafe)),
@@ -324,7 +329,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// # Example
     ///
     /// ```
-    /// use elements_miniscript::{bitcoin::PublicKey, policy::concrete::Policy, Translator};
+    /// use elements_miniscript::{bitcoin::PublicKey, policy::concrete::Policy, Translator, NoExt};
     /// use std::str::FromStr;
     /// use std::collections::HashMap;
     /// use elements_miniscript::bitcoin::hashes::{sha256, hash160};
@@ -355,6 +360,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     ///     fn sha256(&mut self, sha256: &String) -> Result<sha256::Hash, ()> {
     ///         unreachable!("Policy does not contain any sha256 fragment");
     ///     }
+    ///
     /// }
     ///
     /// let mut pk_map = HashMap::new();
@@ -842,7 +848,7 @@ impl_from_tree!(
 #[cfg(feature = "compiler")]
 fn with_huffman_tree<Pk: MiniscriptKey>(
     ms: Vec<(OrdF64, Miniscript<Pk, Tap>)>,
-) -> Result<TapTree<Pk>, Error> {
+) -> Result<TapTree<Pk, NoExt>, Error> {
     let mut node_weights = BinaryHeap::<(Reverse<OrdF64>, TapTree<Pk>)>::new();
     for (prob, script) in ms {
         node_weights.push((Reverse(prob), TapTree::Leaf(Arc::new(script))));

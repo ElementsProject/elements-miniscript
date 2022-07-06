@@ -9,6 +9,7 @@ use elements::hashes::hex::{FromHex, ToHex};
 use elements::hashes::{sha256d, Hash};
 use elements::{self};
 
+use super::{ExtParam, ParseableExt};
 use crate::descriptor::CovError;
 use crate::miniscript::astelem::StackCtxOperations;
 use crate::miniscript::context::ScriptContextError;
@@ -19,8 +20,8 @@ use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::policy::{self, Liftable};
 use crate::{
-    expression, interpreter, Error, Extension, ForEach, MiniscriptKey, Satisfier, ToPublicKey,
-    TranslatePk, Translator,
+    expression, interpreter, Error, ExtTranslator, Extension, MiniscriptKey, Satisfier,
+    ToPublicKey, TranslateExt,
 };
 
 /// Prefix is initally encoded in the script pubkey
@@ -37,33 +38,24 @@ use crate::{
 /// HASH256
 /// DEPTH <10> SUB PICK EQUALVERIFY
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
-pub struct OutputsPref {
+pub struct LegacyOutputsPref {
     /// the version of transaction
     pub pref: Vec<u8>,
 }
 
-impl fmt::Display for OutputsPref {
+impl fmt::Display for LegacyOutputsPref {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "outputs_pref({})", self.pref.to_hex())
     }
 }
 
-impl<Pk: MiniscriptKey> Liftable<Pk> for OutputsPref {
+impl<Pk: MiniscriptKey> Liftable<Pk> for LegacyOutputsPref {
     fn lift(&self) -> Result<policy::Semantic<Pk>, Error> {
         Err(Error::CovError(CovError::CovenantLift))
     }
 }
 
-impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
-    fn real_for_each_key<'a, F>(&'a self, _pred: &mut F) -> bool
-    where
-        Pk: 'a,
-        Pk::Hash: 'a,
-        F: FnMut(ForEach<'a, Pk>) -> bool,
-    {
-        true
-    }
-
+impl Extension for LegacyOutputsPref {
     fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError> {
         if self.pref.len() > MAX_SCRIPT_ELEMENT_SIZE {
             Err(ScriptContextError::CovElementSizeExceeded)
@@ -110,7 +102,26 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
         }
     }
 
-    fn satisfy<S>(&self, sat: &S) -> Satisfaction
+    fn script_size(&self) -> usize {
+        // CAT CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
+        // HASH256 DEPTH <10> SUB PICK EQUAL
+        8 + self.pref.len() + 1 /* line1 opcodes + pref.push */
+                + 6 /* line 2 */
+    }
+
+    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
+        if children.len() == 1 && name == "outputs_pref" {
+            let pref = expression::terminal(&children[0], Vec::<u8>::from_hex).map_err(|_| ())?;
+            Ok(Self { pref })
+        } else {
+            // Correct error handling while parsing fromtree
+            Err(())
+        }
+    }
+}
+
+impl ParseableExt for LegacyOutputsPref {
+    fn satisfy<Pk, S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
@@ -156,7 +167,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
         }
     }
 
-    fn dissatisfy<S>(&self, sat: &S) -> Satisfaction
+    fn dissatisfy<Pk, S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
@@ -197,18 +208,8 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
         }
     }
 
-    fn push_to_builder(&self, builder: elements::script::Builder) -> elements::script::Builder
-    where
-        Pk: ToPublicKey,
-    {
+    fn push_to_builder(&self, builder: elements::script::Builder) -> elements::script::Builder {
         builder.check_item_pref(4, &self.pref)
-    }
-
-    fn script_size(&self) -> usize {
-        // CAT CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
-        // HASH256 DEPTH <10> SUB PICK EQUAL
-        8 + self.pref.len() + 1 /* line1 opcodes + pref.push */
-                + 6 /* line 2 */
     }
 
     fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
@@ -241,32 +242,19 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
         Ok(outputs_pref)
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
-        if children.len() == 1 && name == "outputs_pref" {
-            let pref = expression::terminal(&children[0], Vec::<u8>::from_hex).map_err(|_| ())?;
-            Ok(Self { pref })
-        } else {
-            // Correct error handling while parsing fromtree
-            Err(())
-        }
-    }
-
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut interpreter::Stack<'txin>,
-    ) -> Option<Result<(), interpreter::Error>> {
+    ) -> Result<bool, interpreter::Error> {
         // Hash Outputs is at index 3
         let hash_outputs = stack[3];
-        if let Err(e) = hash_outputs.try_push() {
-            return Some(Err(e));
-        }
+        let hash_outputs = hash_outputs.try_push()?;
         // Maximum number of suffix elements
         let max_elems = MAX_SCRIPT_ELEMENT_SIZE / MAX_STANDARD_P2WSH_STACK_ITEM_SIZE + 1;
-        let hash_outputs = hash_outputs.try_push().unwrap(); // TODO: refactor this later to avoid unwrap
         if hash_outputs.len() == 32 {
             // We want to cat the last 6 elements(5 cats) in suffix
             if stack.len() < max_elems {
-                return Some(Err(interpreter::Error::UnexpectedStackEnd));
+                return Err(interpreter::Error::UnexpectedStackEnd);
             }
             let mut outputs_builder = Vec::new();
             outputs_builder.extend(&self.pref);
@@ -281,26 +269,32 @@ impl<Pk: MiniscriptKey> Extension<Pk> for OutputsPref {
             }
             if sha256d::Hash::hash(&outputs_builder).as_inner() == hash_outputs {
                 stack.push(interpreter::Element::Satisfied);
-                Some(Ok(()))
+                Ok(true)
             } else {
-                None
+                Ok(false)
             }
         } else {
-            Some(Err(interpreter::Error::CovWitnessSizeErr {
+            Err(interpreter::Error::CovWitnessSizeErr {
                 pos: 9,
                 expected: 32,
                 actual: hash_outputs.len(),
-            }))
+            })
         }
     }
 }
 
-impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for OutputsPref {
-    type Output = OutputsPref;
+impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for LegacyOutputsPref
+where
+    PExt: Extension,
+    QExt: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    type Output = LegacyOutputsPref;
 
-    fn translate_pk<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
+    fn translate_ext<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<P, Q, E>,
+        T: ExtTranslator<PArg, QArg, E>,
     {
         Ok(Self {
             pref: self.pref.clone(),
@@ -317,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_outputs_pref() {
-        type MsExtVer = Miniscript<PublicKey, Segwitv0, OutputsPref>;
+        type MsExtVer = Miniscript<PublicKey, Segwitv0, LegacyOutputsPref>;
 
         let ms = MsExtVer::from_str_insane("outputs_pref(aa)").unwrap();
         // test string rtt

@@ -46,7 +46,7 @@ mod cov;
 mod error;
 mod satisfy;
 mod script_internals;
-pub use self::cov::CovenantDescriptor;
+pub use self::cov::LegacyCSFSCov;
 pub use self::error::CovError;
 pub use self::satisfy::CovSatisfier;
 pub use self::script_internals::CovOperations;
@@ -70,7 +70,7 @@ mod tests {
     use super::cov::*;
     use super::*;
     use crate::descriptor::DescriptorType;
-    use crate::extensions::CovenantExt;
+    use crate::extensions::{CovExtArgs, CovenantExt, NoExtParam};
     use crate::interpreter::SatisfiedConstraint;
     use crate::util::{count_non_push_opcodes, witness_size};
     use crate::{interpreter, Descriptor, ElementsSig, Error, Interpreter, Satisfier};
@@ -103,7 +103,8 @@ mod tests {
         let script = desc.as_cov().expect("Parsed as cov").encode();
 
         let cov_desc =
-            CovenantDescriptor::<bitcoin::PublicKey, CovenantExt>::parse_insane(&script).unwrap();
+            LegacyCSFSCov::<bitcoin::PublicKey, CovenantExt<CovExtArgs>>::parse_insane(&script)
+                .unwrap();
 
         assert_eq!(cov_desc.to_string(), desc.to_string());
     }
@@ -181,7 +182,7 @@ mod tests {
     }
 
     fn _satisfy_and_interpret(
-        desc: Descriptor<bitcoin::PublicKey>,
+        desc: Descriptor<bitcoin::PublicKey, CovExtArgs>,
         cov_sk: secp256k1_zkp::SecretKey,
     ) -> Result<(), Error> {
         assert_eq!(desc.desc_type(), DescriptorType::Cov);

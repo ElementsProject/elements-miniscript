@@ -25,7 +25,8 @@ use elements::taproot::LeafVersion;
 use elements::{self, confidential, Script, Transaction};
 
 use super::{sanity_check, Error, InputError, Psbt, PsbtInputSatisfier};
-use crate::descriptor::{CovSatisfier, CovenantDescriptor};
+use crate::descriptor::{CovSatisfier, LegacyCSFSCov};
+use crate::extensions::CovExtArgs;
 use crate::{
     interpreter, util, BareCtx, Descriptor, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0,
     Tap,
@@ -146,7 +147,7 @@ pub(super) fn prevouts(psbt: &Psbt) -> Result<Vec<elements::TxOut>, super::Error
 pub(super) fn get_descriptor(
     psbt: &Psbt,
     index: usize,
-) -> Result<Descriptor<PublicKey>, InputError> {
+) -> Result<Descriptor<PublicKey, CovExtArgs>, InputError> {
     // Figure out Scriptpubkey
     let script_pubkey = get_scriptpubkey(psbt, index)?;
     let inp = &psbt.inputs()[index];
@@ -189,8 +190,8 @@ pub(super) fn get_descriptor(
                 });
             }
             // First try parsing as covenant descriptor. Then try normal wsh descriptor
-            match CovenantDescriptor::parse_insane(witness_script) {
-                Ok(cov) => Ok(Descriptor::Cov(cov)),
+            match LegacyCSFSCov::parse_insane(witness_script) {
+                Ok(cov) => Ok(Descriptor::LegacyCSFSCov(cov)),
                 Err(_) => {
                     let ms =
                         Miniscript::<bitcoin::PublicKey, Segwitv0>::parse_insane(witness_script)?;
@@ -408,7 +409,7 @@ fn _finalize_inp(
 
             // If the descriptor is covenant one, create a covenant satisfier. Otherwise
             // use the regular satisfier
-            if let Descriptor::Cov(cov) = &desc {
+            if let Descriptor::LegacyCSFSCov(cov) = &desc {
                 // For covenant descriptors create satisfier
                 let utxo = psbt.inputs()[index]
                     .witness_utxo

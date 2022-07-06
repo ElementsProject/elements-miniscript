@@ -37,15 +37,16 @@ use elements::{secp256k1_zkp as secp256k1, secp256k1_zkp, Script, TxIn};
 use {bitcoin, elements};
 
 use self::checksum::verify_checksum;
+use crate::extensions::{CovExtArgs, ExtParam, NoExtParam};
 use crate::miniscript::{Legacy, Miniscript, Segwitv0};
 use crate::{
-    expression, miniscript, BareCtx, CovenantExt, Error, ForEach, ForEachKey, MiniscriptKey,
-    PkTranslator, Satisfier, ToPublicKey, TranslatePk, Translator,
+    expression, miniscript, BareCtx, CovenantExt, Error, ExtTranslator, ForEach, ForEachKey,
+    MiniscriptKey, NoExt, Satisfier, ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
 mod bare;
 mod blinded;
-mod covenants;
+mod csfs_cov;
 mod segwitv0;
 mod sh;
 mod sortedmulti;
@@ -59,13 +60,12 @@ pub use self::sh::{Sh, ShInner};
 pub use self::sortedmulti::SortedMultiVec;
 mod checksum;
 mod key;
-pub use self::covenants::{CovError, CovOperations, CovSatisfier, CovenantDescriptor};
+pub use self::csfs_cov::{CovError, CovOperations, CovSatisfier, LegacyCSFSCov};
 pub use self::key::{
     ConversionError, DerivedDescriptorKey, DescriptorKeyParseError, DescriptorPublicKey,
     DescriptorSecretKey, DescriptorXKey, InnerXKey, SinglePriv, SinglePub, SinglePubKey, Wildcard,
 };
 pub use self::tr::{TapTree, Tr};
-
 /// Alias type for a map of public key to secret key
 ///
 /// This map is returned whenever a descriptor that contains secrets is parsed using
@@ -202,9 +202,9 @@ impl DescriptorInfo {
     /// of the type [DescriptorSecretKey]. If the descriptor contains secret, users
     /// should use the method [DescriptorPublicKey::parse_descriptor] to obtain the
     /// Descriptor and a secret key to public key mapping
-    pub fn from_desc_str(s: &str) -> Result<Self, Error> {
+    pub fn from_desc_str<T: ExtParam>(s: &str) -> Result<Self, Error> {
         // Parse as a string descriptor
-        let descriptor = Descriptor::<String>::from_str(s)?;
+        let descriptor = Descriptor::<String, T>::from_str(s)?;
         let has_secret = descriptor.for_any_key(|pk| match pk {
             ForEach::Key(key) => DescriptorSecretKey::from_str(key).is_ok(),
             ForEach::Hash(key) => DescriptorSecretKey::from_str(key).is_ok(),
@@ -225,7 +225,7 @@ impl DescriptorInfo {
 
 /// Script descriptor
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Descriptor<Pk: MiniscriptKey> {
+pub enum Descriptor<Pk: MiniscriptKey, T: ExtParam = CovExtArgs> {
     /// A raw scriptpubkey (including pay-to-pubkey) under Legacy context
     Bare(Bare<Pk>),
     /// Pay-to-PubKey-Hash
@@ -237,58 +237,60 @@ pub enum Descriptor<Pk: MiniscriptKey> {
     /// Pay-to-Witness-ScriptHash with Segwitv0 context
     Wsh(Wsh<Pk>),
     /// Pay-to-Taproot
-    Tr(Tr<Pk>),
+    Tr(Tr<Pk, NoExt>),
+    /// Pay-to-Taproot
+    TrExt(Tr<Pk, CovenantExt<T>>),
     /// Covenant descriptor with all known extensions
     /// Downstream implementations of extensions should implement directly use descriptor API
-    Cov(CovenantDescriptor<Pk, CovenantExt>),
+    LegacyCSFSCov(LegacyCSFSCov<Pk, CovenantExt<T>>),
 }
 
-impl<Pk: MiniscriptKey> From<Bare<Pk>> for Descriptor<Pk> {
+impl<Pk: MiniscriptKey> From<Bare<Pk>> for Descriptor<Pk, NoExtParam> {
     #[inline]
     fn from(inner: Bare<Pk>) -> Self {
         Descriptor::Bare(inner)
     }
 }
 
-impl<Pk: MiniscriptKey> From<Pkh<Pk>> for Descriptor<Pk> {
+impl<Pk: MiniscriptKey> From<Pkh<Pk>> for Descriptor<Pk, NoExtParam> {
     #[inline]
     fn from(inner: Pkh<Pk>) -> Self {
         Descriptor::Pkh(inner)
     }
 }
 
-impl<Pk: MiniscriptKey> From<Wpkh<Pk>> for Descriptor<Pk> {
+impl<Pk: MiniscriptKey> From<Wpkh<Pk>> for Descriptor<Pk, NoExtParam> {
     #[inline]
     fn from(inner: Wpkh<Pk>) -> Self {
         Descriptor::Wpkh(inner)
     }
 }
 
-impl<Pk: MiniscriptKey> From<Sh<Pk>> for Descriptor<Pk> {
+impl<Pk: MiniscriptKey> From<Sh<Pk>> for Descriptor<Pk, NoExtParam> {
     #[inline]
     fn from(inner: Sh<Pk>) -> Self {
         Descriptor::Sh(inner)
     }
 }
 
-impl<Pk: MiniscriptKey> From<Wsh<Pk>> for Descriptor<Pk> {
+impl<Pk: MiniscriptKey> From<Wsh<Pk>> for Descriptor<Pk, NoExtParam> {
     #[inline]
     fn from(inner: Wsh<Pk>) -> Self {
         Descriptor::Wsh(inner)
     }
 }
 
-impl<Pk: MiniscriptKey> From<Tr<Pk>> for Descriptor<Pk> {
+impl<Pk: MiniscriptKey> From<Tr<Pk, NoExt>> for Descriptor<Pk, NoExtParam> {
     #[inline]
-    fn from(inner: Tr<Pk>) -> Self {
+    fn from(inner: Tr<Pk, NoExt>) -> Self {
         Descriptor::Tr(inner)
     }
 }
 
-impl<Pk: MiniscriptKey> From<CovenantDescriptor<Pk, CovenantExt>> for Descriptor<Pk> {
+impl<Pk: MiniscriptKey, T: ExtParam> From<LegacyCSFSCov<Pk, CovenantExt<T>>> for Descriptor<Pk, T> {
     #[inline]
-    fn from(inner: CovenantDescriptor<Pk, CovenantExt>) -> Self {
-        Descriptor::Cov(inner)
+    fn from(inner: LegacyCSFSCov<Pk, CovenantExt<T>>) -> Self {
+        Descriptor::LegacyCSFSCov(inner)
     }
 }
 
@@ -311,7 +313,7 @@ impl DescriptorType {
     }
 }
 
-impl<Pk: MiniscriptKey> Descriptor<Pk> {
+impl<Pk: MiniscriptKey, T: ExtParam> Descriptor<Pk, T> {
     // Keys
 
     /// Create a new pk descriptor
@@ -409,15 +411,17 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
 
     /// Create new tr descriptor
     /// Errors when miniscript exceeds resource limits under Tap context
-    pub fn new_tr(key: Pk, script: Option<tr::TapTree<Pk>>) -> Result<Self, Error> {
+    pub fn new_tr(key: Pk, script: Option<tr::TapTree<Pk, NoExt>>) -> Result<Self, Error> {
         Ok(Descriptor::Tr(Tr::new(key, script)?))
     }
 
-    /// Create a new covenant descriptor
-    // All extensions are supported in wsh descriptor
-    pub fn new_cov_wsh(pk: Pk, ms: Miniscript<Pk, Segwitv0, CovenantExt>) -> Result<Self, Error> {
-        let cov = CovenantDescriptor::new(pk, ms)?;
-        Ok(Descriptor::Cov(cov))
+    /// Create new tr descriptor
+    /// Errors when miniscript exceeds resource limits under Tap context
+    pub fn new_tr_ext(
+        key: Pk,
+        script: Option<tr::TapTree<Pk, CovenantExt<T>>>,
+    ) -> Result<Self, Error> {
+        Ok(Descriptor::TrExt(Tr::new(key, script)?))
     }
 
     /// Get the [DescriptorType] of [Descriptor]
@@ -439,17 +443,9 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
                 WshInner::SortedMulti(ref _smv) => DescriptorType::WshSortedMulti,
                 WshInner::Ms(ref _ms) => DescriptorType::Wsh,
             },
-            Descriptor::Cov(ref _cov) => DescriptorType::Cov,
+            Descriptor::LegacyCSFSCov(ref _cov) => DescriptorType::Cov,
             Descriptor::Tr(ref _tr) => DescriptorType::Tr,
-        }
-    }
-
-    /// Tries to convert descriptor as a covenant descriptor
-    pub fn as_cov(&self) -> Result<&CovenantDescriptor<Pk, CovenantExt>, Error> {
-        if let Descriptor::Cov(cov) = self {
-            Ok(cov)
-        } else {
-            Err(Error::CovError(CovError::BadCovDescriptor))
+            Descriptor::TrExt(ref _tr) => DescriptorType::Cov,
         }
     }
 
@@ -473,8 +469,9 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.sanity_check(),
             Descriptor::Wsh(ref wsh) => wsh.sanity_check(),
             Descriptor::Sh(ref sh) => sh.sanity_check(),
-            Descriptor::Cov(ref cov) => cov.sanity_check(),
+            Descriptor::LegacyCSFSCov(ref cov) => cov.sanity_check(),
             Descriptor::Tr(ref tr) => tr.sanity_check(),
+            Descriptor::TrExt(ref tr) => tr.sanity_check(),
         }
     }
 
@@ -494,14 +491,36 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.max_satisfaction_weight(),
             Descriptor::Wsh(ref wsh) => wsh.max_satisfaction_weight()?,
             Descriptor::Sh(ref sh) => sh.max_satisfaction_weight()?,
-            Descriptor::Cov(ref cov) => cov.max_satisfaction_weight()?,
+            Descriptor::LegacyCSFSCov(ref cov) => cov.max_satisfaction_weight()?,
             Descriptor::Tr(ref tr) => tr.max_satisfaction_weight()?,
+            Descriptor::TrExt(ref tr) => tr.max_satisfaction_weight()?,
         };
         Ok(weight)
     }
 }
 
-impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
+impl<Pk: MiniscriptKey, T: ExtParam> Descriptor<Pk, T> {
+    /// Create a new covenant descriptor
+    // All extensions are supported in wsh descriptor
+    pub fn new_cov_wsh(
+        pk: Pk,
+        ms: Miniscript<Pk, Segwitv0, CovenantExt<T>>,
+    ) -> Result<Self, Error> {
+        let cov = LegacyCSFSCov::new(pk, ms)?;
+        Ok(Descriptor::LegacyCSFSCov(cov))
+    }
+
+    /// Tries to convert descriptor as a covenant descriptor
+    pub fn as_cov(&self) -> Result<&LegacyCSFSCov<Pk, CovenantExt<T>>, Error> {
+        if let Descriptor::LegacyCSFSCov(cov) = self {
+            Ok(cov)
+        } else {
+            Err(Error::CovError(CovError::BadCovDescriptor))
+        }
+    }
+}
+
+impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk, CovExtArgs> {
     ///
     /// Obtains the blinded address for this descriptor
     ///
@@ -523,8 +542,9 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => Ok(wpkh.address(Some(blinder), params)),
             Descriptor::Wsh(ref wsh) => Ok(wsh.address(Some(blinder), params)),
             Descriptor::Sh(ref sh) => Ok(sh.address(Some(blinder), params)),
-            Descriptor::Cov(ref cov) => Ok(cov.address(Some(blinder), params)),
+            Descriptor::LegacyCSFSCov(ref cov) => Ok(cov.address(Some(blinder), params)),
             Descriptor::Tr(ref tr) => Ok(tr.address(Some(blinder), params)),
+            Descriptor::TrExt(ref tr) => Ok(tr.address(Some(blinder), params)),
         }
     }
 
@@ -542,8 +562,9 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => Ok(wpkh.address(None, params)),
             Descriptor::Wsh(ref wsh) => Ok(wsh.address(None, params)),
             Descriptor::Sh(ref sh) => Ok(sh.address(None, params)),
-            Descriptor::Cov(ref cov) => Ok(cov.address(None, params)),
+            Descriptor::LegacyCSFSCov(ref cov) => Ok(cov.address(None, params)),
             Descriptor::Tr(ref tr) => Ok(tr.address(None, params)),
+            Descriptor::TrExt(ref tr) => Ok(tr.address(None, params)),
         }
     }
 
@@ -555,8 +576,9 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.script_pubkey(),
             Descriptor::Wsh(ref wsh) => wsh.script_pubkey(),
             Descriptor::Sh(ref sh) => sh.script_pubkey(),
-            Descriptor::Cov(ref cov) => cov.script_pubkey(),
+            Descriptor::LegacyCSFSCov(ref cov) => cov.script_pubkey(),
             Descriptor::Tr(ref tr) => tr.script_pubkey(),
+            Descriptor::TrExt(ref tr) => tr.script_pubkey(),
         }
     }
 
@@ -574,8 +596,9 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(_) => Script::new(),
             Descriptor::Wsh(_) => Script::new(),
             Descriptor::Sh(ref sh) => sh.unsigned_script_sig(),
-            Descriptor::Cov(_) => Script::new(),
+            Descriptor::LegacyCSFSCov(_) => Script::new(),
             Descriptor::Tr(_) => Script::new(),
+            Descriptor::TrExt(_) => Script::new(),
         }
     }
 
@@ -593,7 +616,8 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wsh(ref wsh) => Ok(wsh.inner_script()),
             Descriptor::Sh(ref sh) => Ok(sh.inner_script()),
             Descriptor::Tr(_) => Err(Error::TrNoScriptCode),
-            Descriptor::Cov(ref cov) => Ok(cov.inner_script()),
+            Descriptor::TrExt(_) => Err(Error::TrNoScriptCode),
+            Descriptor::LegacyCSFSCov(ref cov) => Ok(cov.inner_script()),
         }
     }
 
@@ -611,8 +635,9 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => Ok(wpkh.ecdsa_sighash_script_code()),
             Descriptor::Wsh(ref wsh) => Ok(wsh.ecdsa_sighash_script_code()),
             Descriptor::Sh(ref sh) => Ok(sh.ecdsa_sighash_script_code()),
-            Descriptor::Cov(ref cov) => Ok(cov.ecdsa_sighash_script_code()),
+            Descriptor::LegacyCSFSCov(ref cov) => Ok(cov.ecdsa_sighash_script_code()),
             Descriptor::Tr(_) => Err(Error::TrNoScriptCode),
+            Descriptor::TrExt(_) => Err(Error::TrNoScriptCode),
         }
     }
 
@@ -629,8 +654,9 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.get_satisfaction(satisfier),
             Descriptor::Wsh(ref wsh) => wsh.get_satisfaction(satisfier),
             Descriptor::Sh(ref sh) => sh.get_satisfaction(satisfier),
-            Descriptor::Cov(ref cov) => cov.get_satisfaction(satisfier),
+            Descriptor::LegacyCSFSCov(ref cov) => cov.get_satisfaction(satisfier),
             Descriptor::Tr(ref tr) => tr.get_satisfaction(satisfier),
+            Descriptor::TrExt(ref tr) => tr.get_satisfaction(satisfier),
         }
     }
 
@@ -647,8 +673,9 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.get_satisfaction_mall(satisfier),
             Descriptor::Wsh(ref wsh) => wsh.get_satisfaction_mall(satisfier),
             Descriptor::Sh(ref sh) => sh.get_satisfaction_mall(satisfier),
-            Descriptor::Cov(ref cov) => cov.get_satisfaction_mall(satisfier),
+            Descriptor::LegacyCSFSCov(ref cov) => cov.get_satisfaction_mall(satisfier),
             Descriptor::Tr(ref tr) => tr.get_satisfaction_mall(satisfier),
+            Descriptor::TrExt(ref tr) => tr.get_satisfaction_mall(satisfier),
         }
     }
 
@@ -666,12 +693,13 @@ impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk> {
     }
 }
 
-impl<P, Q> TranslatePk<P, Q> for Descriptor<P>
+impl<P, Q, Arg> TranslatePk<P, Q> for Descriptor<P, Arg>
 where
     P: MiniscriptKey,
     Q: MiniscriptKey,
+    Arg: ExtParam,
 {
-    type Output = Descriptor<Q>;
+    type Output = Descriptor<Q, Arg>;
 
     /// Converts a descriptor using abstract keys to one using specific keys.
     fn translate_pk<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
@@ -685,13 +713,63 @@ where
             Descriptor::Sh(ref sh) => Descriptor::Sh(sh.translate_pk(t)?),
             Descriptor::Wsh(ref wsh) => Descriptor::Wsh(wsh.translate_pk(t)?),
             Descriptor::Tr(ref tr) => Descriptor::Tr(tr.translate_pk(t)?),
-            Descriptor::Cov(ref cov) => Descriptor::Cov((cov.translate_pk(t))?),
+            Descriptor::TrExt(ref tr) => Descriptor::TrExt(tr.translate_pk(t)?),
+            Descriptor::LegacyCSFSCov(ref cov) => Descriptor::LegacyCSFSCov(cov.translate_pk(t)?),
         };
         Ok(desc)
     }
 }
 
-impl<Pk: MiniscriptKey> ForEachKey<Pk> for Descriptor<Pk> {
+impl<PArg, QArg, Pk> TranslateExt<CovenantExt<PArg>, CovenantExt<QArg>, PArg, QArg>
+    for Descriptor<Pk, PArg>
+where
+    PArg: ExtParam,
+    QArg: ExtParam,
+    Pk: MiniscriptKey,
+    // PExt: TranslateExt<PExt, QExt, PArg, QArg, Output = QExt>,
+    // Tr<Pk, CovenantExt<PArg>>: TranslateExt<PExt, QExt, PArg, QArg,>
+{
+    type Output = Descriptor<Pk, QArg>;
+
+    /// Converts a descriptor using abstract keys to one using specific keys.
+    #[rustfmt::skip]
+    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtTranslator<PArg, QArg, E>,
+    {
+        let desc = match *self {
+            Descriptor::Bare(ref bare) => Descriptor::Bare(
+                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(bare, t)?,
+            ),
+            Descriptor::Pkh(ref pk) => Descriptor::Pkh(
+                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(pk, t)?,
+            ),
+            Descriptor::Wpkh(ref pk) => Descriptor::Wpkh(
+                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(pk, t)?,
+            ),
+            Descriptor::Sh(ref sh) => Descriptor::Sh(
+                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(sh, t)?,
+            ),
+            Descriptor::Wsh(ref wsh) => Descriptor::Wsh(
+                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(wsh, t)?,
+            ),
+            Descriptor::Tr(ref tr) => Descriptor::Tr(
+                TranslateExt::<NoExt, NoExt, _, _>::translate_ext(tr, t)?,
+            ),
+            Descriptor::TrExt(ref tr) => Descriptor::TrExt(
+                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(tr, t)?,
+            ),
+            Descriptor::LegacyCSFSCov(ref cov) => {
+                Descriptor::LegacyCSFSCov(TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(
+                    cov, t,
+                )?)
+            }
+        };
+        Ok(desc)
+    }
+}
+
+impl<Pk: MiniscriptKey, T: ExtParam> ForEachKey<Pk> for Descriptor<Pk, T> {
     fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: F) -> bool
     where
         Pk: 'a,
@@ -703,8 +781,9 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.for_each_key(pred),
             Descriptor::Wsh(ref wsh) => wsh.for_each_key(pred),
             Descriptor::Sh(ref sh) => sh.for_each_key(pred),
-            Descriptor::Cov(ref cov) => cov.for_any_key(pred),
+            Descriptor::LegacyCSFSCov(ref cov) => cov.for_any_key(pred),
             Descriptor::Tr(ref tr) => tr.for_each_key(pred),
+            Descriptor::TrExt(ref tr) => tr.for_each_key(pred),
         }
     }
 }
@@ -724,13 +803,17 @@ impl Descriptor<DescriptorPublicKey> {
     pub fn derive(&self, index: u32) -> Descriptor<DerivedDescriptorKey> {
         struct Derivator(u32);
 
-        impl PkTranslator<DescriptorPublicKey, DerivedDescriptorKey, ()> for Derivator {
+        impl Translator<DescriptorPublicKey, DerivedDescriptorKey, ()> for Derivator {
             fn pk(&mut self, pk: &DescriptorPublicKey) -> Result<DerivedDescriptorKey, ()> {
                 Ok(pk.clone().derive(self.0))
             }
 
             fn pkh(&mut self, pkh: &DescriptorPublicKey) -> Result<DerivedDescriptorKey, ()> {
                 Ok(pkh.clone().derive(self.0))
+            }
+
+            fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
+                Ok(*sha256)
             }
         }
         self.translate_pk(&mut Derivator(index))
@@ -769,7 +852,7 @@ impl Descriptor<DescriptorPublicKey> {
         struct Derivator<'a, C: secp256k1::Verification>(&'a secp256k1::Secp256k1<C>);
 
         impl<'a, C: secp256k1::Verification>
-            PkTranslator<DerivedDescriptorKey, bitcoin::PublicKey, ConversionError>
+            Translator<DerivedDescriptorKey, bitcoin::PublicKey, ConversionError>
             for Derivator<'a, C>
         {
             fn pk(
@@ -784,6 +867,10 @@ impl Descriptor<DescriptorPublicKey> {
                 pkh: &DerivedDescriptorKey,
             ) -> Result<bitcoin::hashes::hash160::Hash, ConversionError> {
                 Ok(pkh.derive_public_key(&self.0)?.to_pubkeyhash())
+            }
+
+            fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ConversionError> {
+                Ok(*sha256)
             }
         }
 
@@ -885,7 +972,9 @@ impl Descriptor<DescriptorPublicKey> {
 
         descriptor.to_string()
     }
+}
 
+impl Descriptor<DescriptorPublicKey, CovExtArgs> {
     /// Utility method for deriving the descriptor at each index in a range to find one matching
     /// `script_pubkey`.
     ///
@@ -898,7 +987,7 @@ impl Descriptor<DescriptorPublicKey> {
         secp: &secp256k1_zkp::Secp256k1<C>,
         script_pubkey: &Script,
         range: Range<u32>,
-    ) -> Result<Option<(u32, Descriptor<bitcoin::PublicKey>)>, ConversionError> {
+    ) -> Result<Option<(u32, Descriptor<bitcoin::PublicKey, CovExtArgs>)>, ConversionError> {
         let range = if self.is_deriveable() { range } else { 0..1 };
 
         for i in range {
@@ -914,14 +1003,15 @@ impl Descriptor<DescriptorPublicKey> {
 }
 
 impl_from_tree!(
-    Descriptor<Pk>,
+    ;T; ExtParam,
+    Descriptor<Pk, T>,
     /// Parse an expression tree into a descriptor.
-    fn from_tree(top: &expression::Tree) -> Result<Descriptor<Pk>, Error> {
+    fn from_tree(top: &expression::Tree) -> Result<Descriptor<Pk, T>, Error> {
         Ok(match (top.name, top.args.len() as u32) {
             ("elpkh", 1) => Descriptor::Pkh(Pkh::from_tree(top)?),
             ("elwpkh", 1) => Descriptor::Wpkh(Wpkh::from_tree(top)?),
             ("elsh", 1) => Descriptor::Sh(Sh::from_tree(top)?),
-            ("elcovwsh", 2) => Descriptor::Cov(CovenantDescriptor::from_tree(top)?),
+            ("elcovwsh", 2) => Descriptor::LegacyCSFSCov(LegacyCSFSCov::from_tree(top)?),
             ("elwsh", 1) => Descriptor::Wsh(Wsh::from_tree(top)?),
             ("eltr", _) => Descriptor::Tr(Tr::from_tree(top)?),
             _ => Descriptor::Bare(Bare::from_tree(top)?),
@@ -930,9 +1020,10 @@ impl_from_tree!(
 );
 
 impl_from_str!(
-    Descriptor<Pk>,
+    ;T; ExtParam,
+    Descriptor<Pk, T>,
     type Err = Error;,
-    fn from_str(s: &str) -> Result<Descriptor<Pk>, Error> {
+    fn from_str(s: &str) -> Result<Descriptor<Pk, T>, Error> {
         if !s.starts_with(ELMTS_STR) {
             return Err(Error::BadDescriptor(String::from(
                 "Not an Elements Descriptor",
@@ -942,8 +1033,15 @@ impl_from_str!(
         // Tr::from_str will check the checksum
         // match "tr(" to handle more extensibly
         if s.starts_with(&format!("{}tr", ELMTS_STR)) {
-            let tr = Tr::from_str(s)?;
-            Ok(Descriptor::Tr(tr))
+            // First try parsing without extensions
+            match Tr::<Pk, NoExt>::from_str(s) {
+                Ok(tr) => Ok(Descriptor::Tr(tr)),
+                Err(_) => {
+                    // Try parsing with extensions
+                    let tr = Tr::<Pk, CovenantExt<T>>::from_str(s)?;
+                    Ok(Descriptor::TrExt(tr))
+                }
+            }
         } else {
             let desc_str = verify_checksum(s)?;
             let top = expression::Tree::from_str(desc_str)?;
@@ -952,7 +1050,7 @@ impl_from_str!(
     }
 );
 
-impl<Pk: MiniscriptKey> fmt::Debug for Descriptor<Pk> {
+impl<Pk: MiniscriptKey, T: ExtParam> fmt::Debug for Descriptor<Pk, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Descriptor::Bare(ref sub) => write!(f, "{:?}", sub),
@@ -960,13 +1058,14 @@ impl<Pk: MiniscriptKey> fmt::Debug for Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => write!(f, "{:?}", wpkh),
             Descriptor::Sh(ref sub) => write!(f, "{:?}", sub),
             Descriptor::Wsh(ref sub) => write!(f, "{:?}", sub),
-            Descriptor::Cov(ref cov) => write!(f, "{:?}", cov),
+            Descriptor::LegacyCSFSCov(ref cov) => write!(f, "{:?}", cov),
             Descriptor::Tr(ref tr) => write!(f, "{:?}", tr),
+            Descriptor::TrExt(ref tr) => write!(f, "{:?}", tr),
         }
     }
 }
 
-impl<Pk: MiniscriptKey> fmt::Display for Descriptor<Pk> {
+impl<Pk: MiniscriptKey, T: ExtParam> fmt::Display for Descriptor<Pk, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Descriptor::Bare(ref sub) => write!(f, "{}", sub),
@@ -974,13 +1073,14 @@ impl<Pk: MiniscriptKey> fmt::Display for Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => write!(f, "{}", wpkh),
             Descriptor::Sh(ref sub) => write!(f, "{}", sub),
             Descriptor::Wsh(ref sub) => write!(f, "{}", sub),
-            Descriptor::Cov(ref cov) => write!(f, "{}", cov),
+            Descriptor::LegacyCSFSCov(ref cov) => write!(f, "{}", cov),
             Descriptor::Tr(ref tr) => write!(f, "{}", tr),
+            Descriptor::TrExt(ref tr) => write!(f, "{}", tr),
         }
     }
 }
 
-serde_string_impl_pk!(Descriptor, "a script descriptor");
+serde_string_impl_pk!(Descriptor, "a script descriptor", T; ExtParam);
 
 #[cfg(test)]
 mod tests {
@@ -1007,7 +1107,7 @@ mod tests {
     use crate::policy;
     use crate::{hex_script, Descriptor, DummyKey, Error, Miniscript, Satisfier};
 
-    type StdDescriptor = Descriptor<PublicKey>;
+    type StdDescriptor = Descriptor<PublicKey, CovExtArgs>;
     const TEST_PK: &'static str =
         "elpk(020000000000000000000000000000000000000000000000000000000000000002)";
 
@@ -1821,7 +1921,9 @@ pk(xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHW
 pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
         let res_policy: policy::concrete::Policy<DescriptorPublicKey> =
             res_descriptor_str.parse().unwrap();
-        let res_descriptor = Descriptor::new_sh(res_policy.compile().unwrap()).unwrap();
+        let res_descriptor =
+            Descriptor::<DescriptorPublicKey, NoExtParam>::new_sh(res_policy.compile().unwrap())
+                .unwrap();
 
         assert_eq!(res_descriptor.to_string(), derived_descriptor.to_string());
     }

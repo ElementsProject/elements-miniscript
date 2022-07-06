@@ -24,6 +24,7 @@ use std::ops::Deref;
 use std::{error, fmt};
 
 use bitcoin;
+use bitcoin::hashes::sha256;
 use elements::hashes::{hash160, ripemd160, sha256d};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::secp256k1_zkp::{self as secp256k1, Secp256k1};
@@ -31,19 +32,20 @@ use elements::sighash::SigHashCache;
 use elements::taproot::{self, ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, EcdsaSigHashType, SchnorrSigHashType, Script};
 
+use crate::extensions::{CovExtArgs, ParseableExt};
 use crate::miniscript::iter::PkPkh;
 use crate::miniscript::limits::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crate::miniscript::satisfy::{elementssig_from_rawsig, After, Older};
 use crate::{
-    descriptor, interpreter, Descriptor, DescriptorPublicKey, ElementsSig, MiniscriptKey,
-    PkTranslator, Preimage32, Satisfier, ToPublicKey, TranslatePk,
+    descriptor, interpreter, Descriptor, DescriptorPublicKey, ElementsSig, Extension,
+    MiniscriptKey, Preimage32, Satisfier, ToPublicKey, TranslatePk, Translator,
 };
 
 mod finalizer;
 pub use elements::pset as psbt;
 
 pub use self::finalizer::{finalize, finalize_input, interpreter_check, interpreter_inp_check};
-use crate::descriptor::CovSatisfier;
+use crate::descriptor::{CovSatisfier, Tr};
 use crate::util;
 
 /// Error type for entire Psbt
@@ -589,7 +591,7 @@ pub trait PsbtExt {
     fn update_input_with_descriptor(
         &mut self,
         input_index: usize,
-        descriptor: &Descriptor<DescriptorPublicKey>,
+        descriptor: &Descriptor<DescriptorPublicKey, CovExtArgs>,
     ) -> Result<(), UtxoUpdateError>;
 
     /// Get the sighash message(data to sign) at input index `idx` based on the sighash
@@ -766,7 +768,7 @@ impl PsbtExt for Psbt {
     fn update_input_with_descriptor(
         &mut self,
         input_index: usize,
-        desc: &Descriptor<DescriptorPublicKey>,
+        desc: &Descriptor<DescriptorPublicKey, CovExtArgs>,
     ) -> Result<(), UtxoUpdateError> {
         let n_inputs = self.inputs().len();
         let input = self
@@ -960,15 +962,15 @@ pub trait PsbtInputExt {
     /// [`update_input_with_descriptor`]: PsbtExt::update_input_with_descriptor
     fn update_with_descriptor_unchecked(
         &mut self,
-        descriptor: &Descriptor<DescriptorPublicKey>,
-    ) -> Result<Descriptor<bitcoin::PublicKey>, descriptor::ConversionError>;
+        descriptor: &Descriptor<DescriptorPublicKey, CovExtArgs>,
+    ) -> Result<Descriptor<bitcoin::PublicKey, CovExtArgs>, descriptor::ConversionError>;
 }
 
 impl PsbtInputExt for psbt::Input {
     fn update_with_descriptor_unchecked(
         &mut self,
-        descriptor: &Descriptor<DescriptorPublicKey>,
-    ) -> Result<Descriptor<bitcoin::PublicKey>, descriptor::ConversionError> {
+        descriptor: &Descriptor<DescriptorPublicKey, CovExtArgs>,
+    ) -> Result<Descriptor<bitcoin::PublicKey, CovExtArgs>, descriptor::ConversionError> {
         let (derived, _) = update_input_with_descriptor_helper(self, descriptor, None)?;
         Ok(derived)
     }
@@ -981,7 +983,7 @@ struct XOnlyHashLookUp(
     pub secp256k1::Secp256k1<secp256k1::VerifyOnly>,
 );
 
-impl PkTranslator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionError>
+impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionError>
     for XOnlyHashLookUp
 {
     fn pk(
@@ -1001,6 +1003,13 @@ impl PkTranslator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::Conversio
         self.0.insert(hash, xonly);
         Ok(hash)
     }
+
+    fn sha256(
+        &mut self,
+        sha256: &sha256::Hash,
+    ) -> Result<sha256::Hash, descriptor::ConversionError> {
+        Ok(*sha256)
+    }
 }
 
 // Traverse the pkh lookup while maintaining a reverse map for storing the map
@@ -1010,7 +1019,7 @@ struct KeySourceLookUp(
     pub secp256k1::Secp256k1<secp256k1::VerifyOnly>,
 );
 
-impl PkTranslator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionError>
+impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionError>
     for KeySourceLookUp
 {
     fn pk(
@@ -1031,16 +1040,23 @@ impl PkTranslator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::Conversio
     ) -> Result<hash160::Hash, descriptor::ConversionError> {
         Ok(self.pk(xpk)?.to_pubkeyhash())
     }
+
+    fn sha256(
+        &mut self,
+        sha256: &sha256::Hash,
+    ) -> Result<sha256::Hash, descriptor::ConversionError> {
+        Ok(*sha256)
+    }
 }
 
 fn update_input_with_descriptor_helper(
     input: &mut psbt::Input,
-    descriptor: &Descriptor<DescriptorPublicKey>,
+    descriptor: &Descriptor<DescriptorPublicKey, CovExtArgs>,
     check_script: Option<Script>,
     // the return value is a tuple here since the two internal calls to it require different info.
     // One needs the derived descriptor and the other needs to know whether the script_pubkey check
     // failed.
-) -> Result<(Descriptor<bitcoin::PublicKey>, bool), descriptor::ConversionError> {
+) -> Result<(Descriptor<bitcoin::PublicKey, CovExtArgs>, bool), descriptor::ConversionError> {
     let secp = secp256k1::Secp256k1::verification_only();
 
     let derived = if let Descriptor::Tr(_) = &descriptor {
@@ -1056,61 +1072,25 @@ fn update_input_with_descriptor_helper(
 
         // NOTE: they will both always be Tr
         if let (Descriptor::Tr(tr_derived), Descriptor::Tr(tr_xpk)) = (&derived, descriptor) {
-            let spend_info = tr_derived.spend_info();
-            let ik_derived = spend_info.internal_key();
-            let ik_xpk = tr_xpk.internal_key();
-            input.tap_internal_key = Some(ik_derived);
-            input.tap_merkle_root = spend_info.merkle_root();
-            input.tap_key_origins.insert(
-                ik_derived,
-                (
-                    vec![],
-                    (ik_xpk.master_fingerprint(), ik_xpk.full_derivation_path()),
-                ),
-            );
+            update_tr_psbt_helper(input, tr_derived, tr_xpk, &mut hash_lookup);
+        }
 
-            for ((_depth_der, ms_derived), (_depth, ms)) in
-                tr_derived.iter_scripts().zip(tr_xpk.iter_scripts())
-            {
-                debug_assert_eq!(_depth_der, _depth);
-                let leaf_script = (ms_derived.encode(), LeafVersion::default());
-                let tapleaf_hash = TapLeafHash::from_script(&leaf_script.0, leaf_script.1);
-                let control_block = spend_info
-                    .control_block(&leaf_script)
-                    .expect("Control block must exist in script map for every known leaf");
-                input.tap_scripts.insert(control_block, leaf_script);
+        derived
+    } else if let Descriptor::TrExt(_) = &descriptor {
+        // Repeat the same code for Tr with extensions. Annoying to dedup this code without macros
+        let mut hash_lookup = XOnlyHashLookUp(BTreeMap::new(), secp);
+        // Feed in information about pkh -> pk mapping here
+        let derived = descriptor.translate_pk(&mut hash_lookup)?;
 
-                for (pk_pkh_derived, pk_pkh_xpk) in ms_derived.iter_pk_pkh().zip(ms.iter_pk_pkh()) {
-                    let (xonly, xpk) = match (pk_pkh_derived, pk_pkh_xpk) {
-                        (PkPkh::PlainPubkey(pk), PkPkh::PlainPubkey(xpk)) => {
-                            (pk.to_x_only_pubkey(), xpk)
-                        }
-                        (PkPkh::HashedPubkey(hash), PkPkh::HashedPubkey(xpk)) => (
-                            *hash_lookup
-                                .0
-                                .get(&hash)
-                                .expect("translate_pk inserted an entry for every hash"),
-                            xpk,
-                        ),
-                        _ => unreachable!("the iterators work in the same order"),
-                    };
-
-                    input
-                        .tap_key_origins
-                        .entry(xonly)
-                        .and_modify(|(tapleaf_hashes, _)| {
-                            if tapleaf_hashes.last() != Some(&tapleaf_hash) {
-                                tapleaf_hashes.push(tapleaf_hash);
-                            }
-                        })
-                        .or_insert_with(|| {
-                            (
-                                vec![tapleaf_hash],
-                                (xpk.master_fingerprint(), xpk.full_derivation_path()),
-                            )
-                        });
-                }
+        if let Some(check_script) = check_script {
+            if check_script != derived.script_pubkey() {
+                return Ok((derived, false));
             }
+        }
+
+        // NOTE: they will both always be Tr
+        if let (Descriptor::TrExt(tr_derived), Descriptor::TrExt(tr_xpk)) = (&derived, descriptor) {
+            update_tr_psbt_helper(input, tr_derived, tr_xpk, &mut hash_lookup);
         }
 
         derived
@@ -1141,7 +1121,8 @@ fn update_input_with_descriptor_helper(
             },
             Descriptor::Wsh(wsh) => input.witness_script = Some(wsh.inner_script()),
             Descriptor::Tr(_) => unreachable!("Tr is dealt with separately"),
-            Descriptor::Cov(_) => {
+            Descriptor::TrExt(_) => unreachable!("TrExt is dealt with separately"),
+            Descriptor::LegacyCSFSCov(_) => {
                 // Information for covenants is available directly in the transaction itself
             }
         }
@@ -1150,6 +1131,70 @@ fn update_input_with_descriptor_helper(
     };
 
     Ok((derived, true))
+}
+
+fn update_tr_psbt_helper<Ext, Ext2>(
+    input: &mut psbt::Input,
+    tr_derived: &Tr<bitcoin::PublicKey, Ext>,
+    tr_xpk: &Tr<DescriptorPublicKey, Ext2>,
+    hash_lookup: &mut XOnlyHashLookUp,
+) where
+    Ext: ParseableExt,
+    Ext2: Extension,
+{
+    let spend_info = tr_derived.spend_info();
+    let ik_derived = spend_info.internal_key();
+    let ik_xpk = tr_xpk.internal_key();
+    input.tap_internal_key = Some(ik_derived);
+    input.tap_merkle_root = spend_info.merkle_root();
+    input.tap_key_origins.insert(
+        ik_derived,
+        (
+            vec![],
+            (ik_xpk.master_fingerprint(), ik_xpk.full_derivation_path()),
+        ),
+    );
+
+    for ((_depth_der, ms_derived), (_depth, ms)) in
+        tr_derived.iter_scripts().zip(tr_xpk.iter_scripts())
+    {
+        debug_assert_eq!(_depth_der, _depth);
+        let leaf_script = (ms_derived.encode(), LeafVersion::default());
+        let tapleaf_hash = TapLeafHash::from_script(&leaf_script.0, leaf_script.1);
+        let control_block = spend_info
+            .control_block(&leaf_script)
+            .expect("Control block must exist in script map for every known leaf");
+        input.tap_scripts.insert(control_block, leaf_script);
+
+        for (pk_pkh_derived, pk_pkh_xpk) in ms_derived.iter_pk_pkh().zip(ms.iter_pk_pkh()) {
+            let (xonly, xpk) = match (pk_pkh_derived, pk_pkh_xpk) {
+                (PkPkh::PlainPubkey(pk), PkPkh::PlainPubkey(xpk)) => (pk.to_x_only_pubkey(), xpk),
+                (PkPkh::HashedPubkey(hash), PkPkh::HashedPubkey(xpk)) => (
+                    *hash_lookup
+                        .0
+                        .get(&hash)
+                        .expect("translate_pk inserted an entry for every hash"),
+                    xpk,
+                ),
+                _ => unreachable!("the iterators work in the same order"),
+            };
+
+            input
+                .tap_key_origins
+                .entry(xonly)
+                .and_modify(|(tapleaf_hashes, _)| {
+                    if tapleaf_hashes.last() != Some(&tapleaf_hash) {
+                        tapleaf_hashes.push(tapleaf_hash);
+                    }
+                })
+                .or_insert_with(|| {
+                    (
+                        vec![tapleaf_hash],
+                        (xpk.master_fingerprint(), xpk.full_derivation_path()),
+                    )
+                });
+        }
+    }
 }
 
 // Get a script from witness script pubkey hash

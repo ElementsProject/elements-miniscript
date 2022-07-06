@@ -217,7 +217,8 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
                     miniscript::descriptor::WshInner::Ms(ref ms) => find_sks_ms(&ms, testdata),
                 },
                 Descriptor::Tr(_tr) => unreachable!("Tr checked earlier"),
-                Descriptor::Cov(_cov) => unimplemented!("Covenant tests not supported"),
+                Descriptor::TrExt(_tr) => unreachable!("Extensions not tested here"),
+                Descriptor::LegacyCSFSCov(_cov) => unimplemented!("Covenant tests not supported"),
             };
             let msg = psbt
                 .sighash_msg(0, &mut sighash_cache, None, testdata.pubdata.genesis_hash)

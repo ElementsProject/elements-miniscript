@@ -25,14 +25,16 @@ use std::{cmp, i64, mem};
 use bitcoin;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use elements::hashes::{hash160, ripemd160, sha256d};
+use elements::secp256k1_zkp::schnorr;
 use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, confidential, secp256k1_zkp, OutPoint, Script};
 
+use crate::extensions::{CsfsMsg, ParseableExt};
 use crate::miniscript::limits::{
     LOCKTIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
 };
 use crate::util::witness_size;
-use crate::{Extension, Miniscript, MiniscriptKey, ScriptContext, Terminal, ToPublicKey};
+use crate::{Miniscript, MiniscriptKey, ScriptContext, Terminal, ToPublicKey};
 
 /// Type alias for a signature/hashtype pair
 pub type ElementsSig = (secp256k1_zkp::ecdsa::Signature, elements::EcdsaSigHashType);
@@ -190,6 +192,22 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
 
     /// Item 10: sighash type as u32
     fn lookup_sighashu32(&self) -> Option<u32> {
+        None
+    }
+
+    /// Lookup spending transaction. Required for introspection
+    // TODO: cleanup some of lookup_* methods as they are subsumed by this
+    fn lookup_tx(&self) -> Option<elements::Transaction> {
+        None
+    }
+
+    /// Lookup spent txouts. Required for introspection
+    fn lookup_spent_utxos(&self) -> Option<&[elements::TxOut]> {
+        None
+    }
+
+    /// Lookup (msg, sig) for CSFS fragment
+    fn lookup_csfs_sig(&self, _pk: &XOnlyPublicKey, _msg: &CsfsMsg) -> Option<schnorr::Signature> {
         None
     }
 }
@@ -403,6 +421,18 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
     fn lookup_sighashu32(&self) -> Option<u32> {
         (**self).lookup_sighashu32()
     }
+
+    fn lookup_spent_utxos(&self) -> Option<&[elements::TxOut]> {
+        (**self).lookup_spent_utxos()
+    }
+
+    fn lookup_tx(&self) -> Option<elements::Transaction> {
+        (**self).lookup_tx()
+    }
+
+    fn lookup_csfs_sig(&self, pk: &XOnlyPublicKey, msg: &CsfsMsg) -> Option<schnorr::Signature> {
+        (**self).lookup_csfs_sig(pk, msg)
+    }
 }
 
 impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'a mut S {
@@ -505,6 +535,18 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
 
     fn lookup_sighashu32(&self) -> Option<u32> {
         (**self).lookup_sighashu32()
+    }
+
+    fn lookup_spent_utxos(&self) -> Option<&[elements::TxOut]> {
+        (**self).lookup_spent_utxos()
+    }
+
+    fn lookup_tx(&self) -> Option<elements::Transaction> {
+        (**self).lookup_tx()
+    }
+
+    fn lookup_csfs_sig(&self, pk: &XOnlyPublicKey, msg: &CsfsMsg) -> Option<schnorr::Signature> {
+        (**self).lookup_csfs_sig(pk, msg)
     }
 }
 
@@ -766,6 +808,36 @@ macro_rules! impl_tuple_satisfier {
                 )*
                 None
             }
+
+            fn lookup_spent_utxos(&self) -> Option<&[elements::TxOut]> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_spent_utxos() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_tx(&self) -> Option<elements::Transaction> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_tx() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_csfs_sig(&self, pk: &XOnlyPublicKey, msg: &CsfsMsg) -> Option<schnorr::Signature> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_csfs_sig(pk, msg) {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
         }
     }
 }
@@ -958,7 +1030,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: Extension<Pk>,
+        Ext: ParseableExt,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
     {
         let mut sats = subs
@@ -1077,7 +1149,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: Extension<Pk>,
+        Ext: ParseableExt,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
     {
         let mut sats = subs
@@ -1206,7 +1278,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: Extension<Pk>,
+        Ext: ParseableExt,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
         G: FnMut(
             usize,
@@ -1516,7 +1588,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: Extension<Pk>,
+        Ext: ParseableExt,
         F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
         G: FnMut(
             usize,
@@ -1686,7 +1758,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: Extension<Pk>,
+        Ext: ParseableExt,
     {
         Self::satisfy_helper(
             term,
@@ -1703,7 +1775,7 @@ impl Satisfaction {
         Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
         Sat: Satisfier<Pk>,
-        Ext: Extension<Pk>,
+        Ext: ParseableExt,
     >(
         term: &Terminal<Pk, Ctx, Ext>,
         stfr: &Sat,

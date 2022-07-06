@@ -35,7 +35,7 @@ macro_rules! impl_from_tree {
             <<Pk as MiniscriptKey>::Hash as core::str::FromStr>::Err: std::string::ToString,
             <<Pk as MiniscriptKey>::Sha256 as core::str::FromStr>::Err: std::string::ToString,
             $($gen : $gen_con,)*
-            $($ext: $trt<Pk>)?
+            $($ext: $trt)?
             {
 
                 $(#[$meta])*
@@ -65,7 +65,7 @@ macro_rules! impl_from_str {
             <<Pk as MiniscriptKey>::Hash as core::str::FromStr>::Err: std::string::ToString,
             <<Pk as MiniscriptKey>::Sha256 as core::str::FromStr>::Err: std::string::ToString,
             $($gen : $gen_con,)*
-            $($ext: $trt<Pk>)?
+            $($ext: $trt)?
             {
                 type Err = $err_ty;
 
@@ -95,7 +95,7 @@ macro_rules! impl_block_str {
             <<Pk as MiniscriptKey>::Hash as core::str::FromStr>::Err: std::string::ToString,
             <<Pk as MiniscriptKey>::Sha256 as core::str::FromStr>::Err: std::string::ToString,
             $($gen : $gen_con,)*
-            $($ext: $trt<Pk>)?
+            $($ext: $trt)?
             {
                 $(#[$meta])*
                 $v fn $fn($($arg: $type,)* ) -> $ret {
@@ -121,7 +121,7 @@ macro_rules! serde_string_impl_pk {
             <<Pk as $crate::MiniscriptKey>::Sha256 as core::str::FromStr>::Err:
                 core::fmt::Display,
             $($gen : $gen_con,)*
-            $($ext : $ext_bound<Pk>,)*
+            $($ext : $ext_bound,)*
         {
             fn deserialize<D>(deserializer: D) -> Result<$name<Pk $(, $gen)* $(, $ext)*>, D::Error>
             where
@@ -144,7 +144,7 @@ macro_rules! serde_string_impl_pk {
                     <<Pk as $crate::MiniscriptKey>::Sha256 as core::str::FromStr>::Err:
                         core::fmt::Display,
                     $($gen: $gen_con,)*
-                    $($ext : $ext_bound<Pk>,)*
+                    $($ext : $ext_bound,)*
                 {
                     type Value = $name<Pk $(, $gen)* $(, $ext)*>;
 
@@ -183,7 +183,7 @@ macro_rules! serde_string_impl_pk {
         where
             Pk: MiniscriptKey,
             $($gen: $gen_con,)*
-            $($ext : $ext_bound<Pk>,)*
+            $($ext : $ext_bound,)*
         {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where

@@ -157,7 +157,7 @@ impl<'txin> Stack<'txin> {
     /// Unsat: For empty witness a 0 is pushed
     /// Err: All of other witness result in errors.
     /// `pk` CHECKSIG
-    pub(super) fn evaluate_pk<'intp, Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_pk<'intp, Ext: Extension>(
         &mut self,
         verify_sig: &mut Box<dyn FnMut(&KeySigPair) -> bool + 'intp>,
         pk: &'intp BitcoinKey,
@@ -193,7 +193,7 @@ impl<'txin> Stack<'txin> {
     /// Unsat: For an empty witness
     /// Err: All of other witness result in errors.
     /// `DUP HASH160 <keyhash> EQUALVERIY CHECKSIG`
-    pub(super) fn evaluate_pkh<'intp, Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_pkh<'intp, Ext: Extension>(
         &mut self,
         verify_sig: &mut Box<dyn FnMut(&KeySigPair) -> bool + 'intp>,
         pkh: &'intp TypedHash160,
@@ -255,7 +255,7 @@ impl<'txin> Stack<'txin> {
     /// The reason we don't need to copy the Script semantics is that
     /// Miniscript never evaluates integers and it is safe to treat them as
     /// booleans
-    pub(super) fn evaluate_after<Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_after<Ext: Extension>(
         &mut self,
         n: &u32,
         lock_time: u32,
@@ -274,7 +274,7 @@ impl<'txin> Stack<'txin> {
     /// The reason we don't need to copy the Script semantics is that
     /// Miniscript never evaluates integers and it is safe to treat them as
     /// booleans
-    pub(super) fn evaluate_older<Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_older<Ext: Extension>(
         &mut self,
         n: &u32,
         age: u32,
@@ -289,7 +289,7 @@ impl<'txin> Stack<'txin> {
 
     /// Helper function to evaluate a Sha256 Node.
     /// `SIZE 32 EQUALVERIFY SHA256 h EQUAL`
-    pub(super) fn evaluate_sha256<Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_sha256<Ext: Extension>(
         &mut self,
         hash: &sha256::Hash,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
@@ -314,7 +314,7 @@ impl<'txin> Stack<'txin> {
 
     /// Helper function to evaluate a Hash256 Node.
     /// `SIZE 32 EQUALVERIFY HASH256 h EQUAL`
-    pub(super) fn evaluate_hash256<Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_hash256<Ext: Extension>(
         &mut self,
         hash: &sha256d::Hash,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
@@ -339,7 +339,7 @@ impl<'txin> Stack<'txin> {
 
     /// Helper function to evaluate a Hash160 Node.
     /// `SIZE 32 EQUALVERIFY HASH160 h EQUAL`
-    pub(super) fn evaluate_hash160<Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_hash160<Ext: Extension>(
         &mut self,
         hash: &hash160::Hash,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
@@ -364,7 +364,7 @@ impl<'txin> Stack<'txin> {
 
     /// Helper function to evaluate a RipeMd160 Node.
     /// `SIZE 32 EQUALVERIFY RIPEMD160 h EQUAL`
-    pub(super) fn evaluate_ripemd160<Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_ripemd160<Ext: Extension>(
         &mut self,
         hash: &ripemd160::Hash,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
@@ -393,7 +393,7 @@ impl<'txin> Stack<'txin> {
     /// other signatures are not checked against the first pubkey.
     /// `multi(2,pk1,pk2)` would be satisfied by `[0 sig2 sig1]` and Err on
     /// `[0 sig2 sig1]`
-    pub(super) fn evaluate_multi<'intp, Ext: Extension<BitcoinKey>>(
+    pub(super) fn evaluate_multi<'intp, Ext: Extension>(
         &mut self,
         verify_sig: &mut Box<dyn FnMut(&KeySigPair) -> bool + 'intp>,
         pk: &'intp BitcoinKey,

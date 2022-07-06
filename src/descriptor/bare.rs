@@ -25,12 +25,13 @@ use elements::{self, script, secp256k1_zkp, Script};
 use super::checksum::{desc_checksum, verify_checksum};
 use super::ELMTS_STR;
 use crate::expression::{self, FromTree};
+use crate::extensions::ExtParam;
 use crate::miniscript::context::ScriptContext;
 use crate::policy::{semantic, Liftable};
 use crate::util::{varint_len, witness_to_scriptsig};
 use crate::{
-    elementssig_to_rawsig, BareCtx, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey,
-    Satisfier, ToPublicKey, TranslatePk, Translator,
+    elementssig_to_rawsig, BareCtx, Error, Extension, ForEach, ForEachKey, Miniscript,
+    MiniscriptKey, Satisfier, ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
 /// Create a Bare Descriptor. That is descriptor that is
@@ -189,6 +190,24 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Bare<P> {
         T: Translator<P, Q, E>,
     {
         Ok(Bare::new(self.ms.translate_pk(t)?).expect("Translation cannot fail inside Bare"))
+    }
+}
+
+impl<PExt, QExt, PArg, QArg, Pk> TranslateExt<PExt, QExt, PArg, QArg> for Bare<Pk>
+where
+    PExt: Extension,
+    QExt: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
+    Pk: MiniscriptKey,
+{
+    type Output = Bare<Pk>;
+
+    fn translate_ext<T, E>(&self, _translator: &mut T) -> Result<Self::Output, E>
+    where
+        T: crate::ExtTranslator<PArg, QArg, E>,
+    {
+        Ok(self.clone())
     }
 }
 
@@ -355,5 +374,23 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Pkh<P> {
         T: Translator<P, Q, E>,
     {
         Ok(Pkh::new(t.pk(&self.pk)?))
+    }
+}
+
+impl<PExt, QExt, PArg, QArg, Pk> TranslateExt<PExt, QExt, PArg, QArg> for Pkh<Pk>
+where
+    PExt: Extension,
+    QExt: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
+    Pk: MiniscriptKey,
+{
+    type Output = Pkh<Pk>;
+
+    fn translate_ext<T, E>(&self, _translator: &mut T) -> Result<Self::Output, E>
+    where
+        T: crate::ExtTranslator<PArg, QArg, E>,
+    {
+        Ok(self.clone())
     }
 }

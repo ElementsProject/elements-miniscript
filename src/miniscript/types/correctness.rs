@@ -15,7 +15,7 @@
 //! Correctness/Soundness type properties
 
 use super::{ErrorKind, Property};
-use crate::{Extension, MiniscriptKey, ScriptContext};
+use crate::{Extension, ScriptContext};
 
 /// Basic type representing where the fragment can go
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -471,7 +471,7 @@ impl Property for Correctness {
         })
     }
 
-    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(e: &E) -> Self {
+    fn from_ext<E: Extension>(e: &E) -> Self {
         e.corr_prop()
     }
 

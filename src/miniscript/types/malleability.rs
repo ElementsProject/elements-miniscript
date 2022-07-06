@@ -15,7 +15,7 @@
 //! Malleability-related Type properties
 
 use super::{ErrorKind, Property};
-use crate::{Extension, MiniscriptKey, ScriptContext};
+use crate::{Extension, ScriptContext};
 
 /// Whether the fragment has a dissatisfaction, and if so, whether
 /// it is unique. Affects both correctness and malleability-freeness,
@@ -300,7 +300,7 @@ impl Property for Malleability {
         })
     }
 
-    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(e: &E) -> Self {
+    fn from_ext<E: Extension>(e: &E) -> Self {
         e.mall_prop()
     }
 

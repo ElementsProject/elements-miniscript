@@ -14,35 +14,36 @@ use elements::{self, opcodes, secp256k1_zkp, Script};
 use super::checksum::{desc_checksum, verify_checksum};
 use super::ELMTS_STR;
 use crate::expression::{self, FromTree};
+use crate::extensions::{ExtParam, ParseableExt};
 use crate::miniscript::Miniscript;
 use crate::policy::semantic::Policy;
 use crate::policy::Liftable;
 use crate::util::{varint_len, witness_size};
 use crate::{
-    errstr, Error, ForEach, ForEachKey, MiniscriptKey, Satisfier, Tap, ToPublicKey, TranslatePk,
-    Translator,
+    errstr, Error, Extension, ForEach, ForEachKey, MiniscriptKey, NoExt, Satisfier, Tap,
+    ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
 /// A Taproot Tree representation.
 // Hidden leaves are not yet supported in descriptor spec. Conceptually, it should
 // be simple to integrate those here, but it is best to wait on core for the exact syntax.
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-pub enum TapTree<Pk: MiniscriptKey> {
+pub enum TapTree<Pk: MiniscriptKey, Ext: Extension = NoExt> {
     /// A taproot tree structure
-    Tree(Arc<TapTree<Pk>>, Arc<TapTree<Pk>>),
+    Tree(Arc<TapTree<Pk, Ext>>, Arc<TapTree<Pk, Ext>>),
     /// A taproot leaf denoting a spending condition
     // A new leaf version would require a new Context, therefore there is no point
     // in adding a LeafVersion with Leaf type here. All Miniscripts right now
     // are of Leafversion::default
-    Leaf(Arc<Miniscript<Pk, Tap>>),
+    Leaf(Arc<Miniscript<Pk, Tap, Ext>>),
 }
 
 /// A taproot descriptor
-pub struct Tr<Pk: MiniscriptKey> {
+pub struct Tr<Pk: MiniscriptKey, Ext: Extension = NoExt> {
     /// A taproot internal key
     internal_key: Pk,
     /// Optional Taproot Tree with spending conditions
-    tree: Option<TapTree<Pk>>,
+    tree: Option<TapTree<Pk, Ext>>,
     /// Optional spending information associated with the descriptor
     /// This will be [`None`] when the descriptor is not derived.
     /// This information will be cached automatically when it is required
@@ -53,7 +54,7 @@ pub struct Tr<Pk: MiniscriptKey> {
     spend_info: Mutex<Option<Arc<TaprootSpendInfo>>>,
 }
 
-impl<Pk: MiniscriptKey> Clone for Tr<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> Clone for Tr<Pk, Ext> {
     fn clone(&self) -> Self {
         // When cloning, construct a new Mutex so that distinct clones don't
         // cause blocking between each other. We clone only the internal `Arc`,
@@ -72,15 +73,15 @@ impl<Pk: MiniscriptKey> Clone for Tr<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> PartialEq for Tr<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> PartialEq for Tr<Pk, Ext> {
     fn eq(&self, other: &Self) -> bool {
         self.internal_key == other.internal_key && self.tree == other.tree
     }
 }
 
-impl<Pk: MiniscriptKey> Eq for Tr<Pk> {}
+impl<Pk: MiniscriptKey, Ext: Extension> Eq for Tr<Pk, Ext> {}
 
-impl<Pk: MiniscriptKey> PartialOrd for Tr<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> PartialOrd for Tr<Pk, Ext> {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         match self.internal_key.partial_cmp(&other.internal_key) {
             Some(cmp::Ordering::Equal) => {}
@@ -90,7 +91,7 @@ impl<Pk: MiniscriptKey> PartialOrd for Tr<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> Ord for Tr<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> Ord for Tr<Pk, Ext> {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         match self.internal_key.cmp(&other.internal_key) {
             cmp::Ordering::Equal => {}
@@ -100,14 +101,14 @@ impl<Pk: MiniscriptKey> Ord for Tr<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> hash::Hash for Tr<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> hash::Hash for Tr<Pk, Ext> {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         self.internal_key.hash(state);
         self.tree.hash(state);
     }
 }
 
-impl<Pk: MiniscriptKey> TapTree<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> TapTree<Pk, Ext> {
     // Helper function to compute height
     // TODO: Instead of computing this every time we add a new leaf, we should
     // add height as a separate field in taptree
@@ -121,17 +122,18 @@ impl<Pk: MiniscriptKey> TapTree<Pk> {
     }
 
     /// Iterate over all miniscripts
-    pub fn iter(&self) -> TapTreeIter<'_, Pk> {
+    pub fn iter(&self) -> TapTreeIter<'_, Pk, Ext> {
         TapTreeIter {
             stack: vec![(0, self)],
         }
     }
 
     // Helper function to translate keys
-    fn translate_helper<T, Q, Error>(&self, t: &mut T) -> Result<TapTree<Q>, Error>
+    fn translate_helper<T, Q, Error>(&self, t: &mut T) -> Result<TapTree<Q, Ext>, Error>
     where
         T: Translator<Pk, Q, Error>,
         Q: MiniscriptKey,
+        Ext: Extension,
     {
         let frag = match self {
             TapTree::Tree(l, r) => TapTree::Tree(
@@ -142,9 +144,32 @@ impl<Pk: MiniscriptKey> TapTree<Pk> {
         };
         Ok(frag)
     }
+
+    // Helper function to translate extensions
+    fn translate_ext_helper<T, QExt, PArg, QArg, Error>(
+        &self,
+        t: &mut T,
+    ) -> Result<TapTree<Pk, QExt>, Error>
+    where
+        T: crate::ExtTranslator<PArg, QArg, Error>,
+        QExt: Extension,
+        Ext: Extension,
+        PArg: ExtParam,
+        QArg: ExtParam,
+        Ext: TranslateExt<Ext, QExt, PArg, QArg, Output = QExt>,
+    {
+        let frag = match self {
+            TapTree::Tree(l, r) => TapTree::Tree(
+                Arc::new(l.translate_ext_helper(t)?),
+                Arc::new(r.translate_ext_helper(t)?),
+            ),
+            TapTree::Leaf(ms) => TapTree::Leaf(Arc::new(ms.translate_ext(t)?)),
+        };
+        Ok(frag)
+    }
 }
 
-impl<Pk: MiniscriptKey> fmt::Display for TapTree<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> fmt::Display for TapTree<Pk, Ext> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TapTree::Tree(ref left, ref right) => write!(f, "{{{},{}}}", *left, *right),
@@ -153,7 +178,7 @@ impl<Pk: MiniscriptKey> fmt::Display for TapTree<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> fmt::Debug for TapTree<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> fmt::Debug for TapTree<Pk, Ext> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TapTree::Tree(ref left, ref right) => write!(f, "{{{:?},{:?}}}", *left, *right),
@@ -162,9 +187,9 @@ impl<Pk: MiniscriptKey> fmt::Debug for TapTree<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> Tr<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
     /// Create a new [`Tr`] descriptor from internal key and [`TapTree`]
-    pub fn new(internal_key: Pk, tree: Option<TapTree<Pk>>) -> Result<Self, Error> {
+    pub fn new(internal_key: Pk, tree: Option<TapTree<Pk, Ext>>) -> Result<Self, Error> {
         let nodes = tree.as_ref().map(|t| t.taptree_height()).unwrap_or(0);
 
         if nodes <= TAPROOT_CONTROL_MAX_NODE_COUNT {
@@ -192,13 +217,13 @@ impl<Pk: MiniscriptKey> Tr<Pk> {
     }
 
     /// Obtain the [`TapTree`] of the [`Tr`] descriptor
-    pub fn taptree(&self) -> &Option<TapTree<Pk>> {
+    pub fn taptree(&self) -> &Option<TapTree<Pk, Ext>> {
         &self.tree
     }
 
     /// Iterate over all scripts in merkle tree. If there is no script path, the iterator
     /// yields [`None`]
-    pub fn iter_scripts(&self) -> TapTreeIter<'_, Pk> {
+    pub fn iter_scripts(&self) -> TapTreeIter<'_, Pk, Ext> {
         match self.tree {
             Some(ref t) => t.iter(),
             None => TapTreeIter { stack: vec![] },
@@ -213,6 +238,7 @@ impl<Pk: MiniscriptKey> Tr<Pk> {
     pub fn spend_info(&self) -> Arc<TaprootSpendInfo>
     where
         Pk: ToPublicKey,
+        Ext: ParseableExt,
     {
         // If the value is already cache, read it
         // read only panics if the lock is poisoned (meaning other thread having a lock panicked)
@@ -308,7 +334,7 @@ impl<Pk: MiniscriptKey> Tr<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey + ToPublicKey> Tr<Pk> {
+impl<Pk: MiniscriptKey + ToPublicKey, Ext: ParseableExt> Tr<Pk, Ext> {
     /// Obtains the corresponding script pubkey for this descriptor.
     pub fn script_pubkey(&self) -> Script {
         let output_key = self.spend_info().output_key();
@@ -363,15 +389,16 @@ impl<Pk: MiniscriptKey + ToPublicKey> Tr<Pk> {
 /// would yield (2, A), (2, B), (2,C), (3, D), (3, E).
 ///
 #[derive(Debug, Clone)]
-pub struct TapTreeIter<'a, Pk: MiniscriptKey> {
-    stack: Vec<(usize, &'a TapTree<Pk>)>,
+pub struct TapTreeIter<'a, Pk: MiniscriptKey, Ext: Extension> {
+    stack: Vec<(usize, &'a TapTree<Pk, Ext>)>,
 }
 
-impl<'a, Pk> Iterator for TapTreeIter<'a, Pk>
+impl<'a, Pk, Ext> Iterator for TapTreeIter<'a, Pk, Ext>
 where
     Pk: MiniscriptKey + 'a,
+    Ext: Extension,
 {
-    type Item = (usize, &'a Miniscript<Pk, Tap>);
+    type Item = (usize, &'a Miniscript<Pk, Tap, Ext>);
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.stack.is_empty() {
@@ -390,12 +417,13 @@ where
 
 #[rustfmt::skip]
 impl_block_str!(
-    Tr<Pk>,
+    Tr<Pk, Ext>,
+    => Ext; Extension,
     // Helper function to parse taproot script path
-    fn parse_tr_script_spend(tree: &expression::Tree,) -> Result<TapTree<Pk>, Error> {
+    fn parse_tr_script_spend(tree: &expression::Tree,) -> Result<TapTree<Pk, Ext>, Error> {
         match tree {
             expression::Tree { name, args } if !name.is_empty() && args.is_empty() => {
-                let script = Miniscript::<Pk, Tap>::from_str(name)?;
+                let script = Miniscript::<Pk, Tap, Ext>::from_str(name)?;
                 Ok(TapTree::Leaf(Arc::new(script)))
             }
             expression::Tree { name, args } if name.is_empty() && args.len() == 2 => {
@@ -412,7 +440,8 @@ impl_block_str!(
 );
 
 impl_from_tree!(
-    Tr<Pk>,
+    Tr<Pk, Ext>,
+    => Ext; Extension,
     fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
         if top.name == "eltr" {
             match top.args.len() {
@@ -457,7 +486,8 @@ impl_from_tree!(
 );
 
 impl_from_str!(
-    Tr<Pk>,
+    Tr<Pk, Ext>,
+    => Ext; Extension,
     type Err = Error;,
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
@@ -466,7 +496,7 @@ impl_from_str!(
     }
 );
 
-impl<Pk: MiniscriptKey> fmt::Debug for Tr<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> fmt::Debug for Tr<Pk, Ext> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.tree {
             Some(ref s) => write!(f, "tr({:?},{:?})", self.internal_key, s),
@@ -475,7 +505,7 @@ impl<Pk: MiniscriptKey> fmt::Debug for Tr<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> fmt::Display for Tr<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> fmt::Display for Tr<Pk, Ext> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let desc = self.to_string_no_checksum();
         let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
@@ -553,9 +583,11 @@ fn split_once(inp: &str, delim: char) -> Option<(&str, &str)> {
     ret
 }
 
-impl<Pk: MiniscriptKey> Liftable<Pk> for TapTree<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> Liftable<Pk> for TapTree<Pk, Ext> {
     fn lift(&self) -> Result<Policy<Pk>, Error> {
-        fn lift_helper<Pk: MiniscriptKey>(s: &TapTree<Pk>) -> Result<Policy<Pk>, Error> {
+        fn lift_helper<Pk: MiniscriptKey, Ext: Extension>(
+            s: &TapTree<Pk, Ext>,
+        ) -> Result<Policy<Pk>, Error> {
             match s {
                 TapTree::Tree(ref l, ref r) => {
                     Ok(Policy::Threshold(1, vec![lift_helper(l)?, lift_helper(r)?]))
@@ -569,7 +601,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for TapTree<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> Liftable<Pk> for Tr<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> Liftable<Pk> for Tr<Pk, Ext> {
     fn lift(&self) -> Result<Policy<Pk>, Error> {
         match &self.tree {
             Some(root) => Ok(Policy::Threshold(
@@ -584,7 +616,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Tr<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> ForEachKey<Pk> for Tr<Pk> {
+impl<Pk: MiniscriptKey, Ext: Extension> ForEachKey<Pk> for Tr<Pk, Ext> {
     fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
@@ -597,8 +629,13 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Tr<Pk> {
     }
 }
 
-impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Tr<P> {
-    type Output = Tr<Q>;
+impl<P, Q, Ext> TranslatePk<P, Q> for Tr<P, Ext>
+where
+    P: MiniscriptKey,
+    Q: MiniscriptKey,
+    Ext: Extension,
+{
+    type Output = Tr<Q, Ext>;
 
     fn translate_pk<T, E>(&self, translate: &mut T) -> Result<Self::Output, E>
     where
@@ -616,6 +653,33 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Tr<P> {
     }
 }
 
+impl<PExt, QExt, PArg, QArg, Pk> TranslateExt<PExt, QExt, PArg, QArg> for Tr<Pk, PExt>
+where
+    PExt: Extension,
+    QExt: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
+    Pk: MiniscriptKey,
+    PExt: TranslateExt<PExt, QExt, PArg, QArg, Output = QExt>,
+{
+    type Output = Tr<Pk, QExt>;
+
+    fn translate_ext<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
+    where
+        T: crate::ExtTranslator<PArg, QArg, E>,
+    {
+        let translate_desc = Tr {
+            internal_key: self.internal_key.clone(),
+            tree: match &self.tree {
+                Some(tree) => Some(tree.translate_ext_helper(translator)?),
+                None => None,
+            },
+            spend_info: Mutex::new(None),
+        };
+        Ok(translate_desc)
+    }
+}
+
 // Helper function to compute the len of control block at a given depth
 fn control_block_len(depth: usize) -> usize {
     TAPROOT_CONTROL_BASE_SIZE + depth * TAPROOT_CONTROL_NODE_SIZE
@@ -623,14 +687,15 @@ fn control_block_len(depth: usize) -> usize {
 
 // Helper function to get a script spend satisfaction
 // try script spend
-fn best_tap_spend<Pk, S>(
-    desc: &Tr<Pk>,
+fn best_tap_spend<Pk, S, Ext>(
+    desc: &Tr<Pk, Ext>,
     satisfier: S,
     allow_mall: bool,
 ) -> Result<(Vec<Vec<u8>>, Script), Error>
 where
     Pk: ToPublicKey,
     S: Satisfier<Pk>,
+    Ext: ParseableExt,
 {
     let spend_info = desc.spend_info();
     // First try the key spend path
@@ -685,7 +750,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ForEachKey;
+    use crate::{ForEachKey, NoExt};
 
     #[test]
     fn test_for_each() {
@@ -702,7 +767,7 @@ mod tests {
             }
          })";
         let desc = desc.replace(&[' ', '\n'][..], "");
-        let tr = Tr::<String>::from_str(&desc).unwrap();
+        let tr = Tr::<String, NoExt>::from_str(&desc).unwrap();
         // Note the last ac12 only has ac and fails the predicate
         assert!(!tr.for_each_key(|k| match k {
             ForEach::Key(k) => k.starts_with("acc"),

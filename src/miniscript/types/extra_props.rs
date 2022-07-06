@@ -887,7 +887,7 @@ impl Property for ExtData {
         })
     }
 
-    fn from_ext<Pk: MiniscriptKey, E: Extension<Pk>>(e: &E) -> Self {
+    fn from_ext<E: Extension>(e: &E) -> Self {
         e.extra_prop()
     }
 
@@ -901,7 +901,7 @@ impl Property for ExtData {
         C: FnMut(usize) -> Option<Self>,
         Ctx: ScriptContext,
         Pk: MiniscriptKey,
-        Ext: Extension<Pk>,
+        Ext: Extension,
     {
         let wrap_err = |result: Result<Self, ErrorKind>| {
             result.map_err(|kind| Error {

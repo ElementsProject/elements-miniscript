@@ -7,6 +7,7 @@ use std::fmt;
 use elements::encode::serialize;
 use elements::{self};
 
+use super::{ExtParam, ParseableExt};
 use crate::descriptor::CovError;
 use crate::miniscript::astelem::StackCtxOperations;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -15,40 +16,31 @@ use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::policy::{self, Liftable};
 use crate::{
-    expression, interpreter, miniscript, util, Error, Extension, ForEach, MiniscriptKey, Satisfier,
-    ToPublicKey, TranslatePk, Translator,
+    expression, interpreter, miniscript, util, Error, ExtTranslator, Extension, MiniscriptKey,
+    Satisfier, ToPublicKey, TranslateExt,
 };
 
 /// Version struct
 /// `DEPTH <12> SUB PICK <num> EQUAL`
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Clone, Copy)]
-pub struct VerEq {
+pub struct LegacyVerEq {
     /// the version of transaction
     pub n: u32, // it's i32 in bitcoin core
 }
 
-impl fmt::Display for VerEq {
+impl fmt::Display for LegacyVerEq {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ver_eq({})", self.n)
     }
 }
 
-impl<Pk: MiniscriptKey> Liftable<Pk> for VerEq {
+impl<Pk: MiniscriptKey> Liftable<Pk> for LegacyVerEq {
     fn lift(&self) -> Result<policy::Semantic<Pk>, Error> {
         Err(Error::CovError(CovError::CovenantLift))
     }
 }
 
-impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
-    fn real_for_each_key<'a, F>(&'a self, _pred: &mut F) -> bool
-    where
-        Pk: 'a,
-        Pk::Hash: 'a,
-        F: FnMut(ForEach<'a, Pk>) -> bool,
-    {
-        true
-    }
-
+impl Extension for LegacyVerEq {
     fn segwit_ctx_checks(&self) -> Result<(), miniscript::context::ScriptContextError> {
         Ok(())
     }
@@ -89,7 +81,23 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         }
     }
 
-    fn satisfy<S>(&self, sat: &S) -> Satisfaction
+    fn script_size(&self) -> usize {
+        4 + 1 + 1 + 4 // opcodes + push opcodes + target size
+    }
+
+    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
+        if children.len() == 1 && name == "ver_eq" {
+            let n = expression::terminal(&children[0], expression::parse_num).map_err(|_| ())?;
+            Ok(Self { n })
+        } else {
+            // Correct error handling while parsing fromtree
+            Err(())
+        }
+    }
+}
+
+impl ParseableExt for LegacyVerEq {
+    fn satisfy<Pk, S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
@@ -112,7 +120,7 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         }
     }
 
-    fn dissatisfy<S>(&self, sat: &S) -> Satisfaction
+    fn dissatisfy<Pk, S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
@@ -132,15 +140,8 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         }
     }
 
-    fn push_to_builder(&self, builder: elements::script::Builder) -> elements::script::Builder
-    where
-        Pk: ToPublicKey,
-    {
+    fn push_to_builder(&self, builder: elements::script::Builder) -> elements::script::Builder {
         builder.check_item_eq(12, &serialize(&self.n))
-    }
-
-    fn script_size(&self) -> usize {
-        4 + 1 + 1 + 4 // opcodes + push opcodes + target size
     }
 
     fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
@@ -164,50 +165,43 @@ impl<Pk: MiniscriptKey> Extension<Pk> for VerEq {
         Ok(ver)
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
-        if children.len() == 1 && name == "ver_eq" {
-            let n = expression::terminal(&children[0], expression::parse_num).map_err(|_| ())?;
-            Ok(Self { n })
-        } else {
-            // Correct error handling while parsing fromtree
-            Err(())
-        }
-    }
-
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut interpreter::Stack<'txin>,
-    ) -> Option<Result<(), interpreter::Error>> {
+    ) -> Result<bool, interpreter::Error> {
         // Version is at index 11
         let ver = stack[11];
-        if let Err(e) = ver.try_push() {
-            return Some(Err(e));
-        }
-        let elem = ver.try_push().unwrap(); // TODO: refactor this later to avoid unwrap
+        let elem = ver.try_push()?;
         if elem.len() == 4 {
             let wit_ver = util::slice_to_u32_le(elem);
             if wit_ver == self.n {
                 stack.push(interpreter::Element::Satisfied);
-                Some(Ok(()))
+                Ok(true)
             } else {
-                None
+                Ok(false)
             }
         } else {
-            Some(Err(interpreter::Error::CovWitnessSizeErr {
+            Err(interpreter::Error::CovWitnessSizeErr {
                 pos: 1,
                 expected: 4,
                 actual: elem.len(),
-            }))
+            })
         }
     }
 }
 
-impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for VerEq {
-    type Output = VerEq;
+impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for LegacyVerEq
+where
+    PExt: Extension,
+    QExt: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    type Output = LegacyVerEq;
 
-    fn translate_pk<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
+    fn translate_ext<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
-        T: Translator<P, Q, E>,
+        T: ExtTranslator<PArg, QArg, E>,
     {
         Ok(Self { n: self.n })
     }
@@ -222,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_ver_eq() {
-        type MsExtVer = Miniscript<PublicKey, Segwitv0, VerEq>;
+        type MsExtVer = Miniscript<PublicKey, Segwitv0, LegacyVerEq>;
 
         let ms = MsExtVer::from_str_insane("ver_eq(8)").unwrap();
         // test string rtt
