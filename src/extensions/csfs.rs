@@ -7,7 +7,8 @@ use std::str::FromStr;
 use bitcoin::hashes::hex::{FromHex, ToHex};
 use bitcoin::XOnlyPublicKey;
 use elements::hashes::hex;
-use elements::{self, opcodes, secp256k1_zkp};
+use elements::sighash::Prevouts;
+use elements::{self, opcodes, secp256k1_zkp, Transaction};
 
 use super::{ArgFromStr, CovExtArgs, ExtParam, ParseableExt};
 use crate::miniscript::context::ScriptContextError;
@@ -274,6 +275,8 @@ impl ParseableExt for CheckSigFromStack<CovExtArgs> {
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut interpreter::Stack<'txin>,
+        _tx: Option<&Transaction>,
+        _prevouts: Option<&Prevouts<'txin>>,
     ) -> Result<bool, interpreter::Error> {
         let sig = stack[0].try_push()?;
 

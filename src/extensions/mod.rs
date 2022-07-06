@@ -5,6 +5,8 @@
 use std::{fmt, hash};
 
 use elements::script::Builder;
+use elements::sighash::Prevouts;
+use elements::Transaction;
 
 use crate::expression::Tree;
 use crate::interpreter::{self, Stack};
@@ -104,6 +106,8 @@ pub trait ParseableExt:
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut Stack<'txin>,
+        tx: Option<&Transaction>,
+        prevouts: Option<&Prevouts<'txin>>,
     ) -> Result<bool, interpreter::Error>;
 
     /// Encoding of the current fragment
@@ -194,6 +198,8 @@ impl ParseableExt for NoExt {
     fn evaluate<'intp, 'txin>(
         &'intp self,
         _stack: &mut Stack<'txin>,
+        _tx: Option<&Transaction>,
+        _prevouts: Option<&Prevouts<'txin>>,
     ) -> Result<bool, interpreter::Error> {
         match *self {}
     }
@@ -351,8 +357,13 @@ impl ParseableExt for CovenantExt<CovExtArgs> {
         all_arms_fn!(self, ParseableExt, dissatisfy, sat,)
     }
 
-    fn evaluate(&self, stack: &mut Stack) -> Result<bool, interpreter::Error> {
-        all_arms_fn!(self, ParseableExt, evaluate, stack,)
+    fn evaluate<'intp, 'txin>(
+        &self,
+        stack: &mut Stack<'txin>,
+        tx: Option<&Transaction>,
+        prevouts: Option<&Prevouts<'txin>>,
+    ) -> Result<bool, interpreter::Error> {
+        all_arms_fn!(self, ParseableExt, evaluate, stack, tx, prevouts,)
     }
 
     fn push_to_builder(&self, builder: Builder) -> Builder {

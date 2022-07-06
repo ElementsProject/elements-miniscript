@@ -124,11 +124,15 @@ fn main() {
     )
     .unwrap();
 
-    let iter = interpreter.iter_custom(Box::new(|key_sig: &KeySigPair| {
-        let (pk, ecdsa_sig) = key_sig.as_ecdsa().expect("Ecdsa Sig");
-        ecdsa_sig.1 == elements::EcdsaSigHashType::All
-            && secp.verify_ecdsa(&message, &ecdsa_sig.0, &pk.inner).is_ok()
-    }));
+    let iter = interpreter.iter_custom(
+        Box::new(|key_sig: &KeySigPair| {
+            let (pk, ecdsa_sig) = key_sig.as_ecdsa().expect("Ecdsa Sig");
+            ecdsa_sig.1 == elements::EcdsaSigHashType::All
+                && secp.verify_ecdsa(&message, &ecdsa_sig.0, &pk.inner).is_ok()
+        }),
+        None, // tx
+        None, //prevouts
+    );
     println!("\nExample three");
     for elem in iter {
         let error = elem.expect_err("evaluation error");

@@ -7,7 +7,8 @@ use std::fmt;
 use elements::encode::serialize;
 use elements::hashes::hex::{FromHex, ToHex};
 use elements::hashes::{sha256d, Hash};
-use elements::{self};
+use elements::sighash::Prevouts;
+use elements::{self, Transaction};
 
 use super::{ExtParam, ParseableExt};
 use crate::descriptor::CovError;
@@ -245,6 +246,8 @@ impl ParseableExt for LegacyOutputsPref {
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut interpreter::Stack<'txin>,
+        _tx: Option<&Transaction>,
+        _prevouts: Option<&Prevouts<'txin>>,
     ) -> Result<bool, interpreter::Error> {
         // Hash Outputs is at index 3
         let hash_outputs = stack[3];
