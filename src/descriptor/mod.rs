@@ -60,7 +60,7 @@ pub use self::sh::{Sh, ShInner};
 pub use self::sortedmulti::SortedMultiVec;
 mod checksum;
 mod key;
-pub use self::csfs_cov::{CovError, CovOperations, CovSatisfier, LegacyCSFSCov};
+pub use self::csfs_cov::{CovError, CovOperations, LegacyCSFSCov, LegacyCovSatisfier};
 pub use self::key::{
     ConversionError, DerivedDescriptorKey, DescriptorKeyParseError, DescriptorPublicKey,
     DescriptorSecretKey, DescriptorXKey, InnerXKey, SinglePriv, SinglePub, SinglePubKey, Wildcard,

@@ -6,7 +6,7 @@ use std::{fmt, hash};
 
 use elements::script::Builder;
 use elements::sighash::Prevouts;
-use elements::Transaction;
+use elements::{Transaction, TxOut};
 
 use crate::expression::Tree;
 use crate::interpreter::{self, Stack};
@@ -425,5 +425,45 @@ where
                 }
             };
         Ok(ext)
+    }
+}
+
+/// A satisfier for Covenant descriptors
+/// that can do transaction introspection
+/// 'tx denotes the lifetime of the transaction
+/// being satisfied and 'ptx denotes the lifetime
+/// of the previous transaction inputs
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CovSatisfier<'tx, 'ptx> {
+    /// The transaction being spent
+    tx: &'tx Transaction,
+    /// Spent utxos
+    spent_utxos: &'ptx [TxOut],
+    /// The input index being spent
+    idx: usize,
+}
+
+impl<'tx, 'ptx> CovSatisfier<'tx, 'ptx> {
+    /// Returns None when spent_utos.len() != tx.input.len()
+    pub fn new(tx: &'tx Transaction, spent_utxos: &'ptx [TxOut], idx: usize) -> Option<Self> {
+        if tx.input.len() != spent_utxos.len() {
+            None
+        } else {
+            Some(Self {
+                tx,
+                spent_utxos,
+                idx,
+            })
+        }
+    }
+}
+
+impl<'tx, 'ptx, Pk: ToPublicKey> Satisfier<Pk> for CovSatisfier<'tx, 'ptx> {
+    fn lookup_tx(&self) -> Option<&elements::Transaction> {
+        Some(self.tx)
+    }
+
+    fn lookup_spent_utxos(&self) -> Option<&[elements::TxOut]> {
+        Some(self.spent_utxos)
     }
 }

@@ -12,12 +12,10 @@ use elements::{
 };
 use elementsd::ElementsD;
 use miniscript::miniscript::iter;
-use miniscript::psbt::PsbtInputExt;
+use miniscript::psbt::{PsbtExt, PsbtInputExt};
 use miniscript::{Descriptor, MiniscriptKey, ToPublicKey};
 use rand::RngCore;
 mod setup;
-use miniscript::descriptor::CovSatisfier;
-use miniscript::psbt::PsbtInputSatisfier;
 use setup::test_util::{self, TestData, PARAMS};
 use setup::Call;
 use {actual_rand as rand, elements_miniscript as miniscript};
@@ -164,15 +162,16 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     println!("Testing descriptor: {}", desc);
     // Finalize the transaction using psbt
     // Let miniscript do it's magic!
-    let psbt_sat = PsbtInputSatisfier::new(&psbt, 0);
-    let mut tx = psbt.extract_tx().unwrap();
-    let utxos = [witness_utxo];
-    let unsigned_tx = &tx.clone();
-    let cov_sat = CovSatisfier::new_taproot(unsigned_tx, &utxos, 0);
-
-    derived_desc
-        .satisfy(&mut tx.input[0], (psbt_sat, cov_sat))
-        .expect("Satisfaction error");
+    if let Err(e) = psbt.finalize_mall_mut(&secp, testdata.pubdata.genesis_hash) {
+        // All miniscripts should satisfy
+        panic!(
+            "Could not satisfy non-malleably: error{} desc:{} ",
+            e[0], desc
+        );
+    }
+    let tx = psbt
+        .extract(&secp, testdata.pubdata.genesis_hash)
+        .expect("Extraction error");
 
     // Send the transactions to bitcoin node for mining.
     // Regtest mode has standardness checks
