@@ -90,6 +90,7 @@ pub enum Token<'s> {
     Or,
     Xor,
     Invert,
+    CurrInp,
 }
 
 impl<'s> fmt::Display for Token<'s> {
@@ -244,6 +245,9 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token<'_>>, Error> {
             }
             script::Instruction::Op(opcodes::all::OP_INSPECTINPUTISSUANCE) => {
                 ret.push(Token::InpIssue);
+            }
+            script::Instruction::Op(opcodes::all::OP_PUSHCURRENTINPUTINDEX) => {
+                ret.push(Token::CurrInp);
             }
             script::Instruction::Op(opcodes::all::OP_ADD64) => {
                 ret.push(Token::Add64);

@@ -36,6 +36,9 @@ pub enum ExprInner {
     /// A constant i64 value
     /// Minimal push of this <i64>
     Const(i64),
+    /// Value under the current executing input
+    /// INSPECTCURRENTINPUTINDEX INPSECTINPUTVALUE <1> EQUALVERIFY
+    CurrInputIdx,
     /// Explicit amount at the given input index
     /// i INPSECTINPUTVALUE <1> EQUALVERIFY
     Input(usize),
@@ -127,6 +130,7 @@ impl Expr {
     pub fn from_inner(inner: ExprInner) -> Self {
         let (script_size, depth) = match &inner {
             ExprInner::Const(_c) => (8 + 1, 0),
+            ExprInner::CurrInputIdx => (4, 0), // INSPECTCURRENTINPUTINDEX INPSECTINPUTVALUE <1> EQUALVERIFY
             ExprInner::Input(i) => (
                 script_num_size(*i) + 3, // i INPSECTINPUTVALUE <1> EQUALVERIFY
                 0,
@@ -194,11 +198,22 @@ impl Expr {
     /// Evaluate this expression
     fn eval(
         &self,
+        curr_ind: usize,
         tx: &elements::Transaction,
         utxos: &[elements::TxOut],
     ) -> Result<i64, EvalError> {
         match &self.inner {
             ExprInner::Const(c) => Ok(*c),
+            ExprInner::CurrInputIdx => {
+                if curr_ind >= utxos.len() {
+                    return Err(EvalError::UtxoIndexOutOfBounds(curr_ind, utxos.len()));
+                }
+                utxos[curr_ind]
+                    .value
+                    .explicit()
+                    .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
+                    .ok_or(EvalError::NonExplicitInput(curr_ind))
+            }
             ExprInner::Input(i) => {
                 if *i >= utxos.len() {
                     return Err(EvalError::UtxoIndexOutOfBounds(*i, utxos.len()));
@@ -242,51 +257,51 @@ impl Expr {
                     .ok_or(EvalError::NonExplicitInputReIssuance(*i))
             }
             ExprInner::Add(x, y) => {
-                let x = x.eval(tx, utxos)?;
-                let y = y.eval(tx, utxos)?;
+                let x = x.eval(curr_ind, tx, utxos)?;
+                let y = y.eval(curr_ind, tx, utxos)?;
                 x.checked_add(y).ok_or(EvalError::AddOverflow(x, y))
             }
             ExprInner::Sub(x, y) => {
-                let x = x.eval(tx, utxos)?;
-                let y = y.eval(tx, utxos)?;
+                let x = x.eval(curr_ind, tx, utxos)?;
+                let y = y.eval(curr_ind, tx, utxos)?;
                 x.checked_sub(y).ok_or(EvalError::SubOverflow(x, y))
             }
             ExprInner::Mul(x, y) => {
-                let x = x.eval(tx, utxos)?;
-                let y = y.eval(tx, utxos)?;
+                let x = x.eval(curr_ind, tx, utxos)?;
+                let y = y.eval(curr_ind, tx, utxos)?;
                 x.checked_mul(y).ok_or(EvalError::MulOverflow(x, y))
             }
             ExprInner::Div(x, y) => {
-                let x = x.eval(tx, utxos)?;
-                let y = y.eval(tx, utxos)?;
+                let x = x.eval(curr_ind, tx, utxos)?;
+                let y = y.eval(curr_ind, tx, utxos)?;
                 x.checked_div_euclid(y).ok_or(EvalError::DivOverflow(x, y))
             }
             ExprInner::Mod(x, y) => {
-                let x = x.eval(tx, utxos)?;
-                let y = y.eval(tx, utxos)?;
+                let x = x.eval(curr_ind, tx, utxos)?;
+                let y = y.eval(curr_ind, tx, utxos)?;
                 x.checked_rem_euclid(y).ok_or(EvalError::ModOverflow(x, y))
             }
             ExprInner::BitAnd(x, y) => {
-                let x = x.eval(tx, utxos)?;
-                let y = y.eval(tx, utxos)?;
+                let x = x.eval(curr_ind, tx, utxos)?;
+                let y = y.eval(curr_ind, tx, utxos)?;
                 Ok(x & y)
             }
             ExprInner::BitOr(x, y) => {
-                let x = x.eval(tx, utxos)?;
-                let y = y.eval(tx, utxos)?;
+                let x = x.eval(curr_ind, tx, utxos)?;
+                let y = y.eval(curr_ind, tx, utxos)?;
                 Ok(x | y)
             }
             ExprInner::Xor(x, y) => {
-                let x = x.eval(tx, utxos)?;
-                let y = y.eval(tx, utxos)?;
+                let x = x.eval(curr_ind, tx, utxos)?;
+                let y = y.eval(curr_ind, tx, utxos)?;
                 Ok(x ^ y)
             }
             ExprInner::Invert(x) => {
-                let x = x.eval(tx, utxos)?;
+                let x = x.eval(curr_ind, tx, utxos)?;
                 Ok(!x)
             }
             ExprInner::Negate(x) => {
-                let x = x.eval(tx, utxos)?;
+                let x = x.eval(curr_ind, tx, utxos)?;
                 x.checked_neg().ok_or(EvalError::NegOverflow(x))
             }
         }
@@ -296,6 +311,11 @@ impl Expr {
     fn push_to_builder(&self, builder: script::Builder) -> script::Builder {
         match &self.inner {
             ExprInner::Const(c) => builder.push_slice(&c.to_le_bytes()),
+            ExprInner::CurrInputIdx => builder
+                .push_opcode(OP_PUSHCURRENTINPUTINDEX)
+                .push_opcode(OP_INSPECTINPUTVALUE)
+                .push_int(1)
+                .push_opcode(OP_EQUALVERIFY),
             ExprInner::Input(i) => builder
                 .push_int(*i as i64)
                 .push_opcode(OP_INSPECTINPUTVALUE)
@@ -453,6 +473,12 @@ impl Expr {
             let (x, end_pos) = Self::from_tokens(tokens, end_pos)?;
             let expr = Expr::from_inner(ExprInner::Mul(Box::new(x), Box::new(y)));
             Some((expr, end_pos))
+        } else if let Some(&[Tk::CurrInp, Tk::InpValue, Tk::Num(1), Tk::Equal, Tk::Verify]) =
+            tks.get(e.checked_sub(5)?..e)
+        {
+            let (x, end_pos) = Self::from_tokens(tokens, e - 5)?;
+            let expr = Expr::from_inner(ExprInner::Negate(Box::new(x)));
+            Some((expr, end_pos))
         } else if let Some(&[Tk::Div64, Tk::Num(1), Tk::Equal, Tk::Verify, Tk::Nip]) =
             tks.get(e.checked_sub(5)?..e)
         {
@@ -540,15 +566,16 @@ impl Arith {
     /// Evaluate this expression with context given transaction and spent utxos
     pub fn eval(
         &self,
+        curr_ind: usize,
         tx: &elements::Transaction,
         utxos: &[elements::TxOut],
     ) -> Result<bool, EvalError> {
         let res = match self {
-            Arith::Eq(x, y) => x.eval(tx, utxos)? == y.eval(tx, utxos)?,
-            Arith::Le(x, y) => x.eval(tx, utxos)? < y.eval(tx, utxos)?,
-            Arith::Leq(x, y) => x.eval(tx, utxos)? <= y.eval(tx, utxos)?,
-            Arith::Ge(x, y) => x.eval(tx, utxos)? > y.eval(tx, utxos)?,
-            Arith::Geq(x, y) => x.eval(tx, utxos)? >= y.eval(tx, utxos)?,
+            Arith::Eq(x, y) => x.eval(curr_ind, tx, utxos)? == y.eval(curr_ind, tx, utxos)?,
+            Arith::Le(x, y) => x.eval(curr_ind, tx, utxos)? < y.eval(curr_ind, tx, utxos)?,
+            Arith::Leq(x, y) => x.eval(curr_ind, tx, utxos)? <= y.eval(curr_ind, tx, utxos)?,
+            Arith::Ge(x, y) => x.eval(curr_ind, tx, utxos)? > y.eval(curr_ind, tx, utxos)?,
+            Arith::Geq(x, y) => x.eval(curr_ind, tx, utxos)? >= y.eval(curr_ind, tx, utxos)?,
         };
         Ok(res)
     }
@@ -609,6 +636,7 @@ impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.inner {
             ExprInner::Const(c) => write!(f, "{}", c),
+            ExprInner::CurrInputIdx => write!(f, "curr_inp_v"),
             ExprInner::Input(i) => write!(f, "inp_v({})", i),
             ExprInner::Output(i) => write!(f, "out_v({})", i),
             ExprInner::InputIssue(i) => write!(f, "inp_issue_v({})", i),
@@ -631,6 +659,7 @@ impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.inner {
             ExprInner::Const(c) => write!(f, "{:?}", c),
+            ExprInner::CurrInputIdx => write!(f, "curr_inp_v"),
             ExprInner::Input(i) => write!(f, "inp_v({:?})", i),
             ExprInner::Output(i) => write!(f, "out_v({:?})", i),
             ExprInner::InputIssue(i) => write!(f, "inp_issue_v({:?})", i),
@@ -692,6 +721,7 @@ impl FromTree for Expr {
         }
         match (top.name, top.args.len()) {
             ("inp_v", 1) => term(top, ExprInner::Input),
+            ("curr_inp_v", 0) => Ok(Expr::from_inner(ExprInner::CurrInputIdx)),
             ("out_v", 1) => term(top, ExprInner::Output),
             ("inp_issue_v", 1) => term(top, ExprInner::InputIssue),
             ("inp_reissue_v", 1) => term(top, ExprInner::InputReIssue),
@@ -845,8 +875,12 @@ impl ParseableExt for Arith {
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        let (tx, utxos) = match (sat.lookup_tx(), sat.lookup_spent_utxos()) {
-            (Some(tx), Some(utxos)) => (tx, utxos),
+        let (tx, utxos, curr_idx) = match (
+            sat.lookup_tx(),
+            sat.lookup_spent_utxos(),
+            sat.lookup_curr_inp(),
+        ) {
+            (Some(tx), Some(utxos), Some(curr_idx)) => (tx, utxos, curr_idx),
             _ => {
                 return Satisfaction {
                     stack: Witness::Impossible,
@@ -854,7 +888,7 @@ impl ParseableExt for Arith {
                 }
             }
         };
-        let wit = match self.eval(tx, utxos) {
+        let wit = match self.eval(curr_idx, tx, utxos) {
             Ok(false) => Witness::Unavailable,
             Ok(true) => Witness::empty(),
             Err(_e) => Witness::Impossible,
@@ -870,8 +904,12 @@ impl ParseableExt for Arith {
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        let (tx, utxos) = match (sat.lookup_tx(), sat.lookup_spent_utxos()) {
-            (Some(tx), Some(utxos)) => (tx, utxos),
+        let (tx, utxos, curr_idx) = match (
+            sat.lookup_tx(),
+            sat.lookup_spent_utxos(),
+            sat.lookup_curr_inp(),
+        ) {
+            (Some(tx), Some(utxos), Some(curr_idx)) => (tx, utxos, curr_idx),
             _ => {
                 return Satisfaction {
                     stack: Witness::Impossible,
@@ -879,7 +917,7 @@ impl ParseableExt for Arith {
                 }
             }
         };
-        let wit = match self.eval(tx, utxos) {
+        let wit = match self.eval(curr_idx, tx, utxos) {
             Ok(false) => Witness::empty(),
             Ok(true) => Witness::Unavailable,
             Err(_e) => Witness::Impossible,
@@ -914,7 +952,7 @@ impl ParseableExt for Arith {
             .as_ref()
             .ok_or(interpreter::Error::ArithError(EvalError::TxEnvNotPresent))?;
 
-        match self.eval(txenv.tx(), txenv.spent_utxos()) {
+        match self.eval(txenv.idx(), txenv.tx(), txenv.spent_utxos()) {
             Ok(true) => {
                 stack.push(interpreter::Element::Satisfied);
                 Ok(true)

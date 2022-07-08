@@ -477,4 +477,8 @@ impl<'tx, 'ptx, Pk: ToPublicKey> Satisfier<Pk> for TxEnv<'tx, 'ptx> {
     fn lookup_spent_utxos(&self) -> Option<&[elements::TxOut]> {
         Some(self.spent_utxos)
     }
+
+    fn lookup_curr_inp(&self) -> Option<usize> {
+        Some(self.idx)
+    }
 }

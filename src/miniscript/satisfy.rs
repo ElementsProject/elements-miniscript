@@ -206,6 +206,11 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
         None
     }
 
+    /// Lookup spent txouts. Required for introspection
+    fn lookup_curr_inp(&self) -> Option<usize> {
+        None
+    }
+
     /// Lookup (msg, sig) for CSFS fragment
     fn lookup_csfs_sig(&self, _pk: &XOnlyPublicKey, _msg: &CsfsMsg) -> Option<schnorr::Signature> {
         None
@@ -430,6 +435,10 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_tx()
     }
 
+    fn lookup_curr_inp(&self) -> Option<usize> {
+        (**self).lookup_curr_inp()
+    }
+
     fn lookup_csfs_sig(&self, pk: &XOnlyPublicKey, msg: &CsfsMsg) -> Option<schnorr::Signature> {
         (**self).lookup_csfs_sig(pk, msg)
     }
@@ -543,6 +552,10 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
 
     fn lookup_tx(&self) -> Option<&elements::Transaction> {
         (**self).lookup_tx()
+    }
+
+    fn lookup_curr_inp(&self) -> Option<usize> {
+        (**self).lookup_curr_inp()
     }
 
     fn lookup_csfs_sig(&self, pk: &XOnlyPublicKey, msg: &CsfsMsg) -> Option<schnorr::Signature> {
@@ -813,6 +826,16 @@ macro_rules! impl_tuple_satisfier {
                 let &($(ref $ty,)*) = self;
                 $(
                     if let Some(result) = $ty.lookup_spent_utxos() {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_curr_inp(&self) -> Option<usize> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_curr_inp() {
                         return Some(result);
                     }
                 )*
