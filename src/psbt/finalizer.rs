@@ -26,7 +26,7 @@ use elements::{self, confidential, Script, Transaction, TxOut};
 
 use super::{sanity_check, Error, InputError, Psbt, PsbtInputSatisfier};
 use crate::descriptor::{LegacyCSFSCov, LegacyCovSatisfier};
-use crate::extensions::{CovExtArgs, CovSatisfier};
+use crate::extensions::{CovExtArgs, TxEnv};
 use crate::{
     interpreter, util, BareCtx, CovenantExt, Descriptor, Legacy, Miniscript, MiniscriptKey,
     Satisfier, Segwitv0, Tap,
@@ -303,9 +303,10 @@ pub fn _interpreter_inp_check<C: secp256k1_zkp::Verification>(
         .map_err(|e| Error::InputError(InputError::Interpreter(e), index))?;
 
     let prevouts = prevouts(psbt)?;
-    let prevouts = elements::sighash::Prevouts::All(&prevouts);
+    let env = TxEnv::new(tx, &prevouts, index)
+        .ok_or(Error::InputError(InputError::MissingUtxo, index))?;
     if let Some(error) = interpreter
-        .iter(secp, tx, index, &prevouts, genesis_hash)
+        .iter(secp, &env, genesis_hash)
         .filter_map(Result::err)
         .next()
     {
@@ -401,7 +402,7 @@ fn _finalize_inp(
         let psbt_sat = PsbtInputSatisfier::new(psbt, index);
 
         if util::is_v1_p2tr(spk) {
-            let cov_sat = CovSatisfier::new(&extracted_tx, spent_utxos, index)
+            let cov_sat = TxEnv::new(&extracted_tx, spent_utxos, index)
                 .ok_or(super::Error::InputError(InputError::MissingUtxo, index))?;
             // Deal with tr case separately, unfortunately we cannot infer the full descriptor for Tr
             let wit = construct_tap_witness(spk, &(psbt_sat, cov_sat), allow_mall)

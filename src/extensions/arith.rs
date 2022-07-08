@@ -7,7 +7,7 @@ use elements::opcodes::all::*;
 use elements::sighash::Prevouts;
 use elements::{opcodes, script, Transaction};
 
-use super::{ExtParam, ParseableExt};
+use super::{ExtParam, ParseableExt, TxEnv};
 use crate::expression::{FromTree, Tree};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -908,14 +908,13 @@ impl ParseableExt for Arith {
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut interpreter::Stack<'txin>,
-        tx: Option<&Transaction>,
-        prevouts: Option<&Prevouts<'txin>>,
+        txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
-        let (tx, utxos) = match (tx, prevouts) {
-            (Some(tx), Some(&Prevouts::All(utxos))) => (tx, utxos),
-            _ => return Err(interpreter::Error::ArithError(EvalError::TxEnvNotPresent)),
-        };
-        match self.eval(tx, utxos) {
+        let txenv = txenv
+            .as_ref()
+            .ok_or(interpreter::Error::ArithError(EvalError::TxEnvNotPresent))?;
+
+        match self.eval(txenv.tx(), txenv.spent_utxos()) {
             Ok(true) => {
                 stack.push(interpreter::Element::Satisfied);
                 Ok(true)

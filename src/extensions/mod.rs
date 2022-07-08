@@ -5,7 +5,6 @@
 use std::{fmt, hash};
 
 use elements::script::Builder;
-use elements::sighash::Prevouts;
 use elements::{Transaction, TxOut};
 
 use crate::expression::Tree;
@@ -109,8 +108,7 @@ pub trait ParseableExt:
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut Stack<'txin>,
-        tx: Option<&Transaction>,
-        prevouts: Option<&Prevouts<'txin>>,
+        txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error>;
 
     /// Encoding of the current fragment
@@ -201,8 +199,7 @@ impl ParseableExt for NoExt {
     fn evaluate<'intp, 'txin>(
         &'intp self,
         _stack: &mut Stack<'txin>,
-        _tx: Option<&Transaction>,
-        _prevouts: Option<&Prevouts<'txin>>,
+        _txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         match *self {}
     }
@@ -368,10 +365,9 @@ impl ParseableExt for CovenantExt<CovExtArgs> {
     fn evaluate<'intp, 'txin>(
         &self,
         stack: &mut Stack<'txin>,
-        tx: Option<&Transaction>,
-        prevouts: Option<&Prevouts<'txin>>,
+        txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
-        all_arms_fn!(self, ParseableExt, evaluate, stack, tx, prevouts,)
+        all_arms_fn!(self, ParseableExt, evaluate, stack, txenv,)
     }
 
     fn push_to_builder(&self, builder: Builder) -> Builder {
@@ -434,7 +430,7 @@ where
 /// being satisfied and 'ptx denotes the lifetime
 /// of the previous transaction inputs
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CovSatisfier<'tx, 'ptx> {
+pub struct TxEnv<'tx, 'ptx> {
     /// The transaction being spent
     tx: &'tx Transaction,
     /// Spent utxos
@@ -443,7 +439,7 @@ pub struct CovSatisfier<'tx, 'ptx> {
     idx: usize,
 }
 
-impl<'tx, 'ptx> CovSatisfier<'tx, 'ptx> {
+impl<'tx, 'ptx> TxEnv<'tx, 'ptx> {
     /// Returns None when spent_utos.len() != tx.input.len()
     pub fn new(tx: &'tx Transaction, spent_utxos: &'ptx [TxOut], idx: usize) -> Option<Self> {
         if tx.input.len() != spent_utxos.len() {
@@ -456,9 +452,24 @@ impl<'tx, 'ptx> CovSatisfier<'tx, 'ptx> {
             })
         }
     }
+
+    /// Obtains the tx
+    pub fn tx(&self) -> &Transaction {
+        self.tx
+    }
+
+    /// Obtains the spend utxos
+    pub fn spent_utxos(&self) -> &[TxOut] {
+        self.spent_utxos
+    }
+
+    /// Obtains the current input index
+    pub fn idx(&self) -> usize {
+        self.idx
+    }
 }
 
-impl<'tx, 'ptx, Pk: ToPublicKey> Satisfier<Pk> for CovSatisfier<'tx, 'ptx> {
+impl<'tx, 'ptx, Pk: ToPublicKey> Satisfier<Pk> for TxEnv<'tx, 'ptx> {
     fn lookup_tx(&self) -> Option<&elements::Transaction> {
         Some(self.tx)
     }
