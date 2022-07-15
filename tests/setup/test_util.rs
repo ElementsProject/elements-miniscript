@@ -17,12 +17,14 @@
 //! The keys/hashes are automatically translated so that the tests knows how to satisfy things that don't end with !
 //!
 
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use bitcoin::secp256k1;
-use elements::{AddressParams, BlockHash};
+use elements::hashes::hex::FromHex;
+use elements::{confidential, encode, AddressParams, BlockHash};
 use miniscript::descriptor::{SinglePub, SinglePubKey};
 use miniscript::extensions::{CovExtArgs, CsfsKey, CsfsMsg};
 use miniscript::{
@@ -44,6 +46,9 @@ pub struct PubData {
     pub hash160: hash160::Hash,
     pub genesis_hash: elements::BlockHash,
     pub msg: CsfsMsg,
+    pub values: HashMap<String, confidential::Value>,
+    pub assets: HashMap<String, confidential::Asset>,
+    pub spks: HashMap<String, elements::Script>,
 }
 
 #[derive(Debug, Clone)]
@@ -124,6 +129,9 @@ impl TestData {
             x_only_pks,
             genesis_hash,
             msg,
+            values: HashMap::new(),
+            assets: HashMap::new(),
+            spks: HashMap::new(),
         };
         let secretdata = SecretData {
             sks,
@@ -182,8 +190,32 @@ impl<'a> ExtTranslator<String, CovExtArgs, ()> for StrExtTransalator<'a> {
             let csfs_pk = CovExtArgs::XOnlyKey(CsfsKey(self.1.x_only_pks[self.0]));
             self.0 = self.0 + 1;
             Ok(csfs_pk)
+        } else if e.starts_with("spk") {
+            let default = elements::Script::from_str(
+                "5120c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0",
+            )
+            .unwrap();
+            Ok(CovExtArgs::spk(
+                self.1.spks.get(e).unwrap_or(&default).clone(),
+            ))
+        } else if e.starts_with("conf_asset") || e.starts_with("exp_asset") {
+            let default = if e.starts_with("conf_asset") {
+                "0adef814ab021498562ab4717287305d3f7abb5686832fe6183e1db495abef7cc7"
+            } else {
+                "01663fc0f93e82bdb0bf7da418f5caae09f3f132753114251ecc1bb366e6b2e4d7"
+            };
+            let default = encode::deserialize(&Vec::<u8>::from_hex(default).unwrap()).unwrap();
+            Ok(CovExtArgs::asset(*self.1.assets.get(e).unwrap_or(&default)))
+        } else if e.starts_with("conf_value") || e.starts_with("exp_value") {
+            let default = if e.starts_with("conf_value") {
+                "09def814ab021498562ab4717287305d3f7abb5686832fe6183e1db495abef7cc7"
+            } else {
+                "010000000011110000"
+            };
+            let default = encode::deserialize(&Vec::<u8>::from_hex(default).unwrap()).unwrap();
+            Ok(CovExtArgs::value(*self.1.values.get(e).unwrap_or(&default)))
         } else {
-            panic!("CSFS msg must be string 'msg'")
+            panic!("Unknown extension")
         }
     }
 }
