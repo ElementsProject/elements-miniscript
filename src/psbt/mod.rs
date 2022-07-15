@@ -45,7 +45,7 @@ mod finalizer;
 pub use elements::pset as psbt;
 
 pub use self::finalizer::{finalize, finalize_input, interpreter_check, interpreter_inp_check};
-use crate::descriptor::{CovSatisfier, Tr};
+use crate::descriptor::{LegacyCovSatisfier, Tr};
 use crate::util;
 
 /// Error type for entire Psbt
@@ -300,7 +300,8 @@ pub struct PsbtInputSatisfier<'psbt> {
 /// Psbt Input Satisfier with Covenant support. Users should be
 /// using the high level [`finalizer::finalize`] API.
 /// The [`CovSatisfier`] should be consistent with the extracted transaction.
-pub struct PsbtCovInputSatisfier<'psbt>(PsbtInputSatisfier<'psbt>, CovSatisfier<'psbt, 'psbt>);
+pub type PsbtCovInputSatisfier<'psbt> =
+    (PsbtInputSatisfier<'psbt>, LegacyCovSatisfier<'psbt, 'psbt>);
 
 impl<'psbt> PsbtInputSatisfier<'psbt> {
     /// create a new PsbtInputsatisfier from

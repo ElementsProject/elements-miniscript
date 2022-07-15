@@ -22,14 +22,14 @@
 use bitcoin::{self, PublicKey, XOnlyPublicKey};
 use elements::secp256k1_zkp::{self, Secp256k1};
 use elements::taproot::LeafVersion;
-use elements::{self, confidential, Script, Transaction};
+use elements::{self, confidential, Script, Transaction, TxOut};
 
 use super::{sanity_check, Error, InputError, Psbt, PsbtInputSatisfier};
-use crate::descriptor::{CovSatisfier, LegacyCSFSCov};
-use crate::extensions::CovExtArgs;
+use crate::descriptor::{LegacyCSFSCov, LegacyCovSatisfier};
+use crate::extensions::{CovExtArgs, TxEnv};
 use crate::{
-    interpreter, util, BareCtx, Descriptor, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0,
-    Tap,
+    interpreter, util, BareCtx, CovenantExt, Descriptor, Legacy, Miniscript, MiniscriptKey,
+    Satisfier, Segwitv0, Tap,
 };
 
 // Get the amount being spent for the psbt input
@@ -51,30 +51,31 @@ fn get_amt(psbt: &Psbt, index: usize) -> Result<confidential::Value, InputError>
 // descriptor from psbt because the information about all the scripts might not
 // be present. Also, currently the spec does not support hidden branches, so
 // inferring a descriptor is not possible
-fn construct_tap_witness(
+fn construct_tap_witness<S>(
     spk: &Script,
-    sat: &PsbtInputSatisfier<'_>,
+    sat: &S,
     allow_mall: bool,
-) -> Result<Vec<Vec<u8>>, InputError> {
+) -> Result<Vec<Vec<u8>>, InputError>
+where
+    S: Satisfier<XOnlyPublicKey>,
+{
     assert!(util::is_v1_p2tr(spk));
 
     // try the key spend path first
-    if let Some(sig) =
-        <PsbtInputSatisfier<'_> as Satisfier<XOnlyPublicKey>>::lookup_tap_key_spend_sig(sat)
-    {
+    if let Some(sig) = sat.lookup_tap_key_spend_sig() {
         return Ok(vec![sig.to_vec()]);
     }
     // Next script spends
     let (mut min_wit, mut min_wit_len) = (None, None);
-    if let Some(block_map) =
-        <PsbtInputSatisfier<'_> as Satisfier<XOnlyPublicKey>>::lookup_tap_control_block_map(sat)
-    {
+    if let Some(block_map) = sat.lookup_tap_control_block_map() {
         for (control_block, (script, ver)) in block_map {
             if *ver != LeafVersion::default() {
                 // We don't know how to satisfy non default version scripts yet
                 continue;
             }
-            let ms = match Miniscript::<XOnlyPublicKey, Tap>::parse_insane(script) {
+            let ms = match Miniscript::<XOnlyPublicKey, Tap, CovenantExt<CovExtArgs>>::parse_insane(
+                script,
+            ) {
                 Ok(ms) => ms,
                 Err(..) => continue, // try another script
             };
@@ -302,9 +303,10 @@ pub fn _interpreter_inp_check<C: secp256k1_zkp::Verification>(
         .map_err(|e| Error::InputError(InputError::Interpreter(e), index))?;
 
     let prevouts = prevouts(psbt)?;
-    let prevouts = elements::sighash::Prevouts::All(&prevouts);
+    let env = TxEnv::new(tx, &prevouts, index)
+        .ok_or(Error::InputError(InputError::MissingUtxo, index))?;
     if let Some(error) = interpreter
-        .iter(secp, tx, index, &prevouts, genesis_hash)
+        .iter(secp, &env, genesis_hash)
         .filter_map(Result::err)
         .next()
     {
@@ -390,6 +392,7 @@ fn input_sanity_checks(psbt: &Psbt, index: usize) -> Result<(), super::Error> {
 fn _finalize_inp(
     psbt: &mut Psbt,
     extracted_tx: &Transaction,
+    spent_utxos: &[TxOut],
     index: usize,
     allow_mall: bool,
 ) -> Result<(), super::Error> {
@@ -399,8 +402,10 @@ fn _finalize_inp(
         let psbt_sat = PsbtInputSatisfier::new(psbt, index);
 
         if util::is_v1_p2tr(spk) {
+            let cov_sat = TxEnv::new(&extracted_tx, spent_utxos, index)
+                .ok_or(super::Error::InputError(InputError::MissingUtxo, index))?;
             // Deal with tr case separately, unfortunately we cannot infer the full descriptor for Tr
-            let wit = construct_tap_witness(spk, &psbt_sat, allow_mall)
+            let wit = construct_tap_witness(spk, &(psbt_sat, cov_sat), allow_mall)
                 .map_err(|e| Error::InputError(e, index))?;
             (wit, Script::new())
         } else {
@@ -417,7 +422,7 @@ fn _finalize_inp(
                     .ok_or(super::Error::InputError(InputError::MissingUtxo, index))?;
                 // Codesepartor calculation
                 let script_code = cov.cov_script_code();
-                let cov_sat = CovSatisfier::new_segwitv0(
+                let cov_sat = LegacyCovSatisfier::new_segwitv0(
                     extracted_tx,
                     index as u32,
                     utxo.value,
@@ -477,7 +482,8 @@ pub fn finalize_input<C: secp256k1_zkp::Verification>(
     input_sanity_checks(psbt, index)?;
 
     let extracted_tx = psbt.extract_tx()?;
-    _finalize_inp(psbt, &extracted_tx, index, allow_mall)?;
+    let spent_utxos = prevouts(psbt)?;
+    _finalize_inp(psbt, &extracted_tx, &spent_utxos, index, allow_mall)?;
 
     interpreter_inp_check(psbt, secp, index, genesis_hash)?;
     Ok(())
@@ -504,8 +510,15 @@ pub fn finalize<C: secp256k1_zkp::Verification>(
 
     // Actually construct the witnesses
     let extracted_tx = psbt.extract_tx()?;
+    let spent_utxos = prevouts(psbt)?;
     for index in 0..psbt.inputs().len() {
-        _finalize_inp(psbt, &extracted_tx, index, /*allow_mall*/ false)?;
+        _finalize_inp(
+            psbt,
+            &extracted_tx,
+            &spent_utxos,
+            index,
+            /*allow_mall*/ false,
+        )?;
     }
     // Double check everything with the interpreter
     // This only checks whether the script will be executed

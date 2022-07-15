@@ -9,7 +9,7 @@ use bitcoin::XOnlyPublicKey;
 use elements::hashes::hex;
 use elements::{self, opcodes, secp256k1_zkp};
 
-use super::{ArgFromStr, CovExtArgs, ExtParam, ParseableExt};
+use super::{ArgFromStr, CovExtArgs, ExtParam, ParseableExt, TxEnv};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::limits::MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
@@ -274,6 +274,7 @@ impl ParseableExt for CheckSigFromStack<CovExtArgs> {
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut interpreter::Stack<'txin>,
+        _txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         let sig = stack[0].try_push()?;
 

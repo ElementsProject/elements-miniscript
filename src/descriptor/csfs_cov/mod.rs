@@ -48,7 +48,7 @@ mod satisfy;
 mod script_internals;
 pub use self::cov::LegacyCSFSCov;
 pub use self::error::CovError;
-pub use self::satisfy::CovSatisfier;
+pub use self::satisfy::LegacyCovSatisfier;
 pub use self::script_internals::CovOperations;
 
 #[cfg(test)]
@@ -219,7 +219,7 @@ mod tests {
 
         // Try to satisfy the covenant part
         let script_code = desc.cov_script_code();
-        let cov_sat = CovSatisfier::new_segwitv0(
+        let cov_sat = LegacyCovSatisfier::new_segwitv0(
             &spend_tx,
             0,
             confidential::Value::Explicit(200_000),
@@ -412,7 +412,7 @@ mod tests {
         // Try to satisfy the covenant part
         let desc = desc.as_cov().unwrap();
         let script_code = desc.cov_script_code();
-        let cov_sat = CovSatisfier::new_segwitv0(
+        let cov_sat = LegacyCovSatisfier::new_segwitv0(
             &spend_tx,
             0,
             confidential::Value::Explicit(200_000),

@@ -5,9 +5,8 @@
 use std::fmt;
 
 use elements::encode::serialize;
-use elements::{self};
 
-use super::{ExtParam, ParseableExt};
+use super::{ExtParam, ParseableExt, TxEnv};
 use crate::descriptor::CovError;
 use crate::miniscript::astelem::StackCtxOperations;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -168,6 +167,7 @@ impl ParseableExt for LegacyVerEq {
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut interpreter::Stack<'txin>,
+        _txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         // Version is at index 11
         let ver = stack[11];

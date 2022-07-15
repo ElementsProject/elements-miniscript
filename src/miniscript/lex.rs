@@ -65,6 +65,7 @@ pub enum Token<'s> {
     Hash256,
     Num(u32),
     Hash20(&'s [u8]),
+    Bytes8(&'s [u8]),
     Bytes32(&'s [u8]),
     Bytes33(&'s [u8]),
     Bytes65(&'s [u8]),
@@ -72,6 +73,24 @@ pub enum Token<'s> {
     PickPush4(u32),       // Pick followed by a 4 byte push
     PickPush32([u8; 32]), // Pick followed by a 32 byte push
     PickPush(Vec<u8>),    // Pick followed by a push
+    InpValue,
+    OutValue,
+    InpIssue,
+    Leq64,
+    Le64,
+    Geq64,
+    Ge64,
+    Neg64,
+    Div64,
+    Mul64,
+    Sub64,
+    Add64,
+    Nip,
+    And,
+    Or,
+    Xor,
+    Invert,
+    CurrInp,
 }
 
 impl<'s> fmt::Display for Token<'s> {
@@ -145,6 +164,11 @@ impl<'s> TokenIter<'s> {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    /// Get the inner mutable vector
+    pub fn as_inner_mut(&mut self) -> &mut Vec<Token<'s>> {
+        &mut self.0
+    }
 }
 
 impl<'s> Iterator for TokenIter<'s> {
@@ -210,10 +234,59 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token<'_>>, Error> {
                 ret.push(Token::CheckSig);
                 ret.push(Token::Verify);
             }
-            // Change once the opcode name is updated
-            // TODO: UPDATE UPSTREAM OPCODES
             script::Instruction::Op(opcodes::all::OP_CHECKSIGADD) => {
                 ret.push(Token::CheckSigAdd);
+            }
+            script::Instruction::Op(opcodes::all::OP_INSPECTINPUTVALUE) => {
+                ret.push(Token::InpValue);
+            }
+            script::Instruction::Op(opcodes::all::OP_INSPECTOUTPUTVALUE) => {
+                ret.push(Token::OutValue);
+            }
+            script::Instruction::Op(opcodes::all::OP_INSPECTINPUTISSUANCE) => {
+                ret.push(Token::InpIssue);
+            }
+            script::Instruction::Op(opcodes::all::OP_PUSHCURRENTINPUTINDEX) => {
+                ret.push(Token::CurrInp);
+            }
+            script::Instruction::Op(opcodes::all::OP_ADD64) => {
+                ret.push(Token::Add64);
+            }
+            script::Instruction::Op(opcodes::all::OP_SUB64) => {
+                ret.push(Token::Sub64);
+            }
+            script::Instruction::Op(opcodes::all::OP_MUL64) => {
+                ret.push(Token::Mul64);
+            }
+            script::Instruction::Op(opcodes::all::OP_DIV64) => {
+                ret.push(Token::Div64);
+            }
+            script::Instruction::Op(opcodes::all::OP_NEG64) => {
+                ret.push(Token::Neg64);
+            }
+            script::Instruction::Op(opcodes::all::OP_GREATERTHAN64) => {
+                ret.push(Token::Ge64);
+            }
+            script::Instruction::Op(opcodes::all::OP_GREATERTHANOREQUAL64) => {
+                ret.push(Token::Geq64);
+            }
+            script::Instruction::Op(opcodes::all::OP_LESSTHAN64) => {
+                ret.push(Token::Le64);
+            }
+            script::Instruction::Op(opcodes::all::OP_LESSTHANOREQUAL64) => {
+                ret.push(Token::Leq64);
+            }
+            script::Instruction::Op(opcodes::all::OP_AND) => {
+                ret.push(Token::And);
+            }
+            script::Instruction::Op(opcodes::all::OP_OR) => {
+                ret.push(Token::Or);
+            }
+            script::Instruction::Op(opcodes::all::OP_XOR) => {
+                ret.push(Token::Xor);
+            }
+            script::Instruction::Op(opcodes::all::OP_INVERT) => {
+                ret.push(Token::Invert);
             }
             script::Instruction::Op(opcodes::all::OP_CHECKMULTISIG) => {
                 ret.push(Token::CheckMultiSig);
@@ -246,6 +319,9 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token<'_>>, Error> {
             }
             script::Instruction::Op(opcodes::all::OP_OVER) => {
                 ret.push(Token::Over);
+            }
+            script::Instruction::Op(opcodes::all::OP_NIP) => {
+                ret.push(Token::Nip);
             }
             script::Instruction::Op(opcodes::all::OP_PICK) => {
                 ret.push(Token::Pick);
@@ -339,6 +415,7 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token<'_>>, Error> {
                     // reconvert these to pushes.
                     // See [process_candidate_push]
                     match bytes.len() {
+                        8 => ret.push(Token::Bytes8(bytes)),
                         20 => ret.push(Token::Hash20(bytes)),
                         32 => ret.push(Token::Bytes32(bytes)),
                         33 => ret.push(Token::Bytes33(bytes)),

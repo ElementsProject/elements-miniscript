@@ -5,6 +5,7 @@
 use std::{fmt, hash};
 
 use elements::script::Builder;
+use elements::{Transaction, TxOut};
 
 use crate::expression::Tree;
 use crate::interpreter::{self, Stack};
@@ -15,10 +16,13 @@ use crate::miniscript::types::{Correctness, ExtData, Malleability};
 use crate::policy::Liftable;
 use crate::{policy, Error, ExtTranslator, MiniscriptKey, Satisfier, ToPublicKey, TranslateExt};
 
+#[allow(unused_imports)]
+mod arith;
 mod csfs;
 mod outputs_pref;
 mod tx_ver;
 
+pub use arith::{Arith, EvalError, Expr, ExprInner};
 pub use csfs::{CheckSigFromStack, CsfsKey, CsfsMsg};
 
 pub use self::outputs_pref::LegacyOutputsPref;
@@ -104,6 +108,7 @@ pub trait ParseableExt:
     fn evaluate<'intp, 'txin>(
         &'intp self,
         stack: &mut Stack<'txin>,
+        txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error>;
 
     /// Encoding of the current fragment
@@ -194,6 +199,7 @@ impl ParseableExt for NoExt {
     fn evaluate<'intp, 'txin>(
         &'intp self,
         _stack: &mut Stack<'txin>,
+        _txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         match *self {}
     }
@@ -246,6 +252,8 @@ pub enum CovenantExt<T: ExtParam> {
     LegacyOutputsPref(LegacyOutputsPref),
     /// CSFS
     Csfs(CheckSigFromStack<T>),
+    /// Arith opcodes
+    Arith(Arith),
 }
 
 /// All known Extension parameters/arguments
@@ -292,6 +300,7 @@ macro_rules! all_arms_fn {
             CovenantExt::LegacyVerEq(v) => <LegacyVerEq as $trt>::$f(v, $($args, )*),
             CovenantExt::LegacyOutputsPref(p) => <LegacyOutputsPref as $trt>::$f(p, $($args, )*),
             CovenantExt::Csfs(csfs) => csfs.$f($($args, )*),
+            CovenantExt::Arith(e) => e.$f($($args, )*),
         }
     };
 }
@@ -306,6 +315,8 @@ macro_rules! try_from_arms {
             Ok(CovenantExt::LegacyOutputsPref(v))
         } else if let Ok(v) = <CheckSigFromStack<$ext_arg> as $trt>::$f($($args, )*) {
             Ok(CovenantExt::Csfs(v))
+        } else if let Ok(v) = <Arith as $trt>::$f($($args, )*) {
+            Ok(CovenantExt::Arith(v))
         } else {
             Err(())
         }
@@ -351,8 +362,12 @@ impl ParseableExt for CovenantExt<CovExtArgs> {
         all_arms_fn!(self, ParseableExt, dissatisfy, sat,)
     }
 
-    fn evaluate(&self, stack: &mut Stack) -> Result<bool, interpreter::Error> {
-        all_arms_fn!(self, ParseableExt, evaluate, stack,)
+    fn evaluate<'intp, 'txin>(
+        &self,
+        stack: &mut Stack<'txin>,
+        txenv: Option<&TxEnv>,
+    ) -> Result<bool, interpreter::Error> {
+        all_arms_fn!(self, ParseableExt, evaluate, stack, txenv,)
     }
 
     fn push_to_builder(&self, builder: Builder) -> Builder {
@@ -370,6 +385,7 @@ impl<T: ExtParam> fmt::Display for CovenantExt<T> {
             CovenantExt::LegacyVerEq(v) => v.fmt(f),
             CovenantExt::LegacyOutputsPref(p) => p.fmt(f),
             CovenantExt::Csfs(c) => c.fmt(f),
+            CovenantExt::Arith(e) => e.fmt(f),
         }
     }
 }
@@ -400,7 +416,69 @@ where
                 CovenantExt::Csfs(c) => {
                     CovenantExt::Csfs(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(c, t)?)
                 }
+                CovenantExt::Arith(e) => {
+                    CovenantExt::Arith(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(e, t)?)
+                }
             };
         Ok(ext)
+    }
+}
+
+/// A satisfier for Covenant descriptors
+/// that can do transaction introspection
+/// 'tx denotes the lifetime of the transaction
+/// being satisfied and 'ptx denotes the lifetime
+/// of the previous transaction inputs
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TxEnv<'tx, 'ptx> {
+    /// The transaction being spent
+    tx: &'tx Transaction,
+    /// Spent utxos
+    spent_utxos: &'ptx [TxOut],
+    /// The input index being spent
+    idx: usize,
+}
+
+impl<'tx, 'ptx> TxEnv<'tx, 'ptx> {
+    /// Returns None when spent_utos.len() != tx.input.len()
+    pub fn new(tx: &'tx Transaction, spent_utxos: &'ptx [TxOut], idx: usize) -> Option<Self> {
+        if tx.input.len() != spent_utxos.len() {
+            None
+        } else {
+            Some(Self {
+                tx,
+                spent_utxos,
+                idx,
+            })
+        }
+    }
+
+    /// Obtains the tx
+    pub fn tx(&self) -> &Transaction {
+        self.tx
+    }
+
+    /// Obtains the spend utxos
+    pub fn spent_utxos(&self) -> &[TxOut] {
+        self.spent_utxos
+    }
+
+    /// Obtains the current input index
+    pub fn idx(&self) -> usize {
+        self.idx
+    }
+}
+
+impl<'tx, 'ptx, Pk: ToPublicKey> Satisfier<Pk> for TxEnv<'tx, 'ptx> {
+    fn lookup_tx(&self) -> Option<&elements::Transaction> {
+        Some(self.tx)
+    }
+
+    fn lookup_spent_utxos(&self) -> Option<&[elements::TxOut]> {
+        Some(self.spent_utxos)
+    }
+
+    fn lookup_curr_inp(&self) -> Option<usize> {
+        Some(self.idx)
     }
 }

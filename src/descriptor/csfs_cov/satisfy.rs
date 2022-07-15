@@ -17,9 +17,7 @@
 use elements::encode::Encodable;
 use elements::hashes::{sha256d, Hash};
 use elements::sighash::SigHashCache;
-use elements::{
-    self, confidential, EcdsaSigHashType, OutPoint, Script, SigHash, Transaction, TxOut,
-};
+use elements::{self, confidential, EcdsaSigHashType, OutPoint, Script, SigHash, Transaction};
 
 use super::CovError;
 use crate::{MiniscriptKey, Satisfier, ToPublicKey};
@@ -30,7 +28,7 @@ use crate::{MiniscriptKey, Satisfier, ToPublicKey};
 /// being satisfied and 'ptx denotes the lifetime
 /// of the previous transaction inputs
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CovSatisfier<'tx, 'ptx> {
+pub struct LegacyCovSatisfier<'tx, 'ptx> {
     // Common fields in Segwit and Taphash
     /// The transaction being spent
     tx: &'tx Transaction,
@@ -45,38 +43,9 @@ pub struct CovSatisfier<'tx, 'ptx> {
     script_code: Option<&'ptx Script>,
     /// The value of the output being spent
     value: Option<confidential::Value>,
-
-    // Taproot
-    /// The utxos used in transaction
-    /// This construction should suffice for Taproot
-    /// related covenant spends too.
-    spent_utxos: Option<&'ptx [TxOut]>,
 }
 
-impl<'tx, 'ptx> CovSatisfier<'tx, 'ptx> {
-    /// Create a new CovSatisfier for taproot spends
-    /// **Panics**
-    /// 1) if number of spent_utxos is not equal to
-    /// number of transaction inputs.
-    /// 2) if idx is out of bounds
-    pub fn new_taproot(
-        tx: &'tx Transaction,
-        spent_utxos: &'ptx [TxOut],
-        idx: u32,
-        hash_type: EcdsaSigHashType,
-    ) -> Self {
-        assert!(spent_utxos.len() == tx.input.len());
-        assert!((idx as usize) < spent_utxos.len());
-        Self {
-            tx,
-            idx,
-            hash_type,
-            script_code: None,
-            value: None,
-            spent_utxos: Some(spent_utxos),
-        }
-    }
-
+impl<'tx, 'ptx> LegacyCovSatisfier<'tx, 'ptx> {
     /// Create  a new Covsatisfier for v0 spends
     /// Panics if idx is out of bounds
     pub fn new_segwitv0(
@@ -93,7 +62,6 @@ impl<'tx, 'ptx> CovSatisfier<'tx, 'ptx> {
             hash_type,
             script_code: Some(script_code),
             value: Some(value),
-            spent_utxos: None,
         }
     }
 
@@ -111,7 +79,7 @@ impl<'tx, 'ptx> CovSatisfier<'tx, 'ptx> {
     }
 }
 
-impl<'tx, 'ptx, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for CovSatisfier<'tx, 'ptx> {
+impl<'tx, 'ptx, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for LegacyCovSatisfier<'tx, 'ptx> {
     fn lookup_nversion(&self) -> Option<u32> {
         Some(self.tx.version)
     }

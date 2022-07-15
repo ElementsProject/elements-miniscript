@@ -230,16 +230,23 @@ impl<'a> Tree<'a> {
 }
 
 /// Parse a string as a u32, for timelocks or thresholds
-pub fn parse_num(s: &str) -> Result<u32, Error> {
+pub fn parse_num<T: FromStr>(s: &str) -> Result<T, Error> {
     if s.len() > 1 {
         let ch = s.chars().next().unwrap();
+        let ch = if ch == '-' {
+            s.chars().nth(1).ok_or(Error::Unexpected(
+                "Negative number must follow dash sign".to_string(),
+            ))?
+        } else {
+            ch
+        };
         if !('1'..='9').contains(&ch) {
             return Err(Error::Unexpected(
                 "Number must start with a digit 1-9".to_string(),
             ));
         }
     }
-    u32::from_str(s).map_err(|_| errstr(s))
+    T::from_str(s).map_err(|_| errstr(s))
 }
 
 /// Attempts to parse a terminal expression
@@ -292,11 +299,11 @@ mod tests {
 
     #[test]
     fn test_parse_num() {
-        assert!(parse_num("0").is_ok());
-        assert!(parse_num("00").is_err());
-        assert!(parse_num("0000").is_err());
-        assert!(parse_num("06").is_err());
-        assert!(parse_num("+6").is_err());
-        assert!(parse_num("-6").is_err());
+        assert!(parse_num::<u32>("0").is_ok());
+        assert!(parse_num::<u32>("00").is_err());
+        assert!(parse_num::<u32>("0000").is_err());
+        assert!(parse_num::<u32>("06").is_err());
+        assert!(parse_num::<u32>("+6").is_err());
+        assert!(parse_num::<u32>("-6").is_err());
     }
 }

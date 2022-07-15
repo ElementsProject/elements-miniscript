@@ -26,7 +26,7 @@ use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine};
 use elements::{self, secp256k1_zkp, sighash, EcdsaSigHashType, SigHash};
 
-use crate::extensions::{CovExtArgs, ParseableExt};
+use crate::extensions::{CovExtArgs, ParseableExt, TxEnv};
 use crate::miniscript::context::NoChecks;
 use crate::miniscript::ScriptContext;
 use crate::{util, Descriptor, ElementsSig, Miniscript, Terminal, ToPublicKey};
@@ -233,6 +233,7 @@ where
     pub fn iter_custom<'iter>(
         &'iter self,
         verify_sig: Box<dyn FnMut(&KeySigPair) -> bool + 'iter>,
+        txenv: Option<&'txin TxEnv<'txin, 'txin>>,
     ) -> Iter<'txin, 'iter, Ext> {
         Iter {
             verify_sig,
@@ -265,6 +266,7 @@ where
                 None
             },
             has_errored: false,
+            txenv: txenv,
         }
     }
 
@@ -375,19 +377,27 @@ where
     pub fn iter<'iter, C: secp256k1_zkp::Verification>(
         &'iter self,
         secp: &'iter secp256k1_zkp::Secp256k1<C>,
-        tx: &'txin elements::Transaction,
-        input_idx: usize,
-        prevouts: &'iter sighash::Prevouts<'_>, // actually a 'prevouts, but 'prevouts: 'iter
-        genesis_hash: elements::BlockHash,      // required for sighash computation in BIP341
+        txenv: &'txin TxEnv, // actually a 'prevouts, but 'prevouts: 'iter
+        genesis_hash: elements::BlockHash, // required for sighash computation in BIP341
     ) -> Iter<'txin, 'iter, Ext> {
-        self.iter_custom(Box::new(move |sig| {
-            self.verify_sig(secp, tx, input_idx, prevouts, genesis_hash, sig)
-        }))
+        self.iter_custom(
+            Box::new(move |sig| {
+                self.verify_sig(
+                    secp,
+                    txenv.tx(),
+                    txenv.idx(),
+                    &sighash::Prevouts::All(txenv.spent_utxos()),
+                    genesis_hash,
+                    sig,
+                )
+            }),
+            Some(txenv),
+        )
     }
 
     /// Creates an iterator over the satisfied spending conditions without checking signatures
     pub fn iter_assume_sigs<'iter>(&'iter self) -> Iter<'txin, 'iter, Ext> {
-        self.iter_custom(Box::new(|_| true))
+        self.iter_custom(Box::new(|_| true), None)
     }
 
     /// Outputs a "descriptor" string which reproduces the spent coins
@@ -619,6 +629,7 @@ where
     public_key: Option<&'intp BitcoinKey>,
     state: Vec<NodeEvaluationState<'intp, Ext>>,
     stack: Stack<'txin>,
+    txenv: Option<&'txin TxEnv<'txin, 'txin>>,
     age: u32,
     lock_time: u32,
     cov: Option<&'intp BitcoinKey>,
@@ -746,7 +757,7 @@ where
                     }
                 }
                 Terminal::Ext(ref ext) => {
-                    let res = ext.evaluate(&mut self.stack);
+                    let res = ext.evaluate(&mut self.stack, self.txenv);
                     match res {
                         Ok(true) => {
                             return Some(Ok(SatisfiedConstraint::Ext {
@@ -1288,17 +1299,18 @@ mod tests {
         ) -> Iter<'elem, 'txin, NoExt> {
             Iter {
                 verify_sig: verify_fn,
-                stack: stack,
                 public_key: None,
                 state: vec![NodeEvaluationState {
                     node: &ms,
                     n_evaluated: 0,
                     n_satisfied: 0,
                 }],
+                stack: stack,
                 age: 1002,
                 lock_time: 1002,
                 cov: None,
                 has_errored: false,
+                txenv: None,
             }
         }
 

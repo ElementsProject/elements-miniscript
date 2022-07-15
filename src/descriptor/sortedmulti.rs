@@ -78,7 +78,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         if tree.args.is_empty() {
             return Err(errstr("no arguments given for sortedmulti"));
         }
-        let k = expression::parse_num(tree.args[0].name)?;
+        let k = expression::parse_num::<u32>(tree.args[0].name)?;
         if k > (tree.args.len() - 1) as u32 {
             return Err(errstr(
                 "higher threshold than there were keys in sortedmulti",

@@ -20,6 +20,7 @@ use std::str::FromStr;
 
 use elements::encode::Decodable;
 use elements::{confidential, secp256k1_zkp};
+use miniscript::TxEnv;
 
 use crate::miniscript::interpreter::KeySigPair; // secp256k1 re-exported from rust-bitcoin
 fn main() {
@@ -96,12 +97,12 @@ fn main() {
     spent_utxo.value = amount;
     // Create a spend utxos, since it is a segwit spend we don't really need all prevouts. Fill dummy data for this example instead
     let utxos = [spent_utxo, elements::TxOut::default()];
-    let prevouts = elements::sighash::Prevouts::All(&utxos);
+    let env = TxEnv::new(&transaction, &utxos, 0).expect("Input len == witness utxo len");
     // segwit spends don't require genesis hash
     let genesis_hash = elements::BlockHash::default();
 
     println!("\nExample two");
-    for elem in interpreter.iter(&secp, &transaction, 0, &prevouts, genesis_hash) {
+    for elem in interpreter.iter(&secp, &env, genesis_hash) {
         match elem.expect("no evaluation error") {
             miniscript::interpreter::SatisfiedConstraint::PublicKey { key_sig } => {
                 let (key, sig) = key_sig.as_ecdsa().unwrap();
@@ -124,11 +125,14 @@ fn main() {
     )
     .unwrap();
 
-    let iter = interpreter.iter_custom(Box::new(|key_sig: &KeySigPair| {
-        let (pk, ecdsa_sig) = key_sig.as_ecdsa().expect("Ecdsa Sig");
-        ecdsa_sig.1 == elements::EcdsaSigHashType::All
-            && secp.verify_ecdsa(&message, &ecdsa_sig.0, &pk.inner).is_ok()
-    }));
+    let iter = interpreter.iter_custom(
+        Box::new(|key_sig: &KeySigPair| {
+            let (pk, ecdsa_sig) = key_sig.as_ecdsa().expect("Ecdsa Sig");
+            ecdsa_sig.1 == elements::EcdsaSigHashType::All
+                && secp.verify_ecdsa(&message, &ecdsa_sig.0, &pk.inner).is_ok()
+        }),
+        None, // txenv
+    );
     println!("\nExample three");
     for elem in iter {
         let error = elem.expect_err("evaluation error");
