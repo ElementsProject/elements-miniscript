@@ -257,6 +257,8 @@ pub enum CovenantExt<T: ExtParam> {
     Csfs(CheckSigFromStack<T>),
     /// Arith opcodes
     Arith(Arith),
+    /// Cov opcodes
+    Introspect(CovOps<T>),
 }
 
 /// All known Extension parameters/arguments
@@ -393,6 +395,7 @@ macro_rules! all_arms_fn {
             CovenantExt::LegacyOutputsPref(p) => <LegacyOutputsPref as $trt>::$f(p, $($args, )*),
             CovenantExt::Csfs(csfs) => csfs.$f($($args, )*),
             CovenantExt::Arith(e) => e.$f($($args, )*),
+            CovenantExt::Introspect(e) => e.$f($($args, )*),
         }
     };
 }
@@ -409,7 +412,9 @@ macro_rules! try_from_arms {
             Ok(CovenantExt::Csfs(v))
         } else if let Ok(v) = <Arith as $trt>::$f($($args, )*) {
             Ok(CovenantExt::Arith(v))
-        } else {
+        } else if let Ok(v) = <CovOps<$ext_arg> as $trt>::$f($($args, )*) {
+            Ok(CovenantExt::Introspect(v))
+        }else {
             Err(())
         }
     };
@@ -478,6 +483,7 @@ impl<T: ExtParam> fmt::Display for CovenantExt<T> {
             CovenantExt::LegacyOutputsPref(p) => p.fmt(f),
             CovenantExt::Csfs(c) => c.fmt(f),
             CovenantExt::Arith(e) => e.fmt(f),
+            CovenantExt::Introspect(e) => e.fmt(f),
         }
     }
 }
@@ -510,6 +516,11 @@ where
                 }
                 CovenantExt::Arith(e) => {
                     CovenantExt::Arith(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(e, t)?)
+                }
+                CovenantExt::Introspect(e) => {
+                    CovenantExt::Introspect(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(
+                        e, t,
+                    )?)
                 }
             };
         Ok(ext)
