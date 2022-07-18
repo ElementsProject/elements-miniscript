@@ -91,6 +91,10 @@ pub enum Token<'s> {
     Xor,
     Invert,
     CurrInp,
+    InpAsset,
+    OutAsset,
+    OutSpk,
+    InpSpk,
 }
 
 impl<'s> fmt::Display for Token<'s> {
@@ -242,6 +246,18 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token<'_>>, Error> {
             }
             script::Instruction::Op(opcodes::all::OP_INSPECTOUTPUTVALUE) => {
                 ret.push(Token::OutValue);
+            }
+            script::Instruction::Op(opcodes::all::OP_INSPECTINPUTASSET) => {
+                ret.push(Token::InpAsset);
+            }
+            script::Instruction::Op(opcodes::all::OP_INSPECTOUTPUTASSET) => {
+                ret.push(Token::OutAsset);
+            }
+            script::Instruction::Op(opcodes::all::OP_INSPECTINPUTSCRIPTPUBKEY) => {
+                ret.push(Token::InpSpk);
+            }
+            script::Instruction::Op(opcodes::all::OP_INSPECTOUTPUTSCRIPTPUBKEY) => {
+                ret.push(Token::OutSpk);
             }
             script::Instruction::Op(opcodes::all::OP_INSPECTINPUTISSUANCE) => {
                 ret.push(Token::InpIssue);
