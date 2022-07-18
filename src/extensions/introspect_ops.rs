@@ -424,7 +424,11 @@ impl<T: ExtParam> Extension for CovOps<T> {
     fn extra_prop(&self) -> ExtData {
         ExtData {
             pk_cost: self.script_size(), // 1 opcodes, 1 key push, msg, 1 msg push
-            has_free_verify: false,
+            has_free_verify: if let CovOps::CurrIndEq(..) = self {
+                true
+            } else {
+                false
+            },
             stack_elem_count_sat: Some(0),
             stack_elem_count_dissat: Some(0),
             max_sat_size: Some((0, 0)),
