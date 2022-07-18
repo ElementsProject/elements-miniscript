@@ -197,60 +197,76 @@ fn test_descs(cl: &ElementsD, testdata: &TestData) {
     // X!: X-only key with corresponding secret key unknown
 
     // Test 1: Simple spend with internal key
-    let wit = test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num_eq(8,8)))");
+    let wit = test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_eq(8,8)))");
     assert!(wit.len() == 3);
 
-    let wit = test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),geq(9,8)))");
+    let wit = test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_geq(9,8)))");
     assert!(wit.len() == 3);
 
-    let wit = test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),ge(9,8)))");
+    let wit = test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_gt(9,8)))");
     assert!(wit.len() == 3);
 
     test_desc_satisfy(
         cl,
         testdata,
-        "tr(X!,and_v(v:pk(X1),ge(9223372036854775807,9223372036854775806)))",
+        "tr(X!,and_v(v:pk(X1),num64_gt(9223372036854775807,9223372036854775806)))",
     );
 
     test_desc_satisfy(
         cl,
         testdata,
-        "tr(X!,and_v(v:pk(X1),num_eq(inp_v(0),100000000)))",
+        "tr(X!,and_v(v:pk(X1),num64_eq(inp_v(0),100000000)))",
     );
     test_desc_satisfy(
         cl,
         testdata,
-        "tr(X!,and_v(v:pk(X1),num_eq(out_v(0),99997000)))",
+        "tr(X!,and_v(v:pk(X1),num64_eq(out_v(0),99997000)))",
     );
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num_eq(out_v(1),3000)))");
     test_desc_satisfy(
         cl,
         testdata,
-        "tr(X!,and_v(v:pk(X1),num_eq(inp_v(0),add(out_v(0),out_v(1)))))",
+        "tr(X!,and_v(v:pk(X1),num64_eq(out_v(1),3000)))",
     );
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),leq(-10,-10)))");
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),leq(-10,-10)))");
+    test_desc_satisfy(
+        cl,
+        testdata,
+        "tr(X!,and_v(v:pk(X1),num64_eq(inp_v(0),add(out_v(0),out_v(1)))))",
+    );
+    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_leq(-10,-10)))");
+    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_lt(-11,-10)))");
 
     test_desc_satisfy(
         cl,
         testdata,
-        "tr(X!,and_v(v:pk(X1),num_eq(add(6,2),mul(2,4))))",
+        "tr(X!,and_v(v:pk(X1),num64_eq(add(6,2),mul(2,4))))",
     );
     test_desc_satisfy(
         cl,
         testdata,
-        "tr(X!,and_v(v:pk(X1),num_eq(sub(3,3),div(0,9))))",
+        "tr(X!,and_v(v:pk(X1),num64_eq(sub(3,3),div(0,9))))",
     );
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num_eq(mod(9,3),0)))");
+    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_eq(mod(9,3),0)))");
     test_desc_satisfy(
         cl,
         testdata,
-        "tr(X!,and_v(v:pk(X1),num_eq(bitand(0,134),0)))",
+        "tr(X!,and_v(v:pk(X1),num64_eq(bitand(0,134),0)))",
     );
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num_eq(bitor(1,3),3)))");
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num_eq(bitxor(1,3),2)))");
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num_eq(bitinv(0),-1)))");
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num_eq(neg(1),-1)))");
+    test_desc_satisfy(
+        cl,
+        testdata,
+        "tr(X!,and_v(v:pk(X1),num64_eq(bitor(1,3),3)))",
+    );
+    test_desc_satisfy(
+        cl,
+        testdata,
+        "tr(X!,and_v(v:pk(X1),num64_eq(bitxor(1,3),2)))",
+    );
+    test_desc_satisfy(
+        cl,
+        testdata,
+        "tr(X!,and_v(v:pk(X1),num64_eq(bitinv(0),-1)))",
+    );
+    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_eq(neg(1),-1)))");
 }
 
 #[test]

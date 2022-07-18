@@ -526,15 +526,15 @@ pub enum Arith {
     /// Eq
     /// [X] [Y] EQUAL
     Eq(Expr, Expr),
-    /// Le
+    /// Lt
     /// [X] [Y] LESSTHAN
-    Le(Expr, Expr),
+    Lt(Expr, Expr),
     /// Leq
     /// [X] [Y] LESSTHANOREQUAL
     Leq(Expr, Expr),
-    /// Ge
+    /// Gt
     /// [X] [Y] GREATERTHAN
-    Ge(Expr, Expr),
+    Gt(Expr, Expr),
     /// Geq
     /// [X] [Y] GREATERTHANOREQUAL
     Geq(Expr, Expr),
@@ -545,9 +545,9 @@ impl Arith {
     pub fn depth(&self) -> usize {
         match self {
             Arith::Eq(x, y)
-            | Arith::Le(x, y)
+            | Arith::Lt(x, y)
             | Arith::Leq(x, y)
-            | Arith::Ge(x, y)
+            | Arith::Gt(x, y)
             | Arith::Geq(x, y) => cmp::max(x.depth, y.depth),
         }
     }
@@ -556,9 +556,9 @@ impl Arith {
     pub fn script_size(&self) -> usize {
         match self {
             Arith::Eq(x, y)
-            | Arith::Le(x, y)
+            | Arith::Lt(x, y)
             | Arith::Leq(x, y)
-            | Arith::Ge(x, y)
+            | Arith::Gt(x, y)
             | Arith::Geq(x, y) => x.script_size + y.script_size + 1,
         }
     }
@@ -572,9 +572,9 @@ impl Arith {
     ) -> Result<bool, EvalError> {
         let res = match self {
             Arith::Eq(x, y) => x.eval(curr_ind, tx, utxos)? == y.eval(curr_ind, tx, utxos)?,
-            Arith::Le(x, y) => x.eval(curr_ind, tx, utxos)? < y.eval(curr_ind, tx, utxos)?,
+            Arith::Lt(x, y) => x.eval(curr_ind, tx, utxos)? < y.eval(curr_ind, tx, utxos)?,
             Arith::Leq(x, y) => x.eval(curr_ind, tx, utxos)? <= y.eval(curr_ind, tx, utxos)?,
-            Arith::Ge(x, y) => x.eval(curr_ind, tx, utxos)? > y.eval(curr_ind, tx, utxos)?,
+            Arith::Gt(x, y) => x.eval(curr_ind, tx, utxos)? > y.eval(curr_ind, tx, utxos)?,
             Arith::Geq(x, y) => x.eval(curr_ind, tx, utxos)? >= y.eval(curr_ind, tx, utxos)?,
         };
         Ok(res)
@@ -588,7 +588,7 @@ impl Arith {
                 let builder = y.push_to_builder(builder);
                 builder.push_opcode(OP_EQUAL)
             }
-            Arith::Le(x, y) => {
+            Arith::Lt(x, y) => {
                 let builder = x.push_to_builder(builder);
                 let builder = y.push_to_builder(builder);
                 builder.push_opcode(OP_LESSTHAN64)
@@ -598,7 +598,7 @@ impl Arith {
                 let builder = y.push_to_builder(builder);
                 builder.push_opcode(OP_LESSTHANOREQUAL64)
             }
-            Arith::Ge(x, y) => {
+            Arith::Gt(x, y) => {
                 let builder = x.push_to_builder(builder);
                 let builder = y.push_to_builder(builder);
                 builder.push_opcode(OP_GREATERTHAN64)
@@ -623,9 +623,9 @@ impl Arith {
         let (x, pos) = Expr::from_tokens(tokens, pos)?;
         match last_opcode {
             Tk::Equal => Some((Self::Eq(x, y), pos)),
-            Tk::Le64 => Some((Self::Le(x, y), pos)),
+            Tk::Le64 => Some((Self::Lt(x, y), pos)),
             Tk::Leq64 => Some((Self::Leq(x, y), pos)),
-            Tk::Ge64 => Some((Self::Ge(x, y), pos)),
+            Tk::Ge64 => Some((Self::Gt(x, y), pos)),
             Tk::Geq64 => Some((Self::Geq(x, y), pos)),
             _ => None,
         }
@@ -770,12 +770,12 @@ impl FromTree for Box<Arith> {
 impl FromTree for Arith {
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
-            // Disambiguiate with num_eq to avoid confusion with asset_eq
-            ("num_eq", 2) => expression::binary(top, Arith::Eq),
-            ("geq", 2) => expression::binary(top, Arith::Geq),
-            ("ge", 2) => expression::binary(top, Arith::Ge),
-            ("le", 2) => expression::binary(top, Arith::Le),
-            ("leq", 2) => expression::binary(top, Arith::Leq),
+            // Disambiguiate with num64_eq to avoid confusion with asset_eq
+            ("num64_eq", 2) => expression::binary(top, Arith::Eq),
+            ("num64_geq", 2) => expression::binary(top, Arith::Geq),
+            ("num64_gt", 2) => expression::binary(top, Arith::Gt),
+            ("num64_lt", 2) => expression::binary(top, Arith::Lt),
+            ("num64_leq", 2) => expression::binary(top, Arith::Leq),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
                 top.name,
@@ -788,11 +788,11 @@ impl FromTree for Arith {
 impl fmt::Display for Arith {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
-            Arith::Eq(x, y) => write!(f, "num_eq({},{})", x, y),
-            Arith::Leq(x, y) => write!(f, "leq({},{})", x, y),
-            Arith::Le(x, y) => write!(f, "le({},{})", x, y),
-            Arith::Geq(x, y) => write!(f, "geq({},{})", x, y),
-            Arith::Ge(x, y) => write!(f, "ge({},{})", x, y),
+            Arith::Eq(x, y) => write!(f, "num64_eq({},{})", x, y),
+            Arith::Leq(x, y) => write!(f, "num64_leq({},{})", x, y),
+            Arith::Lt(x, y) => write!(f, "num64_lt({},{})", x, y),
+            Arith::Geq(x, y) => write!(f, "num64_geq({},{})", x, y),
+            Arith::Gt(x, y) => write!(f, "num64_gt({},{})", x, y),
         }
     }
 }
@@ -800,11 +800,11 @@ impl fmt::Display for Arith {
 impl fmt::Debug for Arith {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
-            Arith::Eq(x, y) => write!(f, "num_eq({:?},{:?})", x, y),
-            Arith::Leq(x, y) => write!(f, "leq({:?},{:?})", x, y),
-            Arith::Le(x, y) => write!(f, "le({:?},{:?})", x, y),
-            Arith::Geq(x, y) => write!(f, "geq({:?},{:?})", x, y),
-            Arith::Ge(x, y) => write!(f, "ge({:?},{:?})", x, y),
+            Arith::Eq(x, y) => write!(f, "num64_eq({:?},{:?})", x, y),
+            Arith::Leq(x, y) => write!(f, "num64_leq({:?},{:?})", x, y),
+            Arith::Lt(x, y) => write!(f, "num64_lt({:?},{:?})", x, y),
+            Arith::Geq(x, y) => write!(f, "num64_geq({:?},{:?})", x, y),
+            Arith::Gt(x, y) => write!(f, "num64_gt({:?},{:?})", x, y),
         }
     }
 }
@@ -1065,37 +1065,39 @@ mod tests {
     #[test]
     fn arith_parse() {
         // This does not test the evaluation
-        _arith_parse("num_eq(8,8)");
-        _arith_parse("ge(9223372036854775807,9223372036854775806)"); // 2**63-1
+        _arith_parse("num64_eq(8,8)");
+        _arith_parse("num64_gt(9223372036854775807,9223372036854775806)"); // 2**63-1
 
         // negatives and comparisons
-        _arith_parse("num_eq(-8,-8)"); // negative nums
-        _arith_parse("ge(-8,-9)");
-        _arith_parse("geq(-8,-8)");
-        _arith_parse("leq(-8,-7)");
-        _arith_parse("le(-8,-7)");
+        _arith_parse("num64_eq(-8,-8)"); // negative nums
+        _arith_parse("num64_gt(-8,-9)");
+        _arith_parse("num64_geq(-8,-8)");
+        _arith_parse("num64_leq(-8,-7)");
+        _arith_parse("num64_lt(-8,-7)");
 
         // test terminals parsing
-        _arith_parse("num_eq(inp_v(0),100)");
-        _arith_parse("num_eq(out_v(0),100)");
-        _arith_parse("num_eq(inp_issue_v(0),100)");
-        _arith_parse("num_eq(inp_reissue_v(0),100)");
-        _arith_parse("num_eq(inp_v(0),out_v(0))");
-        _arith_parse("num_eq(inp_issue_v(1),inp_reissue_v(1))");
+        _arith_parse("num64_eq(inp_v(0),100)");
+        _arith_parse("num64_eq(out_v(0),100)");
+        _arith_parse("num64_eq(inp_issue_v(0),100)");
+        _arith_parse("num64_eq(inp_reissue_v(0),100)");
+        _arith_parse("num64_eq(inp_v(0),out_v(0))");
+        _arith_parse("num64_eq(inp_issue_v(1),inp_reissue_v(1))");
 
         // test combinator
-        _arith_parse("num_eq(add(4,3),mul(1,7))");
-        _arith_parse("num_eq(sub(3,3),div(0,9))");
-        _arith_parse("num_eq(mod(9,3),0)");
-        _arith_parse("num_eq(bitand(0,134),0)");
-        _arith_parse("num_eq(bitor(1,3),3)");
-        _arith_parse("num_eq(bitxor(1,3),2)");
-        _arith_parse("num_eq(bitinv(0),-9223372036854775808)");
-        _arith_parse("num_eq(neg(1),-1)");
+        _arith_parse("num64_eq(add(4,3),mul(1,7))");
+        _arith_parse("num64_eq(sub(3,3),div(0,9))");
+        _arith_parse("num64_eq(mod(9,3),0)");
+        _arith_parse("num64_eq(bitand(0,134),0)");
+        _arith_parse("num64_eq(bitor(1,3),3)");
+        _arith_parse("num64_eq(bitxor(1,3),2)");
+        _arith_parse("num64_eq(bitinv(0),-9223372036854775808)");
+        _arith_parse("num64_eq(neg(1),-1)");
 
         // test some misc combinations with other miniscript fragments
-        _arith_parse("and_v(v:pk(K),ge(8,7))");
-        _arith_parse("and_v(v:pk(K),num_eq(mul(inp_v(0),out_v(1)),sub(add(3,inp_issue_v(1)),-9)))");
+        _arith_parse("and_v(v:pk(K),num64_gt(8,7))");
+        _arith_parse(
+            "and_v(v:pk(K),num64_eq(mul(inp_v(0),out_v(1)),sub(add(3,inp_issue_v(1)),-9)))",
+        );
     }
 
     fn _arith_parse(s: &str) {
