@@ -476,9 +476,7 @@ impl Expr {
         } else if let Some(&[Tk::CurrInp, Tk::InpValue, Tk::Num(1), Tk::Equal, Tk::Verify]) =
             tks.get(e.checked_sub(5)?..e)
         {
-            let (x, end_pos) = Self::from_tokens(tokens, e - 5)?;
-            let expr = Expr::from_inner(ExprInner::Negate(Box::new(x)));
-            Some((expr, end_pos))
+            Some((Expr::from_inner(ExprInner::CurrInputIdx), e - 5))
         } else if let Some(&[Tk::Div64, Tk::Num(1), Tk::Equal, Tk::Verify, Tk::Nip]) =
             tks.get(e.checked_sub(5)?..e)
         {
@@ -1064,6 +1062,7 @@ mod tests {
 
     #[test]
     fn arith_parse() {
+        _arith_parse("num64_gt(curr_inp_v,mul(1,out_v(0)))");
         // This does not test the evaluation
         _arith_parse("num64_eq(8,8)");
         _arith_parse("num64_gt(9223372036854775807,9223372036854775806)"); // 2**63-1
