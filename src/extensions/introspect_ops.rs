@@ -168,24 +168,22 @@ impl<T: ExtParam> fmt::Debug for AssetExpr<T> {
     }
 }
 
-impl<T: ExtParam> FromStr for AssetExpr<T> {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+impl<T: ExtParam> ArgFromStr for AssetExpr<T> {
+    fn arg_from_str(s: &str, parent: &str, pos: usize) -> Result<Self, Error> {
         let top = expression::Tree::from_str(s)?;
-        Self::from_tree(&top)
+        Self::from_tree_parent(&top, parent, pos)
     }
 }
 
-impl<T: ExtParam> FromTree for AssetExpr<T> {
-    fn from_tree(top: &Tree<'_>) -> Result<Self, Error> {
+impl<T: ExtParam> AssetExpr<T> {
+    fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("curr_inp_asset", 0) => Ok(AssetExpr::CurrInputAsset),
             ("inp_asset", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
                 .map(AssetExpr::Input),
             ("out_asset", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
                 .map(AssetExpr::Output),
-            (asset, 0) => Ok(AssetExpr::Const(T::arg_from_str(asset, "", 0)?)),
+            (asset, 0) => Ok(AssetExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
                 top.name,
@@ -244,24 +242,22 @@ impl<T: ExtParam> fmt::Debug for ValueExpr<T> {
     }
 }
 
-impl<T: ExtParam> FromStr for ValueExpr<T> {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+impl<T: ExtParam> ArgFromStr for ValueExpr<T> {
+    fn arg_from_str(s: &str, parent: &str, pos: usize) -> Result<Self, Error> {
         let top = expression::Tree::from_str(s)?;
-        Self::from_tree(&top)
+        Self::from_tree_parent(&top, parent, pos)
     }
 }
 
-impl<T: ExtParam> FromTree for ValueExpr<T> {
-    fn from_tree(top: &Tree<'_>) -> Result<Self, Error> {
+impl<T: ExtParam> ValueExpr<T> {
+    fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("curr_inp_value", 0) => Ok(ValueExpr::CurrInputValue),
             ("inp_value", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
                 .map(ValueExpr::Input),
             ("out_value", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
                 .map(ValueExpr::Output),
-            (value, 0) => Ok(ValueExpr::Const(T::arg_from_str(value, "", 0)?)),
+            (value, 0) => Ok(ValueExpr::Const(T::arg_from_str(value, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
                 top.name,
@@ -320,24 +316,22 @@ impl<T: ExtParam> fmt::Debug for SpkExpr<T> {
     }
 }
 
-impl<T: ExtParam> FromStr for SpkExpr<T> {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+impl<T: ExtParam> ArgFromStr for SpkExpr<T> {
+    fn arg_from_str(s: &str, parent: &str, pos: usize) -> Result<Self, Error> {
         let top = expression::Tree::from_str(s)?;
-        Self::from_tree(&top)
+        Self::from_tree_parent(&top, parent, pos)
     }
 }
 
-impl<T: ExtParam> FromTree for SpkExpr<T> {
-    fn from_tree(top: &Tree<'_>) -> Result<Self, Error> {
+impl<T: ExtParam> SpkExpr<T> {
+    fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("curr_inp_spk", 0) => Ok(SpkExpr::CurrInputSpk),
             ("inp_spk", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
                 .map(SpkExpr::Input),
             ("out_spk", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
                 .map(SpkExpr::Output),
-            (asset, 0) => Ok(SpkExpr::Const(T::arg_from_str(asset, "", 0)?)),
+            (asset, 0) => Ok(SpkExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
                 top.name,
@@ -385,11 +379,27 @@ impl<T: ExtParam> FromStr for CovOps<T> {
 impl<T: ExtParam> FromTree for CovOps<T> {
     fn from_tree(top: &Tree<'_>) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
-            ("is_exp_asset", 1) => expression::unary(top, CovOps::IsExpAsset),
-            ("is_exp_value", 1) => expression::unary(top, CovOps::IsExpValue),
-            ("asset_eq", 2) => expression::binary(top, CovOps::AssetEq),
-            ("value_eq", 2) => expression::binary(top, CovOps::ValueEq),
-            ("spk_eq", 2) => expression::binary(top, CovOps::SpkEq),
+            ("is_exp_asset", 1) => {
+                AssetExpr::from_tree_parent(&top.args[0], &top.name, 0).map(CovOps::IsExpAsset)
+            }
+            ("is_exp_value", 1) => {
+                ValueExpr::from_tree_parent(&top.args[0], &top.name, 0).map(CovOps::IsExpValue)
+            }
+            ("asset_eq", 2) => {
+                let l = AssetExpr::from_tree_parent(&top.args[0], &top.name, 0)?;
+                let r = AssetExpr::from_tree_parent(&top.args[1], &top.name, 1)?;
+                Ok(CovOps::AssetEq(l, r))
+            }
+            ("value_eq", 2) => {
+                let l = ValueExpr::from_tree_parent(&top.args[0], &top.name, 0)?;
+                let r = ValueExpr::from_tree_parent(&top.args[1], &top.name, 1)?;
+                Ok(CovOps::ValueEq(l, r))
+            }
+            ("spk_eq", 2) => {
+                let l = SpkExpr::from_tree_parent(&top.args[0], &top.name, 0)?;
+                let r = SpkExpr::from_tree_parent(&top.args[1], &top.name, 1)?;
+                Ok(CovOps::SpkEq(l, r))
+            }
             ("curr_idx_eq", 1) => {
                 expression::terminal(&top.args[0], expression::parse_num::<usize>)
                     .map(CovOps::CurrIndEq)
@@ -1148,6 +1158,16 @@ mod tests {
         _test_parse("and_v(v:pk(K),and_v(v:value_eq(ConfVal,ConfVal),and_v(v:spk_eq(V1Spk,V1Spk),curr_idx_eq(1))))");
     }
 
+    #[test]
+    fn options_fail_test() {
+        type MsExt = Miniscript<XOnlyPublicKey, Tap, CovOps<CovExtArgs>>;
+
+        // 33 bytes explicit asset succeeds
+        MsExt::from_str_insane("asset_eq(out_asset(0),0179d51a47e4ac8e32306486dd0926a88678c392f2ed5f213e3ff2ad461c7c25e1)").unwrap();
+        // 32 bytes explicit asset without prefix fails
+        MsExt::from_str_insane("asset_eq(out_asset(0),79d51a47e4ac8e32306486dd0926a88678c392f2ed5f213e3ff2ad461c7c25e1)").unwrap_err();
+    }
+
     #[rustfmt::skip]
     fn _test_parse(s: &str) {
         type MsExtStr = Miniscript<String, Tap, CovOps<String>>;
@@ -1174,5 +1194,7 @@ mod tests {
         let ms = ms.translate_ext(&mut ext_t).unwrap();
         // script rtt
         assert_eq!(ms.encode(), MsExt::parse_insane(&ms.encode()).unwrap().encode());
+        // String rtt of the translated script
+        assert_eq!(ms, MsExt::from_str_insane(&ms.to_string()).unwrap())
     }
 }
