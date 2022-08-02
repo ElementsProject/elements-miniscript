@@ -44,13 +44,13 @@ To use these with miniscript fragments, we can use them inside comparison extens
 
 Name                                    | Script
 ---                                     | ---
-num_eq(NumExpr_X,NumExpr_Y)             | `[NumExpr_X] [NumExpr_Y] EQUAL64`
-le(NumExpr_X,NumExpr_Y)                 | `[NumExpr_X] [NumExpr_Y] LESSTHAN64`
-ge(NumExpr_X,NumExpr_Y)                 | `[NumExpr_X] [NumExpr_Y] GREATERTHAN64`
-leq(NumExpr_X,NumExpr_Y)                | `[NumExpr_X] [NumExpr_Y] LESSTHANOREQUAL64`
-geq(NumExpr_X,NumExpr_Y)                | `[NumExpr_X] [NumExpr_Y] GREATERTHANOREQUAL64`
+num64_eq(NumExpr_X,NumExpr_Y)           | `[NumExpr_X] [NumExpr_Y] EQUAL`
+num64_le(NumExpr_X,NumExpr_Y)           | `[NumExpr_X] [NumExpr_Y] LESSTHAN64`
+num64_ge(NumExpr_X,NumExpr_Y)           | `[NumExpr_X] [NumExpr_Y] GREATERTHAN64`
+num64_leq(NumExpr_X,NumExpr_Y)          | `[NumExpr_X] [NumExpr_Y] LESSTHANOREQUAL64`
+num64_geq(NumExpr_X,NumExpr_Y)          | `[NumExpr_X] [NumExpr_Y] GREATERTHANOREQUAL64`
 
-- For example, `num_eq(inp_v(1),mul(curr_inp_v,20))` represents second input value is the multiplication of
+- For example, `num64_eq(inp_v(1),mul(curr_inp_v,20))` represents second input value is the multiplication of
 current input value and fourth output value. This would abort if any of the values are confidential.
 
 ### Tx Value introspection

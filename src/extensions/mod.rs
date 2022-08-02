@@ -4,6 +4,8 @@
 
 use std::{fmt, hash};
 
+use bitcoin::hashes::hex::ToHex;
+use elements::encode::serialize;
 use elements::script::Builder;
 use elements::{confidential, Transaction, TxOut};
 
@@ -354,8 +356,8 @@ impl fmt::Display for CovExtArgs {
         match self {
             CovExtArgs::XOnlyKey(x) => write!(f, "{}", x),
             CovExtArgs::CsfsMsg(m) => write!(f, "{}", m),
-            CovExtArgs::Asset(a) => write!(f, "{}", a),
-            CovExtArgs::Value(v) => write!(f, "{}", v),
+            CovExtArgs::Asset(a) => write!(f, "{}", serialize(a).to_hex()),
+            CovExtArgs::Value(v) => write!(f, "{}", serialize(v).to_hex()),
             CovExtArgs::Script(s) => write!(f, "{}", s),
         }
     }
