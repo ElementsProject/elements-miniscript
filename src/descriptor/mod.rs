@@ -442,7 +442,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> Descriptor<Pk, Ext> {
             },
             Descriptor::LegacyCSFSCov(ref _cov) => DescriptorType::Cov,
             Descriptor::Tr(ref _tr) => DescriptorType::Tr,
-            Descriptor::TrExt(ref _tr) => DescriptorType::Cov,
+            Descriptor::TrExt(ref _tr) => DescriptorType::Tr,
         }
     }
 
