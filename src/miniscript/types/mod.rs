@@ -554,7 +554,8 @@ impl Property for Type {
         debug_assert!(!self.corr.dissatisfiable || self.mall.dissat != Dissat::None);
         debug_assert!(self.mall.dissat == Dissat::None || self.corr.base != Base::V);
         debug_assert!(self.mall.safe || self.corr.base != Base::K);
-        debug_assert!(self.mall.non_malleable || self.corr.input != Input::Zero);
+        // Not true for covenant scripts. Covenant scripts have zero inputs, but are still malleable
+        // debug_assert!(self.mall.non_malleable || self.corr.input != Input::Zero);
     }
 
     fn from_true() -> Self {

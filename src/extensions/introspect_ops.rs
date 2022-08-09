@@ -428,7 +428,7 @@ impl<T: ExtParam> Extension for CovOps<T> {
         Malleability {
             dissat: Dissat::Unknown, // many dissatisfactions possible
             safe: false,             // Unsafe as a top fragment
-            non_malleable: true,
+            non_malleable: true, // Script satisfaction is non-malleable, whole fragment tx could be malleable
         }
     }
 

@@ -821,7 +821,8 @@ impl Extension for Arith {
         Malleability {
             dissat: Dissat::Unknown, // many dissatisfactions possible
             safe: false,             // Unsafe as a top fragment
-            non_malleable: true,
+            non_malleable: true, // There can exist multiple satisfactions for expressions. inp_v(0) = out_v(0), but
+                                 // we only deal with script satisfactions here.
         }
     }
 
