@@ -973,24 +973,45 @@ impl CovOps<CovExtArgs> {
             &[Tk::FromAltStack, Tk::Equal, Tk::ToAltStack, Tk::Equal, Tk::FromAltStack, Tk::BoolAnd],
         ) = tks.get(e.checked_sub(6)?..e)
         {
-            if let Some((y, e)) = AssetExpr::from_tokens(tks, e - 6) {
+            let res = if let Some((y, e)) = AssetExpr::from_tokens(tks, e - 6) {
                 if tks.get(e - 1) != Some(&Tk::ToAltStack) {
                     return None;
                 }
-                let (x, e) = AssetExpr::from_tokens(tks, e - 1)?;
-                Some((CovOps::AssetEq(x, y), e))
-            } else if let Some((y, e)) = ValueExpr::from_tokens(tks, e - 6) {
+                if let Some((x, e)) = AssetExpr::from_tokens(tks, e - 1) {
+                    Some((CovOps::AssetEq(x, y), e))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if res.is_some() {
+                return res;
+            }
+            let res = if let Some((y, e)) = ValueExpr::from_tokens(tks, e - 6) {
                 if tks.get(e - 1) != Some(&Tk::ToAltStack) {
                     return None;
                 }
-                let (x, e) = ValueExpr::from_tokens(tks, e - 1)?;
-                Some((CovOps::ValueEq(x, y), e))
-            } else if let Some((y, e)) = SpkExpr::from_tokens(tks, e - 6) {
+                if let Some((x, e)) = ValueExpr::from_tokens(tks, e - 1) {
+                    Some((CovOps::ValueEq(x, y), e))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if res.is_some() {
+                return res;
+            }
+            if let Some((y, e)) = SpkExpr::from_tokens(tks, e - 6) {
                 if tks.get(e - 1) != Some(&Tk::ToAltStack) {
                     return None;
                 }
-                let (x, e) = SpkExpr::from_tokens(tks, e - 1)?;
-                Some((CovOps::SpkEq(x, y), e))
+                if let Some((x, e)) = SpkExpr::from_tokens(tks, e - 1) {
+                    Some((CovOps::SpkEq(x, y), e))
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -1174,6 +1195,7 @@ mod tests {
         _test_parse("spk_eq(V1Spk,inp_spk(1))");
         _test_parse("spk_eq(curr_inp_spk,out_spk(1))");
         _test_parse("spk_eq(inp_spk(3),out_spk(1))");
+        _test_parse("spk_eq(out_spk(2),V1Spk)");
 
         // Testing the current input index
         _test_parse("curr_idx_eq(1)");
