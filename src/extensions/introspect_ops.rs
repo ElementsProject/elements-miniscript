@@ -868,6 +868,9 @@ impl SpkExpr<CovExtArgs> {
         if let Some(&[Tk::Bytes32(spk_vec), Tk::Num(i)]) = tks.get(e.checked_sub(2)?..e) {
             let script = spk(i8::try_from(i).ok()?, spk_vec)?;
             Some((SpkExpr::Const(CovExtArgs::Script(Spk(script))), e - 2))
+        } else if let Some(&[Tk::Bytes32(spk_vec), Tk::NumNeg1]) = tks.get(e.checked_sub(2)?..e) {
+            let script = spk(-1, spk_vec)?;
+            Some((SpkExpr::Const(CovExtArgs::Script(Spk(script))), e - 2))
         } else if let Some(&[Tk::Push(ref spk_vec), Tk::Num(i)]) = tks.get(e.checked_sub(2)?..e) {
             let script = spk(i8::try_from(i).ok()?, spk_vec)?;
             Some((SpkExpr::Const(CovExtArgs::Script(Spk(script))), e - 2))
