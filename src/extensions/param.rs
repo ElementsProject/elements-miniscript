@@ -6,7 +6,7 @@ use bitcoin::hashes::hex::ToHex;
 use elements::confidential;
 use elements::encode::serialize;
 
-use crate::Error;
+use crate::{Error, ExtTranslator};
 use super::csfs::{CsfsKey, CsfsMsg};
 use super::introspect_ops::Spk;
 
@@ -174,5 +174,46 @@ impl ArgFromStr for CovExtArgs {
         };
         Ok(arg)
     }
+}
+
+/// Trait for translating different parameter types for covenant extensions
+pub trait ExtParamTranslator<PArg, QArg, E>
+where
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    /// Translates one extension to another
+    fn ext(&mut self, e: &PArg) -> Result<QArg, E>;
+}
+
+// Use ExtParamTranslator as a ExTTranslator
+impl<T, PArg, QArg, E> ExtTranslator<PArg, QArg, E> for T
+where
+    T: ExtParamTranslator<PArg, QArg, E>,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    /// Translates one extension to another
+    fn ext(&mut self, e: &PArg) -> Result<QArg, E> {
+        ExtParamTranslator::ext(self, e)
+    }
+}
+
+
+/// Converts a descriptor using abstract extension parameters to one using concrete ones,
+/// or vice-versa
+pub trait TranslateExtParam<PArg, QArg>
+where
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    /// The associated output type.
+    type Output;
+
+    /// Translates a struct from one generic to another where the translations
+    /// for Pk are provided by the given [`Translator`].
+    fn translate_ext<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtParamTranslator<PArg, QArg, E>;
 }
 

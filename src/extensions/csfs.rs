@@ -10,6 +10,7 @@ use elements::hashes::hex;
 use elements::{self, opcodes, secp256k1_zkp};
 
 use super::{ArgFromStr, CovExtArgs, ExtParam, ParseableExt, TxEnv};
+use super::param::{ExtParamTranslator, TranslateExtParam};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::limits::MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
@@ -307,6 +308,26 @@ where
     fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
         T: ExtTranslator<PArg, QArg, E>,
+        PArg: ExtParam,
+        QArg: ExtParam,
+    {
+        Ok(CheckSigFromStack {
+            pk: t.ext(&self.pk)?,
+            msg: t.ext(&self.msg)?,
+        })
+    }
+}
+
+impl<PArg, QArg> TranslateExtParam<PArg, QArg> for CheckSigFromStack<PArg>
+where
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    type Output = CheckSigFromStack<QArg>;
+
+    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtParamTranslator<PArg, QArg, E>,
         PArg: ExtParam,
         QArg: ExtParam,
     {

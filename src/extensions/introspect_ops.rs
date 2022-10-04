@@ -12,6 +12,7 @@ use elements::opcodes::all::*;
 use elements::{confidential, encode, script, Address, AddressParams};
 
 use super::{ArgFromStr, CovExtArgs, EvalError, ExtParam, ParseableExt, TxEnv};
+use super::param::{ExtParamTranslator, TranslateExtParam};
 use crate::expression::{FromTree, Tree};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -1094,6 +1095,32 @@ where
     fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
         T: ExtTranslator<PArg, QArg, E>,
+    {
+        match self {
+            CovOps::IsExpAsset(a) => Ok(CovOps::IsExpAsset(a._translate_ext(t)?)),
+            CovOps::IsExpValue(v) => Ok(CovOps::IsExpValue(v._translate_ext(t)?)),
+            CovOps::AssetEq(x, y) => {
+                Ok(CovOps::AssetEq(x._translate_ext(t)?, y._translate_ext(t)?))
+            }
+            CovOps::ValueEq(x, y) => {
+                Ok(CovOps::ValueEq(x._translate_ext(t)?, y._translate_ext(t)?))
+            }
+            CovOps::SpkEq(x, y) => Ok(CovOps::SpkEq(x._translate_ext(t)?, y._translate_ext(t)?)),
+            CovOps::CurrIndEq(i) => Ok(CovOps::CurrIndEq(*i)),
+        }
+    }
+}
+
+impl<PArg, QArg> TranslateExtParam<PArg, QArg> for CovOps<PArg>
+where
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    type Output = CovOps<QArg>;
+
+    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtParamTranslator<PArg, QArg, E>,
     {
         match self {
             CovOps::IsExpAsset(a) => Ok(CovOps::IsExpAsset(a._translate_ext(t)?)),
