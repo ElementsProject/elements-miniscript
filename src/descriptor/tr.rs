@@ -14,7 +14,7 @@ use elements::{self, opcodes, secp256k1_zkp, Script};
 use super::checksum::{desc_checksum, verify_checksum};
 use super::ELMTS_STR;
 use crate::expression::{self, FromTree};
-use crate::extensions::{ExtParam, ParseableExt};
+use crate::extensions::ParseableExt;
 use crate::miniscript::Miniscript;
 use crate::policy::semantic::Policy;
 use crate::policy::Liftable;
@@ -146,17 +146,11 @@ impl<Pk: MiniscriptKey, Ext: Extension> TapTree<Pk, Ext> {
     }
 
     // Helper function to translate extensions
-    fn translate_ext_helper<T, QExt, PArg, QArg, Error>(
-        &self,
-        t: &mut T,
-    ) -> Result<TapTree<Pk, QExt>, Error>
+    fn translate_ext_helper<T, QExt, Error>(&self, t: &mut T) -> Result<TapTree<Pk, QExt>, Error>
     where
-        T: crate::ExtTranslator<PArg, QArg, Error>,
+        T: crate::ExtTranslator<Ext, QExt, Error>,
         QExt: Extension,
-        Ext: Extension,
-        PArg: ExtParam,
-        QArg: ExtParam,
-        Ext: TranslateExt<Ext, QExt, PArg, QArg, Output = QExt>,
+        Ext: Extension + TranslateExt<Ext, QExt, Output = QExt>,
     {
         let frag = match self {
             TapTree::Tree(l, r) => TapTree::Tree(
@@ -653,20 +647,17 @@ where
     }
 }
 
-impl<PExt, QExt, PArg, QArg, Pk> TranslateExt<PExt, QExt, PArg, QArg> for Tr<Pk, PExt>
+impl<PExt, QExt, Pk> TranslateExt<PExt, QExt> for Tr<Pk, PExt>
 where
-    PExt: Extension,
+    PExt: Extension + TranslateExt<PExt, QExt, Output = QExt>,
     QExt: Extension,
-    PArg: ExtParam,
-    QArg: ExtParam,
     Pk: MiniscriptKey,
-    PExt: TranslateExt<PExt, QExt, PArg, QArg, Output = QExt>,
 {
     type Output = Tr<Pk, QExt>;
 
     fn translate_ext<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
     where
-        T: crate::ExtTranslator<PArg, QArg, E>,
+        T: crate::ExtTranslator<PExt, QExt, E>,
     {
         let translate_desc = Tr {
             internal_key: self.internal_key.clone(),

@@ -16,8 +16,8 @@ use crate::miniscript::satisfy::{Satisfaction, Witness};
 use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::{
-    expression, interpreter, miniscript, script_num_size, Error, ExtTranslator, Extension,
-    Satisfier, ToPublicKey, TranslateExt,
+    expression, interpreter, miniscript, script_num_size, Error, Extension, Satisfier, ToPublicKey,
+    TranslateExt,
 };
 
 /// Enum representing arithmetic operations with transaction amounts.
@@ -1035,29 +1035,12 @@ impl fmt::Display for EvalError {
     }
 }
 
-impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for Arith
-where
-    PExt: Extension,
-    QExt: Extension,
-    PArg: ExtParam,
-    QArg: ExtParam,
-{
-    type Output = Arith;
-
-    fn translate_ext<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
-    where
-        T: ExtTranslator<PArg, QArg, E>,
-    {
-        Ok(self.clone())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use bitcoin::XOnlyPublicKey;
 
     use super::*;
-    use crate::test_utils::{StrExtTransalator, StrXOnlyKeyTranslator};
+    use crate::test_utils::{StrExtTranslator, StrXOnlyKeyTranslator};
     use crate::{Miniscript, Segwitv0, Tap, TranslatePk};
 
     #[test]

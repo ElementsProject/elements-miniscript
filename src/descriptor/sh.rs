@@ -25,13 +25,12 @@ use elements::{self, script, secp256k1_zkp, Script};
 use super::checksum::{desc_checksum, verify_checksum};
 use super::{SortedMultiVec, Wpkh, Wsh, ELMTS_STR};
 use crate::expression::{self, FromTree};
-use crate::extensions::ExtParam;
 use crate::miniscript::context::ScriptContext;
 use crate::policy::{semantic, Liftable};
 use crate::util::{varint_len, witness_to_scriptsig};
 use crate::{
-    push_opcode_size, Error, Extension, ForEach, ForEachKey, Legacy, Miniscript, MiniscriptKey,
-    Satisfier, Segwitv0, ToPublicKey, TranslateExt, TranslatePk, Translator,
+    push_opcode_size, Error, ForEach, ForEachKey, Legacy, Miniscript, MiniscriptKey, Satisfier,
+    Segwitv0, ToPublicKey, TranslatePk, Translator,
 };
 
 /// A Legacy p2sh Descriptor
@@ -402,23 +401,5 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Sh<P> {
             ShInner::Ms(ref ms) => ShInner::Ms(ms.translate_pk(t)?),
         };
         Ok(Sh { inner })
-    }
-}
-
-impl<PExt, QExt, PArg, QArg, Pk> TranslateExt<PExt, QExt, PArg, QArg> for Sh<Pk>
-where
-    PExt: Extension,
-    QExt: Extension,
-    PArg: ExtParam,
-    QArg: ExtParam,
-    Pk: MiniscriptKey,
-{
-    type Output = Sh<Pk>;
-
-    fn translate_ext<T, E>(&self, _translator: &mut T) -> Result<Self::Output, E>
-    where
-        T: crate::ExtTranslator<PArg, QArg, E>,
-    {
-        Ok(self.clone())
     }
 }

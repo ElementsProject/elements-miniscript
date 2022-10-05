@@ -148,7 +148,7 @@ pub(super) fn prevouts(psbt: &Psbt) -> Result<Vec<elements::TxOut>, super::Error
 pub(super) fn get_descriptor(
     psbt: &Psbt,
     index: usize,
-) -> Result<Descriptor<PublicKey, CovExtArgs>, InputError> {
+) -> Result<Descriptor<PublicKey, CovenantExt<CovExtArgs>>, InputError> {
     // Figure out Scriptpubkey
     let script_pubkey = get_scriptpubkey(psbt, index)?;
     let inp = &psbt.inputs()[index];

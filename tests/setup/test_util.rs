@@ -26,9 +26,9 @@ use bitcoin::secp256k1;
 use elements::hashes::hex::FromHex;
 use elements::{confidential, encode, AddressParams, BlockHash};
 use miniscript::descriptor::{SinglePub, SinglePubKey};
-use miniscript::extensions::{CovExtArgs, CsfsKey, CsfsMsg};
+use miniscript::extensions::{param::ExtParamTranslator, CovExtArgs, CsfsKey, CsfsMsg};
 use miniscript::{
-    Descriptor, DescriptorPublicKey, ExtTranslator, Miniscript, ScriptContext, TranslateExt,
+    CovenantExt, Descriptor, DescriptorPublicKey, Miniscript, ScriptContext, TranslateExt,
     TranslatePk, Translator,
 };
 use rand::RngCore;
@@ -180,9 +180,9 @@ pub fn parse_insane_ms<Ctx: ScriptContext>(
 }
 
 /// Translate Abstract Str to Consensus Extensions
-struct StrExtTransalator<'a>(usize, &'a PubData);
+struct StrExtTranslator<'a>(usize, &'a PubData);
 
-impl<'a> ExtTranslator<String, CovExtArgs, ()> for StrExtTransalator<'a> {
+impl<'a> ExtParamTranslator<String, CovExtArgs, ()> for StrExtTranslator<'a> {
     fn ext(&mut self, e: &String) -> Result<CovExtArgs, ()> {
         if e.starts_with("msg") {
             Ok(CovExtArgs::CsfsMsg(self.1.msg.clone()))
@@ -310,10 +310,10 @@ impl<'a> Translator<String, DescriptorPublicKey, ()> for StrTranslatorLoose<'a> 
 // https://github.com/rust-lang/rust/issues/46379. The code is pub fn and integration test, but still shows warnings
 pub fn parse_test_desc(desc: &str, pubdata: &PubData) -> Descriptor<DescriptorPublicKey> {
     let desc = subs_hash_frag(desc, pubdata);
-    let desc = Descriptor::<String, String>::from_str(&desc)
+    let desc = Descriptor::<String, CovenantExt<String>>::from_str(&desc)
         .expect("only parsing valid and sane descriptors");
     let mut translator = StrDescPubKeyTranslator(0, pubdata);
-    let mut ext_trans = StrExtTransalator(0, pubdata);
+    let mut ext_trans = StrExtTranslator(0, pubdata);
     let desc: Result<_, ()> = desc.translate_pk(&mut translator);
     let desc = desc.expect("Translate Keys must succeed");
     let desc: Result<_, ()> = desc.translate_ext(&mut ext_trans);

@@ -28,7 +28,7 @@ use elements::hashes::{hash160, ripemd160, sha256d, Hash};
 use elements::{opcodes, script};
 
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
-use crate::extensions::{ExtParam, ParseableExt};
+use crate::extensions::ParseableExt;
 use crate::miniscript::context::SigType;
 use crate::miniscript::types::{self, Property};
 use crate::miniscript::ScriptContext;
@@ -77,21 +77,19 @@ where
     }
 }
 
-impl<Pk, Ctx, Ext, QExt, PArg, QArg> TranslateExt<Ext, QExt, PArg, QArg> for Terminal<Pk, Ctx, Ext>
+impl<Pk, Ctx, Ext, QExt> TranslateExt<Ext, QExt> for Terminal<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
     Ext: Extension,
     QExt: Extension,
-    Ext: TranslateExt<Ext, QExt, PArg, QArg, Output = QExt>,
-    PArg: ExtParam,
-    QArg: ExtParam,
+    Ext: TranslateExt<Ext, QExt, Output = QExt>,
 {
-    type Output = Terminal<Pk, Ctx, <Ext as TranslateExt<Ext, QExt, PArg, QArg>>::Output>;
+    type Output = Terminal<Pk, Ctx, <Ext as TranslateExt<Ext, QExt>>::Output>;
 
     fn translate_ext<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
     where
-        T: ExtTranslator<PArg, QArg, E>,
+        T: ExtTranslator<Ext, QExt, E>,
     {
         self.real_translate_ext(translator)
     }
@@ -225,16 +223,14 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
         Ok(frag)
     }
 
-    pub(super) fn real_translate_ext<T, E, ExtQ, PArg, QArg>(
+    pub(super) fn real_translate_ext<T, E, ExtQ>(
         &self,
         t: &mut T,
     ) -> Result<Terminal<Pk, Ctx, ExtQ>, E>
     where
         ExtQ: Extension,
-        T: ExtTranslator<PArg, QArg, E>,
-        Ext: TranslateExt<Ext, ExtQ, PArg, QArg, Output = ExtQ>,
-        PArg: ExtParam,
-        QArg: ExtParam,
+        T: ExtTranslator<Ext, ExtQ, E>,
+        Ext: TranslateExt<Ext, ExtQ, Output = ExtQ>,
     {
         let frag: Terminal<Pk, Ctx, ExtQ> = match *self {
             Terminal::PkK(ref p) => Terminal::PkK(p.clone()),

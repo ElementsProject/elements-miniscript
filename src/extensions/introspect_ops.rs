@@ -11,6 +11,7 @@ use elements::confidential::Asset;
 use elements::opcodes::all::*;
 use elements::{confidential, encode, script, Address, AddressParams};
 
+use super::param::{ExtParamTranslator, TranslateExtParam};
 use super::{ArgFromStr, CovExtArgs, EvalError, ExtParam, ParseableExt, TxEnv};
 use crate::expression::{FromTree, Tree};
 use crate::miniscript::context::ScriptContextError;
@@ -133,7 +134,7 @@ impl<T: ExtParam> AssetExpr<T> {
     /// Returns the extention translation from AssetExpr<T> to AssetExpr<Q>
     fn _translate_ext<Q, E, Ext>(&self, t: &mut Ext) -> Result<AssetExpr<Q>, E>
     where
-        Ext: ExtTranslator<T, Q, E>,
+        Ext: ExtParamTranslator<T, Q, E>,
         Q: ExtParam,
     {
         let res = match self {
@@ -207,7 +208,7 @@ impl<T: ExtParam> ValueExpr<T> {
     /// Returns the extention translation from ValueExpr<T> to ValueExpr<Q>
     fn _translate_ext<Q, E, Ext>(&self, t: &mut Ext) -> Result<ValueExpr<Q>, E>
     where
-        Ext: ExtTranslator<T, Q, E>,
+        Ext: ExtParamTranslator<T, Q, E>,
         Q: ExtParam,
     {
         let res = match self {
@@ -281,7 +282,7 @@ impl<T: ExtParam> SpkExpr<T> {
     /// Returns the extention translation from SpkExpr<T> to SpkExpr<Q>
     fn _translate_ext<Q, E, Ext>(&self, t: &mut Ext) -> Result<SpkExpr<Q>, E>
     where
-        Ext: ExtTranslator<T, Q, E>,
+        Ext: ExtParamTranslator<T, Q, E>,
         Q: ExtParam,
     {
         let res = match self {
@@ -481,6 +482,36 @@ impl<T: ExtParam> Extension for CovOps<T> {
         Err(ScriptContextError::ExtensionError(
             "Introspection opcodes only available in Taproot".to_string(),
         ))
+    }
+}
+
+impl<PArg, QArg> TranslateExt<CovOps<PArg>, CovOps<QArg>> for CovOps<PArg>
+where
+    CovOps<PArg>: Extension,
+    CovOps<QArg>: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    type Output = CovOps<QArg>;
+
+    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtTranslator<CovOps<PArg>, CovOps<QArg>, E>,
+    {
+        t.ext(self)
+    }
+}
+
+// Use ExtParamTranslator as a ExtTranslator
+impl<T, PArg, QArg, E> ExtTranslator<CovOps<PArg>, CovOps<QArg>, E> for T
+where
+    T: ExtParamTranslator<PArg, QArg, E>,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    /// Translates one extension to another
+    fn ext(&mut self, cov_ops: &CovOps<PArg>) -> Result<CovOps<QArg>, E> {
+        TranslateExtParam::translate_ext(cov_ops, self)
     }
 }
 
@@ -1082,10 +1113,8 @@ impl ParseableExt for CovOps<CovExtArgs> {
     }
 }
 
-impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for CovOps<PArg>
+impl<PArg, QArg> TranslateExtParam<PArg, QArg> for CovOps<PArg>
 where
-    PExt: Extension,
-    QExt: Extension,
     PArg: ExtParam,
     QArg: ExtParam,
 {
@@ -1093,7 +1122,7 @@ where
 
     fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        T: ExtTranslator<PArg, QArg, E>,
+        T: ExtParamTranslator<PArg, QArg, E>,
     {
         match self {
             CovOps::IsExpAsset(a) => Ok(CovOps::IsExpAsset(a._translate_ext(t)?)),
@@ -1115,7 +1144,7 @@ mod tests {
     use bitcoin::XOnlyPublicKey;
 
     use super::*;
-    use crate::test_utils::{StrExtTransalator, StrXOnlyKeyTranslator};
+    use crate::test_utils::{StrExtTranslator, StrXOnlyKeyTranslator};
     use crate::{Miniscript, Segwitv0, Tap, TranslatePk};
 
     #[test]
@@ -1181,7 +1210,7 @@ mod tests {
         // test string rtt
         assert_eq!(ms.to_string(), s);
         let mut t = StrXOnlyKeyTranslator::default();
-        let mut ext_t = StrExtTransalator::default();
+        let mut ext_t = StrExtTranslator::default();
         {
             ext_t.ext_map.insert("V1Spk".to_string(),CovExtArgs::spk(elements::Script::from_str("5120c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0").unwrap()));
             ext_t.ext_map.insert("V0Spk".to_string(),CovExtArgs::spk(elements::Script::from_str("0020c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0").unwrap()));
@@ -1190,8 +1219,8 @@ mod tests {
             ext_t.ext_map.insert("ConfVal".to_string(),CovExtArgs::value(encode::deserialize(&Vec::<u8>::from_hex("09def814ab021498562ab4717287305d3f7abb5686832fe6183e1db495abef7cc7").unwrap()).unwrap()));
             ext_t.ext_map.insert("ExpVal".to_string(),CovExtArgs::value(encode::deserialize(&Vec::<u8>::from_hex("010000000011110000").unwrap()).unwrap()));
         }
-        let ms = ms.translate_pk(&mut t).unwrap();
-        let ms = ms.translate_ext(&mut ext_t).unwrap();
+        let ms: Miniscript<XOnlyPublicKey, Tap, CovOps<String>> = ms.translate_pk(&mut t).unwrap();
+        let ms: Miniscript<XOnlyPublicKey, Tap, CovOps<CovExtArgs>> = ms.translate_ext(&mut ext_t).unwrap();
         // script rtt
         assert_eq!(ms.encode(), MsExt::parse_insane(&ms.encode()).unwrap().encode());
         // String rtt of the translated script

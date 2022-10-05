@@ -9,6 +9,7 @@ use bitcoin::XOnlyPublicKey;
 use elements::hashes::hex;
 use elements::{self, opcodes, secp256k1_zkp};
 
+use super::param::{ExtParamTranslator, TranslateExtParam};
 use super::{ArgFromStr, CovExtArgs, ExtParam, ParseableExt, TxEnv};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -110,6 +111,37 @@ impl<T: ExtParam> Extension for CheckSigFromStack<T> {
             // Correct error handling while parsing fromtree
             Err(())
         }
+    }
+}
+
+impl<PArg, QArg> TranslateExt<CheckSigFromStack<PArg>, CheckSigFromStack<QArg>>
+    for CheckSigFromStack<PArg>
+where
+    CheckSigFromStack<PArg>: Extension,
+    CheckSigFromStack<QArg>: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    type Output = CheckSigFromStack<QArg>;
+
+    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtTranslator<CheckSigFromStack<PArg>, CheckSigFromStack<QArg>, E>,
+    {
+        t.ext(self)
+    }
+}
+
+// Use ExtParamTranslator as a ExtTranslator
+impl<T, PArg, QArg, E> ExtTranslator<CheckSigFromStack<PArg>, CheckSigFromStack<QArg>, E> for T
+where
+    T: ExtParamTranslator<PArg, QArg, E>,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    /// Translates one extension to another
+    fn ext(&mut self, csfs: &CheckSigFromStack<PArg>) -> Result<CheckSigFromStack<QArg>, E> {
+        TranslateExtParam::translate_ext(csfs, self)
     }
 }
 
@@ -295,10 +327,8 @@ impl ParseableExt for CheckSigFromStack<CovExtArgs> {
     }
 }
 
-impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for CheckSigFromStack<PArg>
+impl<PArg, QArg> TranslateExtParam<PArg, QArg> for CheckSigFromStack<PArg>
 where
-    PExt: Extension,
-    QExt: Extension,
     PArg: ExtParam,
     QArg: ExtParam,
 {
@@ -306,7 +336,7 @@ where
 
     fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        T: ExtTranslator<PArg, QArg, E>,
+        T: ExtParamTranslator<PArg, QArg, E>,
         PArg: ExtParam,
         QArg: ExtParam,
     {
@@ -322,7 +352,7 @@ mod tests {
     use bitcoin::XOnlyPublicKey;
 
     use super::*;
-    use crate::test_utils::{StrExtTransalator, StrXOnlyKeyTranslator};
+    use crate::test_utils::{StrExtTranslator, StrXOnlyKeyTranslator};
     use crate::{Miniscript, Segwitv0, Tap, TranslatePk};
 
     #[test]
@@ -363,7 +393,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let mut ext_t = StrExtTransalator::default();
+        let mut ext_t = StrExtTranslator::default();
         ext_t.ext_map.insert(
             "msg".to_string(),
             CovExtArgs::CsfsMsg(CsfsMsg::from_slice(&[0xab; 32]).unwrap()),

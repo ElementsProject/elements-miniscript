@@ -182,7 +182,7 @@ mod tests {
     }
 
     fn _satisfy_and_interpret(
-        desc: Descriptor<bitcoin::PublicKey, CovExtArgs>,
+        desc: Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>,
         cov_sk: secp256k1_zkp::SecretKey,
     ) -> Result<(), Error> {
         assert_eq!(desc.desc_type(), DescriptorType::Cov);

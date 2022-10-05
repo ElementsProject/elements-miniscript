@@ -47,7 +47,7 @@ use std::sync::Arc;
 
 use self::lex::{lex, TokenIter};
 use self::types::Property;
-use crate::extensions::{ExtParam, ParseableExt};
+use crate::extensions::ParseableExt;
 pub use crate::miniscript::context::ScriptContext;
 use crate::miniscript::decode::Terminal;
 use crate::miniscript::types::extra_props::ExtData;
@@ -315,21 +315,18 @@ where
     }
 }
 
-impl<Pk, Ctx, Ext, ExtQ, PArg, QArg> TranslateExt<Ext, ExtQ, PArg, QArg>
-    for Miniscript<Pk, Ctx, Ext>
+impl<Pk, Ctx, Ext, ExtQ> TranslateExt<Ext, ExtQ> for Miniscript<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,
-    Ext: Extension + TranslateExt<Ext, ExtQ, PArg, QArg, Output = ExtQ>,
+    Ext: Extension + TranslateExt<Ext, ExtQ, Output = ExtQ>,
     ExtQ: Extension,
-    PArg: ExtParam,
-    QArg: ExtParam,
 {
     type Output = Miniscript<Pk, Ctx, ExtQ>;
 
     fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        T: ExtTranslator<PArg, QArg, E>,
+        T: ExtTranslator<Ext, ExtQ, E>,
     {
         self.real_translate_ext(t)
     }
@@ -367,16 +364,14 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Miniscript<Pk, Ctx, 
         Ok(ms)
     }
 
-    pub(super) fn real_translate_ext<T, FuncError, ExtQ, PArg, QArg>(
+    pub(super) fn real_translate_ext<T, FuncError, ExtQ>(
         &self,
         t: &mut T,
     ) -> Result<Miniscript<Pk, Ctx, ExtQ>, FuncError>
     where
         ExtQ: Extension,
-        T: ExtTranslator<PArg, QArg, FuncError>,
-        PArg: ExtParam,
-        QArg: ExtParam,
-        Ext: TranslateExt<Ext, ExtQ, PArg, QArg, Output = ExtQ>,
+        T: ExtTranslator<Ext, ExtQ, FuncError>,
+        Ext: TranslateExt<Ext, ExtQ, Output = ExtQ>,
     {
         let inner = self.node.real_translate_ext(t)?;
         let ms = Miniscript {

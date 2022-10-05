@@ -4,14 +4,19 @@ set -e
 
 FEATURES="compiler use-serde rand"
 
-# Use toolchain if explicitly specified
-if [ -n "$TOOLCHAIN" ]
-then
-    alias cargo="cargo +$TOOLCHAIN"
-fi
-
 cargo --version
 rustc --version
+
+MSRV=false
+if cargo --version | grep "1\.41\.0"; then
+    MSRV=true
+fi
+
+if [ "$MSRV" = true ]; then
+    cargo update -p url --precise 2.2.2
+    cargo update -p form_urlencoded --precise 1.0.1
+    cargo update -p once_cell --precise 1.13.1
+fi
 
 # Format if told to
 if [ "$DO_FMT" = true ]
