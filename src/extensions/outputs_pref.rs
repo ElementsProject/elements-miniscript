@@ -8,7 +8,7 @@ use elements::encode::serialize;
 use elements::hashes::hex::{FromHex, ToHex};
 use elements::hashes::{sha256d, Hash};
 
-use super::{ExtParam, ParseableExt, TxEnv};
+use super::{ParseableExt, TxEnv};
 use crate::descriptor::CovError;
 use crate::miniscript::astelem::StackCtxOperations;
 use crate::miniscript::context::ScriptContextError;
@@ -19,8 +19,8 @@ use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::policy::{self, Liftable};
 use crate::{
-    expression, interpreter, Error, ExtTranslator, Extension, MiniscriptKey, Satisfier,
-    ToPublicKey, TranslateExt,
+    expression, interpreter, Error, Extension, MiniscriptKey, Satisfier,
+    ToPublicKey
 };
 
 /// Prefix is initally encoded in the script pubkey
@@ -280,25 +280,6 @@ impl ParseableExt for LegacyOutputsPref {
                 actual: hash_outputs.len(),
             })
         }
-    }
-}
-
-impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for LegacyOutputsPref
-where
-    PExt: Extension,
-    QExt: Extension,
-    PArg: ExtParam,
-    QArg: ExtParam,
-{
-    type Output = LegacyOutputsPref;
-
-    fn translate_ext<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
-    where
-        T: ExtTranslator<PArg, QArg, E>,
-    {
-        Ok(Self {
-            pref: self.pref.clone(),
-        })
     }
 }
 

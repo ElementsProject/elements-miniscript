@@ -25,7 +25,7 @@ use elements::{self, Script};
 use super::checksum::{desc_checksum, strip_checksum, verify_checksum};
 use super::{Descriptor, TranslatePk};
 use crate::expression::{self, FromTree};
-use crate::extensions::CovExtArgs;
+use crate::extensions::{CovenantExt, CovExtArgs};
 use crate::policy::{semantic, Liftable};
 use crate::{Error, MiniscriptKey, Satisfier, ToPublicKey, Translator};
 
@@ -40,12 +40,12 @@ pub struct Blinded<Pk: MiniscriptKey> {
     /// permitted at the root level.
     ///
     /// TODO: Add blinding support to descriptor extensions
-    desc: Descriptor<Pk, CovExtArgs>,
+    desc: Descriptor<Pk, CovenantExt<CovExtArgs>>,
 }
 
 impl<Pk: MiniscriptKey> Blinded<Pk> {
     /// Create a new blinded descriptor from a descriptor and blinder
-    pub fn new(blinder: Pk, desc: Descriptor<Pk, CovExtArgs>) -> Self {
+    pub fn new(blinder: Pk, desc: Descriptor<Pk, CovenantExt<CovExtArgs>>) -> Self {
         Self { blinder, desc }
     }
 
@@ -55,12 +55,12 @@ impl<Pk: MiniscriptKey> Blinded<Pk> {
     }
 
     /// get the unblinded descriptor
-    pub fn as_unblinded(&self) -> &Descriptor<Pk, CovExtArgs> {
+    pub fn as_unblinded(&self) -> &Descriptor<Pk, CovenantExt<CovExtArgs>> {
         &self.desc
     }
 
     /// get the unblinded descriptor
-    pub fn into_unblinded(self) -> Descriptor<Pk, CovExtArgs> {
+    pub fn into_unblinded(self) -> Descriptor<Pk, CovenantExt<CovExtArgs>> {
         self.desc
     }
 }
@@ -92,7 +92,7 @@ impl_from_tree!(
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         if top.name == "blinded" && top.args.len() == 2 {
             let blinder = expression::terminal(&top.args[0], |pk| Pk::from_str(pk))?;
-            let desc = Descriptor::<Pk, CovExtArgs>::from_tree(&top.args[1])?;
+            let desc = Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(&top.args[1])?;
             if top.args[1].name == "blinded" {
                 return Err(Error::BadDescriptor(
                     "Blinding only permitted at root level".to_string(),

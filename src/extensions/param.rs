@@ -7,6 +7,7 @@ use elements::confidential;
 use elements::encode::serialize;
 
 use crate::{Error, ExtTranslator};
+use super::CovenantExt;
 use super::csfs::{CsfsKey, CsfsMsg};
 use super::introspect_ops::Spk;
 
@@ -187,15 +188,21 @@ where
 }
 
 // Use ExtParamTranslator as a ExTTranslator
-impl<T, PArg, QArg, E> ExtTranslator<PArg, QArg, E> for T
+impl<T, PArg, QArg, E> ExtTranslator<CovenantExt<PArg>, CovenantExt<QArg>, E> for T
 where
     T: ExtParamTranslator<PArg, QArg, E>,
     PArg: ExtParam,
     QArg: ExtParam,
 {
     /// Translates one extension to another
-    fn ext(&mut self, e: &PArg) -> Result<QArg, E> {
-        ExtParamTranslator::ext(self, e)
+    fn ext(&mut self, cov: &CovenantExt<PArg>) -> Result<CovenantExt<QArg>, E> {
+        match *cov {
+            CovenantExt::LegacyVerEq(ref v) => Ok(CovenantExt::LegacyVerEq(v.clone())),
+            CovenantExt::LegacyOutputsPref(ref p) => Ok(CovenantExt::LegacyOutputsPref(p.clone())),
+            CovenantExt::Csfs(ref c) => Ok(CovenantExt::Csfs(TranslateExtParam::translate_ext(c, self)?)),
+            CovenantExt::Arith(ref e) => Ok(CovenantExt::Arith(e.clone())),
+            CovenantExt::Introspect(ref c) => Ok(CovenantExt::Introspect(TranslateExtParam::translate_ext(c, self)?)),
+        }
     }
 }
 

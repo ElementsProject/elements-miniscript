@@ -518,7 +518,7 @@ where
     /// x-only keys are translated to [`bitcoin::PublicKey`] with 0x02 prefix.
     pub fn inferred_descriptor(
         &self,
-    ) -> Result<Descriptor<bitcoin::PublicKey, CovExtArgs>, crate::Error> {
+    ) -> Result<Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>, crate::Error> {
         Descriptor::from_str(&self.inferred_descriptor_string())
     }
 }

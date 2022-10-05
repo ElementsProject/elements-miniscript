@@ -18,8 +18,7 @@ use crate::miniscript::satisfy::{Satisfaction, Witness};
 use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::{
-    expression, interpreter, miniscript, Error, ExtTranslator, Extension, Satisfier, ToPublicKey,
-    TranslateExt,
+    expression, interpreter, miniscript, Error, Extension, ExtTranslator, Satisfier, ToPublicKey, TranslateExt,
 };
 
 /// CheckSigFromStack struct
@@ -113,6 +112,38 @@ impl<T: ExtParam> Extension for CheckSigFromStack<T> {
         }
     }
 }
+
+impl<PArg, QArg> TranslateExt<CheckSigFromStack<PArg>, CheckSigFromStack<QArg>> for CheckSigFromStack<PArg>
+where
+    CheckSigFromStack<PArg>: Extension,
+    CheckSigFromStack<QArg>: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    type Output = CheckSigFromStack<QArg>;
+
+    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtTranslator<CheckSigFromStack<PArg>, CheckSigFromStack<QArg>, E>,
+    {
+        t.ext(self)
+    }
+}
+
+// Use ExtParamTranslator as a ExtTranslator
+impl<T, PArg, QArg, E> ExtTranslator<CheckSigFromStack<PArg>, CheckSigFromStack<QArg>, E> for T
+where
+    T: ExtParamTranslator<PArg, QArg, E>,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    /// Translates one extension to another
+    fn ext(&mut self, csfs: &CheckSigFromStack<PArg>) -> Result<CheckSigFromStack<QArg>, E> {
+        TranslateExtParam::translate_ext(csfs, self)
+    }
+}
+
+
 
 /// Wrapper around CheckSigFromStack signature messages
 #[derive(Debug, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]
@@ -293,28 +324,6 @@ impl ParseableExt for CheckSigFromStack<CovExtArgs> {
 
         secp.verify_schnorr(&sig, &msg, &self.as_pk())?;
         Ok(true)
-    }
-}
-
-impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for CheckSigFromStack<PArg>
-where
-    PExt: Extension,
-    QExt: Extension,
-    PArg: ExtParam,
-    QArg: ExtParam,
-{
-    type Output = CheckSigFromStack<QArg>;
-
-    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
-    where
-        T: ExtTranslator<PArg, QArg, E>,
-        PArg: ExtParam,
-        QArg: ExtParam,
-    {
-        Ok(CheckSigFromStack {
-            pk: t.ext(&self.pk)?,
-            msg: t.ext(&self.msg)?,
-        })
     }
 }
 

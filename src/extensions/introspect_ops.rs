@@ -20,7 +20,7 @@ use crate::miniscript::satisfy::{Satisfaction, Witness};
 use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::{
-    expression, interpreter, script_num_size, Error, ExtTranslator, Extension, Satisfier,
+    expression, interpreter, script_num_size, Error, Extension, ExtTranslator, Satisfier,
     ToPublicKey, TranslateExt,
 };
 
@@ -134,7 +134,7 @@ impl<T: ExtParam> AssetExpr<T> {
     /// Returns the extention translation from AssetExpr<T> to AssetExpr<Q>
     fn _translate_ext<Q, E, Ext>(&self, t: &mut Ext) -> Result<AssetExpr<Q>, E>
     where
-        Ext: ExtTranslator<T, Q, E>,
+        Ext: ExtParamTranslator<T, Q, E>,
         Q: ExtParam,
     {
         let res = match self {
@@ -208,7 +208,7 @@ impl<T: ExtParam> ValueExpr<T> {
     /// Returns the extention translation from ValueExpr<T> to ValueExpr<Q>
     fn _translate_ext<Q, E, Ext>(&self, t: &mut Ext) -> Result<ValueExpr<Q>, E>
     where
-        Ext: ExtTranslator<T, Q, E>,
+        Ext: ExtParamTranslator<T, Q, E>,
         Q: ExtParam,
     {
         let res = match self {
@@ -282,7 +282,7 @@ impl<T: ExtParam> SpkExpr<T> {
     /// Returns the extention translation from SpkExpr<T> to SpkExpr<Q>
     fn _translate_ext<Q, E, Ext>(&self, t: &mut Ext) -> Result<SpkExpr<Q>, E>
     where
-        Ext: ExtTranslator<T, Q, E>,
+        Ext: ExtParamTranslator<T, Q, E>,
         Q: ExtParam,
     {
         let res = match self {
@@ -484,6 +484,38 @@ impl<T: ExtParam> Extension for CovOps<T> {
         ))
     }
 }
+
+impl<PArg, QArg> TranslateExt<CovOps<PArg>, CovOps<QArg>> for CovOps<PArg>
+where
+    CovOps<PArg>: Extension,
+    CovOps<QArg>: Extension,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    type Output = CovOps<QArg>;
+
+    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtTranslator<CovOps<PArg>, CovOps<QArg>, E>,
+    {
+        t.ext(self)
+    }
+}
+
+// Use ExtParamTranslator as a ExtTranslator
+impl<T, PArg, QArg, E> ExtTranslator<CovOps<PArg>, CovOps<QArg>, E> for T
+where
+    T: ExtParamTranslator<PArg, QArg, E>,
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    /// Translates one extension to another
+    fn ext(&mut self, cov_ops: &CovOps<PArg>) -> Result<CovOps<QArg>, E> {
+        TranslateExtParam::translate_ext(cov_ops, self)
+    }
+}
+
+
 
 /// Wrapper around [`elements::Script`] for representing script pubkeys
 // Required because the fmt::Display of elements::Script does not print hex
@@ -1083,34 +1115,6 @@ impl ParseableExt for CovOps<CovExtArgs> {
     }
 }
 
-impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for CovOps<PArg>
-where
-    PExt: Extension,
-    QExt: Extension,
-    PArg: ExtParam,
-    QArg: ExtParam,
-{
-    type Output = CovOps<QArg>;
-
-    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
-    where
-        T: ExtTranslator<PArg, QArg, E>,
-    {
-        match self {
-            CovOps::IsExpAsset(a) => Ok(CovOps::IsExpAsset(a._translate_ext(t)?)),
-            CovOps::IsExpValue(v) => Ok(CovOps::IsExpValue(v._translate_ext(t)?)),
-            CovOps::AssetEq(x, y) => {
-                Ok(CovOps::AssetEq(x._translate_ext(t)?, y._translate_ext(t)?))
-            }
-            CovOps::ValueEq(x, y) => {
-                Ok(CovOps::ValueEq(x._translate_ext(t)?, y._translate_ext(t)?))
-            }
-            CovOps::SpkEq(x, y) => Ok(CovOps::SpkEq(x._translate_ext(t)?, y._translate_ext(t)?)),
-            CovOps::CurrIndEq(i) => Ok(CovOps::CurrIndEq(*i)),
-        }
-    }
-}
-
 impl<PArg, QArg> TranslateExtParam<PArg, QArg> for CovOps<PArg>
 where
     PArg: ExtParam,
@@ -1217,8 +1221,8 @@ mod tests {
             ext_t.ext_map.insert("ConfVal".to_string(),CovExtArgs::value(encode::deserialize(&Vec::<u8>::from_hex("09def814ab021498562ab4717287305d3f7abb5686832fe6183e1db495abef7cc7").unwrap()).unwrap()));
             ext_t.ext_map.insert("ExpVal".to_string(),CovExtArgs::value(encode::deserialize(&Vec::<u8>::from_hex("010000000011110000").unwrap()).unwrap()));
         }
-        let ms = ms.translate_pk(&mut t).unwrap();
-        let ms = ms.translate_ext(&mut ext_t).unwrap();
+        let ms: Miniscript<XOnlyPublicKey, Tap, CovOps<String>> = ms.translate_pk(&mut t).unwrap();
+        let ms: Miniscript<XOnlyPublicKey, Tap, CovOps<CovExtArgs>> = ms.translate_ext(&mut ext_t).unwrap();
         // script rtt
         assert_eq!(ms.encode(), MsExt::parse_insane(&ms.encode()).unwrap().encode());
         // String rtt of the translated script

@@ -28,6 +28,7 @@ use {
     crate::policy::compiler::CompilerError,
     crate::policy::compiler::OrdF64,
     crate::policy::{compiler, Concrete, Liftable, Semantic},
+    crate::CovenantExt,
     crate::Descriptor,
     crate::Miniscript,
     crate::NoExt,
@@ -266,7 +267,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     pub fn compile_tr(
         &self,
         unspendable_key: Option<Pk>,
-    ) -> Result<Descriptor<Pk, NoExtParam>, Error> {
+    ) -> Result<Descriptor<Pk, CovenantExt<NoExtParam>>, Error> {
         self.is_valid()?; // Check for validity
         match self.is_safe_nonmalleable() {
             (false, _) => Err(Error::from(CompilerError::TopLevelNonSafe)),

@@ -6,7 +6,7 @@ use std::fmt;
 
 use elements::encode::serialize;
 
-use super::{ExtParam, ParseableExt, TxEnv};
+use super::{ParseableExt, TxEnv};
 use crate::descriptor::CovError;
 use crate::miniscript::astelem::StackCtxOperations;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -15,8 +15,8 @@ use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::policy::{self, Liftable};
 use crate::{
-    expression, interpreter, miniscript, util, Error, ExtTranslator, Extension, MiniscriptKey,
-    Satisfier, ToPublicKey, TranslateExt,
+    expression, interpreter, miniscript, util, Error, Extension, MiniscriptKey,
+    Satisfier, ToPublicKey,
 };
 
 /// Version struct
@@ -187,23 +187,6 @@ impl ParseableExt for LegacyVerEq {
                 actual: elem.len(),
             })
         }
-    }
-}
-
-impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for LegacyVerEq
-where
-    PExt: Extension,
-    QExt: Extension,
-    PArg: ExtParam,
-    QArg: ExtParam,
-{
-    type Output = LegacyVerEq;
-
-    fn translate_ext<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
-    where
-        T: ExtTranslator<PArg, QArg, E>,
-    {
-        Ok(Self { n: self.n })
     }
 }
 

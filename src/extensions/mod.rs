@@ -193,18 +193,16 @@ impl fmt::Display for NoExt {
     }
 }
 
-impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for NoExt
+impl<PExt, QExt> TranslateExt<PExt, QExt> for NoExt
 where
     PExt: Extension,
     QExt: Extension,
-    PArg: ExtParam,
-    QArg: ExtParam,
 {
     type Output = NoExt;
 
     fn translate_ext<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
     where
-        T: ExtTranslator<PArg, QArg, E>,
+        T: ExtTranslator<PExt, QExt, E>,
     {
         match *self {}
     }
@@ -326,10 +324,10 @@ impl<T: ExtParam> fmt::Display for CovenantExt<T> {
     }
 }
 
-impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for CovenantExt<PArg>
+impl<PArg, QArg> TranslateExt<CovenantExt<PArg>, CovenantExt<QArg>> for CovenantExt<PArg>
 where
-    PExt: Extension,
-    QExt: Extension,
+    CovenantExt<PArg>: Extension,
+    CovenantExt<QArg>: Extension,
     PArg: ExtParam,
     QArg: ExtParam,
 {
@@ -337,31 +335,9 @@ where
 
     fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
     where
-        T: ExtTranslator<PArg, QArg, E>,
+        T: ExtTranslator<CovenantExt<PArg>, CovenantExt<QArg>, E>,
     {
-        let ext =
-            match self {
-                CovenantExt::LegacyVerEq(v) => {
-                    CovenantExt::LegacyVerEq(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(
-                        v, t,
-                    )?)
-                }
-                CovenantExt::LegacyOutputsPref(p) => CovenantExt::LegacyOutputsPref(
-                    TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(p, t)?,
-                ),
-                CovenantExt::Csfs(c) => {
-                    CovenantExt::Csfs(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(c, t)?)
-                }
-                CovenantExt::Arith(e) => {
-                    CovenantExt::Arith(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(e, t)?)
-                }
-                CovenantExt::Introspect(e) => {
-                    CovenantExt::Introspect(TranslateExt::<PExt, QExt, PArg, QArg>::translate_ext(
-                        e, t,
-                    )?)
-                }
-            };
-        Ok(ext)
+        t.ext(self)
     }
 }
 

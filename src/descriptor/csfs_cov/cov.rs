@@ -51,7 +51,7 @@ use super::super::checksum::{desc_checksum, verify_checksum};
 use super::super::ELMTS_STR;
 use super::{CovError, CovOperations};
 use crate::expression::{self, FromTree};
-use crate::extensions::{ExtParam, ParseableExt};
+use crate::extensions::ParseableExt;
 use crate::miniscript::lex::{lex, Token as Tk, TokenIter};
 use crate::miniscript::limits::{
     MAX_OPS_PER_SCRIPT, MAX_SCRIPT_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE,
@@ -485,20 +485,18 @@ where
     }
 }
 
-impl<Pk, Ext, ExtQ, PArg, QArg> TranslateExt<Ext, ExtQ, PArg, QArg> for LegacyCSFSCov<Pk, Ext>
+impl<Pk, Ext, ExtQ> TranslateExt<Ext, ExtQ> for LegacyCSFSCov<Pk, Ext>
 where
     Pk: MiniscriptKey,
     Ext: Extension,
     ExtQ: Extension,
-    Ext: TranslateExt<Ext, ExtQ, PArg, QArg, Output = ExtQ>,
-    PArg: ExtParam,
-    QArg: ExtParam,
+    Ext: TranslateExt<Ext, ExtQ, Output = ExtQ>,
 {
     type Output = LegacyCSFSCov<Pk, ExtQ>;
 
     fn translate_ext<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
     where
-        T: ExtTranslator<PArg, QArg, E>,
+        T: ExtTranslator<Ext, ExtQ, E>,
     {
         Ok(LegacyCSFSCov {
             pk: self.pk.clone(),

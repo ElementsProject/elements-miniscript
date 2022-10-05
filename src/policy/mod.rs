@@ -21,7 +21,6 @@
 //! The format represents EC public keys abstractly to allow wallets to replace
 //! these with BIP32 paths, pay-to-contract instructions, etc.
 //!
-use crate::extensions::ExtParam;
 use crate::{error, fmt};
 
 #[cfg(feature = "compiler")]
@@ -179,7 +178,7 @@ where
     }
 }
 
-impl<Pk: MiniscriptKey, T: ExtParam> Liftable<Pk> for Descriptor<Pk, T> {
+impl<Pk: MiniscriptKey, T: Extension> Liftable<Pk> for Descriptor<Pk, T> {
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
         match *self {
             Descriptor::Bare(ref bare) => bare.lift(),

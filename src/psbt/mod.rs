@@ -32,7 +32,7 @@ use elements::sighash::SigHashCache;
 use elements::taproot::{self, ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, EcdsaSigHashType, SchnorrSigHashType, Script};
 
-use crate::extensions::{CovExtArgs, ParseableExt};
+use crate::extensions::{CovenantExt, CovExtArgs, ParseableExt};
 use crate::miniscript::iter::PkPkh;
 use crate::miniscript::limits::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crate::miniscript::satisfy::{elementssig_from_rawsig, After, Older};
@@ -592,7 +592,7 @@ pub trait PsbtExt {
     fn update_input_with_descriptor(
         &mut self,
         input_index: usize,
-        descriptor: &Descriptor<DescriptorPublicKey, CovExtArgs>,
+        descriptor: &Descriptor<DescriptorPublicKey, CovenantExt<CovExtArgs>>,
     ) -> Result<(), UtxoUpdateError>;
 
     /// Get the sighash message(data to sign) at input index `idx` based on the sighash
@@ -769,7 +769,7 @@ impl PsbtExt for Psbt {
     fn update_input_with_descriptor(
         &mut self,
         input_index: usize,
-        desc: &Descriptor<DescriptorPublicKey, CovExtArgs>,
+        desc: &Descriptor<DescriptorPublicKey, CovenantExt<CovExtArgs>>,
     ) -> Result<(), UtxoUpdateError> {
         let n_inputs = self.inputs().len();
         let input = self
@@ -963,15 +963,15 @@ pub trait PsbtInputExt {
     /// [`update_input_with_descriptor`]: PsbtExt::update_input_with_descriptor
     fn update_with_descriptor_unchecked(
         &mut self,
-        descriptor: &Descriptor<DescriptorPublicKey, CovExtArgs>,
-    ) -> Result<Descriptor<bitcoin::PublicKey, CovExtArgs>, descriptor::ConversionError>;
+        descriptor: &Descriptor<DescriptorPublicKey, CovenantExt<CovExtArgs>>,
+    ) -> Result<Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>, descriptor::ConversionError>;
 }
 
 impl PsbtInputExt for psbt::Input {
     fn update_with_descriptor_unchecked(
         &mut self,
-        descriptor: &Descriptor<DescriptorPublicKey, CovExtArgs>,
-    ) -> Result<Descriptor<bitcoin::PublicKey, CovExtArgs>, descriptor::ConversionError> {
+        descriptor: &Descriptor<DescriptorPublicKey, CovenantExt<CovExtArgs>>,
+    ) -> Result<Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>, descriptor::ConversionError> {
         let (derived, _) = update_input_with_descriptor_helper(self, descriptor, None)?;
         Ok(derived)
     }
@@ -1052,12 +1052,12 @@ impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionE
 
 fn update_input_with_descriptor_helper(
     input: &mut psbt::Input,
-    descriptor: &Descriptor<DescriptorPublicKey, CovExtArgs>,
+    descriptor: &Descriptor<DescriptorPublicKey, CovenantExt<CovExtArgs>>,
     check_script: Option<Script>,
     // the return value is a tuple here since the two internal calls to it require different info.
     // One needs the derived descriptor and the other needs to know whether the script_pubkey check
     // failed.
-) -> Result<(Descriptor<bitcoin::PublicKey, CovExtArgs>, bool), descriptor::ConversionError> {
+) -> Result<(Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>, bool), descriptor::ConversionError> {
     let secp = secp256k1::Secp256k1::verification_only();
 
     let derived = if let Descriptor::Tr(_) = &descriptor {

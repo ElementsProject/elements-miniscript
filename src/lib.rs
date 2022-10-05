@@ -126,7 +126,6 @@ pub(crate) use bitcoin_miniscript::{
 pub use bitcoin_miniscript::{
     DummyKey, DummyKeyHash, ForEach, ForEachKey, MiniscriptKey, ToPublicKey,
 };
-use extensions::ExtParam;
 // End imports
 
 #[macro_use]
@@ -225,13 +224,13 @@ where
 }
 
 /// Trait for translation Extensions
-pub trait ExtTranslator<PArg, QArg, E>
+pub trait ExtTranslator<PExt, QExt, E>
 where
-    PArg: ExtParam,
-    QArg: ExtParam,
+    PExt: Extension,
+    QExt: Extension,
 {
     /// Translates one extension to another
-    fn ext(&mut self, e: &PArg) -> Result<QArg, E>;
+    fn ext(&mut self, e: &PExt) -> Result<QExt, E>;
 }
 
 /// Converts a descriptor using abstract keys to one using specific keys. Uses translator `t` to do
@@ -253,12 +252,10 @@ where
 
 /// Converts a descriptor using abstract keys to one using specific keys. Uses translator `t` to do
 /// the actual translation function calls.
-pub trait TranslateExt<PExt, QExt, PArg, QArg>
+pub trait TranslateExt<PExt, QExt>
 where
     PExt: Extension,
     QExt: Extension,
-    PArg: ExtParam,
-    QArg: ExtParam,
 {
     /// The associated output type.
     type Output;
@@ -267,7 +264,7 @@ where
     /// for Pk are provided by the given [`Translator`].
     fn translate_ext<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
     where
-        T: ExtTranslator<PArg, QArg, E>;
+        T: ExtTranslator<PExt, QExt, E>;
 }
 
 /// Miniscript Error

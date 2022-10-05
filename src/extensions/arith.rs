@@ -16,7 +16,7 @@ use crate::miniscript::satisfy::{Satisfaction, Witness};
 use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::{
-    expression, interpreter, miniscript, script_num_size, Error, ExtTranslator, Extension,
+    expression, interpreter, miniscript, script_num_size, Error, Extension,
     Satisfier, ToPublicKey, TranslateExt,
 };
 
@@ -1032,23 +1032,6 @@ impl fmt::Display for EvalError {
                 "Transaction must be supplied to extension to arithmetic evaluation"
             ),
         }
-    }
-}
-
-impl<PExt, QExt, PArg, QArg> TranslateExt<PExt, QExt, PArg, QArg> for Arith
-where
-    PExt: Extension,
-    QExt: Extension,
-    PArg: ExtParam,
-    QArg: ExtParam,
-{
-    type Output = Arith;
-
-    fn translate_ext<T, E>(&self, _t: &mut T) -> Result<Self::Output, E>
-    where
-        T: ExtTranslator<PArg, QArg, E>,
-    {
-        Ok(self.clone())
     }
 }
 
