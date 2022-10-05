@@ -37,7 +37,7 @@ use elements::{secp256k1_zkp as secp256k1, secp256k1_zkp, Script, TxIn};
 use {bitcoin, elements};
 
 use self::checksum::verify_checksum;
-use crate::extensions::{CovExtArgs, ExtParam, NoExtParam};
+use crate::extensions::{CovExtArgs, ExtParam, ParseableExt};
 use crate::miniscript::{Legacy, Miniscript, Segwitv0};
 use crate::{
     expression, miniscript, BareCtx, CovenantExt, Error, Extension, ExtTranslator, ForEach, ForEachKey,
@@ -245,42 +245,42 @@ pub enum Descriptor<Pk: MiniscriptKey, T: Extension = CovenantExt<CovExtArgs>> {
     LegacyCSFSCov(LegacyCSFSCov<Pk, T>),
 }
 
-impl<Pk: MiniscriptKey> From<Bare<Pk>> for Descriptor<Pk, CovenantExt<NoExtParam>> {
+impl<Pk: MiniscriptKey, Ext: Extension> From<Bare<Pk>> for Descriptor<Pk, Ext> {
     #[inline]
     fn from(inner: Bare<Pk>) -> Self {
         Descriptor::Bare(inner)
     }
 }
 
-impl<Pk: MiniscriptKey> From<Pkh<Pk>> for Descriptor<Pk, CovenantExt<NoExtParam>> {
+impl<Pk: MiniscriptKey, Ext: Extension> From<Pkh<Pk>> for Descriptor<Pk, Ext> {
     #[inline]
     fn from(inner: Pkh<Pk>) -> Self {
         Descriptor::Pkh(inner)
     }
 }
 
-impl<Pk: MiniscriptKey> From<Wpkh<Pk>> for Descriptor<Pk, CovenantExt<NoExtParam>> {
+impl<Pk: MiniscriptKey, Ext: Extension> From<Wpkh<Pk>> for Descriptor<Pk, Ext> {
     #[inline]
     fn from(inner: Wpkh<Pk>) -> Self {
         Descriptor::Wpkh(inner)
     }
 }
 
-impl<Pk: MiniscriptKey> From<Sh<Pk>> for Descriptor<Pk, CovenantExt<NoExtParam>> {
+impl<Pk: MiniscriptKey, Ext: Extension> From<Sh<Pk>> for Descriptor<Pk, Ext> {
     #[inline]
     fn from(inner: Sh<Pk>) -> Self {
         Descriptor::Sh(inner)
     }
 }
 
-impl<Pk: MiniscriptKey> From<Wsh<Pk>> for Descriptor<Pk, CovenantExt<NoExtParam>> {
+impl<Pk: MiniscriptKey, Ext: Extension> From<Wsh<Pk>> for Descriptor<Pk, Ext> {
     #[inline]
     fn from(inner: Wsh<Pk>) -> Self {
         Descriptor::Wsh(inner)
     }
 }
 
-impl<Pk: MiniscriptKey> From<Tr<Pk, NoExt>> for Descriptor<Pk, CovenantExt<NoExtParam>> {
+impl<Pk: MiniscriptKey, Ext: Extension> From<Tr<Pk, NoExt>> for Descriptor<Pk, Ext> {
     #[inline]
     fn from(inner: Tr<Pk, NoExt>) -> Self {
         Descriptor::Tr(inner)
@@ -313,7 +313,7 @@ impl DescriptorType {
     }
 }
 
-impl<Pk: MiniscriptKey, Arg: ExtParam> Descriptor<Pk, CovenantExt<Arg>> {
+impl<Pk: MiniscriptKey, Ext: Extension> Descriptor<Pk, Ext> {
     // Keys
 
     /// Create a new pk descriptor
@@ -419,7 +419,7 @@ impl<Pk: MiniscriptKey, Arg: ExtParam> Descriptor<Pk, CovenantExt<Arg>> {
     /// Errors when miniscript exceeds resource limits under Tap context
     pub fn new_tr_ext(
         key: Pk,
-        script: Option<tr::TapTree<Pk, CovenantExt<Arg>>>,
+        script: Option<tr::TapTree<Pk, Ext>>,
     ) -> Result<Self, Error> {
         Ok(Descriptor::TrExt(Tr::new(key, script)?))
     }
@@ -520,7 +520,7 @@ impl<Pk: MiniscriptKey, Arg: ExtParam> Descriptor<Pk, CovenantExt<Arg>> {
     }
 }
 
-impl<Pk: MiniscriptKey + ToPublicKey> Descriptor<Pk, CovenantExt<CovExtArgs>> {
+impl<Pk: MiniscriptKey + ToPublicKey, Ext: Extension + ParseableExt> Descriptor<Pk, Ext> {
     ///
     /// Obtains the blinded address for this descriptor
     ///
@@ -774,7 +774,7 @@ impl<Pk: MiniscriptKey, T: Extension> ForEachKey<Pk> for Descriptor<Pk, T> {
     }
 }
 
-impl Descriptor<DescriptorPublicKey> {
+impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     /// Whether or not the descriptor has any wildcards
     pub fn is_deriveable(&self) -> bool {
         self.for_any_key(|key| key.as_key().is_deriveable())
@@ -786,7 +786,7 @@ impl Descriptor<DescriptorPublicKey> {
     ///
     /// In most cases, you would want to use [`Self::derived_descriptor`] directly to obtain
     /// a [`Descriptor<bitcoin::PublicKey>`]
-    pub fn derive(&self, index: u32) -> Descriptor<DerivedDescriptorKey> {
+    pub fn derive(&self, index: u32) -> Descriptor<DerivedDescriptorKey, Ext> {
         struct Derivator(u32);
 
         impl Translator<DescriptorPublicKey, DerivedDescriptorKey, ()> for Derivator {
@@ -834,7 +834,7 @@ impl Descriptor<DescriptorPublicKey> {
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
         index: u32,
-    ) -> Result<Descriptor<bitcoin::PublicKey>, ConversionError> {
+    ) -> Result<Descriptor<bitcoin::PublicKey, Ext>, ConversionError> {
         struct Derivator<'a, C: secp256k1::Verification>(&'a secp256k1::Secp256k1<C>);
 
         impl<'a, C: secp256k1::Verification>
@@ -871,7 +871,7 @@ impl Descriptor<DescriptorPublicKey> {
     pub fn parse_descriptor<C: secp256k1_zkp::Signing>(
         secp: &secp256k1_zkp::Secp256k1<C>,
         s: &str,
-    ) -> Result<(Descriptor<DescriptorPublicKey>, KeyMap), Error> {
+    ) -> Result<(Descriptor<DescriptorPublicKey, Ext>, KeyMap), Error> {
         fn parse_key<C: secp256k1::Signing>(
             s: &String,
             key_map: &mut KeyMap,
@@ -919,7 +919,7 @@ impl Descriptor<DescriptorPublicKey> {
             }
         }
 
-        let descriptor = Descriptor::<String>::from_str(s)?;
+        let descriptor = Descriptor::<String, Ext>::from_str(s)?;
         let descriptor = descriptor
             .translate_pk(&mut keymap_pk)
             .map_err(|e| Error::Unexpected(e.to_string()))?;
@@ -960,7 +960,7 @@ impl Descriptor<DescriptorPublicKey> {
     }
 }
 
-impl Descriptor<DescriptorPublicKey, CovenantExt<CovExtArgs>> {
+impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     /// Utility method for deriving the descriptor at each index in a range to find one matching
     /// `script_pubkey`.
     ///
@@ -973,12 +973,11 @@ impl Descriptor<DescriptorPublicKey, CovenantExt<CovExtArgs>> {
         secp: &secp256k1_zkp::Secp256k1<C>,
         script_pubkey: &Script,
         range: Range<u32>,
-    ) -> Result<Option<(u32, Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>)>, ConversionError> {
+    ) -> Result<Option<(u32, Descriptor<bitcoin::PublicKey, Ext>)>, ConversionError> {
         let range = if self.is_deriveable() { range } else { 0..1 };
 
         for i in range {
             let concrete = self.derived_descriptor(secp, i)?;
-            println!("{} {} {}", i, &concrete, concrete.script_pubkey());
             if &concrete.script_pubkey() == script_pubkey {
                 return Ok(Some((i, concrete)));
             }
@@ -1416,7 +1415,7 @@ mod tests {
             asset_issuance: elements::AssetIssuance::default(),
             witness: elements::TxInWitness::default(),
         };
-        let bare = Descriptor::new_bare(ms.clone()).unwrap();
+        let bare: Descriptor<_, NoExt> = Descriptor::new_bare(ms.clone()).unwrap();
 
         bare.satisfy(&mut txin, &satisfier).expect("satisfaction");
         assert_eq!(
@@ -1428,7 +1427,7 @@ mod tests {
         );
         assert_eq!(bare.unsigned_script_sig(), elements::Script::new());
 
-        let pkh = Descriptor::new_pkh(pk);
+        let pkh: Descriptor<_, NoExt> = Descriptor::new_pkh(pk);
         pkh.satisfy(&mut txin, &satisfier).expect("satisfaction");
         assert_eq!(
             txin,
@@ -1442,7 +1441,7 @@ mod tests {
         );
         assert_eq!(pkh.unsigned_script_sig(), elements::Script::new());
 
-        let wpkh = Descriptor::new_wpkh(pk).unwrap();
+        let wpkh: Descriptor<_, NoExt> = Descriptor::new_wpkh(pk).unwrap();
         wpkh.satisfy(&mut txin, &satisfier).expect("satisfaction");
         assert_eq!(
             txin,
@@ -1450,7 +1449,7 @@ mod tests {
         );
         assert_eq!(wpkh.unsigned_script_sig(), elements::Script::new());
 
-        let shwpkh = Descriptor::new_sh_wpkh(pk).unwrap();
+        let shwpkh: Descriptor<_, NoExt> = Descriptor::new_sh_wpkh(pk).unwrap();
         shwpkh.satisfy(&mut txin, &satisfier).expect("satisfaction");
         let redeem_script = script::Builder::new()
             .push_opcode(opcodes::all::OP_PUSHBYTES_0)
@@ -1468,7 +1467,7 @@ mod tests {
         assert_eq!(shwpkh.unsigned_script_sig(), expected_ssig);
 
         let ms = ms_str!("c:pk_k({})", pk);
-        let sh = Descriptor::new_sh(ms.clone()).unwrap();
+        let sh: Descriptor<_, NoExt> = Descriptor::new_sh(ms.clone()).unwrap();
         sh.satisfy(&mut txin, &satisfier).expect("satisfaction");
         let expected_ssig = script::Builder::new()
             .push_slice(&sigser[..])
@@ -1479,7 +1478,7 @@ mod tests {
 
         let ms = ms_str!("c:pk_k({})", pk);
 
-        let wsh = Descriptor::new_wsh(ms.clone()).unwrap();
+        let wsh: Descriptor<_, NoExt> = Descriptor::new_wsh(ms.clone()).unwrap();
         wsh.satisfy(&mut txin, &satisfier).expect("satisfaction");
         assert_eq!(
             txin,
@@ -1490,7 +1489,7 @@ mod tests {
         );
         assert_eq!(wsh.unsigned_script_sig(), Script::new());
 
-        let shwsh = Descriptor::new_sh_wsh(ms.clone()).unwrap();
+        let shwsh: Descriptor<_, NoExt> = Descriptor::new_sh_wsh(ms.clone()).unwrap();
         shwsh.satisfy(&mut txin, &satisfier).expect("satisfaction");
         let expected_ssig = script::Builder::new()
             .push_slice(&ms.encode().to_v0_p2wsh()[..])
@@ -1856,7 +1855,7 @@ mod tests {
     #[test]
     fn test_parse_descriptor() {
         let secp = &secp256k1_zkp::Secp256k1::signing_only();
-        let (descriptor, key_map) = Descriptor::parse_descriptor(secp, "elwpkh(tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/44'/0'/0'/0/*)").unwrap();
+        let (descriptor, key_map) = Descriptor::<_, NoExt>::parse_descriptor(secp, "elwpkh(tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/44'/0'/0'/0/*)").unwrap();
         assert_eq!(descriptor.to_string(), "elwpkh([2cbe2a6d/44'/0'/0']tpubDCvNhURocXGZsLNqWcqD3syHTqPXrMSTwi8feKVwAcpi29oYKsDD3Vex7x2TDneKMVN23RbLprfxB69v94iYqdaYHsVz3kPR37NQXeqouVz/0/*)#pznhhta9");
         assert_eq!(key_map.len(), 1);
 
@@ -1864,7 +1863,7 @@ mod tests {
         macro_rules! check_invalid_checksum {
             ($secp: ident,$($desc: expr),*) => {
                 $(
-                    match Descriptor::parse_descriptor($secp, $desc) {
+                    match Descriptor::<_, NoExt>::parse_descriptor($secp, $desc) {
                         Err(Error::BadDescriptor(_)) => {},
                         Err(e) => panic!("Expected bad checksum for {}, got '{}'", $desc, e),
                         _ => panic!("Invalid checksum treated as valid: {}", $desc),
@@ -1886,8 +1885,8 @@ mod tests {
             "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))##tjq09x4t"
         );
 
-        Descriptor::parse_descriptor(&secp, "elsh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#9s2ngs7u").expect("Valid descriptor with checksum");
-        Descriptor::parse_descriptor(&secp, "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#uklept69").expect("Valid descriptor with checksum");
+        Descriptor::<_, NoExt>::parse_descriptor(&secp, "elsh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#9s2ngs7u").expect("Valid descriptor with checksum");
+        Descriptor::<_, NoExt>::parse_descriptor(&secp, "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#uklept69").expect("Valid descriptor with checksum");
     }
 
     #[test]
@@ -1898,7 +1897,7 @@ pk([d34db33f/44'/0'/0']xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgb
 pk(xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL/1),\
 pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
         let policy: policy::concrete::Policy<DescriptorPublicKey> = descriptor_str.parse().unwrap();
-        let descriptor = Descriptor::new_sh(policy.compile().unwrap()).unwrap();
+        let descriptor = Descriptor::<_, NoExt>::new_sh(policy.compile().unwrap()).unwrap();
         let derived_descriptor = descriptor.derive(42);
 
         let res_descriptor_str = "thresh(2,\
@@ -1908,7 +1907,7 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
         let res_policy: policy::concrete::Policy<DescriptorPublicKey> =
             res_descriptor_str.parse().unwrap();
         let res_descriptor =
-            Descriptor::<DescriptorPublicKey, CovenantExt<NoExtParam>>::new_sh(res_policy.compile().unwrap())
+            Descriptor::<DescriptorPublicKey, NoExt>::new_sh(res_policy.compile().unwrap())
                 .unwrap();
 
         assert_eq!(res_descriptor.to_string(), derived_descriptor.to_string());
@@ -1958,7 +1957,7 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
     #[test]
     fn test_find_derivation_index_for_spk() {
         let secp = secp256k1_zkp::Secp256k1::verification_only();
-        let descriptor = Descriptor::from_str("eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*)").unwrap();
+        let descriptor = Descriptor::<_, NoExt>::from_str("eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*)").unwrap();
         let script_at_0_1 = Script::from_str(
             "5120c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0",
         )
