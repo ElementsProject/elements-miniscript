@@ -152,11 +152,11 @@ impl StrXOnlyKeyTranslator {
 
 /// Translate Abstract Str to Consensus Extensions
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
-pub struct StrExtTransalator {
+pub struct StrExtTranslator {
     pub ext_map: HashMap<String, CovExtArgs>,
 }
 
-impl ExtParamTranslator<String, CovExtArgs, ()> for StrExtTransalator {
+impl ExtParamTranslator<String, CovExtArgs, ()> for StrExtTranslator {
     fn ext(&mut self, e: &String) -> Result<CovExtArgs, ()> {
         let x = self.ext_map.get(e).expect("Ext Mapping not found");
         Ok(x.clone())

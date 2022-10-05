@@ -1040,7 +1040,7 @@ mod tests {
     use bitcoin::XOnlyPublicKey;
 
     use super::*;
-    use crate::test_utils::{StrExtTransalator, StrXOnlyKeyTranslator};
+    use crate::test_utils::{StrExtTranslator, StrXOnlyKeyTranslator};
     use crate::{Miniscript, Segwitv0, Tap, TranslatePk};
 
     #[test]

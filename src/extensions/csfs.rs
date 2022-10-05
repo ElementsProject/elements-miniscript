@@ -352,7 +352,7 @@ mod tests {
     use bitcoin::XOnlyPublicKey;
 
     use super::*;
-    use crate::test_utils::{StrExtTransalator, StrXOnlyKeyTranslator};
+    use crate::test_utils::{StrExtTranslator, StrXOnlyKeyTranslator};
     use crate::{Miniscript, Segwitv0, Tap, TranslatePk};
 
     #[test]
@@ -393,7 +393,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let mut ext_t = StrExtTransalator::default();
+        let mut ext_t = StrExtTranslator::default();
         ext_t.ext_map.insert(
             "msg".to_string(),
             CovExtArgs::CsfsMsg(CsfsMsg::from_slice(&[0xab; 32]).unwrap()),

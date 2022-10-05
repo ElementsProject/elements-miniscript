@@ -1146,7 +1146,7 @@ mod tests {
     use bitcoin::XOnlyPublicKey;
 
     use super::*;
-    use crate::test_utils::{StrExtTransalator, StrXOnlyKeyTranslator};
+    use crate::test_utils::{StrExtTranslator, StrXOnlyKeyTranslator};
     use crate::{Miniscript, Segwitv0, Tap, TranslatePk};
 
     #[test]
@@ -1212,7 +1212,7 @@ mod tests {
         // test string rtt
         assert_eq!(ms.to_string(), s);
         let mut t = StrXOnlyKeyTranslator::default();
-        let mut ext_t = StrExtTransalator::default();
+        let mut ext_t = StrExtTranslator::default();
         {
             ext_t.ext_map.insert("V1Spk".to_string(),CovExtArgs::spk(elements::Script::from_str("5120c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0").unwrap()));
             ext_t.ext_map.insert("V0Spk".to_string(),CovExtArgs::spk(elements::Script::from_str("0020c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0").unwrap()));
