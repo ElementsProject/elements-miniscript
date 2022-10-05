@@ -738,24 +738,12 @@ where
         T: ExtTranslator<PArg, QArg, E>,
     {
         let desc = match *self {
-            Descriptor::Bare(ref bare) => Descriptor::Bare(
-                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(bare, t)?,
-            ),
-            Descriptor::Pkh(ref pk) => Descriptor::Pkh(
-                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(pk, t)?,
-            ),
-            Descriptor::Wpkh(ref pk) => Descriptor::Wpkh(
-                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(pk, t)?,
-            ),
-            Descriptor::Sh(ref sh) => Descriptor::Sh(
-                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(sh, t)?,
-            ),
-            Descriptor::Wsh(ref wsh) => Descriptor::Wsh(
-                TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(wsh, t)?,
-            ),
-            Descriptor::Tr(ref tr) => Descriptor::Tr(
-                TranslateExt::<NoExt, NoExt, _, _>::translate_ext(tr, t)?,
-            ),
+            Descriptor::Bare(ref bare) => Descriptor::Bare(bare.clone()),
+            Descriptor::Pkh(ref pk) => Descriptor::Pkh(pk.clone()),
+            Descriptor::Wpkh(ref pk) => Descriptor::Wpkh(pk.clone()),
+            Descriptor::Sh(ref sh) => Descriptor::Sh(sh.clone()),
+            Descriptor::Wsh(ref wsh) => Descriptor::Wsh(wsh.clone()),
+            Descriptor::Tr(ref tr) => Descriptor::Tr(tr.clone()),
             Descriptor::TrExt(ref tr) => Descriptor::TrExt(
                 TranslateExt::<CovenantExt<PArg>, CovenantExt<QArg>, _, _>::translate_ext(tr, t)?,
             ),

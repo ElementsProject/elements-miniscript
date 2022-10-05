@@ -24,13 +24,12 @@ use elements::{self, secp256k1_zkp, Address, Script};
 use super::checksum::{desc_checksum, verify_checksum};
 use super::{SortedMultiVec, ELMTS_STR};
 use crate::expression::{self, FromTree};
-use crate::extensions::ExtParam;
 use crate::miniscript::context::{ScriptContext, ScriptContextError};
 use crate::policy::{semantic, Liftable};
 use crate::util::varint_len;
 use crate::{
-    elementssig_to_rawsig, Error, Extension, ForEach, ForEachKey, Miniscript, MiniscriptKey,
-    Satisfier, Segwitv0, ToPublicKey, TranslateExt, TranslatePk, Translator,
+    elementssig_to_rawsig, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey,
+    Satisfier, Segwitv0, ToPublicKey, TranslatePk, Translator,
 };
 /// A Segwitv0 wsh descriptor
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
@@ -310,24 +309,6 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Wsh<P> {
     }
 }
 
-impl<PExt, QExt, PArg, QArg, Pk> TranslateExt<PExt, QExt, PArg, QArg> for Wsh<Pk>
-where
-    PExt: Extension,
-    QExt: Extension,
-    PArg: ExtParam,
-    QArg: ExtParam,
-    Pk: MiniscriptKey,
-{
-    type Output = Wsh<Pk>;
-
-    fn translate_ext<T, E>(&self, _translator: &mut T) -> Result<Self::Output, E>
-    where
-        T: crate::ExtTranslator<PArg, QArg, E>,
-    {
-        Ok(self.clone())
-    }
-}
-
 /// A bare Wpkh descriptor at top level
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct Wpkh<Pk: MiniscriptKey> {
@@ -539,20 +520,3 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Wpkh<P> {
     }
 }
 
-impl<PExt, QExt, PArg, QArg, Pk> TranslateExt<PExt, QExt, PArg, QArg> for Wpkh<Pk>
-where
-    PExt: Extension,
-    QExt: Extension,
-    PArg: ExtParam,
-    QArg: ExtParam,
-    Pk: MiniscriptKey,
-{
-    type Output = Wpkh<Pk>;
-
-    fn translate_ext<T, E>(&self, _translator: &mut T) -> Result<Self::Output, E>
-    where
-        T: crate::ExtTranslator<PArg, QArg, E>,
-    {
-        Ok(self.clone())
-    }
-}
