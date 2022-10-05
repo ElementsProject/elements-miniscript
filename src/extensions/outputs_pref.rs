@@ -18,10 +18,7 @@ use crate::miniscript::satisfy::{Satisfaction, Witness};
 use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::policy::{self, Liftable};
-use crate::{
-    expression, interpreter, Error, Extension, MiniscriptKey, Satisfier,
-    ToPublicKey
-};
+use crate::{expression, interpreter, Error, Extension, MiniscriptKey, Satisfier, ToPublicKey};
 
 /// Prefix is initally encoded in the script pubkey
 /// User provides a suffix such that hash of (prefix || suffix)

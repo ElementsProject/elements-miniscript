@@ -315,8 +315,7 @@ where
     }
 }
 
-impl<Pk, Ctx, Ext, ExtQ> TranslateExt<Ext, ExtQ>
-    for Miniscript<Pk, Ctx, Ext>
+impl<Pk, Ctx, Ext, ExtQ> TranslateExt<Ext, ExtQ> for Miniscript<Pk, Ctx, Ext>
 where
     Pk: MiniscriptKey,
     Ctx: ScriptContext,

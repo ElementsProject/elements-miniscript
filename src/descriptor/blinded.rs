@@ -25,7 +25,7 @@ use elements::{self, Script};
 use super::checksum::{desc_checksum, strip_checksum, verify_checksum};
 use super::{Descriptor, TranslatePk};
 use crate::expression::{self, FromTree};
-use crate::extensions::{CovenantExt, CovExtArgs};
+use crate::extensions::{CovExtArgs, CovenantExt};
 use crate::policy::{semantic, Liftable};
 use crate::{Error, MiniscriptKey, Satisfier, ToPublicKey, Translator};
 

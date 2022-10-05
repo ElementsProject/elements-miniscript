@@ -9,8 +9,8 @@ use bitcoin::XOnlyPublicKey;
 use elements::hashes::hex;
 use elements::{self, opcodes, secp256k1_zkp};
 
-use super::{ArgFromStr, CovExtArgs, ExtParam, ParseableExt, TxEnv};
 use super::param::{ExtParamTranslator, TranslateExtParam};
+use super::{ArgFromStr, CovExtArgs, ExtParam, ParseableExt, TxEnv};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::limits::MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
@@ -18,7 +18,8 @@ use crate::miniscript::satisfy::{Satisfaction, Witness};
 use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::{
-    expression, interpreter, miniscript, Error, Extension, ExtTranslator, Satisfier, ToPublicKey, TranslateExt,
+    expression, interpreter, miniscript, Error, ExtTranslator, Extension, Satisfier, ToPublicKey,
+    TranslateExt,
 };
 
 /// CheckSigFromStack struct
@@ -113,7 +114,8 @@ impl<T: ExtParam> Extension for CheckSigFromStack<T> {
     }
 }
 
-impl<PArg, QArg> TranslateExt<CheckSigFromStack<PArg>, CheckSigFromStack<QArg>> for CheckSigFromStack<PArg>
+impl<PArg, QArg> TranslateExt<CheckSigFromStack<PArg>, CheckSigFromStack<QArg>>
+    for CheckSigFromStack<PArg>
 where
     CheckSigFromStack<PArg>: Extension,
     CheckSigFromStack<QArg>: Extension,
@@ -142,8 +144,6 @@ where
         TranslateExtParam::translate_ext(csfs, self)
     }
 }
-
-
 
 /// Wrapper around CheckSigFromStack signature messages
 #[derive(Debug, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]

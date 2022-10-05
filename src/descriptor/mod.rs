@@ -40,8 +40,9 @@ use self::checksum::verify_checksum;
 use crate::extensions::{CovExtArgs, ExtParam, ParseableExt};
 use crate::miniscript::{Legacy, Miniscript, Segwitv0};
 use crate::{
-    expression, miniscript, BareCtx, CovenantExt, Error, Extension, ExtTranslator, ForEach, ForEachKey,
-    MiniscriptKey, NoExt, Satisfier, ToPublicKey, TranslateExt, TranslatePk, Translator,
+    expression, miniscript, BareCtx, CovenantExt, Error, ExtTranslator, Extension, ForEach,
+    ForEachKey, MiniscriptKey, NoExt, Satisfier, ToPublicKey, TranslateExt, TranslatePk,
+    Translator,
 };
 
 mod bare;
@@ -287,7 +288,9 @@ impl<Pk: MiniscriptKey, Ext: Extension> From<Tr<Pk, NoExt>> for Descriptor<Pk, E
     }
 }
 
-impl<Pk: MiniscriptKey, Arg: ExtParam> From<LegacyCSFSCov<Pk, CovenantExt<Arg>>> for Descriptor<Pk, CovenantExt<Arg>> {
+impl<Pk: MiniscriptKey, Arg: ExtParam> From<LegacyCSFSCov<Pk, CovenantExt<Arg>>>
+    for Descriptor<Pk, CovenantExt<Arg>>
+{
     #[inline]
     fn from(inner: LegacyCSFSCov<Pk, CovenantExt<Arg>>) -> Self {
         Descriptor::LegacyCSFSCov(inner)
@@ -417,10 +420,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> Descriptor<Pk, Ext> {
 
     /// Create new tr descriptor
     /// Errors when miniscript exceeds resource limits under Tap context
-    pub fn new_tr_ext(
-        key: Pk,
-        script: Option<tr::TapTree<Pk, Ext>>,
-    ) -> Result<Self, Error> {
+    pub fn new_tr_ext(key: Pk, script: Option<tr::TapTree<Pk, Ext>>) -> Result<Self, Error> {
         Ok(Descriptor::TrExt(Tr::new(key, script)?))
     }
 
@@ -720,8 +720,7 @@ where
     }
 }
 
-impl<PExt, QExt, Pk> TranslateExt<PExt, QExt>
-    for Descriptor<Pk, PExt>
+impl<PExt, QExt, Pk> TranslateExt<PExt, QExt> for Descriptor<Pk, PExt>
 where
     PExt: Extension + TranslateExt<PExt, QExt, Output = QExt>,
     QExt: Extension,

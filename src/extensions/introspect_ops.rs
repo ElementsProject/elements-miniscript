@@ -11,8 +11,8 @@ use elements::confidential::Asset;
 use elements::opcodes::all::*;
 use elements::{confidential, encode, script, Address, AddressParams};
 
-use super::{ArgFromStr, CovExtArgs, EvalError, ExtParam, ParseableExt, TxEnv};
 use super::param::{ExtParamTranslator, TranslateExtParam};
+use super::{ArgFromStr, CovExtArgs, EvalError, ExtParam, ParseableExt, TxEnv};
 use crate::expression::{FromTree, Tree};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -20,7 +20,7 @@ use crate::miniscript::satisfy::{Satisfaction, Witness};
 use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::{
-    expression, interpreter, script_num_size, Error, Extension, ExtTranslator, Satisfier,
+    expression, interpreter, script_num_size, Error, ExtTranslator, Extension, Satisfier,
     ToPublicKey, TranslateExt,
 };
 
@@ -514,8 +514,6 @@ where
         TranslateExtParam::translate_ext(cov_ops, self)
     }
 }
-
-
 
 /// Wrapper around [`elements::Script`] for representing script pubkeys
 // Required because the fmt::Display of elements::Script does not print hex

@@ -32,7 +32,7 @@ use elements::sighash::SigHashCache;
 use elements::taproot::{self, ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, EcdsaSigHashType, SchnorrSigHashType, Script};
 
-use crate::extensions::{CovenantExt, CovExtArgs, ParseableExt};
+use crate::extensions::{CovExtArgs, CovenantExt, ParseableExt};
 use crate::miniscript::iter::PkPkh;
 use crate::miniscript::limits::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crate::miniscript::satisfy::{elementssig_from_rawsig, After, Older};
@@ -971,7 +971,8 @@ impl PsbtInputExt for psbt::Input {
     fn update_with_descriptor_unchecked(
         &mut self,
         descriptor: &Descriptor<DescriptorPublicKey, CovenantExt<CovExtArgs>>,
-    ) -> Result<Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>, descriptor::ConversionError> {
+    ) -> Result<Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>, descriptor::ConversionError>
+    {
         let (derived, _) = update_input_with_descriptor_helper(self, descriptor, None)?;
         Ok(derived)
     }
@@ -1057,7 +1058,13 @@ fn update_input_with_descriptor_helper(
     // the return value is a tuple here since the two internal calls to it require different info.
     // One needs the derived descriptor and the other needs to know whether the script_pubkey check
     // failed.
-) -> Result<(Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>, bool), descriptor::ConversionError> {
+) -> Result<
+    (
+        Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>,
+        bool,
+    ),
+    descriptor::ConversionError,
+> {
     let secp = secp256k1::Secp256k1::verification_only();
 
     let derived = if let Descriptor::Tr(_) = &descriptor {

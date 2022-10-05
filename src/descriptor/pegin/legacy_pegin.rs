@@ -34,7 +34,7 @@ use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{desc_checksum, verify_checksum};
 use crate::expression::{self, FromTree};
-use crate::extensions::{CovenantExt, CovExtArgs};
+use crate::extensions::{CovExtArgs, CovenantExt};
 use crate::policy::{semantic, Liftable};
 use crate::util::varint_len;
 use crate::{

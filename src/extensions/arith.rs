@@ -16,8 +16,8 @@ use crate::miniscript::satisfy::{Satisfaction, Witness};
 use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::{
-    expression, interpreter, miniscript, script_num_size, Error, Extension,
-    Satisfier, ToPublicKey, TranslateExt,
+    expression, interpreter, miniscript, script_num_size, Error, Extension, Satisfier, ToPublicKey,
+    TranslateExt,
 };
 
 /// Enum representing arithmetic operations with transaction amounts.

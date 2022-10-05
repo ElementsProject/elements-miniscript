@@ -146,10 +146,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> TapTree<Pk, Ext> {
     }
 
     // Helper function to translate extensions
-    fn translate_ext_helper<T, QExt, Error>(
-        &self,
-        t: &mut T,
-    ) -> Result<TapTree<Pk, QExt>, Error>
+    fn translate_ext_helper<T, QExt, Error>(&self, t: &mut T) -> Result<TapTree<Pk, QExt>, Error>
     where
         T: crate::ExtTranslator<Ext, QExt, Error>,
         QExt: Extension,

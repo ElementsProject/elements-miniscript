@@ -162,4 +162,3 @@ impl ExtParamTranslator<String, CovExtArgs, ()> for StrExtTranslator {
         Ok(x.clone())
     }
 }
-

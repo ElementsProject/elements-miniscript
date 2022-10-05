@@ -32,7 +32,6 @@ pub use self::outputs_pref::LegacyOutputsPref;
 pub use self::param::{ArgFromStr, CovExtArgs, ExtParam, NoExtParam};
 pub use self::tx_ver::LegacyVerEq;
 
-
 /// Extensions to elements-miniscript.
 /// Refer to implementations(unimplemented!) for example and tutorials
 pub trait Extension: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash {

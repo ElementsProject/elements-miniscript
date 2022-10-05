@@ -29,8 +29,8 @@ use crate::miniscript::context::ScriptContext;
 use crate::policy::{semantic, Liftable};
 use crate::util::{varint_len, witness_to_scriptsig};
 use crate::{
-    push_opcode_size, Error, ForEach, ForEachKey, Legacy, Miniscript, MiniscriptKey,
-    Satisfier, Segwitv0, ToPublicKey, TranslatePk, Translator,
+    push_opcode_size, Error, ForEach, ForEachKey, Legacy, Miniscript, MiniscriptKey, Satisfier,
+    Segwitv0, ToPublicKey, TranslatePk, Translator,
 };
 
 /// A Legacy p2sh Descriptor
@@ -403,4 +403,3 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Sh<P> {
         Ok(Sh { inner })
     }
 }
-

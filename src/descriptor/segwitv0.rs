@@ -28,8 +28,8 @@ use crate::miniscript::context::{ScriptContext, ScriptContextError};
 use crate::policy::{semantic, Liftable};
 use crate::util::varint_len;
 use crate::{
-    elementssig_to_rawsig, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey,
-    Satisfier, Segwitv0, ToPublicKey, TranslatePk, Translator,
+    elementssig_to_rawsig, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier,
+    Segwitv0, ToPublicKey, TranslatePk, Translator,
 };
 /// A Segwitv0 wsh descriptor
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
@@ -519,4 +519,3 @@ impl<P: MiniscriptKey, Q: MiniscriptKey> TranslatePk<P, Q> for Wpkh<P> {
         Ok(Wpkh::new(t.pk(&self.pk)?).expect("Uncompressed keys in Wpkh"))
     }
 }
-

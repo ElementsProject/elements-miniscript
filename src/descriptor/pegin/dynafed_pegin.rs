@@ -29,7 +29,7 @@ use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{desc_checksum, verify_checksum};
 use crate::expression::{self, FromTree};
-use crate::extensions::{CovenantExt, CovExtArgs};
+use crate::extensions::{CovExtArgs, CovenantExt};
 use crate::policy::{semantic, Liftable};
 use crate::{
     BtcDescriptor, BtcError, BtcFromTree, BtcLiftable, BtcPolicy, BtcSatisfier, BtcTree,
@@ -50,7 +50,10 @@ pub struct Pegin<Pk: MiniscriptKey> {
 
 impl<Pk: MiniscriptKey> Pegin<Pk> {
     /// Create a new LegacyPegin descriptor
-    pub fn new(fed_desc: BtcDescriptor<Pk>, elem_desc: Descriptor<Pk, CovenantExt<CovExtArgs>>) -> Self {
+    pub fn new(
+        fed_desc: BtcDescriptor<Pk>,
+        elem_desc: Descriptor<Pk, CovenantExt<CovExtArgs>>,
+    ) -> Self {
         Self {
             fed_desc,
             elem_desc,

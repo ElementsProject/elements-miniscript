@@ -15,8 +15,8 @@ use crate::miniscript::types::extra_props::{OpLimits, TimelockInfo};
 use crate::miniscript::types::{Base, Correctness, Dissat, ExtData, Input, Malleability};
 use crate::policy::{self, Liftable};
 use crate::{
-    expression, interpreter, miniscript, util, Error, Extension, MiniscriptKey,
-    Satisfier, ToPublicKey,
+    expression, interpreter, miniscript, util, Error, Extension, MiniscriptKey, Satisfier,
+    ToPublicKey,
 };
 
 /// Version struct

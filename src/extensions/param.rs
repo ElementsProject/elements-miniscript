@@ -1,15 +1,15 @@
 //! Parameters to certain covenants
 
-use std::{hash, fmt};
+use std::{fmt, hash};
 
 use bitcoin::hashes::hex::ToHex;
 use elements::confidential;
 use elements::encode::serialize;
 
-use crate::{Error, ExtTranslator};
-use super::CovenantExt;
 use super::csfs::{CsfsKey, CsfsMsg};
 use super::introspect_ops::Spk;
+use super::CovenantExt;
+use crate::{Error, ExtTranslator};
 
 /// Trait for parsing extension arg from String
 /// Parse an argument from `s` given context of parent and argument position
@@ -39,7 +39,6 @@ impl ArgFromStr for String {
         Ok(String::from(s))
     }
 }
-
 
 /// No Extensions for elements-miniscript
 /// All the implementations for the this function are unreachable
@@ -199,13 +198,16 @@ where
         match *cov {
             CovenantExt::LegacyVerEq(ref v) => Ok(CovenantExt::LegacyVerEq(v.clone())),
             CovenantExt::LegacyOutputsPref(ref p) => Ok(CovenantExt::LegacyOutputsPref(p.clone())),
-            CovenantExt::Csfs(ref c) => Ok(CovenantExt::Csfs(TranslateExtParam::translate_ext(c, self)?)),
+            CovenantExt::Csfs(ref c) => Ok(CovenantExt::Csfs(TranslateExtParam::translate_ext(
+                c, self,
+            )?)),
             CovenantExt::Arith(ref e) => Ok(CovenantExt::Arith(e.clone())),
-            CovenantExt::Introspect(ref c) => Ok(CovenantExt::Introspect(TranslateExtParam::translate_ext(c, self)?)),
+            CovenantExt::Introspect(ref c) => Ok(CovenantExt::Introspect(
+                TranslateExtParam::translate_ext(c, self)?,
+            )),
         }
     }
 }
-
 
 /// Converts a descriptor using abstract extension parameters to one using concrete ones,
 /// or vice-versa
@@ -223,4 +225,3 @@ where
     where
         T: ExtParamTranslator<PArg, QArg, E>;
 }
-
