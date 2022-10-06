@@ -204,6 +204,7 @@ fn test_descs(cl: &ElementsD, testdata: &mut TestData) {
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(out_asset(1))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(curr_inp_asset,inp_asset(0))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(curr_inp_asset,out_asset(0))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(curr_out_asset,out_asset(0))))");
 
     // same tests for values
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(exp_value)))");

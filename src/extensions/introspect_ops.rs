@@ -44,6 +44,9 @@ pub enum AssetExpr<T: ExtParam> {
     /// Explicit asset at the given output index
     /// i INPSECTOUTPUTASSET
     Output(usize),
+    /// Explicit asset at the output index corresponding to the input index
+    /// INSPECTCURRENTINPUTINDEX INPSECTOUTPUTASSET
+    CurrOutputAsset,
 }
 
 /// Enum representing operations with transaction values.
@@ -135,6 +138,7 @@ impl<T: ExtParam> AssetExpr<T> {
             AssetExpr::CurrInputAsset => 2,
             AssetExpr::Input(i) => script_num_size(*i) + 1,
             AssetExpr::Output(i) => script_num_size(*i) + 1,
+            AssetExpr::CurrOutputAsset => 2,
         }
     }
 
@@ -149,6 +153,7 @@ impl<T: ExtParam> AssetExpr<T> {
             AssetExpr::CurrInputAsset => AssetExpr::CurrInputAsset,
             AssetExpr::Input(i) => AssetExpr::Input(*i),
             AssetExpr::Output(i) => AssetExpr::Output(*i),
+            AssetExpr::CurrOutputAsset => AssetExpr::CurrOutputAsset,
         };
         Ok(res)
     }
@@ -161,6 +166,7 @@ impl<T: ExtParam> fmt::Display for AssetExpr<T> {
             AssetExpr::CurrInputAsset => write!(f, "curr_inp_asset"),
             AssetExpr::Input(i) => write!(f, "inp_asset({})", i),
             AssetExpr::Output(i) => write!(f, "out_asset({})", i),
+            AssetExpr::CurrOutputAsset => write!(f, "curr_out_asset"),
         }
     }
 }
@@ -172,6 +178,7 @@ impl<T: ExtParam> fmt::Debug for AssetExpr<T> {
             AssetExpr::CurrInputAsset => write!(f, "curr_inp_asset"),
             AssetExpr::Input(i) => write!(f, "inp_asset({:?})", i),
             AssetExpr::Output(i) => write!(f, "out_asset({:?})", i),
+            AssetExpr::CurrOutputAsset => write!(f, "curr_out_asset"),
         }
     }
 }
@@ -191,6 +198,7 @@ impl<T: ExtParam> AssetExpr<T> {
                 .map(AssetExpr::Input),
             ("out_asset", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
                 .map(AssetExpr::Output),
+            ("curr_out_asset", 0) => Ok(AssetExpr::CurrOutputAsset),
             (asset, 0) => Ok(AssetExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -670,6 +678,9 @@ impl AssetExpr<CovExtArgs> {
             AssetExpr::CurrInputAsset => builder
                 .push_opcode(OP_PUSHCURRENTINPUTINDEX)
                 .push_opcode(OP_INSPECTINPUTASSET),
+            AssetExpr::CurrOutputAsset => builder
+                .push_opcode(OP_PUSHCURRENTINPUTINDEX)
+                .push_opcode(OP_INSPECTOUTPUTASSET),
             AssetExpr::Input(i) => builder
                 .push_int(*i as i64)
                 .push_opcode(OP_INSPECTINPUTASSET),
@@ -696,6 +707,15 @@ impl AssetExpr<CovExtArgs> {
                 }
                 Ok(env.spent_utxos()[env.idx()].asset)
             }
+            AssetExpr::CurrOutputAsset => {
+                if env.idx() >= env.tx().output.len() {
+                    return Err(EvalError::OutputIndexOutOfBounds(
+                        env.idx(),
+                        env.tx().output.len(),
+                    ));
+                }
+                Ok(env.tx().output[env.idx()].asset)
+            }
             AssetExpr::Input(i) => {
                 if *i >= env.spent_utxos().len() {
                     return Err(EvalError::UtxoIndexOutOfBounds(*i, env.spent_utxos().len()));
@@ -721,6 +741,8 @@ impl AssetExpr<CovExtArgs> {
             Some((AssetExpr::Const(CovExtArgs::Asset(asset)), e - 2))
         } else if let Some(&[Tk::CurrInp, Tk::InpAsset]) = tks.get(e.checked_sub(2)?..e) {
             Some((AssetExpr::CurrInputAsset, e - 2))
+        } else if let Some(&[Tk::CurrInp, Tk::OutAsset]) = tks.get(e.checked_sub(2)?..e) {
+            Some((AssetExpr::CurrOutputAsset, e - 2))
         } else if let Some(&[Tk::Num(i), Tk::InpAsset]) = tks.get(e.checked_sub(2)?..e) {
             Some((AssetExpr::Input(i as usize), e - 2))
         } else if let Some(&[Tk::Num(i), Tk::OutAsset]) = tks.get(e.checked_sub(2)?..e) {
@@ -1202,6 +1224,7 @@ mod tests {
         _test_parse("is_exp_asset(out_asset(9))");
         _test_parse("asset_eq(ConfAst,ExpAst)");
         _test_parse("asset_eq(curr_inp_asset,out_asset(1))");
+        _test_parse("asset_eq(curr_inp_asset,curr_out_asset)");
         _test_parse("asset_eq(inp_asset(3),out_asset(1))");
 
         // same tests for values
