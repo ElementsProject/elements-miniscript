@@ -65,6 +65,10 @@ pub enum ValueExpr<T: ExtParam> {
     /// Value(possibly confidential) at the given output index
     /// i INPSECTOUTPUTVALUE
     Output(usize),
+    /// Value in the corresponding output of the current input index
+    /// Required for sighash single emulation
+    /// INSPECTCURRENTINPUTINDEX INPSECTINPUTVALUE
+    CurrOutputValue,
 }
 
 /// Enum representing operations with transaction script pubkeys.
@@ -205,6 +209,7 @@ impl<T: ExtParam> ValueExpr<T> {
             ValueExpr::CurrInputValue => 2,
             ValueExpr::Input(i) => script_num_size(*i) + 1,
             ValueExpr::Output(i) => script_num_size(*i) + 1,
+            ValueExpr::CurrOutputValue => 2,
         }
     }
 
@@ -219,6 +224,7 @@ impl<T: ExtParam> ValueExpr<T> {
             ValueExpr::CurrInputValue => ValueExpr::CurrInputValue,
             ValueExpr::Input(i) => ValueExpr::Input(*i),
             ValueExpr::Output(i) => ValueExpr::Output(*i),
+            ValueExpr::CurrOutputValue => ValueExpr::CurrOutputValue,
         };
         Ok(res)
     }
@@ -231,6 +237,7 @@ impl<T: ExtParam> fmt::Display for ValueExpr<T> {
             ValueExpr::CurrInputValue => write!(f, "curr_inp_value"),
             ValueExpr::Input(i) => write!(f, "inp_value({})", i),
             ValueExpr::Output(i) => write!(f, "out_value({})", i),
+            ValueExpr::CurrOutputValue => write!(f, "curr_out_value"),
         }
     }
 }
@@ -242,6 +249,7 @@ impl<T: ExtParam> fmt::Debug for ValueExpr<T> {
             ValueExpr::CurrInputValue => write!(f, "curr_inp_value"),
             ValueExpr::Input(i) => write!(f, "inp_value({:?})", i),
             ValueExpr::Output(i) => write!(f, "out_value({:?})", i),
+            ValueExpr::CurrOutputValue => write!(f, "curr_out_value"),
         }
     }
 }
@@ -261,6 +269,7 @@ impl<T: ExtParam> ValueExpr<T> {
                 .map(ValueExpr::Input),
             ("out_value", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
                 .map(ValueExpr::Output),
+            ("curr_out_value", 0) => Ok(ValueExpr::CurrOutputValue),
             (value, 0) => Ok(ValueExpr::Const(T::arg_from_str(value, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -747,6 +756,9 @@ impl ValueExpr<CovExtArgs> {
             ValueExpr::CurrInputValue => builder
                 .push_opcode(OP_PUSHCURRENTINPUTINDEX)
                 .push_opcode(OP_INSPECTINPUTVALUE),
+            ValueExpr::CurrOutputValue => builder
+                .push_opcode(OP_PUSHCURRENTINPUTINDEX)
+                .push_opcode(OP_INSPECTOUTPUTVALUE),
             ValueExpr::Input(i) => builder
                 .push_int(*i as i64)
                 .push_opcode(OP_INSPECTINPUTVALUE),
@@ -772,6 +784,15 @@ impl ValueExpr<CovExtArgs> {
                     ));
                 }
                 Ok(env.spent_utxos()[env.idx()].value)
+            }
+            ValueExpr::CurrOutputValue => {
+                if env.idx() >= env.tx().output.len() {
+                    return Err(EvalError::OutputIndexOutOfBounds(
+                        env.idx(),
+                        env.tx().output.len(),
+                    ));
+                }
+                Ok(env.tx().output[env.idx()].value)
             }
             ValueExpr::Input(i) => {
                 if *i >= env.spent_utxos().len() {
@@ -801,6 +822,8 @@ impl ValueExpr<CovExtArgs> {
             Some((ValueExpr::Const(CovExtArgs::Value(value)), e - 2))
         } else if let Some(&[Tk::CurrInp, Tk::InpValue]) = tks.get(e.checked_sub(2)?..e) {
             Some((ValueExpr::CurrInputValue, e - 2))
+        } else if let Some(&[Tk::CurrInp, Tk::OutValue]) = tks.get(e.checked_sub(2)?..e) {
+            Some((ValueExpr::CurrOutputValue, e - 2))
         } else if let Some(&[Tk::Num(i), Tk::InpValue]) = tks.get(e.checked_sub(2)?..e) {
             Some((ValueExpr::Input(i as usize), e - 2))
         } else if let Some(&[Tk::Num(i), Tk::OutValue]) = tks.get(e.checked_sub(2)?..e) {
@@ -1190,6 +1213,7 @@ mod tests {
         _test_parse("value_eq(ConfVal,ExpVal)");
         _test_parse("value_eq(curr_inp_value,out_value(1))");
         _test_parse("value_eq(inp_value(3),out_value(1))");
+        _test_parse("value_eq(curr_out_value,out_value(1))");
 
         // same tests for spks
         _test_parse("spk_eq(V0Spk,out_spk(1))");
@@ -1208,6 +1232,9 @@ mod tests {
         );
         _test_parse("and_v(v:pk(K),and_v(v:value_eq(ConfVal,ConfVal),spk_eq(V1Spk,V1Spk)))");
         _test_parse("and_v(v:pk(K),and_v(v:value_eq(ConfVal,ConfVal),spk_eq(V1Spk,curr_out_spk)))");
+        _test_parse(
+            "and_v(v:pk(K),and_v(v:value_eq(curr_out_value,ConfVal),spk_eq(V1Spk,curr_out_spk)))",
+        );
         _test_parse("and_v(v:pk(K),and_v(v:value_eq(ConfVal,ConfVal),and_v(v:spk_eq(V1Spk,V1Spk),curr_idx_eq(1))))");
     }
 

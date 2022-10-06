@@ -211,6 +211,7 @@ fn test_descs(cl: &ElementsD, testdata: &mut TestData) {
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(inp_value(0))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(out_value(1))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(curr_inp_value,inp_value(0))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(curr_out_value,out_value(0))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(out_value(0),out_value(0))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(out_value(1),out_value(1))))");
 
