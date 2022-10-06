@@ -218,6 +218,7 @@ fn test_descs(cl: &ElementsD, testdata: &mut TestData) {
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(out_spk(1),out_spk(1))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(spk_v1,spk_v1)))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(curr_inp_spk,inp_spk(0))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(curr_out_spk,out_spk(0))))");
 
     // Testing the current input index
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),curr_idx_eq(0)))");

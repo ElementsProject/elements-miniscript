@@ -89,6 +89,9 @@ pub enum SpkExpr<T: ExtParam> {
     /// Explicit asset at the given output index
     /// i INPSECTOUTPUTSCRIPTPUBKEY
     Output(usize),
+    /// Output spk matching the current executing index. Required for sighash single emulation
+    /// INSPECTCURRENTINPUTINDEX INPSECTOUTPUTSCRIPTPUBKEY
+    CurrOutputSpk,
 }
 
 /// Miniscript Fragment containing arith expressions
@@ -276,6 +279,7 @@ impl<T: ExtParam> SpkExpr<T> {
             SpkExpr::CurrInputSpk => 2,
             SpkExpr::Input(i) => script_num_size(*i) + 1,
             SpkExpr::Output(i) => script_num_size(*i) + 1,
+            SpkExpr::CurrOutputSpk => 2,
         }
     }
 
@@ -290,6 +294,7 @@ impl<T: ExtParam> SpkExpr<T> {
             SpkExpr::CurrInputSpk => SpkExpr::CurrInputSpk,
             SpkExpr::Input(i) => SpkExpr::Input(*i),
             SpkExpr::Output(i) => SpkExpr::Output(*i),
+            SpkExpr::CurrOutputSpk => SpkExpr::CurrOutputSpk,
         };
         Ok(res)
     }
@@ -302,6 +307,7 @@ impl<T: ExtParam> fmt::Display for SpkExpr<T> {
             SpkExpr::CurrInputSpk => write!(f, "curr_inp_spk"),
             SpkExpr::Input(i) => write!(f, "inp_spk({})", i),
             SpkExpr::Output(i) => write!(f, "out_spk({})", i),
+            SpkExpr::CurrOutputSpk => write!(f, "curr_out_spk"),
         }
     }
 }
@@ -313,6 +319,7 @@ impl<T: ExtParam> fmt::Debug for SpkExpr<T> {
             SpkExpr::CurrInputSpk => write!(f, "curr_inp_spk"),
             SpkExpr::Input(i) => write!(f, "inp_spk({:?})", i),
             SpkExpr::Output(i) => write!(f, "out_spk({:?})", i),
+            SpkExpr::CurrOutputSpk => write!(f, "curr_out_spk"),
         }
     }
 }
@@ -332,6 +339,7 @@ impl<T: ExtParam> SpkExpr<T> {
                 .map(SpkExpr::Input),
             ("out_spk", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
                 .map(SpkExpr::Output),
+            ("curr_out_spk", 0) => Ok(SpkExpr::CurrOutputSpk),
             (asset, 0) => Ok(SpkExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -818,6 +826,9 @@ impl SpkExpr<CovExtArgs> {
             SpkExpr::CurrInputSpk => builder
                 .push_opcode(OP_PUSHCURRENTINPUTINDEX)
                 .push_opcode(OP_INSPECTINPUTSCRIPTPUBKEY),
+            SpkExpr::CurrOutputSpk => builder
+                .push_opcode(OP_PUSHCURRENTINPUTINDEX)
+                .push_opcode(OP_INSPECTOUTPUTSCRIPTPUBKEY),
             SpkExpr::Input(i) => builder
                 .push_int(*i as i64)
                 .push_opcode(OP_INSPECTINPUTSCRIPTPUBKEY),
@@ -843,6 +854,15 @@ impl SpkExpr<CovExtArgs> {
                     ));
                 }
                 spk_to_components(&env.spent_utxos()[env.idx()].script_pubkey)
+            }
+            SpkExpr::CurrOutputSpk => {
+                if env.idx() >= env.tx().output.len() {
+                    return Err(EvalError::OutputIndexOutOfBounds(
+                        env.idx(),
+                        env.tx().output.len(),
+                    ));
+                }
+                spk_to_components(&env.tx().output[env.idx()].script_pubkey)
             }
             SpkExpr::Input(i) => {
                 if *i >= env.spent_utxos().len() {
@@ -873,6 +893,8 @@ impl SpkExpr<CovExtArgs> {
             Some((SpkExpr::Const(CovExtArgs::Script(Spk(script))), e - 2))
         } else if let Some(&[Tk::CurrInp, Tk::InpSpk]) = tks.get(e.checked_sub(2)?..e) {
             Some((SpkExpr::CurrInputSpk, e - 2))
+        } else if let Some(&[Tk::CurrInp, Tk::OutSpk]) = tks.get(e.checked_sub(2)?..e) {
+            Some((SpkExpr::CurrOutputSpk, e - 2))
         } else if let Some(&[Tk::Num(i), Tk::InpSpk]) = tks.get(e.checked_sub(2)?..e) {
             Some((SpkExpr::Input(i as usize), e - 2))
         } else if let Some(&[Tk::Num(i), Tk::OutSpk]) = tks.get(e.checked_sub(2)?..e) {
@@ -1173,6 +1195,7 @@ mod tests {
         _test_parse("spk_eq(V0Spk,out_spk(1))");
         _test_parse("spk_eq(V1Spk,inp_spk(1))");
         _test_parse("spk_eq(curr_inp_spk,out_spk(1))");
+        _test_parse("spk_eq(curr_out_spk,out_spk(1))");
         _test_parse("spk_eq(inp_spk(3),out_spk(1))");
 
         // Testing the current input index
@@ -1184,6 +1207,7 @@ mod tests {
             "and_v(v:pk(K),and_v(v:is_exp_value(out_value(1)),is_exp_asset(out_asset(1))))",
         );
         _test_parse("and_v(v:pk(K),and_v(v:value_eq(ConfVal,ConfVal),spk_eq(V1Spk,V1Spk)))");
+        _test_parse("and_v(v:pk(K),and_v(v:value_eq(ConfVal,ConfVal),spk_eq(V1Spk,curr_out_spk)))");
         _test_parse("and_v(v:pk(K),and_v(v:value_eq(ConfVal,ConfVal),and_v(v:spk_eq(V1Spk,V1Spk),curr_idx_eq(1))))");
     }
 
