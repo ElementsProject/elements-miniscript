@@ -1,7 +1,6 @@
 // Tapscript
 
 use std::cmp::{self, max};
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::{fmt, hash};
 
@@ -417,7 +416,7 @@ impl_block_str!(
     fn parse_tr_script_spend(tree: &expression::Tree,) -> Result<TapTree<Pk, Ext>, Error> {
         match tree {
             expression::Tree { name, args } if !name.is_empty() && args.is_empty() => {
-                let script = Miniscript::<Pk, Tap, Ext>::from_str(name)?;
+                let script = Miniscript::<Pk, Tap, Ext>::from_str_insane(name)?;
                 Ok(TapTree::Leaf(Arc::new(script)))
             }
             expression::Tree { name, args } if name.is_empty() && args.len() == 2 => {
@@ -484,6 +483,20 @@ impl_from_str!(
     => Ext; Extension,
     type Err = Error;,
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let res = Self::from_str_insane(s)?;
+        if res.iter_scripts().any(|(_, ms)| ms.sanity_check().is_err()) {
+            return Err(Error::BadDescriptor("Sanity check failed".to_string()));
+        }
+        Ok(res)
+    }
+);
+
+#[rustfmt::skip]
+impl_block_str!(
+    Tr<Pk, Ext>,
+    => Ext; Extension,
+    /// Parse taproot descriptors without any sanity checks
+    pub fn from_str_insane(s: &str,) -> Result<Tr<Pk, Ext>, Error> {
         let desc_str = verify_checksum(s)?;
         let top = parse_tr_tree(desc_str)?;
         Self::from_tree(&top)
@@ -742,6 +755,7 @@ where
 mod tests {
     use super::*;
     use crate::{ForEachKey, NoExt};
+    use core::str::FromStr;
 
     #[test]
     fn test_for_each() {
