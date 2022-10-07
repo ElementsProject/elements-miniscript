@@ -24,7 +24,7 @@ use crate::descriptor::{CovOperations, LegacyCSFSCov};
 use crate::extensions::ParseableExt;
 use crate::miniscript::context::{NoChecks, ScriptContext};
 use crate::util::is_v1_p2tr;
-use crate::{BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, Translator};
+use crate::{hash256, BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, Translator};
 
 /// Attempts to parse a slice as a Bitcoin public key, checking compressedness
 /// if asked to, but otherwise dropping it
@@ -437,6 +437,10 @@ impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
                 Ok(*sha256)
             }
+
+            fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ()> {
+                Ok(*hash256)
+            }
         }
 
         self.real_translate_pk(&mut TranslateFullPk)
@@ -462,6 +466,10 @@ impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
 
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
                 Ok(*sha256)
+            }
+
+            fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ()> {
+                Ok(*hash256)
             }
         }
         self.real_translate_pk(&mut TranslateXOnlyPk)

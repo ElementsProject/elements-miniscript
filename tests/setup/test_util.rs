@@ -21,14 +21,14 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use bitcoin::hashes::hex::ToHex;
-use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
+use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
 use bitcoin::secp256k1;
 use elements::hashes::hex::FromHex;
 use elements::{confidential, encode, AddressParams, BlockHash};
 use miniscript::descriptor::{SinglePub, SinglePubKey};
 use miniscript::extensions::{param::ExtParamTranslator, CovExtArgs, CsfsKey, CsfsMsg};
 use miniscript::{
-    CovenantExt, Descriptor, DescriptorPublicKey, Error, Miniscript, ScriptContext, TranslateExt,
+    hash256, CovenantExt, Descriptor, DescriptorPublicKey, Error, Miniscript, ScriptContext, TranslateExt,
     TranslatePk, Translator,
 };
 use rand::RngCore;
@@ -41,7 +41,7 @@ pub struct PubData {
     pub pks: Vec<bitcoin::PublicKey>,
     pub x_only_pks: Vec<bitcoin::XOnlyPublicKey>,
     pub sha256: sha256::Hash,
-    pub hash256: sha256d::Hash,
+    pub hash256: hash256::Hash,
     pub ripemd160: ripemd160::Hash,
     pub hash160: hash160::Hash,
     pub genesis_hash: elements::BlockHash,
@@ -112,7 +112,7 @@ impl TestData {
         let sha256_pre = [0x12 as u8; 32];
         let sha256 = sha256::Hash::hash(&sha256_pre);
         let hash256_pre = [0x34 as u8; 32];
-        let hash256 = sha256d::Hash::hash(&hash256_pre);
+        let hash256 = hash256::Hash::hash(&hash256_pre);
         let hash160_pre = [0x56 as u8; 32];
         let hash160 = hash160::Hash::hash(&hash160_pre);
         let ripemd160_pre = [0x78 as u8; 32];
@@ -258,6 +258,11 @@ impl<'a> Translator<String, DescriptorPublicKey, ()> for StrDescPubKeyTranslator
         let sha = sha256::Hash::from_str(sha256).unwrap();
         Ok(sha)
     }
+
+    fn hash256(&mut self, hash256: &String) -> Result<hash256::Hash, ()> {
+        let hash256 = hash256::Hash::from_str(hash256).unwrap();
+        Ok(hash256)
+    }
 }
 
 // Translate Str to DescriptorPublicKey
@@ -303,6 +308,11 @@ impl<'a> Translator<String, DescriptorPublicKey, ()> for StrTranslatorLoose<'a> 
     fn sha256(&mut self, sha256: &String) -> Result<sha256::Hash, ()> {
         let sha = sha256::Hash::from_str(sha256).unwrap();
         Ok(sha)
+    }
+
+    fn hash256(&mut self, hash256: &String) -> Result<hash256::Hash, ()> {
+        let hash256 = hash256::Hash::from_str(hash256).unwrap();
+        Ok(hash256)
     }
 }
 

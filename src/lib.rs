@@ -124,7 +124,7 @@ pub(crate) use bitcoin_miniscript::{
 };
 // re-export imports
 pub use bitcoin_miniscript::{
-    DummyKey, DummyKeyHash, ForEachKey, MiniscriptKey, ToPublicKey,
+    hash256, DummyKey, DummyKeyHash, ForEachKey, MiniscriptKey, ToPublicKey,
 };
 // End imports
 
@@ -144,7 +144,7 @@ pub mod timelock;
 mod test_utils;
 mod util;
 
-use std::{error, fmt, str};
+use std::{error, fmt, hash, str};
 
 use elements::hashes::sha256;
 use elements::secp256k1_zkp::Secp256k1;
@@ -206,8 +206,34 @@ where
     contracthash::tweak_key(secp, pk, contract)
 }
 
-/// Describes an object that can translate various keys and hashes from one key to the type
-/// associated with the other key. Used by the [`TranslatePk`] trait to do the actual translations.
+/// Dummy keyhash which de/serializes to the empty string; useful for testing
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
+pub struct DummyHash256;
+
+impl str::FromStr for DummyHash256 {
+    type Err = &'static str;
+    fn from_str(x: &str) -> Result<DummyHash256, &'static str> {
+        if x.is_empty() {
+            Ok(DummyHash256)
+        } else {
+            Err("non empty dummy hash")
+        }
+    }
+}
+
+impl fmt::Display for DummyHash256 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("")
+    }
+}
+
+impl hash::Hash for DummyHash256 {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        "DummySha256Hash".hash(state);
+    }
+}
+
+/// Provides the conversion information required in [`TranslatePk`]
 pub trait Translator<P, Q, E>
 where
     P: MiniscriptKey,
@@ -217,10 +243,13 @@ where
     fn pk(&mut self, pk: &P) -> Result<Q, E>;
 
     /// Translates public key hashes P::Hash -> Q::Hash.
-    fn pkh(&mut self, pkh: &P::Hash) -> Result<Q::Hash, E>;
+    fn pkh(&mut self, pkh: &P::RawPkHash) -> Result<Q::RawPkHash, E>;
 
-    /// Translates sha256 hashes from P::Sha256 -> Q::Sha256
+    /// Provides the translation from P::Sha256 -> Q::Sha256
     fn sha256(&mut self, sha256: &P::Sha256) -> Result<Q::Sha256, E>;
+
+    /// Provides the translation from P::Hash256 -> Q::Hash256
+    fn hash256(&mut self, hash256: &P::Hash256) -> Result<Q::Hash256, E>;
 }
 
 /// Trait for translation Extensions

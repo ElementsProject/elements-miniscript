@@ -6,6 +6,7 @@
 
 use std::{error, fmt};
 
+use elements::hashes::{sha256d, Hash};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SigHashCache;
 use elements::taproot::{LeafVersion, TapLeafHash};
@@ -275,7 +276,7 @@ pub fn test_desc_satisfy(
         testdata.secretdata.sha256_pre.to_vec(),
     );
     psbt.inputs_mut()[0].hash256_preimages.insert(
-        testdata.pubdata.hash256,
+        sha256d::Hash::from_inner(testdata.pubdata.hash256.into_inner()),
         testdata.secretdata.hash256_pre.to_vec(),
     );
     psbt.inputs_mut()[0].hash160_preimages.insert(

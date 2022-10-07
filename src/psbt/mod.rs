@@ -25,7 +25,7 @@ use std::{error, fmt};
 
 use bitcoin;
 use bitcoin::hashes::sha256;
-use elements::hashes::{hash160, ripemd160, sha256d};
+use elements::hashes::{hash160, ripemd160, sha256d, Hash};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::secp256k1_zkp::{self as secp256k1, Secp256k1};
 use elements::sighash::SigHashCache;
@@ -37,7 +37,7 @@ use crate::miniscript::iter::PkPkh;
 use crate::miniscript::limits::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crate::miniscript::satisfy::{elementssig_from_rawsig, After, Older};
 use crate::{
-    descriptor, interpreter, Descriptor, DescriptorPublicKey, ElementsSig, Extension,
+    descriptor, hash256, interpreter, Descriptor, DescriptorPublicKey, ElementsSig, Extension,
     MiniscriptKey, Preimage32, Satisfier, ToPublicKey, TranslatePk, Translator,
 };
 
@@ -335,7 +335,7 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
 
     fn lookup_pkh_tap_leaf_script_sig(
         &self,
-        pkh: &(Pk::Hash, TapLeafHash),
+        pkh: &(Pk::RawPkHash, TapLeafHash),
     ) -> Option<(
         elements::secp256k1_zkp::XOnlyPublicKey,
         elements::SchnorrSig,
@@ -362,7 +362,7 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
         }
     }
 
-    fn lookup_pkh_ecdsa_sig(&self, pkh: &Pk::Hash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
+    fn lookup_pkh_ecdsa_sig(&self, pkh: &Pk::RawPkHash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
         if let Some((pk, sig)) = self.psbt.inputs()[self.index]
             .partial_sigs
             .iter()
@@ -427,10 +427,10 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
             .and_then(try_vec_as_preimage32)
     }
 
-    fn lookup_hash256(&self, h: sha256d::Hash) -> Option<Preimage32> {
+    fn lookup_hash256(&self, h: &Pk::Hash256) -> Option<Preimage32> {
         self.psbt.inputs()[self.index]
             .hash256_preimages
-            .get(&h)
+            .get(&sha256d::Hash::from_inner(Pk::to_hash256(h).into_inner())) // upstream psbt operates on hash256
             .and_then(try_vec_as_preimage32)
     }
 
@@ -1012,6 +1012,13 @@ impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionE
     ) -> Result<sha256::Hash, descriptor::ConversionError> {
         Ok(*sha256)
     }
+
+    fn hash256(
+        &mut self,
+        hash256: &hash256::Hash,
+    ) -> Result<hash256::Hash, descriptor::ConversionError> {
+        Ok(*hash256)
+    }
 }
 
 // Traverse the pkh lookup while maintaining a reverse map for storing the map
@@ -1048,6 +1055,13 @@ impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionE
         sha256: &sha256::Hash,
     ) -> Result<sha256::Hash, descriptor::ConversionError> {
         Ok(*sha256)
+    }
+
+    fn hash256(
+        &mut self,
+        hash256: &hash256::Hash,
+    ) -> Result<hash256::Hash, descriptor::ConversionError> {
+        Ok(*hash256)
     }
 }
 

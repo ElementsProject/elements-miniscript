@@ -29,11 +29,13 @@ macro_rules! impl_from_tree {
         impl<Pk $(, $gen)* $(, $ext)?> $crate::expression::FromTree for $name
         where
             Pk: MiniscriptKey + core::str::FromStr,
-            Pk::Hash: core::str::FromStr,
+            Pk::RawPkHash: core::str::FromStr,
             Pk::Sha256: core::str::FromStr,
+            Pk::Hash256: core::str::FromStr,
             <Pk as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Hash as core::str::FromStr>::Err: std::string::ToString,
+            <<Pk as MiniscriptKey>::RawPkHash as core::str::FromStr>::Err: std::string::ToString,
             <<Pk as MiniscriptKey>::Sha256 as core::str::FromStr>::Err: std::string::ToString,
+            <<Pk as MiniscriptKey>::Hash256 as core::str::FromStr>::Err: std::string::ToString,
             $($gen : $gen_con,)*
             $($ext: $trt)?
             {
@@ -59,11 +61,13 @@ macro_rules! impl_from_str {
         impl<Pk $(, $gen)* $(, $ext)?> core::str::FromStr for $name
         where
             Pk: MiniscriptKey + core::str::FromStr,
-            Pk::Hash: core::str::FromStr,
+            Pk::RawPkHash: core::str::FromStr,
             Pk::Sha256: core::str::FromStr,
+            Pk::Hash256: core::str::FromStr,
             <Pk as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Hash as core::str::FromStr>::Err: std::string::ToString,
+            <<Pk as MiniscriptKey>::RawPkHash as core::str::FromStr>::Err: std::string::ToString,
             <<Pk as MiniscriptKey>::Sha256 as core::str::FromStr>::Err: std::string::ToString,
+            <<Pk as MiniscriptKey>::Hash256 as core::str::FromStr>::Err: std::string::ToString,
             $($gen : $gen_con,)*
             $($ext: $trt)?
             {
@@ -89,11 +93,13 @@ macro_rules! impl_block_str {
         impl<Pk $(, $gen)* $(, $ext)?> $name
         where
             Pk: MiniscriptKey + core::str::FromStr,
-            Pk::Hash: core::str::FromStr,
+            Pk::RawPkHash: core::str::FromStr,
             Pk::Sha256: core::str::FromStr,
+            Pk::Hash256: core::str::FromStr,
             <Pk as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Hash as core::str::FromStr>::Err: std::string::ToString,
+            <<Pk as MiniscriptKey>::RawPkHash as core::str::FromStr>::Err: std::string::ToString,
             <<Pk as MiniscriptKey>::Sha256 as core::str::FromStr>::Err: std::string::ToString,
+            <<Pk as MiniscriptKey>::Hash256 as core::str::FromStr>::Err: std::string::ToString,
             $($gen : $gen_con,)*
             $($ext: $trt)?
             {
@@ -113,12 +119,15 @@ macro_rules! serde_string_impl_pk {
         impl<'de, Pk $(, $gen)* $(, $ext)*> serde::Deserialize<'de> for $name<Pk $(, $gen)* $(, $ext)* >
         where
             Pk: $crate::MiniscriptKey + core::str::FromStr,
-            Pk::Hash: core::str::FromStr,
+            Pk::RawPkHash: core::str::FromStr,
             Pk::Sha256: core::str::FromStr,
+            Pk::Hash256: core::str::FromStr,
             <Pk as core::str::FromStr>::Err: core::fmt::Display,
-            <<Pk as $crate::MiniscriptKey>::Hash as core::str::FromStr>::Err:
+            <<Pk as $crate::MiniscriptKey>::RawPkHash as core::str::FromStr>::Err:
                 core::fmt::Display,
             <<Pk as $crate::MiniscriptKey>::Sha256 as core::str::FromStr>::Err:
+                core::fmt::Display,
+            <<Pk as $crate::MiniscriptKey>::Hash256 as core::str::FromStr>::Err:
                 core::fmt::Display,
             $($gen : $gen_con,)*
             $($ext : $ext_bound,)*
@@ -136,12 +145,15 @@ macro_rules! serde_string_impl_pk {
                 impl<'de, Pk $(, $gen)* $(, $ext)*> serde::de::Visitor<'de> for Visitor<Pk $(, $gen)* $(, $ext)*>
                 where
                     Pk: $crate::MiniscriptKey + core::str::FromStr,
-                    Pk::Hash: core::str::FromStr,
+                    Pk::RawPkHash: core::str::FromStr,
                     Pk::Sha256: core::str::FromStr,
+                    Pk::Hash256: core::str::FromStr,
                     <Pk as core::str::FromStr>::Err: core::fmt::Display,
-                    <<Pk as $crate::MiniscriptKey>::Hash as core::str::FromStr>::Err:
+                    <<Pk as $crate::MiniscriptKey>::RawPkHash as core::str::FromStr>::Err:
                         core::fmt::Display,
                     <<Pk as $crate::MiniscriptKey>::Sha256 as core::str::FromStr>::Err:
+                        core::fmt::Display,
+                    <<Pk as $crate::MiniscriptKey>::Hash256 as core::str::FromStr>::Err:
                         core::fmt::Display,
                     $($gen: $gen_con,)*
                     $($ext : $ext_bound,)*

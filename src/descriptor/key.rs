@@ -7,7 +7,7 @@ use elements::hashes::hex::FromHex;
 use elements::hashes::{hash160, sha256, Hash, HashEngine};
 use elements::secp256k1_zkp::{Secp256k1, Signing, Verification};
 
-use crate::{MiniscriptKey, ToPublicKey};
+use crate::{hash256, MiniscriptKey, ToPublicKey};
 
 /// Single public key without any origin or range information
 #[derive(Debug, Eq, PartialEq, Clone, Ord, PartialOrd, Hash)]
@@ -716,8 +716,9 @@ impl<K: InnerXKey> DescriptorXKey<K> {
 
 impl MiniscriptKey for DescriptorPublicKey {
     // This allows us to be able to derive public keys even for PkH s
-    type Hash = Self;
-    type Sha256 = bitcoin::hashes::sha256::Hash;
+    type RawPkHash = Self;
+    type Sha256 = sha256::Hash;
+    type Hash256 = hash256::Hash;
 
     fn is_uncompressed(&self) -> bool {
         match self {
@@ -782,8 +783,9 @@ impl fmt::Display for DerivedDescriptorKey {
 
 impl MiniscriptKey for DerivedDescriptorKey {
     // This allows us to be able to derive public keys even for PkH s
-    type Hash = Self;
-    type Sha256 = bitcoin::hashes::sha256::Hash;
+    type RawPkHash = Self;
+    type Sha256 = sha256::Hash;
+    type Hash256 = hash256::Hash;
 
     fn is_uncompressed(&self) -> bool {
         self.key.is_uncompressed()
@@ -809,6 +811,10 @@ impl ToPublicKey for DerivedDescriptorKey {
     }
 
     fn to_sha256(hash: &sha256::Hash) -> sha256::Hash {
+        *hash
+    }
+
+    fn to_hash256(hash: &hash256::Hash) -> hash256::Hash {
         *hash
     }
 }

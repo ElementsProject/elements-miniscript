@@ -40,7 +40,7 @@ use self::checksum::verify_checksum;
 use crate::extensions::{CovExtArgs, ExtParam, ParseableExt};
 use crate::miniscript::{Legacy, Miniscript, Segwitv0};
 use crate::{
-    expression, miniscript, BareCtx, CovenantExt, Error, ExtTranslator, Extension,
+    expression, hash256, miniscript, BareCtx, CovenantExt, Error, ExtTranslator, Extension,
     ForEachKey, MiniscriptKey, NoExt, Satisfier, ToPublicKey, TranslateExt, TranslatePk,
     Translator,
 };
@@ -755,7 +755,7 @@ impl<Pk: MiniscriptKey, T: Extension> ForEachKey<Pk> for Descriptor<Pk, T> {
     fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: F) -> bool
     where
         Pk: 'a,
-        Pk::Hash: 'a,
+        Pk::RawPkHash: 'a,
     {
         match *self {
             Descriptor::Bare(ref bare) => bare.for_each_key(pred),
@@ -796,6 +796,10 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
 
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
                 Ok(*sha256)
+            }
+
+            fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ()> {
+                Ok(*hash256)
             }
         }
         self.translate_pk(&mut Derivator(index))
@@ -853,6 +857,10 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
 
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ConversionError> {
                 Ok(*sha256)
+            }
+
+            fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ConversionError> {
+                Ok(*hash256)
             }
         }
 
@@ -913,6 +921,12 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
                     sha256::Hash::from_str(sha256).map_err(|e| Error::Unexpected(e.to_string()))?;
                 Ok(hash)
             }
+
+            fn hash256(&mut self, hash256: &String) -> Result<hash256::Hash, Error> {
+                let hash = hash256::Hash::from_str(hash256)
+                    .map_err(|e| Error::Unexpected(e.to_string()))?;
+                Ok(hash)
+            }
         }
 
         let descriptor = Descriptor::<String, Ext>::from_str(s)?;
@@ -938,6 +952,10 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
 
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<String, ()> {
                 Ok(sha256.to_string())
+            }
+
+            fn hash256(&mut self, hash256: &hash256::Hash) -> Result<String, ()> {
+                Ok(hash256.to_string())
             }
         }
 
