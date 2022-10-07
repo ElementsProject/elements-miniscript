@@ -57,6 +57,7 @@ then
     cargo run --example sign_multisig
     cargo run --example verify_tx > /dev/null
     cargo run --example xpub_descriptors
+    cargo run --example taproot --features=compiler
 fi
 
 # Bench if told to (this only works with the nightly toolchain)
