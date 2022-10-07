@@ -112,7 +112,7 @@ compile_error!(
 
 pub use {bitcoin, elements};
 #[cfg(feature = "serde")]
-pub extern crate serde;
+pub use actual_serde as serde;
 #[cfg(all(test, feature = "unstable"))]
 extern crate test;
 
