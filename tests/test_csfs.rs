@@ -43,13 +43,15 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     // Generate some blocks
     cl.generate(1);
 
-    let desc = test_util::parse_test_desc(&desc, &testdata.pubdata).unwrap();
-    let derived_desc = desc.derived_descriptor(&secp, 0).unwrap();
+    let definite_desc = test_util::parse_test_desc(&desc, &testdata.pubdata)
+        .unwrap()
+        .at_derivation_index(0);
+
+    let derived_desc = definite_desc.derived_descriptor(&secp).unwrap();
+    let desc_address = derived_desc.address(&PARAMS).unwrap(); // No blinding
+
     // Next send some btc to each address corresponding to the miniscript
-    let txid = cl.send_to_address(
-        &derived_desc.address(&PARAMS).unwrap(), // No blinding
-        "1",                                     // 1 BTC
-    );
+    let txid = cl.send_to_address(&desc_address, "1");  // 1 BTC
     // Wait for the funds to mature.
     cl.generate(2);
     // Create a PSBT for each transaction.
@@ -86,7 +88,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     psbt.add_output(psbt::Output::from_txout(fee_out));
 
     psbt.inputs_mut()[0]
-        .update_with_descriptor_unchecked(&desc)
+        .update_with_descriptor_unchecked(&definite_desc)
         .unwrap();
     psbt.inputs_mut()[0].witness_utxo = Some(witness_utxo.clone());
 

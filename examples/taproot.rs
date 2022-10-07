@@ -5,7 +5,6 @@ use std::str::FromStr;
 
 use bitcoin::hashes::{hash160, ripemd160, sha256};
 use bitcoin::util::address::WitnessVersion;
-use bitcoin::Network;
 use miniscript::descriptor::DescriptorType;
 use miniscript::policy::Concrete;
 use miniscript::{hash256, Descriptor, Miniscript, NoExt, Tap, TranslatePk, Translator};
@@ -125,7 +124,6 @@ fn main() {
     assert_eq!(max_sat_wt, 273);
 
     // Compute the bitcoin address and check if it matches
-    let network = Network::Bitcoin;
     let addr = real_desc.address(&elements::AddressParams::ELEMENTS).unwrap();
     let expected_addr = elements::Address::from_str(
         "ert1pxx6wkfdnnx97akwws8l8xdmx5n03qftvx2t269k4sn9adm2emz0sdnytn4",

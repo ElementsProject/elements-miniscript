@@ -155,7 +155,7 @@ use elements::hashes::sha256;
 use elements::secp256k1_zkp::Secp256k1;
 use elements::{opcodes, script, secp256k1_zkp};
 
-pub use crate::descriptor::{Descriptor, DescriptorPublicKey};
+pub use crate::descriptor::{DefiniteDescriptorKey, Descriptor, DescriptorPublicKey};
 pub use crate::extensions::{CovenantExt, Extension, NoExt, TxEnv};
 pub use crate::interpreter::Interpreter;
 pub use crate::miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0, Tap};
