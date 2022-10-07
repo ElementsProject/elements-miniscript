@@ -28,7 +28,7 @@ use crate::miniscript::context::{ScriptContext, ScriptContextError};
 use crate::policy::{semantic, Liftable};
 use crate::util::varint_len;
 use crate::{
-    elementssig_to_rawsig, Error, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier,
+    elementssig_to_rawsig, Error, ForEachKey, Miniscript, MiniscriptKey, Satisfier,
     Segwitv0, ToPublicKey, TranslatePk, Translator,
 };
 /// A Segwitv0 wsh descriptor
@@ -282,7 +282,7 @@ impl_from_str!(
 );
 
 impl<Pk: MiniscriptKey> ForEachKey<Pk> for Wsh<Pk> {
-    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: F) -> bool
+    fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: F) -> bool
     where
         Pk: 'a,
         Pk::Hash: 'a,
@@ -500,12 +500,12 @@ impl_from_str!(
 );
 
 impl<Pk: MiniscriptKey> ForEachKey<Pk> for Wpkh<Pk> {
-    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
+    fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
         Pk::Hash: 'a,
     {
-        pred(ForEach::Key(&self.pk))
+        pred(&self.pk)
     }
 }
 

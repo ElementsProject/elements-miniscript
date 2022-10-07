@@ -160,7 +160,7 @@ impl<'txin> Stack<'txin> {
     pub(super) fn evaluate_pk<'intp, Ext: Extension>(
         &mut self,
         verify_sig: &mut Box<dyn FnMut(&KeySigPair) -> bool + 'intp>,
-        pk: &'intp BitcoinKey,
+        pk: BitcoinKey,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         if let Some(sigser) = self.pop() {
             match sigser {
@@ -169,7 +169,7 @@ impl<'txin> Stack<'txin> {
                     None
                 }
                 Element::Push(sigser) => {
-                    let key_sig = verify_sersig(verify_sig, pk, sigser);
+                    let key_sig = verify_sersig(verify_sig, &pk, sigser);
                     match key_sig {
                         Ok(key_sig) => {
                             self.push(Element::Satisfied);
@@ -178,9 +178,7 @@ impl<'txin> Stack<'txin> {
                         Err(e) => Some(Err(e)),
                     }
                 }
-                Element::Satisfied => {
-                    Some(Err(Error::PkEvaluationError(PkEvalErrInner::from(*pk))))
-                }
+                Element::Satisfied => Some(Err(Error::PkEvaluationError(PkEvalErrInner::from(pk)))),
             }
         } else {
             Some(Err(Error::UnexpectedStackEnd))
@@ -196,7 +194,7 @@ impl<'txin> Stack<'txin> {
     pub(super) fn evaluate_pkh<'intp, Ext: Extension>(
         &mut self,
         verify_sig: &mut Box<dyn FnMut(&KeySigPair) -> bool + 'intp>,
-        pkh: &'intp TypedHash160,
+        pkh: TypedHash160,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         // Parse a bitcoin key from witness data slice depending on hash context
         // when we encounter a pkh(hash)
@@ -215,7 +213,7 @@ impl<'txin> Stack<'txin> {
             if pk_hash != pkh.hash160() {
                 return Some(Err(Error::PkHashVerifyFail(pkh.hash160())));
             }
-            match bitcoin_key_from_slice(pk, *pkh) {
+            match bitcoin_key_from_slice(pk, pkh) {
                 Some(pk) => {
                     if let Some(sigser) = self.pop() {
                         match sigser {

@@ -59,7 +59,7 @@ use crate::miniscript::limits::{
 use crate::miniscript::{decode, types};
 use crate::util::varint_len;
 use crate::{
-    Error, ExtTranslator, Extension, ForEach, ForEachKey, Miniscript, MiniscriptKey, Satisfier,
+    Error, ExtTranslator, Extension, ForEachKey, Miniscript, MiniscriptKey, Satisfier,
     ScriptContext, Segwitv0, ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
@@ -457,12 +457,12 @@ where
 }
 
 impl<Pk: MiniscriptKey, Ext: Extension> ForEachKey<Pk> for LegacyCSFSCov<Pk, Ext> {
-    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
+    fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
         Pk::Hash: 'a,
     {
-        pred(ForEach::Key(&self.pk)) && self.ms.for_any_key(pred)
+        pred(&self.pk) && self.ms.for_any_key(pred)
     }
 }
 

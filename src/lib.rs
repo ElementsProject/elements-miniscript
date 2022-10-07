@@ -124,7 +124,7 @@ pub(crate) use bitcoin_miniscript::{
 };
 // re-export imports
 pub use bitcoin_miniscript::{
-    DummyKey, DummyKeyHash, ForEach, ForEachKey, MiniscriptKey, ToPublicKey,
+    DummyKey, DummyKeyHash, ForEachKey, MiniscriptKey, ToPublicKey,
 };
 // End imports
 

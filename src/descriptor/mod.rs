@@ -40,7 +40,7 @@ use self::checksum::verify_checksum;
 use crate::extensions::{CovExtArgs, ExtParam, ParseableExt};
 use crate::miniscript::{Legacy, Miniscript, Segwitv0};
 use crate::{
-    expression, miniscript, BareCtx, CovenantExt, Error, ExtTranslator, Extension, ForEach,
+    expression, miniscript, BareCtx, CovenantExt, Error, ExtTranslator, Extension,
     ForEachKey, MiniscriptKey, NoExt, Satisfier, ToPublicKey, TranslateExt, TranslatePk,
     Translator,
 };
@@ -206,10 +206,7 @@ impl DescriptorInfo {
     pub fn from_desc_str<T: Extension>(s: &str) -> Result<Self, Error> {
         // Parse as a string descriptor
         let descriptor = Descriptor::<String, T>::from_str(s)?;
-        let has_secret = descriptor.for_any_key(|pk| match pk {
-            ForEach::Key(key) => DescriptorSecretKey::from_str(key).is_ok(),
-            ForEach::Hash(key) => DescriptorSecretKey::from_str(key).is_ok(),
-        });
+        let has_secret = descriptor.for_any_key(|pk| DescriptorSecretKey::from_str(pk).is_ok());
         let ty = DescriptorType::from_str(s)?;
         let is_pegin = match ty {
             DescriptorType::Pegin | DescriptorType::LegacyPegin => true,
@@ -755,7 +752,7 @@ where
 }
 
 impl<Pk: MiniscriptKey, T: Extension> ForEachKey<Pk> for Descriptor<Pk, T> {
-    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: F) -> bool
+    fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: F) -> bool
     where
         Pk: 'a,
         Pk::Hash: 'a,
@@ -776,7 +773,7 @@ impl<Pk: MiniscriptKey, T: Extension> ForEachKey<Pk> for Descriptor<Pk, T> {
 impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     /// Whether or not the descriptor has any wildcards
     pub fn is_deriveable(&self) -> bool {
-        self.for_any_key(|key| key.as_key().is_deriveable())
+        self.for_any_key(|key| key.is_deriveable())
     }
 
     /// Derives all wildcard keys in the descriptor using the supplied index
@@ -1551,7 +1548,7 @@ mod tests {
         let p2 = "020000000000000000000000000000000000000000000000000000000000000002";
         let p3 = "020000000000000000000000000000000000000000000000000000000000000003";
         let p4 = "020000000000000000000000000000000000000000000000000000000000000004";
-        let p5 = "f54a5851e9372b87810a8e60cdd2e7cfd80b6e31";
+        let p5 = "03f8551772d66557da28c1de858124f365a8eb30ce6ad79c10e0f4c546d0ab0f82";
         let descriptor = Tr::<PublicKey>::from_str(&format!(
             "eltr({},{{pk({}),{{pk({}),or_d(pk({}),pkh({}))}}}})",
             p1, p2, p3, p4, p5
@@ -1559,11 +1556,12 @@ mod tests {
         .unwrap()
         .to_string();
 
+        // p5.to_pubkeyhash() = 516ca378e588a7ed71336147e2a72848b20aca1a
         assert_eq!(
             descriptor,
             format!(
-                "eltr({},{{pk({}),{{pk({}),or_d(pk({}),pkh({}))}}}})#sze34nfs",
-                p1, p2, p3, p4, p5
+                "eltr({},{{pk({}),{{pk({}),or_d(pk({}),pkh(516ca378e588a7ed71336147e2a72848b20aca1a))}}}})#3cw4zduf",
+                p1, p2, p3, p4,
             )
         )
     }

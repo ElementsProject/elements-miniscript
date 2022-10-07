@@ -129,7 +129,9 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension = NoExt>
     /// `<key>`
     PkK(Pk),
     /// `DUP HASH160 <keyhash> EQUALVERIFY`
-    PkH(Pk::Hash),
+    PkH(Pk),
+    /// Only for parsing PkH for Script
+    RawPkH(Pk::Hash),
     // timelocks
     /// `n CHECKLOCKTIMEVERIFY`
     After(u32),
@@ -332,7 +334,7 @@ pub fn parse<Ctx: ScriptContext, Ext: ParseableExt>(
                                 Tk::Hash160 => match_token!(
                                     tokens,
                                     Tk::Dup => {
-                                        term.reduce0(Terminal::PkH(
+                                        term.reduce0(Terminal::RawPkH(
                                             hash160::Hash::from_slice(hash).expect("valid size")
                                         ))?
                                     },

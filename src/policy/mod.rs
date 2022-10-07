@@ -128,8 +128,8 @@ where
 {
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
         let ret = match *self {
-            Terminal::PkK(ref pk) => Semantic::KeyHash(pk.to_pubkeyhash()),
-            Terminal::PkH(ref pkh) => Semantic::KeyHash(pkh.clone()),
+            Terminal::PkK(ref pk) | Terminal::PkH(ref pk) => Semantic::KeyHash(pk.to_pubkeyhash()),
+            Terminal::RawPkH(ref pkh) => Semantic::KeyHash(pkh.clone()),
             Terminal::After(t) => Semantic::After(t),
             Terminal::Older(t) => Semantic::Older(t),
             Terminal::Sha256(ref h) => Semantic::Sha256(h.clone()),
