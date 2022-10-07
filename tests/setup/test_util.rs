@@ -28,7 +28,7 @@ use elements::{confidential, encode, AddressParams, BlockHash};
 use miniscript::descriptor::{SinglePub, SinglePubKey};
 use miniscript::extensions::{param::ExtParamTranslator, CovExtArgs, CsfsKey, CsfsMsg};
 use miniscript::{
-    CovenantExt, Descriptor, DescriptorPublicKey, Miniscript, ScriptContext, TranslateExt,
+    CovenantExt, Descriptor, DescriptorPublicKey, Error, Miniscript, ScriptContext, TranslateExt,
     TranslatePk, Translator,
 };
 use rand::RngCore;
@@ -308,16 +308,18 @@ impl<'a> Translator<String, DescriptorPublicKey, ()> for StrTranslatorLoose<'a> 
 
 #[allow(dead_code)]
 // https://github.com/rust-lang/rust/issues/46379. The code is pub fn and integration test, but still shows warnings
-pub fn parse_test_desc(desc: &str, pubdata: &PubData) -> Descriptor<DescriptorPublicKey> {
+pub fn parse_test_desc(
+    desc: &str,
+    pubdata: &PubData,
+) -> Result<Descriptor<DescriptorPublicKey>, Error> {
     let desc = subs_hash_frag(desc, pubdata);
-    let desc = Descriptor::<String, CovenantExt<String>>::from_str(&desc)
-        .expect("only parsing valid and sane descriptors");
+    let desc = Descriptor::<String, CovenantExt<String>>::from_str(&desc)?;
     let mut translator = StrDescPubKeyTranslator(0, pubdata);
     let mut ext_trans = StrExtTranslator(0, pubdata);
     let desc: Result<_, ()> = desc.translate_pk(&mut translator);
     let desc = desc.expect("Translate Keys must succeed");
     let desc: Result<_, ()> = desc.translate_ext(&mut ext_trans);
-    desc.expect("Ext translation must succeed")
+    Ok(desc.expect("Ext translation must succeed"))
 }
 
 // substitute hash fragments in the string as the per rules

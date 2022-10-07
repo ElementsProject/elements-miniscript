@@ -43,7 +43,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     // Generate some blocks
     cl.generate(1);
 
-    let desc = test_util::parse_test_desc(&desc, &testdata.pubdata);
+    let desc = test_util::parse_test_desc(&desc, &testdata.pubdata).unwrap();
     let derived_desc = desc.derived_descriptor(&secp, 0).unwrap();
     // Next send some btc to each address corresponding to the miniscript
     let txid = cl.send_to_address(
