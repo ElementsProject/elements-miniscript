@@ -14,7 +14,7 @@
 
 use bitcoin;
 use bitcoin::util::taproot::TAPROOT_ANNEX_PREFIX;
-use elements::hashes::{hash160, sha256, Hash};
+use elements::hashes::{hash160, ripemd160, sha256, Hash};
 use elements::schnorr::TapTweak;
 use elements::taproot::ControlBlock;
 use elements::{self, script};
@@ -441,6 +441,14 @@ impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
             fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ()> {
                 Ok(*hash256)
             }
+
+            fn ripemd160(&mut self, ripemd160: &ripemd160::Hash) -> Result<ripemd160::Hash, ()> {
+                Ok(*ripemd160)
+            }
+
+            fn hash160(&mut self, hash160: &hash160::Hash) -> Result<hash160::Hash, ()> {
+                Ok(*hash160)
+            }
         }
 
         self.real_translate_pk(&mut TranslateFullPk)
@@ -470,6 +478,14 @@ impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
 
             fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ()> {
                 Ok(*hash256)
+            }
+
+            fn ripemd160(&mut self, ripemd160: &ripemd160::Hash) -> Result<ripemd160::Hash, ()> {
+                Ok(*ripemd160)
+            }
+
+            fn hash160(&mut self, hash160: &hash160::Hash) -> Result<hash160::Hash, ()> {
+                Ok(*hash160)
             }
         }
         self.real_translate_pk(&mut TranslateXOnlyPk)

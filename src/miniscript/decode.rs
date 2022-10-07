@@ -143,9 +143,9 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension = NoExt>
     /// `SIZE 32 EQUALVERIFY HASH256 <hash> EQUAL`
     Hash256(Pk::Hash256),
     /// `SIZE 32 EQUALVERIFY RIPEMD160 <hash> EQUAL`
-    Ripemd160(ripemd160::Hash),
+    Ripemd160(Pk::Ripemd160),
     /// `SIZE 32 EQUALVERIFY HASH160 <hash> EQUAL`
-    Hash160(hash160::Hash),
+    Hash160(Pk::Hash160),
     // Wrappers
     /// `TOALTSTACK [E] FROMALTSTACK`
     Alt(Arc<Miniscript<Pk, Ctx, Ext>>),

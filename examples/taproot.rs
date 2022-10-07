@@ -3,7 +3,7 @@ extern crate elements_miniscript as miniscript;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use bitcoin::hashes::{hash160, sha256};
+use bitcoin::hashes::{hash160, ripemd160, sha256};
 use bitcoin::util::address::WitnessVersion;
 use bitcoin::Network;
 use miniscript::descriptor::DescriptorType;
@@ -34,6 +34,14 @@ impl Translator<String, bitcoin::XOnlyPublicKey, ()> for StrPkTranslator {
     fn hash256(&mut self, _sha256: &String) -> Result<hash256::Hash, ()> {
         unreachable!("Policy does not contain any hash256 fragment");
     }
+
+    fn ripemd160(&mut self, _ripemd160: &String) -> Result<ripemd160::Hash, ()> {
+        unreachable!("Policy does not contain any ripemd160 fragment");
+    }
+
+    fn hash160(&mut self, _hash160: &String) -> Result<hash160::Hash, ()> {
+        unreachable!("Policy does not contain any hash160 fragment");
+    }
 }
 
 fn main() {
@@ -47,6 +55,7 @@ fn main() {
         )"
     .replace(&[' ', '\n', '\t'][..], "");
 
+    let _ms = Miniscript::<String, Tap>::from_str("and_v(v:ripemd160(H),pk(A))").unwrap();
     let pol: Concrete<String> = Concrete::from_str(&pol_str).unwrap();
     // In case we can't find an internal key for the given policy, we set the internal key to
     // a random pubkey as specified by BIP341 (which are *unspendable* by any party :p)

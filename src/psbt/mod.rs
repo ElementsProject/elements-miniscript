@@ -413,10 +413,10 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
         }
     }
 
-    fn lookup_hash160(&self, h: hash160::Hash) -> Option<Preimage32> {
+    fn lookup_hash160(&self, h: &Pk::Hash160) -> Option<Preimage32> {
         self.psbt.inputs()[self.index]
             .hash160_preimages
-            .get(&h)
+            .get(&Pk::to_hash160(h))
             .and_then(try_vec_as_preimage32)
     }
 
@@ -434,10 +434,10 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
             .and_then(try_vec_as_preimage32)
     }
 
-    fn lookup_ripemd160(&self, h: ripemd160::Hash) -> Option<Preimage32> {
+    fn lookup_ripemd160(&self, h: &Pk::Ripemd160) -> Option<Preimage32> {
         self.psbt.inputs()[self.index]
             .ripemd160_preimages
-            .get(&h)
+            .get(&Pk::to_ripemd160(h))
             .and_then(try_vec_as_preimage32)
     }
 }
@@ -1019,6 +1019,20 @@ impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionE
     ) -> Result<hash256::Hash, descriptor::ConversionError> {
         Ok(*hash256)
     }
+
+    fn ripemd160(
+        &mut self,
+        ripemd160: &ripemd160::Hash,
+    ) -> Result<ripemd160::Hash, descriptor::ConversionError> {
+        Ok(*ripemd160)
+    }
+
+    fn hash160(
+        &mut self,
+        hash160: &hash160::Hash,
+    ) -> Result<hash160::Hash, descriptor::ConversionError> {
+        Ok(*hash160)
+    }
 }
 
 // Traverse the pkh lookup while maintaining a reverse map for storing the map
@@ -1062,6 +1076,20 @@ impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionE
         hash256: &hash256::Hash,
     ) -> Result<hash256::Hash, descriptor::ConversionError> {
         Ok(*hash256)
+    }
+
+    fn ripemd160(
+        &mut self,
+        ripemd160: &ripemd160::Hash,
+    ) -> Result<ripemd160::Hash, descriptor::ConversionError> {
+        Ok(*ripemd160)
+    }
+
+    fn hash160(
+        &mut self,
+        hash160: &hash160::Hash,
+    ) -> Result<hash160::Hash, descriptor::ConversionError> {
+        Ok(*hash160)
     }
 }
 

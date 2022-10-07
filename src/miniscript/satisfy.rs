@@ -24,7 +24,7 @@ use std::{cmp, i64, mem};
 
 use bitcoin;
 use bitcoin::secp256k1::XOnlyPublicKey;
-use elements::hashes::{hash160, ripemd160, sha256d};
+use elements::hashes::sha256d;
 use elements::secp256k1_zkp::schnorr;
 use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, confidential, secp256k1_zkp, OutPoint, Script};
@@ -120,12 +120,12 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
     }
 
     /// Given a RIPEMD160 hash, look up its preimage
-    fn lookup_ripemd160(&self, _: ripemd160::Hash) -> Option<Preimage32> {
+    fn lookup_ripemd160(&self, _: &Pk::Ripemd160) -> Option<Preimage32> {
         None
     }
 
     /// Given a HASH160 hash, look up its preimage
-    fn lookup_hash160(&self, _: hash160::Hash) -> Option<Preimage32> {
+    fn lookup_hash160(&self, _: &Pk::Hash160) -> Option<Preimage32> {
         None
     }
 
@@ -367,11 +367,11 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_hash256(h)
     }
 
-    fn lookup_ripemd160(&self, h: ripemd160::Hash) -> Option<Preimage32> {
+    fn lookup_ripemd160(&self, h: &Pk::Ripemd160) -> Option<Preimage32> {
         (**self).lookup_ripemd160(h)
     }
 
-    fn lookup_hash160(&self, h: hash160::Hash) -> Option<Preimage32> {
+    fn lookup_hash160(&self, h: &Pk::Hash160) -> Option<Preimage32> {
         (**self).lookup_hash160(h)
     }
 
@@ -486,11 +486,11 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_hash256(h)
     }
 
-    fn lookup_ripemd160(&self, h: ripemd160::Hash) -> Option<Preimage32> {
+    fn lookup_ripemd160(&self, h: &Pk::Ripemd160) -> Option<Preimage32> {
         (**self).lookup_ripemd160(h)
     }
 
-    fn lookup_hash160(&self, h: hash160::Hash) -> Option<Preimage32> {
+    fn lookup_hash160(&self, h: &Pk::Hash160) -> Option<Preimage32> {
         (**self).lookup_hash160(h)
     }
 
@@ -672,7 +672,7 @@ macro_rules! impl_tuple_satisfier {
                 None
             }
 
-            fn lookup_ripemd160(&self, h: ripemd160::Hash) -> Option<Preimage32> {
+            fn lookup_ripemd160(&self, h: &Pk::Ripemd160) -> Option<Preimage32> {
                 let &($(ref $ty,)*) = self;
                 $(
                     if let Some(result) = $ty.lookup_ripemd160(h) {
@@ -682,7 +682,7 @@ macro_rules! impl_tuple_satisfier {
                 None
             }
 
-            fn lookup_hash160(&self, h: hash160::Hash) -> Option<Preimage32> {
+            fn lookup_hash160(&self, h: &Pk::Hash160) -> Option<Preimage32> {
                 let &($(ref $ty,)*) = self;
                 $(
                     if let Some(result) = $ty.lookup_hash160(h) {
@@ -958,7 +958,7 @@ impl Witness {
     /// Turn a hash preimage into (part of) a satisfaction
     pub fn ripemd160_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(
         sat: S,
-        h: ripemd160::Hash,
+        h: &Pk::Ripemd160,
     ) -> Self {
         match sat.lookup_ripemd160(h) {
             Some(pre) => Witness::Stack(vec![pre.to_vec()]),
@@ -968,7 +968,7 @@ impl Witness {
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    pub fn hash160_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: hash160::Hash) -> Self {
+    pub fn hash160_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: &Pk::Hash160) -> Self {
         match sat.lookup_hash160(h) {
             Some(pre) => Witness::Stack(vec![pre.to_vec()]),
             // Note hash preimages are unavailable instead of impossible
@@ -1356,11 +1356,11 @@ impl Satisfaction {
 
                 has_sig: false,
             },
-            Terminal::Ripemd160(h) => Satisfaction {
+            Terminal::Ripemd160(ref h) => Satisfaction {
                 stack: Witness::ripemd160_preimage(stfr, h),
                 has_sig: false,
             },
-            Terminal::Hash160(h) => Satisfaction {
+            Terminal::Hash160(ref h) => Satisfaction {
                 stack: Witness::hash160_preimage(stfr, h),
                 has_sig: false,
             },

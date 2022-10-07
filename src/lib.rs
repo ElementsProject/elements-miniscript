@@ -221,7 +221,27 @@ impl str::FromStr for DummyHash256 {
     }
 }
 
+/// Dummy keyhash which de/serializes to the empty string; useful for testing
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
+pub struct DummyRipemd160Hash;
+
+impl str::FromStr for DummyRipemd160Hash {
+    type Err = &'static str;
+    fn from_str(x: &str) -> Result<DummyRipemd160Hash, &'static str> {
+        if x.is_empty() {
+            Ok(DummyRipemd160Hash)
+        } else {
+            Err("non empty dummy hash")
+        }
+    }
+}
+
 impl fmt::Display for DummyHash256 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("")
+    }
+}
+impl fmt::Display for DummyRipemd160Hash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("")
     }
@@ -233,7 +253,40 @@ impl hash::Hash for DummyHash256 {
     }
 }
 
-/// Provides the conversion information required in [`TranslatePk`]
+impl hash::Hash for DummyRipemd160Hash {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        "DummyRipemd160Hash".hash(state);
+    }
+}
+
+/// Dummy keyhash which de/serializes to the empty string; useful for testing
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
+pub struct DummyHash160Hash;
+
+impl str::FromStr for DummyHash160Hash {
+    type Err = &'static str;
+    fn from_str(x: &str) -> Result<DummyHash160Hash, &'static str> {
+        if x.is_empty() {
+            Ok(DummyHash160Hash)
+        } else {
+            Err("non empty dummy hash")
+        }
+    }
+}
+
+impl fmt::Display for DummyHash160Hash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("")
+    }
+}
+
+impl hash::Hash for DummyHash160Hash {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        "DummyHash160Hash".hash(state);
+    }
+}
+/// Describes an object that can translate various keys and hashes from one key to the type
+/// associated with the other key. Used by the [`TranslatePk`] trait to do the actual translations.
 pub trait Translator<P, Q, E>
 where
     P: MiniscriptKey,
@@ -250,6 +303,12 @@ where
 
     /// Provides the translation from P::Hash256 -> Q::Hash256
     fn hash256(&mut self, hash256: &P::Hash256) -> Result<Q::Hash256, E>;
+
+    /// Translates ripemd160 hashes from P::Ripemd160 -> Q::Ripemd160
+    fn ripemd160(&mut self, ripemd160: &P::Ripemd160) -> Result<Q::Ripemd160, E>;
+
+    /// Translates hash160 hashes from P::Hash160 -> Q::Hash160
+    fn hash160(&mut self, hash160: &P::Hash160) -> Result<Q::Hash160, E>;
 }
 
 /// Trait for translation Extensions

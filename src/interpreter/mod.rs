@@ -123,6 +123,14 @@ impl ToPublicKey for BitcoinKey {
     fn to_hash256(hash: &<Self as MiniscriptKey>::Hash256) -> hash256::Hash {
         *hash
     }
+
+    fn to_ripemd160(hash: &<Self as MiniscriptKey>::Ripemd160) -> ripemd160::Hash {
+        *hash
+    }
+
+    fn to_hash160(hash: &<Self as MiniscriptKey>::Hash160) -> hash160::Hash {
+        *hash
+    }
 }
 
 // Displayed in full 33 byte representation. X-only keys are displayed with 0x02 prefix
@@ -177,6 +185,8 @@ impl MiniscriptKey for BitcoinKey {
     type RawPkHash = TypedHash160;
     type Sha256 = sha256::Hash;
     type Hash256 = hash256::Hash;
+    type Ripemd160 = ripemd160::Hash;
+    type Hash160 = hash160::Hash;
 
     fn to_pubkeyhash(&self) -> Self::RawPkHash {
         match self {

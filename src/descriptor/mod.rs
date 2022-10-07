@@ -32,7 +32,7 @@ use std::sync::Arc;
 pub mod pegin;
 
 use bitcoin::util::address::WitnessVersion;
-use elements::hashes::sha256;
+use elements::hashes::{hash160, ripemd160, sha256};
 use elements::{secp256k1_zkp as secp256k1, secp256k1_zkp, Script, TxIn};
 use {bitcoin, elements};
 
@@ -801,6 +801,14 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
             fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ()> {
                 Ok(*hash256)
             }
+
+            fn ripemd160(&mut self, ripemd160: &ripemd160::Hash) -> Result<ripemd160::Hash, ()> {
+                Ok(*ripemd160)
+            }
+
+            fn hash160(&mut self, hash160: &hash160::Hash) -> Result<hash160::Hash, ()> {
+                Ok(*hash160)
+            }
         }
         self.translate_pk(&mut Derivator(index))
             .expect("BIP 32 key index substitution cannot fail")
@@ -861,6 +869,14 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
 
             fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ConversionError> {
                 Ok(*hash256)
+            }
+
+            fn ripemd160(&mut self, ripemd160: &ripemd160::Hash) -> Result<ripemd160::Hash, ConversionError> {
+                Ok(*ripemd160)
+            }
+
+            fn hash160(&mut self, hash160: &hash160::Hash) -> Result<hash160::Hash, ConversionError> {
+                Ok(*hash160)
             }
         }
 
@@ -927,6 +943,18 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
                     .map_err(|e| Error::Unexpected(e.to_string()))?;
                 Ok(hash)
             }
+
+            fn ripemd160(&mut self, ripemd160: &String) -> Result<ripemd160::Hash, Error> {
+                let hash = ripemd160::Hash::from_str(ripemd160)
+                    .map_err(|e| Error::Unexpected(e.to_string()))?;
+                Ok(hash)
+            }
+
+            fn hash160(&mut self, hash160: &String) -> Result<hash160::Hash, Error> {
+                let hash = hash160::Hash::from_str(hash160)
+                    .map_err(|e| Error::Unexpected(e.to_string()))?;
+                Ok(hash)
+            }
         }
 
         let descriptor = Descriptor::<String, Ext>::from_str(s)?;
@@ -956,6 +984,14 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
 
             fn hash256(&mut self, hash256: &hash256::Hash) -> Result<String, ()> {
                 Ok(hash256.to_string())
+            }
+
+            fn ripemd160(&mut self, ripemd160: &ripemd160::Hash) -> Result<String, ()> {
+                Ok(ripemd160.to_string())
+            }
+
+            fn hash160(&mut self, hash160: &hash160::Hash) -> Result<String, ()> {
+                Ok(hash160.to_string())
             }
         }
 
