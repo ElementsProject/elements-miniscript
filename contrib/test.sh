@@ -2,16 +2,21 @@
 
 set -e
 
-FEATURES="compiler use-serde rand"
+FEATURES="compiler serde rand"
+
+cargo update -p serde --precise 1.0.142
+cargo update -p serde_derive --precise 1.0.142
 
 cargo --version
 rustc --version
 
+# Work out if we are using a nightly toolchain.
 MSRV=false
 if cargo --version | grep "1\.41\.0"; then
     MSRV=true
 fi
 
+# form_urlencoded 1.1.0 breaks MSRV.
 if [ "$MSRV" = true ]; then
     cargo update -p url --precise 2.2.2
     cargo update -p form_urlencoded --precise 1.0.1
@@ -57,6 +62,7 @@ then
     cargo run --example sign_multisig
     cargo run --example verify_tx > /dev/null
     cargo run --example xpub_descriptors
+    cargo run --example taproot --features=compiler
 fi
 
 # Bench if told to (this only works with the nightly toolchain)

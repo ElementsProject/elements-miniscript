@@ -23,10 +23,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use elements::hashes::hex::FromHex;
-use elements::hashes::{hash160, ripemd160, sha256d, Hash};
 use elements::{opcodes, script};
-
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 use crate::extensions::ParseableExt;
 use crate::miniscript::context::SigType;
@@ -34,7 +31,7 @@ use crate::miniscript::types::{self, Property};
 use crate::miniscript::ScriptContext;
 use crate::util::MsKeyBuilder;
 use crate::{
-    errstr, expression, script_num_size, Error, ExtTranslator, Extension, ForEach, ForEachKey,
+    errstr, expression, script_num_size, Error, ExtTranslator, Extension, ForEachKey,
     Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
@@ -96,18 +93,16 @@ where
 }
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ext> {
-    pub(super) fn real_for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(
-        &'a self,
-        pred: &mut F,
-    ) -> bool
+    pub(super) fn real_for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: &mut F) -> bool
     where
         Pk: 'a,
-        Pk::Hash: 'a,
+        Pk::RawPkHash: 'a,
     {
         match *self {
-            Terminal::PkK(ref p) => pred(ForEach::Key(p)),
-            Terminal::PkH(ref p) => pred(ForEach::Hash(p)),
-            Terminal::After(..)
+            Terminal::PkK(ref p) => pred(p),
+            Terminal::PkH(ref p) => pred(p),
+            Terminal::RawPkH(..)
+            | Terminal::After(..)
             | Terminal::Older(..)
             | Terminal::Sha256(..)
             | Terminal::Hash256(..)
@@ -137,7 +132,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
             }
             Terminal::Thresh(_, ref subs) => subs.iter().all(|sub| sub.real_for_each_key(pred)),
             Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => {
-                keys.iter().all(|key| pred(ForEach::Key(key)))
+                keys.iter().all(|key| pred(key))
             }
             Terminal::Ext(ref _e) => true,
         }
@@ -154,13 +149,14 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
     {
         let frag: Terminal<Q, CtxQ, _> = match *self {
             Terminal::PkK(ref p) => Terminal::PkK(t.pk(p)?),
-            Terminal::PkH(ref p) => Terminal::PkH(t.pkh(p)?),
+            Terminal::PkH(ref p) => Terminal::PkH(t.pk(p)?),
+            Terminal::RawPkH(ref p) => Terminal::RawPkH(t.pkh(p)?),
             Terminal::After(n) => Terminal::After(n),
             Terminal::Older(n) => Terminal::Older(n),
             Terminal::Sha256(ref x) => Terminal::Sha256(t.sha256(&x)?),
-            Terminal::Hash256(x) => Terminal::Hash256(x),
-            Terminal::Ripemd160(x) => Terminal::Ripemd160(x),
-            Terminal::Hash160(x) => Terminal::Hash160(x),
+            Terminal::Hash256(ref x) => Terminal::Hash256(t.hash256(&x)?),
+            Terminal::Ripemd160(ref x) => Terminal::Ripemd160(t.ripemd160(&x)?),
+            Terminal::Hash160(ref x) => Terminal::Hash160(t.hash160(&x)?),
             Terminal::True => Terminal::True,
             Terminal::False => Terminal::False,
             Terminal::Alt(ref sub) => Terminal::Alt(Arc::new(sub.real_translate_pk(t)?)),
@@ -235,12 +231,13 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
         let frag: Terminal<Pk, Ctx, ExtQ> = match *self {
             Terminal::PkK(ref p) => Terminal::PkK(p.clone()),
             Terminal::PkH(ref p) => Terminal::PkH(p.clone()),
+            Terminal::RawPkH(ref h) => Terminal::RawPkH(h.clone()),
             Terminal::After(n) => Terminal::After(n),
             Terminal::Older(n) => Terminal::Older(n),
             Terminal::Sha256(ref x) => Terminal::Sha256(x.clone()),
-            Terminal::Hash256(x) => Terminal::Hash256(x),
-            Terminal::Ripemd160(x) => Terminal::Ripemd160(x),
-            Terminal::Hash160(x) => Terminal::Hash160(x),
+            Terminal::Hash256(ref x) => Terminal::Hash256(x.clone()),
+            Terminal::Ripemd160(ref x) => Terminal::Ripemd160(x.clone()),
+            Terminal::Hash160(ref x) => Terminal::Hash160(x.clone()),
             Terminal::True => Terminal::True,
             Terminal::False => Terminal::False,
             Terminal::Alt(ref sub) => Terminal::Alt(Arc::new(sub.real_translate_ext(t)?)),
@@ -302,10 +299,10 @@ where
     Ctx: ScriptContext,
     Ext: Extension,
 {
-    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
+    fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
-        Pk::Hash: 'a,
+        Pk::RawPkHash: 'a,
     {
         self.real_for_each_key(&mut pred)
     }
@@ -364,17 +361,14 @@ where
         } else {
             match *self {
                 Terminal::PkK(ref pk) => write!(f, "pk_k({:?})", pk),
-                Terminal::PkH(ref pkh) => write!(f, "pk_h({:?})", pkh),
+                Terminal::PkH(ref pk) => write!(f, "pk_h({:?})", pk),
+                Terminal::RawPkH(ref pkh) => write!(f, "pk_h({:?})", pkh),
                 Terminal::After(t) => write!(f, "after({})", t),
                 Terminal::Older(t) => write!(f, "older({})", t),
                 Terminal::Sha256(ref h) => write!(f, "sha256({})", h),
-                Terminal::Hash256(h) => {
-                    let mut x = h.into_inner();
-                    x.reverse();
-                    write!(f, "hash256({})", sha256d::Hash::from_inner(x))
-                }
-                Terminal::Ripemd160(h) => write!(f, "ripemd160({})", h),
-                Terminal::Hash160(h) => write!(f, "hash160({})", h),
+                Terminal::Hash256(ref h) => write!(f, "hash256({})", h),
+                Terminal::Ripemd160(ref h) => write!(f, "ripemd160({})", h),
+                Terminal::Hash160(ref h) => write!(f, "hash160({})", h),
                 Terminal::True => f.write_str("1"),
                 Terminal::False => f.write_str("0"),
                 Terminal::Ext(ref e) => write!(f, "{:?}", e),
@@ -427,17 +421,14 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Terminal::PkK(ref pk) => write!(f, "pk_k({})", pk),
-            Terminal::PkH(ref pkh) => write!(f, "pk_h({})", pkh),
+            Terminal::PkH(ref pk) => write!(f, "pk_h({})", pk),
+            Terminal::RawPkH(ref pkh) => write!(f, "pk_h({})", pkh),
             Terminal::After(t) => write!(f, "after({})", t),
             Terminal::Older(t) => write!(f, "older({})", t),
             Terminal::Sha256(ref h) => write!(f, "sha256({})", h),
-            Terminal::Hash256(h) => {
-                let mut x = h.into_inner();
-                x.reverse();
-                write!(f, "hash256({})", sha256d::Hash::from_inner(x))
-            }
-            Terminal::Ripemd160(h) => write!(f, "ripemd160({})", h),
-            Terminal::Hash160(h) => write!(f, "hash160({})", h),
+            Terminal::Hash256(ref h) => write!(f, "hash256({})", h),
+            Terminal::Ripemd160(ref h) => write!(f, "ripemd160({})", h),
+            Terminal::Hash160(ref h) => write!(f, "hash160({})", h),
             Terminal::True => f.write_str("1"),
             Terminal::False => f.write_str("0"),
             Terminal::Ext(ref e) => write!(f, "{}", e),
@@ -488,9 +479,13 @@ where
                         if let Terminal::PkK(ref pk) = sub.node {
                             // alias: pk(K) = c:pk_k(K)
                             return write!(f, "pk({})", pk);
-                        } else if let Terminal::PkH(ref pkh) = sub.node {
+                        } else if let Terminal::RawPkH(ref pkh) = sub.node {
+                            // `RawPkH` is currently unsupported in the descriptor spec
                             // alias: pkh(K) = c:pk_h(K)
                             return write!(f, "pkh({})", pkh);
+                        } else if let Terminal::PkH(ref pk) = sub.node {
+                            // alias: pkh(K) = c:pk_h(K)
+                            return write!(f, "pkh({})", &pk.to_pubkeyhash());
                         }
                     }
 
@@ -501,13 +496,12 @@ where
                         }
                         // Add a ':' wrapper if there are other wrappers apart from c:pk_k()
                         // tvc:pk_k() -> tv:pk()
-                        Some(('c', ms)) => {
-                            if let Terminal::PkK(ref _pk) = ms.node {
-                                fmt::Write::write_char(f, ':')?;
-                            } else if let Terminal::PkH(ref _pkh) = ms.node {
-                                fmt::Write::write_char(f, ':')?;
+                        Some(('c', ms)) => match ms.node {
+                            Terminal::PkK(_) | Terminal::PkH(_) | Terminal::RawPkH(_) => {
+                                fmt::Write::write_char(f, ':')?
                             }
-                        }
+                            _ => {}
+                        },
                         _ => {}
                     };
                     write!(f, "{}", sub)
@@ -581,9 +575,7 @@ impl_from_tree!(
             ("pk_k", 1) => {
                 expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkK))
             }
-            ("pk_h", 1) => {
-                expression::terminal(&top.args[0], |x| Pk::Hash::from_str(x).map(Terminal::PkH))
-            }
+            ("pk_h", 1) => expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkH)),
             ("after", 1) => expression::terminal(&top.args[0], |x| {
                 expression::parse_num::<u32>(x).map(Terminal::After)
             }),
@@ -594,19 +586,13 @@ impl_from_tree!(
                 Pk::Sha256::from_str(x).map(Terminal::Sha256)
             }),
             ("hash256", 1) => expression::terminal(&top.args[0], |x| {
-                sha256d::Hash::from_hex(x)
-                    .map(|x| x.into_inner())
-                    .map(|mut x| {
-                        x.reverse();
-                        x
-                    })
-                    .map(|x| Terminal::Hash256(sha256d::Hash::from_inner(x)))
+                Pk::Hash256::from_str(x).map(Terminal::Hash256)
             }),
             ("ripemd160", 1) => expression::terminal(&top.args[0], |x| {
-                ripemd160::Hash::from_hex(x).map(Terminal::Ripemd160)
+                Pk::Ripemd160::from_str(x).map(Terminal::Ripemd160)
             }),
             ("hash160", 1) => expression::terminal(&top.args[0], |x| {
-                hash160::Hash::from_hex(x).map(Terminal::Hash160)
+                Pk::Hash160::from_str(x).map(Terminal::Hash160)
             }),
             ("1", 0) => Ok(Terminal::True),
             ("0", 0) => Ok(Terminal::False),
@@ -802,7 +788,12 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
     {
         match *self {
             Terminal::PkK(ref pk) => builder.push_ms_key::<_, Ctx>(pk),
-            Terminal::PkH(ref hash) => builder
+            Terminal::PkH(ref pk) => builder
+                .push_opcode(opcodes::all::OP_DUP)
+                .push_opcode(opcodes::all::OP_HASH160)
+                .push_ms_key_hash::<_, Ctx>(pk)
+                .push_opcode(opcodes::all::OP_EQUALVERIFY),
+            Terminal::RawPkH(ref hash) => builder
                 .push_opcode(opcodes::all::OP_DUP)
                 .push_opcode(opcodes::all::OP_HASH160)
                 .push_slice(&Pk::hash_to_hash160(hash)[..])
@@ -818,26 +809,26 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
                 .push_opcode(opcodes::all::OP_SHA256)
                 .push_slice(&Pk::to_sha256(&h))
                 .push_opcode(opcodes::all::OP_EQUAL),
-            Terminal::Hash256(h) => builder
+            Terminal::Hash256(ref h) => builder
                 .push_opcode(opcodes::all::OP_SIZE)
                 .push_int(32)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY)
                 .push_opcode(opcodes::all::OP_HASH256)
-                .push_slice(&h[..])
+                .push_slice(&Pk::to_hash256(&h))
                 .push_opcode(opcodes::all::OP_EQUAL),
-            Terminal::Ripemd160(h) => builder
+            Terminal::Ripemd160(ref h) => builder
                 .push_opcode(opcodes::all::OP_SIZE)
                 .push_int(32)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY)
                 .push_opcode(opcodes::all::OP_RIPEMD160)
-                .push_slice(&h[..])
+                .push_slice(&Pk::to_ripemd160(&h))
                 .push_opcode(opcodes::all::OP_EQUAL),
-            Terminal::Hash160(h) => builder
+            Terminal::Hash160(ref h) => builder
                 .push_opcode(opcodes::all::OP_SIZE)
                 .push_int(32)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY)
                 .push_opcode(opcodes::all::OP_HASH160)
-                .push_slice(&h[..])
+                .push_slice(&Pk::to_hash160(&h))
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::True => builder.push_opcode(opcodes::OP_TRUE),
             Terminal::False => builder.push_opcode(opcodes::OP_FALSE),
@@ -943,7 +934,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
     pub fn script_size(&self) -> usize {
         match *self {
             Terminal::PkK(ref pk) => Ctx::pk_len(pk),
-            Terminal::PkH(..) => 24,
+            Terminal::PkH(..) | Terminal::RawPkH(..) => 24,
             Terminal::After(n) => script_num_size(n as usize) + 1,
             Terminal::Older(n) => script_num_size(n as usize) + 1,
             Terminal::Sha256(..) => 33 + 6,

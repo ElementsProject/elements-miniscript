@@ -17,14 +17,16 @@
 use std::ops::Index;
 
 use bitcoin;
-use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
+use elements::hashes::{hash160, ripemd160, sha256, Hash};
 use elements::{self, opcodes, script};
 
 use super::error::PkEvalErrInner;
 use super::{
     verify_sersig, BitcoinKey, Error, HashLockType, KeySigPair, SatisfiedConstraint, TypedHash160,
 };
+use crate::hash256;
 use crate::Extension;
+
 /// Definition of Stack Element of the Stack used for interpretation of Miniscript.
 /// All stack elements with vec![] go to Dissatisfied and vec![1] are marked to Satisfied.
 /// Others are directly pushed as witness
@@ -160,7 +162,7 @@ impl<'txin> Stack<'txin> {
     pub(super) fn evaluate_pk<'intp, Ext: Extension>(
         &mut self,
         verify_sig: &mut Box<dyn FnMut(&KeySigPair) -> bool + 'intp>,
-        pk: &'intp BitcoinKey,
+        pk: BitcoinKey,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         if let Some(sigser) = self.pop() {
             match sigser {
@@ -169,7 +171,7 @@ impl<'txin> Stack<'txin> {
                     None
                 }
                 Element::Push(sigser) => {
-                    let key_sig = verify_sersig(verify_sig, pk, sigser);
+                    let key_sig = verify_sersig(verify_sig, &pk, sigser);
                     match key_sig {
                         Ok(key_sig) => {
                             self.push(Element::Satisfied);
@@ -178,9 +180,7 @@ impl<'txin> Stack<'txin> {
                         Err(e) => Some(Err(e)),
                     }
                 }
-                Element::Satisfied => {
-                    Some(Err(Error::PkEvaluationError(PkEvalErrInner::from(*pk))))
-                }
+                Element::Satisfied => Some(Err(Error::PkEvaluationError(PkEvalErrInner::from(pk)))),
             }
         } else {
             Some(Err(Error::UnexpectedStackEnd))
@@ -196,7 +196,7 @@ impl<'txin> Stack<'txin> {
     pub(super) fn evaluate_pkh<'intp, Ext: Extension>(
         &mut self,
         verify_sig: &mut Box<dyn FnMut(&KeySigPair) -> bool + 'intp>,
-        pkh: &'intp TypedHash160,
+        pkh: TypedHash160,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         // Parse a bitcoin key from witness data slice depending on hash context
         // when we encounter a pkh(hash)
@@ -215,7 +215,7 @@ impl<'txin> Stack<'txin> {
             if pk_hash != pkh.hash160() {
                 return Some(Err(Error::PkHashVerifyFail(pkh.hash160())));
             }
-            match bitcoin_key_from_slice(pk, *pkh) {
+            match bitcoin_key_from_slice(pk, pkh) {
                 Some(pk) => {
                     if let Some(sigser) = self.pop() {
                         match sigser {
@@ -316,13 +316,13 @@ impl<'txin> Stack<'txin> {
     /// `SIZE 32 EQUALVERIFY HASH256 h EQUAL`
     pub(super) fn evaluate_hash256<Ext: Extension>(
         &mut self,
-        hash: &sha256d::Hash,
+        hash: &hash256::Hash,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         if let Some(Element::Push(preimage)) = self.pop() {
             if preimage.len() != 32 {
                 return Some(Err(Error::HashPreimageLengthMismatch));
             }
-            if sha256d::Hash::hash(preimage) == *hash {
+            if hash256::Hash::hash(preimage) == *hash {
                 self.push(Element::Satisfied);
                 Some(Ok(SatisfiedConstraint::HashLock {
                     hash: HashLockType::Hash256(*hash),

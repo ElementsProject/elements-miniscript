@@ -27,7 +27,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use bitcoin::blockdata::{opcodes, script};
-use bitcoin::hashes::{hash160, sha256, Hash};
+use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
 use bitcoin::{self, hashes, Script as BtcScript};
 use bitcoin_miniscript::TranslatePk as BtcTranslatePk;
 use elements::secp256k1_zkp;
@@ -38,7 +38,7 @@ use crate::extensions::{CovExtArgs, CovenantExt};
 use crate::policy::{semantic, Liftable};
 use crate::util::varint_len;
 use crate::{
-    tweak_key, BtcError, BtcFromTree, BtcLiftable, BtcMiniscript, BtcPolicy, BtcSatisfier,
+    hash256, tweak_key, BtcError, BtcFromTree, BtcLiftable, BtcMiniscript, BtcPolicy, BtcSatisfier,
     BtcSegwitv0, BtcTerminal, BtcTree, Descriptor, Error, MiniscriptKey, ToPublicKey,
 };
 
@@ -95,14 +95,17 @@ impl fmt::Display for LegacyPeginKey {
 }
 
 impl MiniscriptKey for LegacyPeginKey {
-    type Hash = hash160::Hash;
+    type RawPkHash = hash160::Hash;
     type Sha256 = sha256::Hash;
+    type Hash256 = hash256::Hash;
+    type Ripemd160 = ripemd160::Hash;
+    type Hash160 = hash160::Hash;
 
     fn is_uncompressed(&self) -> bool {
         false
     }
 
-    fn to_pubkeyhash(&self) -> Self::Hash {
+    fn to_pubkeyhash(&self) -> Self::RawPkHash {
         let pk = match *self {
             LegacyPeginKey::Functionary(ref pk) => pk,
             LegacyPeginKey::NonFunctionary(ref pk) => pk,
@@ -252,8 +255,8 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
 
             fn pkh(
                 &mut self,
-                _pkh: &<LegacyPeginKey as MiniscriptKey>::Hash,
-            ) -> Result<<bitcoin::PublicKey as MiniscriptKey>::Hash, ()> {
+                _pkh: &<LegacyPeginKey as MiniscriptKey>::RawPkHash,
+            ) -> Result<<bitcoin::PublicKey as MiniscriptKey>::RawPkHash, ()> {
                 unreachable!("No keyhashes in elements descriptors")
             }
         }

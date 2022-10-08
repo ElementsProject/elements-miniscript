@@ -128,16 +128,16 @@ where
 {
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
         let ret = match *self {
-            Terminal::PkK(ref pk) => Semantic::KeyHash(pk.to_pubkeyhash()),
-            Terminal::PkH(ref pkh) => Semantic::KeyHash(pkh.clone()),
+            Terminal::PkK(ref pk) | Terminal::PkH(ref pk) => Semantic::KeyHash(pk.to_pubkeyhash()),
+            Terminal::RawPkH(ref pkh) => Semantic::KeyHash(pkh.clone()),
             Terminal::After(t) => Semantic::After(t),
             Terminal::Older(t) => Semantic::Older(t),
             Terminal::Sha256(ref h) => Semantic::Sha256(h.clone()),
-            Terminal::Hash256(h) => Semantic::Hash256(h),
-            Terminal::Ripemd160(h) => Semantic::Ripemd160(h),
-            Terminal::Hash160(h) => Semantic::Hash160(h),
-            Terminal::True => Semantic::Trivial,
+            Terminal::Hash256(ref h) => Semantic::Hash256(h.clone()),
+            Terminal::Ripemd160(ref h) => Semantic::Ripemd160(h.clone()),
+            Terminal::Hash160(ref h) => Semantic::Hash160(h.clone()),
             Terminal::False => Semantic::Unsatisfiable,
+            Terminal::True => Semantic::Trivial,
             Terminal::Alt(ref sub)
             | Terminal::Swap(ref sub)
             | Terminal::Check(ref sub)
@@ -211,9 +211,9 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Concrete<Pk> {
             Concrete::After(t) => Semantic::After(t),
             Concrete::Older(t) => Semantic::Older(t),
             Concrete::Sha256(ref h) => Semantic::Sha256(h.clone()),
-            Concrete::Hash256(h) => Semantic::Hash256(h),
-            Concrete::Ripemd160(h) => Semantic::Ripemd160(h),
-            Concrete::Hash160(h) => Semantic::Hash160(h),
+            Concrete::Hash256(ref h) => Semantic::Hash256(h.clone()),
+            Concrete::Ripemd160(ref h) => Semantic::Ripemd160(h.clone()),
+            Concrete::Hash160(ref h) => Semantic::Hash160(h.clone()),
             Concrete::And(ref subs) => {
                 let semantic_subs: Result<_, Error> = subs.iter().map(Liftable::lift).collect();
                 Semantic::Threshold(2, semantic_subs?)
@@ -241,9 +241,9 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for BtcPolicy<Pk> {
             BtcPolicy::Trivial => Ok(Semantic::Trivial),
             BtcPolicy::KeyHash(ref pkh) => Ok(Semantic::KeyHash(pkh.clone())),
             BtcPolicy::Sha256(ref h) => Ok(Semantic::Sha256(h.clone())),
-            BtcPolicy::Hash256(ref h) => Ok(Semantic::Hash256(*h)),
-            BtcPolicy::Ripemd160(ref h) => Ok(Semantic::Ripemd160(*h)),
-            BtcPolicy::Hash160(ref h) => Ok(Semantic::Hash160(*h)),
+            BtcPolicy::Hash256(ref h) => Ok(Semantic::Hash256(h.clone())),
+            BtcPolicy::Ripemd160(ref h) => Ok(Semantic::Ripemd160(h.clone())),
+            BtcPolicy::Hash160(ref h) => Ok(Semantic::Hash160(h.clone())),
             BtcPolicy::After(n) => Ok(Semantic::After(n)),
             BtcPolicy::Older(n) => Ok(Semantic::Older(n)),
             BtcPolicy::Threshold(k, ref subs) => {
@@ -315,7 +315,7 @@ mod tests {
         assert!(ConcretePol::from_str("thresh()").is_err());
         assert!(SemanticPol::from_str("thresh(0)").is_err());
         assert!(SemanticPol::from_str("thresh()").is_err());
-        concrete_policy_rtt("ripemd160(aaaaaaaaaaaaaaaaaaaaaa0Daaaaaaaaaabaaaaa)");
+        concrete_policy_rtt("ripemd160()");
     }
 
     #[test]

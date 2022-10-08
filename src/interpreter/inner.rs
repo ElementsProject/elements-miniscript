@@ -14,7 +14,7 @@
 
 use bitcoin;
 use bitcoin::util::taproot::TAPROOT_ANNEX_PREFIX;
-use elements::hashes::{hash160, sha256, Hash};
+use elements::hashes::{hash160, ripemd160, sha256, Hash};
 use elements::schnorr::TapTweak;
 use elements::taproot::ControlBlock;
 use elements::{self, script};
@@ -24,7 +24,7 @@ use crate::descriptor::{CovOperations, LegacyCSFSCov};
 use crate::extensions::ParseableExt;
 use crate::miniscript::context::{NoChecks, ScriptContext};
 use crate::util::is_v1_p2tr;
-use crate::{BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, Translator};
+use crate::{hash256, BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, Translator};
 
 /// Attempts to parse a slice as a Bitcoin public key, checking compressedness
 /// if asked to, but otherwise dropping it
@@ -437,6 +437,18 @@ impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
                 Ok(*sha256)
             }
+
+            fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ()> {
+                Ok(*hash256)
+            }
+
+            fn ripemd160(&mut self, ripemd160: &ripemd160::Hash) -> Result<ripemd160::Hash, ()> {
+                Ok(*ripemd160)
+            }
+
+            fn hash160(&mut self, hash160: &hash160::Hash) -> Result<hash160::Hash, ()> {
+                Ok(*hash160)
+            }
         }
 
         self.real_translate_pk(&mut TranslateFullPk)
@@ -462,6 +474,18 @@ impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
 
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
                 Ok(*sha256)
+            }
+
+            fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ()> {
+                Ok(*hash256)
+            }
+
+            fn ripemd160(&mut self, ripemd160: &ripemd160::Hash) -> Result<ripemd160::Hash, ()> {
+                Ok(*ripemd160)
+            }
+
+            fn hash160(&mut self, hash160: &hash160::Hash) -> Result<hash160::Hash, ()> {
+                Ok(*hash160)
             }
         }
         self.real_translate_pk(&mut TranslateXOnlyPk)

@@ -105,9 +105,14 @@
 #![deny(unused_imports)]
 #![deny(missing_docs)]
 
+#[cfg(target_pointer_width = "16")]
+compile_error!(
+    "elements-miniscript currently only supports architectures with pointers wider than 16 bits"
+);
+
 pub use {bitcoin, elements};
 #[cfg(feature = "serde")]
-pub extern crate serde;
+pub use actual_serde as serde;
 #[cfg(all(test, feature = "unstable"))]
 extern crate test;
 
@@ -124,7 +129,7 @@ pub(crate) use bitcoin_miniscript::{
 };
 // re-export imports
 pub use bitcoin_miniscript::{
-    DummyKey, DummyKeyHash, ForEach, ForEachKey, MiniscriptKey, ToPublicKey,
+    hash256, DummyKey, DummyKeyHash, ForEachKey, MiniscriptKey, ToPublicKey,
 };
 // End imports
 
@@ -144,13 +149,13 @@ pub mod timelock;
 mod test_utils;
 mod util;
 
-use std::{error, fmt, str};
+use std::{error, fmt, hash, str};
 
 use elements::hashes::sha256;
 use elements::secp256k1_zkp::Secp256k1;
 use elements::{opcodes, script, secp256k1_zkp};
 
-pub use crate::descriptor::{Descriptor, DescriptorPublicKey};
+pub use crate::descriptor::{DefiniteDescriptorKey, Descriptor, DescriptorPublicKey};
 pub use crate::extensions::{CovenantExt, Extension, NoExt, TxEnv};
 pub use crate::interpreter::Interpreter;
 pub use crate::miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0, Tap};
@@ -206,6 +211,85 @@ where
     contracthash::tweak_key(secp, pk, contract)
 }
 
+/// Dummy keyhash which de/serializes to the empty string; useful for testing
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
+pub struct DummyHash256;
+
+impl str::FromStr for DummyHash256 {
+    type Err = &'static str;
+    fn from_str(x: &str) -> Result<DummyHash256, &'static str> {
+        if x.is_empty() {
+            Ok(DummyHash256)
+        } else {
+            Err("non empty dummy hash")
+        }
+    }
+}
+
+/// Dummy keyhash which de/serializes to the empty string; useful for testing
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
+pub struct DummyRipemd160Hash;
+
+impl str::FromStr for DummyRipemd160Hash {
+    type Err = &'static str;
+    fn from_str(x: &str) -> Result<DummyRipemd160Hash, &'static str> {
+        if x.is_empty() {
+            Ok(DummyRipemd160Hash)
+        } else {
+            Err("non empty dummy hash")
+        }
+    }
+}
+
+impl fmt::Display for DummyHash256 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("")
+    }
+}
+impl fmt::Display for DummyRipemd160Hash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("")
+    }
+}
+
+impl hash::Hash for DummyHash256 {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        "DummySha256Hash".hash(state);
+    }
+}
+
+impl hash::Hash for DummyRipemd160Hash {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        "DummyRipemd160Hash".hash(state);
+    }
+}
+
+/// Dummy keyhash which de/serializes to the empty string; useful for testing
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
+pub struct DummyHash160Hash;
+
+impl str::FromStr for DummyHash160Hash {
+    type Err = &'static str;
+    fn from_str(x: &str) -> Result<DummyHash160Hash, &'static str> {
+        if x.is_empty() {
+            Ok(DummyHash160Hash)
+        } else {
+            Err("non empty dummy hash")
+        }
+    }
+}
+
+impl fmt::Display for DummyHash160Hash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("")
+    }
+}
+
+impl hash::Hash for DummyHash160Hash {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        "DummyHash160Hash".hash(state);
+    }
+}
 /// Describes an object that can translate various keys and hashes from one key to the type
 /// associated with the other key. Used by the [`TranslatePk`] trait to do the actual translations.
 pub trait Translator<P, Q, E>
@@ -217,10 +301,19 @@ where
     fn pk(&mut self, pk: &P) -> Result<Q, E>;
 
     /// Translates public key hashes P::Hash -> Q::Hash.
-    fn pkh(&mut self, pkh: &P::Hash) -> Result<Q::Hash, E>;
+    fn pkh(&mut self, pkh: &P::RawPkHash) -> Result<Q::RawPkHash, E>;
 
-    /// Translates sha256 hashes from P::Sha256 -> Q::Sha256
+    /// Provides the translation from P::Sha256 -> Q::Sha256
     fn sha256(&mut self, sha256: &P::Sha256) -> Result<Q::Sha256, E>;
+
+    /// Provides the translation from P::Hash256 -> Q::Hash256
+    fn hash256(&mut self, hash256: &P::Hash256) -> Result<Q::Hash256, E>;
+
+    /// Translates ripemd160 hashes from P::Ripemd160 -> Q::Ripemd160
+    fn ripemd160(&mut self, ripemd160: &P::Ripemd160) -> Result<Q::Ripemd160, E>;
+
+    /// Translates hash160 hashes from P::Hash160 -> Q::Hash160
+    fn hash160(&mut self, hash160: &P::Hash160) -> Result<Q::Hash160, E>;
 }
 
 /// Trait for translation Extensions

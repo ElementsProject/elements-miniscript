@@ -21,7 +21,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::{error, fmt};
 
-use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
+use elements::hashes::{hash160, ripemd160, sha256, Hash};
 
 use crate::extensions::ParseableExt;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -29,7 +29,7 @@ use crate::miniscript::limits::{MAX_BLOCK_WEIGHT, MAX_PUBKEYS_PER_MULTISIG};
 use crate::miniscript::types::extra_props::ExtData;
 use crate::miniscript::types::{Property, Type};
 use crate::miniscript::ScriptContext;
-use crate::{bitcoin, Error, Extension, Miniscript, MiniscriptKey, NoExt, ToPublicKey};
+use crate::{bitcoin, hash256, Error, Extension, Miniscript, MiniscriptKey, NoExt, ToPublicKey};
 
 fn return_none<T>(_: usize) -> Option<T> {
     None
@@ -129,7 +129,9 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension = NoExt>
     /// `<key>`
     PkK(Pk),
     /// `DUP HASH160 <keyhash> EQUALVERIFY`
-    PkH(Pk::Hash),
+    PkH(Pk),
+    /// Only for parsing PkH for Script
+    RawPkH(Pk::RawPkHash),
     // timelocks
     /// `n CHECKLOCKTIMEVERIFY`
     After(u32),
@@ -139,11 +141,11 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension = NoExt>
     /// `SIZE 32 EQUALVERIFY SHA256 <hash> EQUAL`
     Sha256(Pk::Sha256),
     /// `SIZE 32 EQUALVERIFY HASH256 <hash> EQUAL`
-    Hash256(sha256d::Hash),
+    Hash256(Pk::Hash256),
     /// `SIZE 32 EQUALVERIFY RIPEMD160 <hash> EQUAL`
-    Ripemd160(ripemd160::Hash),
+    Ripemd160(Pk::Ripemd160),
     /// `SIZE 32 EQUALVERIFY HASH160 <hash> EQUAL`
-    Hash160(hash160::Hash),
+    Hash160(Pk::Hash160),
     // Wrappers
     /// `TOALTSTACK [E] FROMALTSTACK`
     Alt(Arc<Miniscript<Pk, Ctx, Ext>>),
@@ -332,7 +334,7 @@ pub fn parse<Ctx: ScriptContext, Ext: ParseableExt>(
                                 Tk::Hash160 => match_token!(
                                     tokens,
                                     Tk::Dup => {
-                                        term.reduce0(Terminal::PkH(
+                                        term.reduce0(Terminal::RawPkH(
                                             hash160::Hash::from_slice(hash).expect("valid size")
                                         ))?
                                     },
@@ -362,7 +364,7 @@ pub fn parse<Ctx: ScriptContext, Ext: ParseableExt>(
                                 Tk::Hash256, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size => {
                                     non_term.push(NonTerm::Verify);
                                     term.reduce0(Terminal::Hash256(
-                                        sha256d::Hash::from_slice(hash).expect("valid size")
+                                        hash256::Hash::from_slice(hash).expect("valid size")
                                     ))?
                                 },
                             ),
@@ -412,7 +414,7 @@ pub fn parse<Ctx: ScriptContext, Ext: ParseableExt>(
                             Tk::Equal,
                             Tk::Num(32),
                             Tk::Size => term.reduce0(Terminal::Hash256(
-                                sha256d::Hash::from_slice(hash).expect("valid size")
+                                hash256::Hash::from_slice(hash).expect("valid size")
                             ))?,
                         ),
                         Tk::Hash20(hash) => match_token!(

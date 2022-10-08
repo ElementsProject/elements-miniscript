@@ -25,7 +25,7 @@ use std::{error, fmt};
 
 use bitcoin;
 use bitcoin::hashes::sha256;
-use elements::hashes::{hash160, ripemd160, sha256d};
+use elements::hashes::{hash160, ripemd160, sha256d, Hash};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::secp256k1_zkp::{self as secp256k1, Secp256k1};
 use elements::sighash::SigHashCache;
@@ -37,7 +37,7 @@ use crate::miniscript::iter::PkPkh;
 use crate::miniscript::limits::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crate::miniscript::satisfy::{elementssig_from_rawsig, After, Older};
 use crate::{
-    descriptor, interpreter, Descriptor, DescriptorPublicKey, ElementsSig, Extension,
+    descriptor, hash256, interpreter, DefiniteDescriptorKey, Descriptor, ElementsSig, Extension,
     MiniscriptKey, Preimage32, Satisfier, ToPublicKey, TranslatePk, Translator,
 };
 
@@ -335,7 +335,7 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
 
     fn lookup_pkh_tap_leaf_script_sig(
         &self,
-        pkh: &(Pk::Hash, TapLeafHash),
+        pkh: &(Pk::RawPkHash, TapLeafHash),
     ) -> Option<(
         elements::secp256k1_zkp::XOnlyPublicKey,
         elements::SchnorrSig,
@@ -362,7 +362,7 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
         }
     }
 
-    fn lookup_pkh_ecdsa_sig(&self, pkh: &Pk::Hash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
+    fn lookup_pkh_ecdsa_sig(&self, pkh: &Pk::RawPkHash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
         if let Some((pk, sig)) = self.psbt.inputs()[self.index]
             .partial_sigs
             .iter()
@@ -413,10 +413,10 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
         }
     }
 
-    fn lookup_hash160(&self, h: hash160::Hash) -> Option<Preimage32> {
+    fn lookup_hash160(&self, h: &Pk::Hash160) -> Option<Preimage32> {
         self.psbt.inputs()[self.index]
             .hash160_preimages
-            .get(&h)
+            .get(&Pk::to_hash160(h))
             .and_then(try_vec_as_preimage32)
     }
 
@@ -427,17 +427,17 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
             .and_then(try_vec_as_preimage32)
     }
 
-    fn lookup_hash256(&self, h: sha256d::Hash) -> Option<Preimage32> {
+    fn lookup_hash256(&self, h: &Pk::Hash256) -> Option<Preimage32> {
         self.psbt.inputs()[self.index]
             .hash256_preimages
-            .get(&h)
+            .get(&sha256d::Hash::from_inner(Pk::to_hash256(h).into_inner())) // upstream psbt operates on hash256
             .and_then(try_vec_as_preimage32)
     }
 
-    fn lookup_ripemd160(&self, h: ripemd160::Hash) -> Option<Preimage32> {
+    fn lookup_ripemd160(&self, h: &Pk::Ripemd160) -> Option<Preimage32> {
         self.psbt.inputs()[self.index]
             .ripemd160_preimages
-            .get(&h)
+            .get(&Pk::to_ripemd160(h))
             .and_then(try_vec_as_preimage32)
     }
 }
@@ -592,7 +592,7 @@ pub trait PsbtExt {
     fn update_input_with_descriptor(
         &mut self,
         input_index: usize,
-        descriptor: &Descriptor<DescriptorPublicKey, CovenantExt<CovExtArgs>>,
+        descriptor: &Descriptor<DefiniteDescriptorKey, CovenantExt<CovExtArgs>>,
     ) -> Result<(), UtxoUpdateError>;
 
     /// Get the sighash message(data to sign) at input index `idx` based on the sighash
@@ -769,7 +769,7 @@ impl PsbtExt for Psbt {
     fn update_input_with_descriptor(
         &mut self,
         input_index: usize,
-        desc: &Descriptor<DescriptorPublicKey, CovenantExt<CovExtArgs>>,
+        desc: &Descriptor<DefiniteDescriptorKey, CovenantExt<CovExtArgs>>,
     ) -> Result<(), UtxoUpdateError> {
         let n_inputs = self.inputs().len();
         let input = self
@@ -963,14 +963,14 @@ pub trait PsbtInputExt {
     /// [`update_input_with_descriptor`]: PsbtExt::update_input_with_descriptor
     fn update_with_descriptor_unchecked(
         &mut self,
-        descriptor: &Descriptor<DescriptorPublicKey, CovenantExt<CovExtArgs>>,
+        descriptor: &Descriptor<DefiniteDescriptorKey, CovenantExt<CovExtArgs>>,
     ) -> Result<Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>, descriptor::ConversionError>;
 }
 
 impl PsbtInputExt for psbt::Input {
     fn update_with_descriptor_unchecked(
         &mut self,
-        descriptor: &Descriptor<DescriptorPublicKey, CovenantExt<CovExtArgs>>,
+        descriptor: &Descriptor<DefiniteDescriptorKey, CovenantExt<CovExtArgs>>,
     ) -> Result<Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>, descriptor::ConversionError>
     {
         let (derived, _) = update_input_with_descriptor_helper(self, descriptor, None)?;
@@ -985,19 +985,19 @@ struct XOnlyHashLookUp(
     pub secp256k1::Secp256k1<secp256k1::VerifyOnly>,
 );
 
-impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionError>
+impl Translator<DefiniteDescriptorKey, bitcoin::PublicKey, descriptor::ConversionError>
     for XOnlyHashLookUp
 {
     fn pk(
         &mut self,
-        xpk: &DescriptorPublicKey,
+        xpk: &DefiniteDescriptorKey,
     ) -> Result<bitcoin::PublicKey, descriptor::ConversionError> {
         xpk.derive_public_key(&self.1)
     }
 
     fn pkh(
         &mut self,
-        xpk: &DescriptorPublicKey,
+        xpk: &DefiniteDescriptorKey,
     ) -> Result<hash160::Hash, descriptor::ConversionError> {
         let pk = xpk.derive_public_key(&self.1)?;
         let xonly = pk.to_x_only_pubkey();
@@ -1012,6 +1012,27 @@ impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionE
     ) -> Result<sha256::Hash, descriptor::ConversionError> {
         Ok(*sha256)
     }
+
+    fn hash256(
+        &mut self,
+        hash256: &hash256::Hash,
+    ) -> Result<hash256::Hash, descriptor::ConversionError> {
+        Ok(*hash256)
+    }
+
+    fn ripemd160(
+        &mut self,
+        ripemd160: &ripemd160::Hash,
+    ) -> Result<ripemd160::Hash, descriptor::ConversionError> {
+        Ok(*ripemd160)
+    }
+
+    fn hash160(
+        &mut self,
+        hash160: &hash160::Hash,
+    ) -> Result<hash160::Hash, descriptor::ConversionError> {
+        Ok(*hash160)
+    }
 }
 
 // Traverse the pkh lookup while maintaining a reverse map for storing the map
@@ -1021,12 +1042,12 @@ struct KeySourceLookUp(
     pub secp256k1::Secp256k1<secp256k1::VerifyOnly>,
 );
 
-impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionError>
+impl Translator<DefiniteDescriptorKey, bitcoin::PublicKey, descriptor::ConversionError>
     for KeySourceLookUp
 {
     fn pk(
         &mut self,
-        xpk: &DescriptorPublicKey,
+        xpk: &DefiniteDescriptorKey,
     ) -> Result<bitcoin::PublicKey, descriptor::ConversionError> {
         let derived = xpk.derive_public_key(&self.1)?;
         self.0.insert(
@@ -1038,7 +1059,7 @@ impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionE
 
     fn pkh(
         &mut self,
-        xpk: &DescriptorPublicKey,
+        xpk: &DefiniteDescriptorKey,
     ) -> Result<hash160::Hash, descriptor::ConversionError> {
         Ok(self.pk(xpk)?.to_pubkeyhash())
     }
@@ -1049,11 +1070,32 @@ impl Translator<DescriptorPublicKey, bitcoin::PublicKey, descriptor::ConversionE
     ) -> Result<sha256::Hash, descriptor::ConversionError> {
         Ok(*sha256)
     }
+
+    fn hash256(
+        &mut self,
+        hash256: &hash256::Hash,
+    ) -> Result<hash256::Hash, descriptor::ConversionError> {
+        Ok(*hash256)
+    }
+
+    fn ripemd160(
+        &mut self,
+        ripemd160: &ripemd160::Hash,
+    ) -> Result<ripemd160::Hash, descriptor::ConversionError> {
+        Ok(*ripemd160)
+    }
+
+    fn hash160(
+        &mut self,
+        hash160: &hash160::Hash,
+    ) -> Result<hash160::Hash, descriptor::ConversionError> {
+        Ok(*hash160)
+    }
 }
 
 fn update_input_with_descriptor_helper(
     input: &mut psbt::Input,
-    descriptor: &Descriptor<DescriptorPublicKey, CovenantExt<CovExtArgs>>,
+    descriptor: &Descriptor<DefiniteDescriptorKey, CovenantExt<CovExtArgs>>,
     check_script: Option<Script>,
     // the return value is a tuple here since the two internal calls to it require different info.
     // One needs the derived descriptor and the other needs to know whether the script_pubkey check
@@ -1103,7 +1145,6 @@ fn update_input_with_descriptor_helper(
 
         derived
     } else {
-        // have to use a RefCell because we can't pass FnMut to translate_pk2
         let mut bip32_derivation = KeySourceLookUp(BTreeMap::new(), Secp256k1::verification_only());
         let derived = descriptor.translate_pk(&mut bip32_derivation)?;
 
@@ -1144,7 +1185,7 @@ fn update_input_with_descriptor_helper(
 fn update_tr_psbt_helper<Ext, Ext2>(
     input: &mut psbt::Input,
     tr_derived: &Tr<bitcoin::PublicKey, Ext>,
-    tr_xpk: &Tr<DescriptorPublicKey, Ext2>,
+    tr_xpk: &Tr<DefiniteDescriptorKey, Ext2>,
     hash_lookup: &mut XOnlyHashLookUp,
 ) where
     Ext: ParseableExt,
@@ -1449,11 +1490,8 @@ mod tests {
         )
         .unwrap();
         let first_leaf_hash = {
-            let ms = Miniscript::<XOnlyPublicKey, Tap>::from_str(&format!(
-                "pkh({})",
-                &key_0_1.to_pubkeyhash()
-            ))
-            .unwrap();
+            let ms =
+                Miniscript::<XOnlyPublicKey, Tap>::from_str(&format!("pkh({})", &key_0_1)).unwrap();
             let first_script = ms.encode();
             assert!(psbt_input
                 .tap_scripts
@@ -1553,7 +1591,7 @@ mod tests {
     #[test]
     fn test_update_input_checks() {
         let desc = format!("eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/0)");
-        let desc = Descriptor::<DescriptorPublicKey>::from_str(&desc).unwrap();
+        let desc = Descriptor::<DefiniteDescriptorKey>::from_str(&desc).unwrap();
 
         let asset = elements::AssetId::from_hex(
             "b2e15d0d7a0c94e4e2ce0fe6e8691b9e451377f6e46e8045a86f7c4b5d4f0f23",

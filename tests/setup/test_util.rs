@@ -21,14 +21,14 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use bitcoin::hashes::hex::ToHex;
-use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
+use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
 use bitcoin::secp256k1;
 use elements::hashes::hex::FromHex;
 use elements::{confidential, encode, AddressParams, BlockHash};
 use miniscript::descriptor::{SinglePub, SinglePubKey};
 use miniscript::extensions::{param::ExtParamTranslator, CovExtArgs, CsfsKey, CsfsMsg};
 use miniscript::{
-    CovenantExt, Descriptor, DescriptorPublicKey, Miniscript, ScriptContext, TranslateExt,
+    hash256, CovenantExt, Descriptor, DescriptorPublicKey, Error, Miniscript, ScriptContext, TranslateExt,
     TranslatePk, Translator,
 };
 use rand::RngCore;
@@ -41,7 +41,7 @@ pub struct PubData {
     pub pks: Vec<bitcoin::PublicKey>,
     pub x_only_pks: Vec<bitcoin::XOnlyPublicKey>,
     pub sha256: sha256::Hash,
-    pub hash256: sha256d::Hash,
+    pub hash256: hash256::Hash,
     pub ripemd160: ripemd160::Hash,
     pub hash160: hash160::Hash,
     pub genesis_hash: elements::BlockHash,
@@ -112,7 +112,7 @@ impl TestData {
         let sha256_pre = [0x12 as u8; 32];
         let sha256 = sha256::Hash::hash(&sha256_pre);
         let hash256_pre = [0x34 as u8; 32];
-        let hash256 = sha256d::Hash::hash(&hash256_pre);
+        let hash256 = hash256::Hash::hash(&hash256_pre);
         let hash160_pre = [0x56 as u8; 32];
         let hash160 = hash160::Hash::hash(&hash160_pre);
         let ripemd160_pre = [0x78 as u8; 32];
@@ -258,6 +258,21 @@ impl<'a> Translator<String, DescriptorPublicKey, ()> for StrDescPubKeyTranslator
         let sha = sha256::Hash::from_str(sha256).unwrap();
         Ok(sha)
     }
+
+    fn hash256(&mut self, hash256: &String) -> Result<hash256::Hash, ()> {
+        let hash256 = hash256::Hash::from_str(hash256).unwrap();
+        Ok(hash256)
+    }
+
+    fn ripemd160(&mut self, ripemd160: &String) -> Result<ripemd160::Hash, ()> {
+        let ripemd160 = ripemd160::Hash::from_str(ripemd160).unwrap();
+        Ok(ripemd160)
+    }
+
+    fn hash160(&mut self, hash160: &String) -> Result<hash160::Hash, ()> {
+        let hash160 = hash160::Hash::from_str(hash160).unwrap();
+        Ok(hash160)
+    }
 }
 
 // Translate Str to DescriptorPublicKey
@@ -304,20 +319,37 @@ impl<'a> Translator<String, DescriptorPublicKey, ()> for StrTranslatorLoose<'a> 
         let sha = sha256::Hash::from_str(sha256).unwrap();
         Ok(sha)
     }
+
+    fn hash256(&mut self, hash256: &String) -> Result<hash256::Hash, ()> {
+        let hash256 = hash256::Hash::from_str(hash256).unwrap();
+        Ok(hash256)
+    }
+
+    fn ripemd160(&mut self, ripemd160: &String) -> Result<ripemd160::Hash, ()> {
+        let ripemd160 = ripemd160::Hash::from_str(ripemd160).unwrap();
+        Ok(ripemd160)
+    }
+
+    fn hash160(&mut self, hash160: &String) -> Result<hash160::Hash, ()> {
+        let hash160 = hash160::Hash::from_str(hash160).unwrap();
+        Ok(hash160)
+    }
 }
 
 #[allow(dead_code)]
 // https://github.com/rust-lang/rust/issues/46379. The code is pub fn and integration test, but still shows warnings
-pub fn parse_test_desc(desc: &str, pubdata: &PubData) -> Descriptor<DescriptorPublicKey> {
+pub fn parse_test_desc(
+    desc: &str,
+    pubdata: &PubData,
+) -> Result<Descriptor<DescriptorPublicKey>, Error> {
     let desc = subs_hash_frag(desc, pubdata);
-    let desc = Descriptor::<String, CovenantExt<String>>::from_str(&desc)
-        .expect("only parsing valid and sane descriptors");
+    let desc = Descriptor::<String, CovenantExt<String>>::from_str(&desc)?;
     let mut translator = StrDescPubKeyTranslator(0, pubdata);
     let mut ext_trans = StrExtTranslator(0, pubdata);
     let desc: Result<_, ()> = desc.translate_pk(&mut translator);
     let desc = desc.expect("Translate Keys must succeed");
     let desc: Result<_, ()> = desc.translate_ext(&mut ext_trans);
-    desc.expect("Ext translation must succeed")
+    Ok(desc.expect("Ext translation must succeed"))
 }
 
 // substitute hash fragments in the string as the per rules

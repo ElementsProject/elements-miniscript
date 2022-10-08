@@ -16,6 +16,7 @@ use std::{error, fmt, hash};
 
 use bitcoin;
 use bitcoin::blockdata::constants::MAX_BLOCK_WEIGHT;
+use bitcoin::hashes::{hash160, ripemd160, sha256};
 
 use super::decode::ParseableKey;
 use crate::miniscript::limits::{
@@ -25,7 +26,7 @@ use crate::miniscript::limits::{
 };
 use crate::miniscript::types;
 use crate::util::witness_to_scriptsig;
-use crate::{Error, Extension, Miniscript, MiniscriptKey, Terminal};
+use crate::{hash256, Error, Extension, Miniscript, MiniscriptKey, Terminal};
 
 /// Error for Script Context
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -199,8 +200,11 @@ impl fmt::Display for ScriptContextError {
 pub trait ScriptContext:
     fmt::Debug + Clone + Ord + PartialOrd + Eq + PartialEq + hash::Hash + private::Sealed
 where
-    Self::Key: MiniscriptKey<Hash = bitcoin::hashes::hash160::Hash>,
-    Self::Key: MiniscriptKey<Sha256 = bitcoin::hashes::sha256::Hash>,
+    Self::Key: MiniscriptKey<RawPkHash = hash160::Hash>,
+    Self::Key: MiniscriptKey<Sha256 = sha256::Hash>,
+    Self::Key: MiniscriptKey<Hash256 = hash256::Hash>,
+    Self::Key: MiniscriptKey<Ripemd160 = ripemd160::Hash>,
+    Self::Key: MiniscriptKey<Hash160 = hash160::Hash>,
 {
     /// The consensus key associated with the type. Must be a parseable key
     type Key: ParseableKey;
@@ -388,6 +392,7 @@ impl ScriptContext for Legacy {
     ) -> Result<(), ScriptContextError> {
         match *frag {
             Terminal::PkH(ref _pkh) => Err(ScriptContextError::MalleablePkH),
+            Terminal::RawPkH(ref _pk) => Err(ScriptContextError::MalleablePkH),
             Terminal::OrI(ref _a, ref _b) => Err(ScriptContextError::MalleableOrI),
             Terminal::DupIf(ref _ms) => Err(ScriptContextError::MalleableDupIf),
             _ => Ok(()),
@@ -813,8 +818,8 @@ impl ScriptContext for BareCtx {
     ) -> Result<(), Error> {
         match &ms.node {
             Terminal::Check(ref ms) => match &ms.node {
-                Terminal::PkH(_pkh) => Ok(()),
-                Terminal::PkK(_pk) => Ok(()),
+                Terminal::RawPkH(_pkh) => Ok(()),
+                Terminal::PkK(_pk) | Terminal::PkH(_pk) => Ok(()),
                 _ => Err(Error::NonStandardBareScript),
             },
             Terminal::Multi(_k, subs) if subs.len() <= 3 => Ok(()),

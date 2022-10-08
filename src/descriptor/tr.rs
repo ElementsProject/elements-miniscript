@@ -20,7 +20,7 @@ use crate::policy::semantic::Policy;
 use crate::policy::Liftable;
 use crate::util::{varint_len, witness_size};
 use crate::{
-    errstr, Error, Extension, ForEach, ForEachKey, MiniscriptKey, NoExt, Satisfier, Tap,
+    errstr, Error, Extension, ForEachKey, MiniscriptKey, NoExt, Satisfier, Tap,
     ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
@@ -611,15 +611,15 @@ impl<Pk: MiniscriptKey, Ext: Extension> Liftable<Pk> for Tr<Pk, Ext> {
 }
 
 impl<Pk: MiniscriptKey, Ext: Extension> ForEachKey<Pk> for Tr<Pk, Ext> {
-    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
+    fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
-        Pk::Hash: 'a,
+        Pk::RawPkHash: 'a,
     {
         let script_keys_res = self
             .iter_scripts()
             .all(|(_d, ms)| ms.for_each_key(&mut pred));
-        script_keys_res && pred(ForEach::Key(&self.internal_key))
+        script_keys_res && pred(&self.internal_key)
     }
 }
 
@@ -760,9 +760,6 @@ mod tests {
         let desc = desc.replace(&[' ', '\n'][..], "");
         let tr = Tr::<String, NoExt>::from_str(&desc).unwrap();
         // Note the last ac12 only has ac and fails the predicate
-        assert!(!tr.for_each_key(|k| match k {
-            ForEach::Key(k) => k.starts_with("acc"),
-            ForEach::Hash(_h) => unreachable!(),
-        }));
+        assert!(!tr.for_each_key(|k| k.starts_with("acc")));
     }
 }

@@ -27,7 +27,7 @@ use crate::miniscript::decode::Terminal;
 use crate::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
 use crate::miniscript::{self};
 use crate::{
-    errstr, expression, policy, script_num_size, Error, ForEach, ForEachKey, Miniscript,
+    errstr, expression, policy, script_num_size, Error, ForEachKey, Miniscript,
     MiniscriptKey, Satisfier, ToPublicKey, Translator,
 };
 
@@ -113,12 +113,12 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
 }
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> ForEachKey<Pk> for SortedMultiVec<Pk, Ctx> {
-    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
+    fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
-        Pk::Hash: 'a,
+        Pk::RawPkHash: 'a,
     {
-        self.pks.iter().all(|key| pred(ForEach::Key(key)))
+        self.pks.iter().all(|key| pred(key))
     }
 }
 

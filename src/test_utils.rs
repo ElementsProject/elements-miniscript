@@ -3,11 +3,11 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use bitcoin::hashes::{hash160, sha256};
+use bitcoin::hashes::{hash160, ripemd160, sha256};
 use bitcoin::secp256k1;
 
 use crate::extensions::{param::ExtParamTranslator, CovExtArgs};
-use crate::{MiniscriptKey, Translator};
+use crate::{hash256, MiniscriptKey, Translator};
 
 /// Translate from a String MiniscriptKey type to bitcoin::PublicKey
 /// If the hashmap is populated, this will lookup for keys in HashMap
@@ -17,6 +17,8 @@ pub struct StrKeyTranslator {
     pub pk_map: HashMap<String, bitcoin::PublicKey>,
     pub pkh_map: HashMap<String, hash160::Hash>,
     pub sha256_map: HashMap<String, sha256::Hash>,
+    pub ripemd160_map: HashMap<String, ripemd160::Hash>,
+    pub hash160_map: HashMap<String, hash160::Hash>,
 }
 
 impl Translator<String, bitcoin::PublicKey, ()> for StrKeyTranslator {
@@ -44,6 +46,25 @@ impl Translator<String, bitcoin::PublicKey, ()> for StrKeyTranslator {
         .unwrap();
         Ok(hash)
     }
+
+    fn hash256(&mut self, _hash256: &String) -> Result<hash256::Hash, ()> {
+        // hard coded value
+        let hash = hash256::Hash::from_str(
+            "4ae81572f06e1b88fd5ced7a1a000945432e83e1551e6f721ee9c00b8cc33260",
+        )
+        .unwrap();
+        Ok(hash)
+    }
+
+    fn ripemd160(&mut self, _ripemd160: &String) -> Result<ripemd160::Hash, ()> {
+        let hash = ripemd160::Hash::from_str("4ae81572f06e1b88fd5ced7a1a00094543a0069").unwrap();
+        Ok(hash)
+    }
+
+    fn hash160(&mut self, _hash160: &String) -> Result<hash160::Hash, ()> {
+        let hash = hash160::Hash::from_str("4ae81572f06e1b88fd5ced7a1a00094543a0069").unwrap();
+        Ok(hash)
+    }
 }
 
 /// Same as [`StrKeyTranslator`], but for [`bitcoin::XOnlyPublicKey`]
@@ -52,6 +73,8 @@ pub struct StrXOnlyKeyTranslator {
     pub pk_map: HashMap<String, bitcoin::XOnlyPublicKey>,
     pub pkh_map: HashMap<String, hash160::Hash>,
     pub sha256_map: HashMap<String, sha256::Hash>,
+    pub ripemd160_map: HashMap<String, ripemd160::Hash>,
+    pub hash160_map: HashMap<String, hash160::Hash>,
 }
 
 impl Translator<String, bitcoin::XOnlyPublicKey, ()> for StrXOnlyKeyTranslator {
@@ -77,6 +100,24 @@ impl Translator<String, bitcoin::XOnlyPublicKey, ()> for StrXOnlyKeyTranslator {
             "4ae81572f06e1b88fd5ced7a1a000945432e83e1551e6f721ee9c00b8cc33260",
         )
         .unwrap();
+        Ok(hash)
+    }
+
+    fn hash256(&mut self, _hash256: &String) -> Result<hash256::Hash, ()> {
+        let hash = hash256::Hash::from_str(
+            "4ae81572f06e1b88fd5ced7a1a000945432e83e1551e6f721ee9c00b8cc33260",
+        )
+        .unwrap();
+        Ok(hash)
+    }
+
+    fn ripemd160(&mut self, _ripemd160: &String) -> Result<ripemd160::Hash, ()> {
+        let hash = ripemd160::Hash::from_str("4ae81572f06e1b88fd5ced7a1a00094543a0069").unwrap();
+        Ok(hash)
+    }
+
+    fn hash160(&mut self, _hash160: &String) -> Result<hash160::Hash, ()> {
+        let hash = hash160::Hash::from_str("4ae81572f06e1b88fd5ced7a1a00094543a0069").unwrap();
         Ok(hash)
     }
 }
@@ -118,6 +159,8 @@ impl StrKeyTranslator {
             pk_map,
             pkh_map,
             sha256_map: HashMap::new(),
+            ripemd160_map: HashMap::new(),
+            hash160_map: HashMap::new(),
         }
     }
 }
@@ -146,6 +189,8 @@ impl StrXOnlyKeyTranslator {
             pk_map,
             pkh_map,
             sha256_map: HashMap::new(),
+            ripemd160_map: HashMap::new(),
+            hash160_map: HashMap::new(),
         }
     }
 }

@@ -29,8 +29,8 @@ use crate::miniscript::context::ScriptContext;
 use crate::policy::{semantic, Liftable};
 use crate::util::{varint_len, witness_to_scriptsig};
 use crate::{
-    push_opcode_size, Error, ForEach, ForEachKey, Legacy, Miniscript, MiniscriptKey, Satisfier,
-    Segwitv0, ToPublicKey, TranslatePk, Translator,
+    push_opcode_size, Error, ForEachKey, Legacy, Miniscript, MiniscriptKey, Satisfier, Segwitv0,
+    ToPublicKey, TranslatePk, Translator,
 };
 
 /// A Legacy p2sh Descriptor
@@ -373,10 +373,10 @@ impl<Pk: MiniscriptKey + ToPublicKey> Sh<Pk> {
 }
 
 impl<Pk: MiniscriptKey> ForEachKey<Pk> for Sh<Pk> {
-    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, pred: F) -> bool
+    fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: F) -> bool
     where
         Pk: 'a,
-        Pk::Hash: 'a,
+        Pk::RawPkHash: 'a,
     {
         match self.inner {
             ShInner::Wsh(ref wsh) => wsh.for_each_key(pred),

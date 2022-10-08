@@ -21,7 +21,7 @@ use std::str::FromStr;
 use elements::Address;
 
 use crate::miniscript::elements::secp256k1_zkp::{Secp256k1, Verification};
-use crate::miniscript::{Descriptor, DescriptorPublicKey};
+use crate::miniscript::{DefiniteDescriptorKey, Descriptor, DescriptorPublicKey};
 
 const XPUB_1: &str = "xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB";
 const XPUB_2: &str = "xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH";
@@ -43,9 +43,9 @@ fn p2wsh<C: Verification>(secp: &Secp256k1<C>) -> Address {
     let s = format!("elwsh(sortedmulti(1,{},{}))", XPUB_1, XPUB_2);
     // let s = format!("wsh(sortedmulti(1,{},{}))", XPUB_2, XPUB_1);
 
-    let address = Descriptor::<DescriptorPublicKey>::from_str(&s)
+    let address = Descriptor::<DefiniteDescriptorKey>::from_str(&s)
         .unwrap()
-        .derived_descriptor(&secp, 0) // dummy index value if it not a wildcard
+        .derived_descriptor(&secp)
         .unwrap()
         .address(&elements::AddressParams::ELEMENTS)
         .unwrap();
@@ -68,7 +68,8 @@ fn p2sh_p2wsh<C: Verification>(secp: &Secp256k1<C>) -> Address {
 
     let address = Descriptor::<DescriptorPublicKey>::from_str(&s)
         .unwrap()
-        .derived_descriptor(secp, 5)
+        .at_derivation_index(5)
+        .derived_descriptor(secp)
         .unwrap()
         .address(&elements::AddressParams::ELEMENTS)
         .unwrap();

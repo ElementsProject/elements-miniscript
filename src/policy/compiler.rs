@@ -844,9 +844,7 @@ where
             insert_wrap!(AstElemExt::terminal(Terminal::True));
         }
         Concrete::Key(ref pk) => {
-            insert_wrap!(AstElemExt::terminal(Terminal::PkH(
-                pk.to_pubkeyhash().clone()
-            )));
+            insert_wrap!(AstElemExt::terminal(Terminal::PkH(pk.clone())));
             insert_wrap!(AstElemExt::terminal(Terminal::PkK(pk.clone())));
         }
         Concrete::After(n) => insert_wrap!(AstElemExt::terminal(Terminal::After(n))),
@@ -855,9 +853,15 @@ where
             insert_wrap!(AstElemExt::terminal(Terminal::Sha256(hash.clone())))
         }
         // Satisfaction-cost + script-cost
-        Concrete::Hash256(hash) => insert_wrap!(AstElemExt::terminal(Terminal::Hash256(hash))),
-        Concrete::Ripemd160(hash) => insert_wrap!(AstElemExt::terminal(Terminal::Ripemd160(hash))),
-        Concrete::Hash160(hash) => insert_wrap!(AstElemExt::terminal(Terminal::Hash160(hash))),
+        Concrete::Hash256(ref hash) => {
+            insert_wrap!(AstElemExt::terminal(Terminal::Hash256(hash.clone())))
+        }
+        Concrete::Ripemd160(ref hash) => {
+            insert_wrap!(AstElemExt::terminal(Terminal::Ripemd160(hash.clone())))
+        }
+        Concrete::Hash160(ref hash) => {
+            insert_wrap!(AstElemExt::terminal(Terminal::Hash160(hash.clone())))
+        }
         Concrete::And(ref subs) => {
             assert_eq!(subs.len(), 2, "and takes 2 args");
             let mut left = best_compilations(policy_cache, &subs[0], sat_prob, dissat_prob)?;
@@ -1387,9 +1391,9 @@ mod tests {
             keys[2],
             keys[3],
             keys[4],
-            keys[5].to_pubkeyhash(),
-            keys[6].to_pubkeyhash(),
-            keys[7].to_pubkeyhash()
+            keys[5],
+            keys[6],
+            keys[7]
         );
 
         assert_eq!(ms, ms_comp_res);

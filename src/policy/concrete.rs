@@ -18,17 +18,13 @@
 use std::collections::HashSet;
 use std::{error, fmt, str};
 
-use elements::hashes::hex::FromHex;
-use elements::hashes::{hash160, ripemd160, sha256d};
 #[cfg(feature = "compiler")]
 use {
     crate::descriptor::TapTree,
-    crate::extensions::NoExtParam,
     crate::miniscript::ScriptContext,
     crate::policy::compiler::CompilerError,
     crate::policy::compiler::OrdF64,
     crate::policy::{compiler, Concrete, Liftable, Semantic},
-    crate::CovenantExt,
     crate::Descriptor,
     crate::Miniscript,
     crate::NoExt,
@@ -42,7 +38,7 @@ use super::ENTAILMENT_MAX_TERMINALS;
 use crate::expression::{self, FromTree};
 use crate::miniscript::limits::{LOCKTIME_THRESHOLD, SEQUENCE_LOCKTIME_TYPE_FLAG};
 use crate::miniscript::types::extra_props::TimelockInfo;
-use crate::{errstr, Error, ForEach, ForEachKey, MiniscriptKey, Translator};
+use crate::{errstr, Error, ForEachKey, MiniscriptKey, Translator};
 
 /// Concrete policy which corresponds directly to a Miniscript structure,
 /// and whose disjunctions are annotated with satisfaction probabilities
@@ -62,11 +58,11 @@ pub enum Policy<Pk: MiniscriptKey> {
     /// A SHA256 whose preimage must be provided to satisfy the descriptor
     Sha256(Pk::Sha256),
     /// A SHA256d whose preimage must be provided to satisfy the descriptor
-    Hash256(sha256d::Hash),
+    Hash256(Pk::Hash256),
     /// A RIPEMD160 whose preimage must be provided to satisfy the descriptor
-    Ripemd160(ripemd160::Hash),
+    Ripemd160(Pk::Ripemd160),
     /// A HASH160 whose preimage must be provided to satisfy the descriptor
-    Hash160(hash160::Hash),
+    Hash160(Pk::Hash160),
     /// A list of sub-policies, all of which must be satisfied
     And(Vec<Policy<Pk>>),
     /// A list of sub-policies, one of which must be satisfied, along with
@@ -100,6 +96,21 @@ pub enum PolicyError {
     HeightTimelockCombination,
     /// Duplicate Public Keys
     DuplicatePubKeys,
+}
+
+/// Descriptor context for [`Policy`] compilation into a [`Descriptor`]
+pub enum DescriptorCtx<Pk> {
+    /// [Bare][`Descriptor::Bare`]
+    Bare,
+    /// [Sh][`Descriptor::Sh`]
+    Sh,
+    /// [Wsh][`Descriptor::Wsh`]
+    Wsh,
+    /// Sh-wrapped [Wsh][`Descriptor::Wsh`]
+    ShWsh,
+    /// [Tr][`Descriptor::Tr`] where the Option<Pk> corresponds to the internal_key if no internal
+    /// key can be inferred from the given policy
+    Tr(Option<Pk>),
 }
 
 impl fmt::Display for PolicyError {
@@ -195,19 +206,6 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
         }
     }
 
-    /// Compile [`Policy::Or`] and [`Policy::Threshold`] according to odds
-    #[cfg(feature = "compiler")]
-    fn compile_tr_policy(&self) -> Result<TapTree<Pk, NoExt>, Error> {
-        let leaf_compilations: Vec<_> = self
-            .to_tapleaf_prob_vec(1.0)
-            .into_iter()
-            .filter(|x| x.1 != Policy::Unsatisfiable)
-            .map(|(prob, ref policy)| (OrdF64(prob), compiler::best_compilation(policy).unwrap()))
-            .collect();
-        let taptree = with_huffman_tree::<Pk>(leaf_compilations).unwrap();
-        Ok(taptree)
-    }
-
     /// Extract the internal_key from policy tree.
     #[cfg(feature = "compiler")]
     fn extract_key(self, unspendable_key: Option<Pk>) -> Result<(Pk, Policy<Pk>), Error> {
@@ -258,16 +256,20 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// The policy tree constructed by root-level disjunctions over [`Or`][`Policy::Or`] and
     /// [`Thresh`][`Policy::Threshold`](1, ..) which is flattened into a vector (with respective
     /// probabilities derived from odds) of policies.
-    /// For example, the policy `thresh(1,or(pk(A),pk(B)),and(or(pk(C),pk(D)),pk(E)))` gives the vector
-    /// `[pk(A),pk(B),and(or(pk(C),pk(D)),pk(E)))]`. Each policy in the vector is compiled into
-    /// the respective miniscripts. A Huffman Tree is created from this vector which optimizes over
-    /// the probabilitity of satisfaction for the respective branch in the TapTree.
+    /// For example, the policy `thresh(1,or(pk(A),pk(B)),and(or(pk(C),pk(D)),pk(E)))` gives the
+    /// vector `[pk(A),pk(B),and(or(pk(C),pk(D)),pk(E)))]`. Each policy in the vector is compiled
+    /// into the respective miniscripts. A Huffman Tree is created from this vector which optimizes
+    /// over the probabilitity of satisfaction for the respective branch in the TapTree.
+    ///
+    /// Refer to [this link](https://gist.github.com/SarcasticNastik/9e70b2b43375aab3e78c51e09c288c89)
+    /// or [doc/Tr compiler.pdf] in the root of the repository to understand why such compilation
+    /// is also *cost-efficient*.
     // TODO: We might require other compile errors for Taproot.
     #[cfg(feature = "compiler")]
     pub fn compile_tr(
         &self,
         unspendable_key: Option<Pk>,
-    ) -> Result<Descriptor<Pk, CovenantExt<NoExtParam>>, Error> {
+    ) -> Result<Descriptor<Pk, NoExt>, Error> {
         self.is_valid()?; // Check for validity
         match self.is_safe_nonmalleable() {
             (false, _) => Err(Error::from(CompilerError::TopLevelNonSafe)),
@@ -280,11 +282,50 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                     internal_key,
                     match policy {
                         Policy::Trivial => None,
-                        policy => Some(policy.compile_tr_policy()?),
+                        policy => {
+                            let vec_policies: Vec<_> = policy.to_tapleaf_prob_vec(1.0);
+                            let mut leaf_compilations: Vec<(OrdF64, Miniscript<Pk, Tap>)> = vec![];
+                            for (prob, pol) in vec_policies {
+                                // policy corresponding to the key (replaced by unsatisfiable) is skipped
+                                if pol == Policy::Unsatisfiable {
+                                    continue;
+                                }
+                                let compilation = compiler::best_compilation::<Pk, Tap>(&pol)?;
+                                compilation.sanity_check()?;
+                                leaf_compilations.push((OrdF64(prob), compilation));
+                            }
+                            let taptree = with_huffman_tree::<Pk>(leaf_compilations)?;
+                            Some(taptree)
+                        }
                     },
                 )?;
                 Ok(tree)
             }
+        }
+    }
+
+    /// Compile the [`Policy`] into desc_ctx [`Descriptor`]
+    ///
+    /// In case of [Tr][`DescriptorCtx::Tr`], `internal_key` is used for the Taproot comilation when
+    /// no public key can be inferred from the given policy
+    #[cfg(feature = "compiler")]
+    pub fn compile_to_descriptor<Ctx: ScriptContext>(
+        &self,
+        desc_ctx: DescriptorCtx<Pk>,
+    ) -> Result<Descriptor<Pk, NoExt>, Error> {
+        self.is_valid()?;
+        match self.is_safe_nonmalleable() {
+            (false, _) => Err(Error::from(CompilerError::TopLevelNonSafe)),
+            (_, false) => Err(Error::from(
+                CompilerError::ImpossibleNonMalleableCompilation,
+            )),
+            _ => match desc_ctx {
+                DescriptorCtx::Bare => Descriptor::new_bare(compiler::best_compilation(self)?),
+                DescriptorCtx::Sh => Descriptor::new_sh(compiler::best_compilation(self)?),
+                DescriptorCtx::Wsh => Descriptor::new_wsh(compiler::best_compilation(self)?),
+                DescriptorCtx::ShWsh => Descriptor::new_sh_wsh(compiler::best_compilation(self)?),
+                DescriptorCtx::Tr(unspendable_key) => self.compile_tr(unspendable_key),
+            },
         }
     }
 
@@ -301,14 +342,14 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 }
 
 impl<Pk: MiniscriptKey> ForEachKey<Pk> for Policy<Pk> {
-    fn for_each_key<'a, F: FnMut(ForEach<'a, Pk>) -> bool>(&'a self, mut pred: F) -> bool
+    fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
-        Pk::Hash: 'a,
+        Pk::RawPkHash: 'a,
     {
         match *self {
             Policy::Unsatisfiable | Policy::Trivial => true,
-            Policy::Key(ref pk) => pred(ForEach::Key(pk)),
+            Policy::Key(ref pk) => pred(pk),
             Policy::Sha256(..)
             | Policy::Hash256(..)
             | Policy::Ripemd160(..)
@@ -330,10 +371,10 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// # Example
     ///
     /// ```
-    /// use elements_miniscript::{bitcoin::PublicKey, policy::concrete::Policy, Translator, NoExt};
+    /// use elements_miniscript::{bitcoin::PublicKey, policy::concrete::Policy, Translator, NoExt, hash256};
     /// use std::str::FromStr;
     /// use std::collections::HashMap;
-    /// use elements_miniscript::bitcoin::hashes::{sha256, hash160};
+    /// use elements_miniscript::bitcoin::hashes::{sha256, hash160, ripemd160};
     /// let alice_key = "0270cf3c71f65a3d93d285d9149fddeeb638f87a2d4d8cf16c525f71c417439777";
     /// let bob_key = "02f43b15c50a436f5335dbea8a64dd3b4e63e34c3b50c42598acb5f4f336b5d2fb";
     /// let placeholder_policy = Policy::<String>::from_str("and(pk(alice_key),pk(bob_key))").unwrap();
@@ -362,6 +403,18 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     ///         unreachable!("Policy does not contain any sha256 fragment");
     ///     }
     ///
+    ///     // If our policy also contained other fragments, we could provide the translation here.
+    ///     fn hash256(&mut self, sha256: &String) -> Result<hash256::Hash, ()> {
+    ///         unreachable!("Policy does not contain any sha256 fragment");
+    ///     }
+    ///
+    ///     fn ripemd160(&mut self, ripemd160: &String) -> Result<ripemd160::Hash, ()> {
+    ///         unreachable!("Policy does not contain any ripemd160 fragment");    
+    ///     }
+    ///
+    ///     fn hash160(&mut self, hash160: &String) -> Result<hash160::Hash, ()> {
+    ///         unreachable!("Policy does not contain any hash160 fragment");
+    ///     }
     /// }
     ///
     /// let mut pk_map = HashMap::new();
@@ -392,11 +445,11 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             Policy::Trivial => Ok(Policy::Trivial),
             Policy::Key(ref pk) => t.pk(pk).map(Policy::Key),
             Policy::Sha256(ref h) => t.sha256(h).map(Policy::Sha256),
-            Policy::Hash256(ref h) => Ok(Policy::Hash256(*h)),
-            Policy::Ripemd160(ref h) => Ok(Policy::Ripemd160(*h)),
-            Policy::Hash160(ref h) => Ok(Policy::Hash160(*h)),
-            Policy::After(n) => Ok(Policy::After(n)),
+            Policy::Hash256(ref h) => t.hash256(h).map(Policy::Hash256),
+            Policy::Ripemd160(ref h) => t.ripemd160(h).map(Policy::Ripemd160),
+            Policy::Hash160(ref h) => t.hash160(h).map(Policy::Hash160),
             Policy::Older(n) => Ok(Policy::Older(n)),
+            Policy::After(n) => Ok(Policy::After(n)),
             Policy::Threshold(k, ref subs) => {
                 let new_subs: Result<Vec<Policy<Q>>, _> =
                     subs.iter().map(|sub| sub._translate_pk(t)).collect();
@@ -635,9 +688,9 @@ impl<Pk: MiniscriptKey> fmt::Debug for Policy<Pk> {
             Policy::After(n) => write!(f, "after({})", n),
             Policy::Older(n) => write!(f, "older({})", n),
             Policy::Sha256(ref h) => write!(f, "sha256({})", h),
-            Policy::Hash256(h) => write!(f, "hash256({})", h),
-            Policy::Ripemd160(h) => write!(f, "ripemd160({})", h),
-            Policy::Hash160(h) => write!(f, "hash160({})", h),
+            Policy::Hash256(ref h) => write!(f, "hash256({})", h),
+            Policy::Ripemd160(ref h) => write!(f, "ripemd160({})", h),
+            Policy::Hash160(ref h) => write!(f, "hash160({})", h),
             Policy::And(ref subs) => {
                 f.write_str("and(")?;
                 if !subs.is_empty() {
@@ -678,9 +731,9 @@ impl<Pk: MiniscriptKey> fmt::Display for Policy<Pk> {
             Policy::After(n) => write!(f, "after({})", n),
             Policy::Older(n) => write!(f, "older({})", n),
             Policy::Sha256(ref h) => write!(f, "sha256({})", h),
-            Policy::Hash256(h) => write!(f, "hash256({})", h),
-            Policy::Ripemd160(h) => write!(f, "ripemd160({})", h),
-            Policy::Hash160(h) => write!(f, "hash160({})", h),
+            Policy::Hash256(ref h) => write!(f, "hash256({})", h),
+            Policy::Ripemd160(ref h) => write!(f, "ripemd160({})", h),
+            Policy::Hash160(ref h) => write!(f, "hash160({})", h),
             Policy::And(ref subs) => {
                 f.write_str("and(")?;
                 if !subs.is_empty() {
@@ -788,13 +841,13 @@ impl_block_str!(
                 <Pk::Sha256 as core::str::FromStr>::from_str(x).map(Policy::Sha256)
             }),
             ("hash256", 1) => expression::terminal(&top.args[0], |x| {
-                sha256d::Hash::from_hex(x).map(Policy::Hash256)
+                <Pk::Hash256 as core::str::FromStr>::from_str(x).map(Policy::Hash256)
             }),
             ("ripemd160", 1) => expression::terminal(&top.args[0], |x| {
-                ripemd160::Hash::from_hex(x).map(Policy::Ripemd160)
+                <Pk::Ripemd160 as core::str::FromStr>::from_str(x).map(Policy::Ripemd160)
             }),
             ("hash160", 1) => expression::terminal(&top.args[0], |x| {
-                hash160::Hash::from_hex(x).map(Policy::Hash160)
+                <Pk::Hash160 as core::str::FromStr>::from_str(x).map(Policy::Hash160)
             }),
             ("and", _) => {
                 if top.args.len() != 2 {
