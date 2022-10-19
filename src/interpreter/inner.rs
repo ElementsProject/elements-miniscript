@@ -24,7 +24,9 @@ use crate::descriptor::{CovOperations, LegacyCSFSCov};
 use crate::extensions::ParseableExt;
 use crate::miniscript::context::{NoChecks, ScriptContext};
 use crate::util::is_v1_p2tr;
-use crate::{hash256, BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, Translator};
+use crate::{
+    hash256, BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, Translator,
+};
 
 /// Attempts to parse a slice as a Bitcoin public key, checking compressedness
 /// if asked to, but otherwise dropping it

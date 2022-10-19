@@ -266,10 +266,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// is also *cost-efficient*.
     // TODO: We might require other compile errors for Taproot.
     #[cfg(feature = "compiler")]
-    pub fn compile_tr(
-        &self,
-        unspendable_key: Option<Pk>,
-    ) -> Result<Descriptor<Pk, NoExt>, Error> {
+    pub fn compile_tr(&self, unspendable_key: Option<Pk>) -> Result<Descriptor<Pk, NoExt>, Error> {
         self.is_valid()?; // Check for validity
         match self.is_safe_nonmalleable() {
             (false, _) => Err(Error::from(CompilerError::TopLevelNonSafe)),

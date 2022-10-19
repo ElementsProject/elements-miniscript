@@ -362,7 +362,10 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
         }
     }
 
-    fn lookup_pkh_ecdsa_sig(&self, pkh: &Pk::RawPkHash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
+    fn lookup_pkh_ecdsa_sig(
+        &self,
+        pkh: &Pk::RawPkHash,
+    ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
         if let Some((pk, sig)) = self.psbt.inputs()[self.index]
             .partial_sigs
             .iter()

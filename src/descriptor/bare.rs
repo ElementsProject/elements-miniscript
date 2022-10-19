@@ -29,8 +29,8 @@ use crate::miniscript::context::ScriptContext;
 use crate::policy::{semantic, Liftable};
 use crate::util::{varint_len, witness_to_scriptsig};
 use crate::{
-    elementssig_to_rawsig, BareCtx, Error, ForEachKey, Miniscript, MiniscriptKey,
-    Satisfier, ToPublicKey, TranslatePk, Translator,
+    elementssig_to_rawsig, BareCtx, Error, ForEachKey, Miniscript, MiniscriptKey, Satisfier,
+    ToPublicKey, TranslatePk, Translator,
 };
 
 /// Create a Bare Descriptor. That is descriptor that is

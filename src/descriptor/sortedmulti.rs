@@ -27,8 +27,8 @@ use crate::miniscript::decode::Terminal;
 use crate::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
 use crate::miniscript::{self};
 use crate::{
-    errstr, expression, policy, script_num_size, Error, ForEachKey, Miniscript,
-    MiniscriptKey, Satisfier, ToPublicKey, Translator,
+    errstr, expression, policy, script_num_size, Error, ForEachKey, Miniscript, MiniscriptKey,
+    Satisfier, ToPublicKey, Translator,
 };
 
 /// Contents of a "sortedmulti" descriptor

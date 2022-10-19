@@ -86,8 +86,8 @@ pub fn test_desc_satisfy(
     let desc_address = desc_address.map_err(|_x| DescError::AddressComputationError)?;
 
     // Next send some btc to each address corresponding to the miniscript
-    let txid = cl.send_to_address(&desc_address, "1");  // 1 BTC
-    // Wait for the funds to mature.
+    let txid = cl.send_to_address(&desc_address, "1"); // 1 BTC
+                                                       // Wait for the funds to mature.
     cl.generate(2);
     // Create a PSBT for each transaction.
     // Spend one input and spend one output for simplicity.
@@ -312,7 +312,7 @@ pub fn test_desc_satisfy(
         .as_u64()
         .unwrap();
     assert!(num_conf > 0);
-    return Ok(tx.input[0].witness.script_witness.clone())
+    return Ok(tx.input[0].witness.script_witness.clone());
 }
 
 // Find all secret corresponding to the known public keys in ms

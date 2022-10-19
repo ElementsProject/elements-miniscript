@@ -6,7 +6,8 @@ use std::str::FromStr;
 use bitcoin::hashes::{hash160, ripemd160, sha256};
 use bitcoin::secp256k1;
 
-use crate::extensions::{param::ExtParamTranslator, CovExtArgs};
+use crate::extensions::param::ExtParamTranslator;
+use crate::extensions::CovExtArgs;
 use crate::{hash256, MiniscriptKey, Translator};
 
 /// Translate from a String MiniscriptKey type to bitcoin::PublicKey

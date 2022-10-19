@@ -24,6 +24,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use elements::{opcodes, script};
+
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 use crate::extensions::ParseableExt;
 use crate::miniscript::context::SigType;
@@ -31,8 +32,8 @@ use crate::miniscript::types::{self, Property};
 use crate::miniscript::ScriptContext;
 use crate::util::MsKeyBuilder;
 use crate::{
-    errstr, expression, script_num_size, Error, ExtTranslator, Extension, ForEachKey,
-    Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslateExt, TranslatePk, Translator,
+    errstr, expression, script_num_size, Error, ExtTranslator, Extension, ForEachKey, Miniscript,
+    MiniscriptKey, Terminal, ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ext> {

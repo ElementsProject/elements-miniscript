@@ -1065,15 +1065,24 @@ impl<Ext: Extension> Descriptor<DefiniteDescriptorKey, Ext> {
                 Ok(*sha256)
             }
 
-            fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ConversionError> {
+            fn hash256(
+                &mut self,
+                hash256: &hash256::Hash,
+            ) -> Result<hash256::Hash, ConversionError> {
                 Ok(*hash256)
             }
 
-            fn ripemd160(&mut self, ripemd160: &ripemd160::Hash) -> Result<ripemd160::Hash, ConversionError> {
+            fn ripemd160(
+                &mut self,
+                ripemd160: &ripemd160::Hash,
+            ) -> Result<ripemd160::Hash, ConversionError> {
                 Ok(*ripemd160)
             }
 
-            fn hash160(&mut self, hash160: &hash160::Hash) -> Result<hash160::Hash, ConversionError> {
+            fn hash160(
+                &mut self,
+                hash160: &hash160::Hash,
+            ) -> Result<hash160::Hash, ConversionError> {
                 Ok(*hash160)
             }
         }

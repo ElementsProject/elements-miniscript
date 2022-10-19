@@ -51,8 +51,8 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     let desc_address = derived_desc.address(&PARAMS).unwrap(); // No blinding
 
     // Next send some btc to each address corresponding to the miniscript
-    let txid = cl.send_to_address(&desc_address, "1");  // 1 BTC
-    // Wait for the funds to mature.
+    let txid = cl.send_to_address(&desc_address, "1"); // 1 BTC
+                                                       // Wait for the funds to mature.
     cl.generate(2);
     // Create a PSBT for each transaction.
     // Spend one input and spend one output for simplicity.

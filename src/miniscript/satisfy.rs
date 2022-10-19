@@ -338,7 +338,10 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_pkh_pk(pkh)
     }
 
-    fn lookup_pkh_ecdsa_sig(&self, pkh: &Pk::RawPkHash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
+    fn lookup_pkh_ecdsa_sig(
+        &self,
+        pkh: &Pk::RawPkHash,
+    ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
         (**self).lookup_pkh_ecdsa_sig(pkh)
     }
 
@@ -461,7 +464,10 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_pkh_pk(pkh)
     }
 
-    fn lookup_pkh_ecdsa_sig(&self, pkh: &Pk::RawPkHash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
+    fn lookup_pkh_ecdsa_sig(
+        &self,
+        pkh: &Pk::RawPkHash,
+    ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
         (**self).lookup_pkh_ecdsa_sig(pkh)
     }
 

@@ -53,8 +53,8 @@ use crate::miniscript::decode::Terminal;
 use crate::miniscript::types::extra_props::ExtData;
 use crate::miniscript::types::Type;
 use crate::{
-    expression, Error, ExtTranslator, Extension, ForEachKey, MiniscriptKey, NoExt,
-    ToPublicKey, TranslateExt, TranslatePk, Translator,
+    expression, Error, ExtTranslator, Extension, ForEachKey, MiniscriptKey, NoExt, ToPublicKey,
+    TranslateExt, TranslatePk, Translator,
 };
 #[cfg(test)]
 mod ms_tests;

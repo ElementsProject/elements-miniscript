@@ -20,8 +20,8 @@ use crate::policy::semantic::Policy;
 use crate::policy::Liftable;
 use crate::util::{varint_len, witness_size};
 use crate::{
-    errstr, Error, Extension, ForEachKey, MiniscriptKey, NoExt, Satisfier, Tap,
-    ToPublicKey, TranslateExt, TranslatePk, Translator,
+    errstr, Error, Extension, ForEachKey, MiniscriptKey, NoExt, Satisfier, Tap, ToPublicKey,
+    TranslateExt, TranslatePk, Translator,
 };
 
 /// A Taproot Tree representation.

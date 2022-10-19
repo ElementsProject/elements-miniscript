@@ -110,9 +110,9 @@ compile_error!(
     "elements-miniscript currently only supports architectures with pointers wider than 16 bits"
 );
 
-pub use {bitcoin, elements};
 #[cfg(feature = "serde")]
 pub use actual_serde as serde;
+pub use {bitcoin, elements};
 #[cfg(all(test, feature = "unstable"))]
 extern crate test;
 
@@ -123,13 +123,13 @@ extern crate test;
 pub(crate) use bitcoin_miniscript::expression::{FromTree as BtcFromTree, Tree as BtcTree};
 pub(crate) use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
 pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
-pub(crate) use bitcoin_miniscript::{
-    Descriptor as BtcDescriptor, Error as BtcError, Miniscript as BtcMiniscript,
-    Satisfier as BtcSatisfier, Segwitv0 as BtcSegwitv0, Terminal as BtcTerminal,
-};
 // re-export imports
 pub use bitcoin_miniscript::{
     hash256, DummyKey, DummyKeyHash, ForEachKey, MiniscriptKey, ToPublicKey,
+};
+pub(crate) use bitcoin_miniscript::{
+    Descriptor as BtcDescriptor, Error as BtcError, Miniscript as BtcMiniscript,
+    Satisfier as BtcSatisfier, Segwitv0 as BtcSegwitv0, Terminal as BtcTerminal,
 };
 // End imports
 

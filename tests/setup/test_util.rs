@@ -26,10 +26,11 @@ use bitcoin::secp256k1;
 use elements::hashes::hex::FromHex;
 use elements::{confidential, encode, AddressParams, BlockHash};
 use miniscript::descriptor::{SinglePub, SinglePubKey};
-use miniscript::extensions::{param::ExtParamTranslator, CovExtArgs, CsfsKey, CsfsMsg};
+use miniscript::extensions::param::ExtParamTranslator;
+use miniscript::extensions::{CovExtArgs, CsfsKey, CsfsMsg};
 use miniscript::{
-    hash256, CovenantExt, Descriptor, DescriptorPublicKey, Error, Miniscript, ScriptContext, TranslateExt,
-    TranslatePk, Translator,
+    hash256, CovenantExt, Descriptor, DescriptorPublicKey, Error, Miniscript, ScriptContext,
+    TranslateExt, TranslatePk, Translator,
 };
 use rand::RngCore;
 use {actual_rand as rand, elements_miniscript as miniscript};
