@@ -143,7 +143,6 @@ pub mod interpreter;
 pub mod miniscript;
 pub mod policy;
 pub mod psbt;
-pub mod timelock;
 
 #[cfg(test)]
 mod test_utils;
@@ -166,6 +165,7 @@ pub use crate::miniscript::satisfy::{
 pub use crate::miniscript::Miniscript;
 // minimal implementation of contract hash module
 mod contracthash {
+    use bitcoin::secp256k1::Scalar;
     use bitcoin::PublicKey;
     use elements::hashes::{sha256, Hash, HashEngine, Hmac, HmacEngine};
     use elements::secp256k1_zkp::{self, Secp256k1};
@@ -173,14 +173,19 @@ mod contracthash {
     /// Tweak a single key using some arbitrary data
     pub(super) fn tweak_key<C: secp256k1_zkp::Verification>(
         secp: &Secp256k1<C>,
-        mut key: PublicKey,
+        key: PublicKey,
         contract: &[u8],
     ) -> PublicKey {
         let hmac_result = compute_tweak(&key, contract);
-        key.inner
-            .add_exp_assign(secp, &hmac_result[..])
+        let secp_key = key
+            .inner
+            .add_exp_tweak(
+                secp,
+                &Scalar::from_be_bytes(hmac_result.into_inner())
+                    .expect("Result of hash must be a valid point"),
+            )
             .expect("HMAC cannot produce invalid tweak");
-        key
+        bitcoin::PublicKey::new(secp_key)
     }
 
     /// Compute a tweak from some given data for the given public key

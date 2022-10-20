@@ -510,7 +510,7 @@ mod tests {
     use bitcoin::{self, XOnlyPublicKey};
     use elements::hashes::{hash160, sha256, Hash};
     use elements::taproot::TapLeafHash;
-    use elements::{self, secp256k1_zkp};
+    use elements::{self, secp256k1_zkp, Sequence};
 
     use super::{Miniscript, ScriptContext, Segwitv0, Tap};
     use crate::extensions::CovExtArgs;
@@ -930,13 +930,13 @@ mod tests {
         let mut abs = miniscript.lift().unwrap();
         assert_eq!(abs.n_keys(), 5);
         assert_eq!(abs.minimum_n_keys(), Some(2));
-        abs = abs.at_age(10000);
+        abs = abs.at_age(Sequence::from_height(10000));
         assert_eq!(abs.n_keys(), 5);
         assert_eq!(abs.minimum_n_keys(), Some(2));
-        abs = abs.at_age(9999);
+        abs = abs.at_age(Sequence::from_height(9999));
         assert_eq!(abs.n_keys(), 3);
         assert_eq!(abs.minimum_n_keys(), Some(3));
-        abs = abs.at_age(0);
+        abs = abs.at_age(Sequence::ZERO);
         assert_eq!(abs.n_keys(), 3);
         assert_eq!(abs.minimum_n_keys(), Some(3));
 
@@ -1060,7 +1060,10 @@ mod tests {
         let ms = Segwitv0Script::from_str_insane(&format!(
             "pk(2788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)"
         ));
-        assert!(ms.is_err());
+        assert_eq!(
+            ms.unwrap_err().to_string(),
+            "unexpected «key hex decoding error»",
+        );
         Tapscript::from_str_insane(&format!(
             "pk(2788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)"
         ))

@@ -126,7 +126,7 @@ pub struct LegacyPegin<Pk: MiniscriptKey> {
     /// The emergency threshold
     pub emer_k: usize,
     /// csv timelock
-    pub timelock: u32,
+    pub timelock: bitcoin::Sequence,
     /// The elements descriptor required to redeem
     ///
     /// TODO: Allow extension user descriptors when claiming pegins
@@ -143,7 +143,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         fed_k: usize,
         emer_pks: Vec<LegacyPeginKey>,
         emer_k: usize,
-        timelock: u32,
+        timelock: bitcoin::Sequence,
         desc: Descriptor<Pk, CovenantExt<CovExtArgs>>,
     ) -> Self {
         let fed_ms = BtcMiniscript::from_ast(BtcTerminal::Multi(fed_k, fed_pks.clone()))
@@ -268,8 +268,8 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         let mut rser = right.encode().into_bytes();
         // ...and we have an OP_VERIFY style checksequenceverify, which in
         // Liquid production was encoded with OP_DROP instead...
-        assert_eq!(rser[4], opcodes::all::OP_VERIFY.into_u8());
-        rser[4] = opcodes::all::OP_DROP.into_u8();
+        assert_eq!(rser[4], opcodes::all::OP_VERIFY.to_u8());
+        rser[4] = opcodes::all::OP_DROP.to_u8();
         // ...then we should serialize it by sharing the OP_CMS across
         // both branches, and add an OP_DEPTH check to distinguish the
         // branches rather than doing the normal cascade construction
@@ -315,7 +315,14 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
             .map(|pk| LegacyPeginKey::Functionary(bitcoin::PublicKey::from_str(pk).unwrap()))
             .collect();
 
-        Self::new(fed_pks, 11, emer_pks, 2, 4032, user_desc)
+        Self::new(
+            fed_pks,
+            11,
+            emer_pks,
+            2,
+            bitcoin::Sequence::from_consensus(4032),
+            user_desc,
+        )
     }
 }
 

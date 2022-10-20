@@ -19,7 +19,8 @@ extern crate elements_miniscript as miniscript;
 use std::str::FromStr;
 
 use elements::encode::Decodable;
-use elements::{confidential, secp256k1_zkp};
+use elements::hashes::Hash;
+use elements::{confidential, secp256k1_zkp, LockTime, Sequence};
 use miniscript::TxEnv;
 
 use crate::miniscript::interpreter::KeySigPair; // secp256k1 re-exported from rust-bitcoin
@@ -40,8 +41,8 @@ fn main() {
         &spk_input_1,
         &transaction.input[0].script_sig,
         &transaction.input[0].witness.script_witness,
-        0,
-        0,
+        Sequence::ZERO,
+        LockTime::ZERO,
     )
     .unwrap();
 
@@ -79,8 +80,8 @@ fn main() {
         &spk_input_1,
         &transaction.input[0].script_sig,
         &transaction.input[0].witness.script_witness,
-        0,
-        0,
+        Sequence::ZERO,
+        LockTime::ZERO,
     )
     .unwrap();
 
@@ -99,7 +100,7 @@ fn main() {
     let utxos = [spent_utxo, elements::TxOut::default()];
     let env = TxEnv::new(&transaction, &utxos, 0).expect("Input len == witness utxo len");
     // segwit spends don't require genesis hash
-    let genesis_hash = elements::BlockHash::default();
+    let genesis_hash = elements::BlockHash::all_zeros();
 
     println!("\nExample two");
     for elem in interpreter.iter(&secp, &env, genesis_hash) {
@@ -120,8 +121,8 @@ fn main() {
         &spk_input_1,
         &transaction.input[0].script_sig,
         &transaction.input[0].witness.script_witness,
-        0,
-        0,
+        Sequence::ZERO,
+        LockTime::ZERO,
     )
     .unwrap();
 

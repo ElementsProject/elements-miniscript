@@ -21,6 +21,8 @@
 //! The format represents EC public keys abstractly to allow wallets to replace
 //! these with BIP32 paths, pay-to-contract instructions, etc.
 //!
+use elements::Sequence;
+
 use crate::{error, fmt};
 
 #[cfg(feature = "compiler")]
@@ -244,8 +246,8 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for BtcPolicy<Pk> {
             BtcPolicy::Hash256(ref h) => Ok(Semantic::Hash256(h.clone())),
             BtcPolicy::Ripemd160(ref h) => Ok(Semantic::Ripemd160(h.clone())),
             BtcPolicy::Hash160(ref h) => Ok(Semantic::Hash160(h.clone())),
-            BtcPolicy::After(n) => Ok(Semantic::After(n)),
-            BtcPolicy::Older(n) => Ok(Semantic::Older(n)),
+            BtcPolicy::After(n) => Ok(Semantic::After(elements::PackedLockTime(n.to_u32()))),
+            BtcPolicy::Older(n) => Ok(Semantic::Older(Sequence(n.to_consensus_u32()))),
             BtcPolicy::Threshold(k, ref subs) => {
                 let new_subs: Result<Vec<Semantic<Pk>>, _> =
                     subs.iter().map(|sub| Liftable::lift(sub)).collect();
@@ -262,6 +264,7 @@ mod tests {
     use std::sync::Arc;
 
     use bitcoin;
+    use elements::Sequence;
 
     use super::super::miniscript::context::Segwitv0;
     use super::super::miniscript::Miniscript;
@@ -389,7 +392,7 @@ mod tests {
                         2,
                         vec![
                             Semantic::KeyHash(key_a.pubkey_hash().as_hash()),
-                            Semantic::Older(42)
+                            Semantic::Older(Sequence::from_height(42))
                         ]
                     ),
                     Semantic::KeyHash(key_b.pubkey_hash().as_hash())

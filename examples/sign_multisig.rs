@@ -19,7 +19,7 @@ extern crate elements_miniscript as miniscript;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use elements::secp256k1_zkp;
+use elements::{secp256k1_zkp, PackedLockTime, Sequence};
 
 fn main() {
     // Avoid repeatedly typing a pretty-common descriptor type
@@ -28,13 +28,12 @@ fn main() {
     // Transaction which spends some output
     let mut tx = elements::Transaction {
         version: 2,
-        lock_time: 0,
+        lock_time: PackedLockTime::ZERO,
         input: vec![elements::TxIn {
             previous_output: elements::OutPoint::default(),
             script_sig: elements::Script::new(),
-            sequence: 0xffffffff,
+            sequence: Sequence::MAX,
             is_pegin: false,
-            has_issuance: false,
             asset_issuance: elements::AssetIssuance::default(),
             witness: elements::TxInWitness::default(),
         }],

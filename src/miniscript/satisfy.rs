@@ -22,17 +22,13 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::{cmp, i64, mem};
 
-use bitcoin;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use elements::hashes::sha256d;
 use elements::secp256k1_zkp::schnorr;
 use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
-use elements::{self, confidential, secp256k1_zkp, OutPoint, Script};
+use elements::{self, confidential, secp256k1_zkp, LockTime, OutPoint, Script, Sequence};
 
 use crate::extensions::{CsfsMsg, ParseableExt};
-use crate::miniscript::limits::{
-    LOCKTIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
-};
 use crate::util::witness_size;
 use crate::{Miniscript, MiniscriptKey, ScriptContext, Terminal, ToPublicKey};
 
@@ -130,12 +126,12 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
     }
 
     /// Assert whether an relative locktime is satisfied
-    fn check_older(&self, _: u32) -> bool {
+    fn check_older(&self, _: Sequence) -> bool {
         false
     }
 
     /// Assert whether a absolute locktime is satisfied
-    fn check_after(&self, _: u32) -> bool {
+    fn check_after(&self, _: LockTime) -> bool {
         false
     }
 
@@ -220,23 +216,22 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
 // Allow use of `()` as a "no conditions available" satisfier
 impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for () {}
 
-/// Newtype around `u32` which implements `Satisfier` using `n` as an
-/// relative locktime
-pub struct Older(pub u32);
-
-impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for Older {
-    fn check_older(&self, n: u32) -> bool {
-        if self.0 & SEQUENCE_LOCKTIME_DISABLE_FLAG != 0 {
-            return true;
+impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for Sequence {
+    fn check_older(&self, n: Sequence) -> bool {
+        if !self.is_relative_lock_time() {
+            return false;
         }
+
+        // We need a relative lock time type in rust-bitcoin to clean this up.
 
         /* If nSequence encodes a relative lock-time, this mask is
          * applied to extract that lock-time from the sequence field. */
         const SEQUENCE_LOCKTIME_MASK: u32 = 0x0000ffff;
+        const SEQUENCE_LOCKTIME_TYPE_FLAG: u32 = 0x00400000;
 
         let mask = SEQUENCE_LOCKTIME_MASK | SEQUENCE_LOCKTIME_TYPE_FLAG;
-        let masked_n = n & mask;
-        let masked_seq = self.0 & mask;
+        let masked_n = n.to_consensus_u32() & mask;
+        let masked_seq = self.to_consensus_u32() & mask;
         if masked_n < SEQUENCE_LOCKTIME_TYPE_FLAG && masked_seq >= SEQUENCE_LOCKTIME_TYPE_FLAG {
             false
         } else {
@@ -245,17 +240,14 @@ impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for Older {
     }
 }
 
-/// Newtype around `u32` which implements `Satisfier` using `n` as an
-/// absolute locktime
-pub struct After(pub u32);
+impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for LockTime {
+    fn check_after(&self, n: LockTime) -> bool {
+        use LockTime::*;
 
-impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for After {
-    fn check_after(&self, n: u32) -> bool {
-        // if n > self.0; we will be returning false anyways
-        if n < LOCKTIME_THRESHOLD && self.0 >= LOCKTIME_THRESHOLD {
-            false
-        } else {
-            n <= self.0
+        match (n, *self) {
+            (Blocks(n), Blocks(lock_time)) => n <= lock_time,
+            (Seconds(n), Seconds(lock_time)) => n <= lock_time,
+            _ => false, // Not the same units.
         }
     }
 }
@@ -378,12 +370,12 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_hash160(h)
     }
 
-    fn check_older(&self, t: u32) -> bool {
+    fn check_older(&self, t: Sequence) -> bool {
         (**self).check_older(t)
     }
 
-    fn check_after(&self, t: u32) -> bool {
-        (**self).check_after(t)
+    fn check_after(&self, n: LockTime) -> bool {
+        (**self).check_after(n)
     }
 
     fn lookup_nversion(&self) -> Option<u32> {
@@ -500,12 +492,12 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_hash160(h)
     }
 
-    fn check_older(&self, t: u32) -> bool {
+    fn check_older(&self, t: Sequence) -> bool {
         (**self).check_older(t)
     }
 
-    fn check_after(&self, t: u32) -> bool {
-        (**self).check_after(t)
+    fn check_after(&self, n: LockTime) -> bool {
+        (**self).check_after(n)
     }
 
     fn lookup_nversion(&self) -> Option<u32> {
@@ -698,7 +690,7 @@ macro_rules! impl_tuple_satisfier {
                 None
             }
 
-            fn check_older(&self, n: u32) -> bool {
+            fn check_older(&self, n: Sequence) -> bool {
                 let &($(ref $ty,)*) = self;
                 $(
                     if $ty.check_older(n) {
@@ -708,7 +700,7 @@ macro_rules! impl_tuple_satisfier {
                 false
             }
 
-            fn check_after(&self, n: u32) -> bool {
+            fn check_after(&self, n: LockTime) -> bool {
                 let &($(ref $ty,)*) = self;
                 $(
                     if $ty.check_after(n) {
@@ -1332,7 +1324,7 @@ impl Satisfaction {
                 has_sig: true,
             },
             Terminal::After(t) => Satisfaction {
-                stack: if stfr.check_after(t) {
+                stack: if stfr.check_after(t.into()) {
                     Witness::empty()
                 } else if root_has_sig {
                     // If the root terminal has signature, the

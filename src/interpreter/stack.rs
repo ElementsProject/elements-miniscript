@@ -18,7 +18,7 @@ use std::ops::Index;
 
 use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, Hash};
-use elements::{self, opcodes, script};
+use elements::{self, opcodes, script, LockTime, Sequence};
 
 use super::error::PkEvalErrInner;
 use super::{
@@ -256,14 +256,27 @@ impl<'txin> Stack<'txin> {
     /// booleans
     pub(super) fn evaluate_after<Ext: Extension>(
         &mut self,
-        n: &u32,
-        lock_time: u32,
+        n: &LockTime,
+        lock_time: LockTime,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
-        if lock_time >= *n {
+        use LockTime::*;
+
+        let is_satisfied = match (*n, lock_time) {
+            (Blocks(n), Blocks(lock_time)) => n <= lock_time,
+            (Seconds(n), Seconds(lock_time)) => n <= lock_time,
+            _ => {
+                return Some(Err(Error::AbsoluteLocktimeComparisonInvalid(
+                    n.to_consensus_u32(),
+                    lock_time.to_consensus_u32(),
+                )))
+            }
+        };
+
+        if is_satisfied {
             self.push(Element::Satisfied);
-            Some(Ok(SatisfiedConstraint::AbsoluteTimelock { time: *n }))
+            Some(Ok(SatisfiedConstraint::AbsoluteTimelock { n: *n }))
         } else {
-            Some(Err(Error::AbsoluteLocktimeNotMet(*n)))
+            Some(Err(Error::AbsoluteLocktimeNotMet(n.to_consensus_u32())))
         }
     }
 
@@ -275,14 +288,14 @@ impl<'txin> Stack<'txin> {
     /// booleans
     pub(super) fn evaluate_older<Ext: Extension>(
         &mut self,
-        n: &u32,
-        age: u32,
+        n: &Sequence,
+        age: Sequence,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         if age >= *n {
             self.push(Element::Satisfied);
-            Some(Ok(SatisfiedConstraint::RelativeTimelock { time: *n }))
+            Some(Ok(SatisfiedConstraint::RelativeTimelock { n: *n }))
         } else {
-            Some(Err(Error::RelativeLocktimeNotMet(*n)))
+            Some(Err(Error::RelativeLocktimeNotMet(n.to_consensus_u32())))
         }
     }
 

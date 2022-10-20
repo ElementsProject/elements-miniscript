@@ -1185,7 +1185,7 @@ mod tests {
     use elements::hashes::{hash160, sha256};
     use elements::opcodes::all::{OP_CLTV, OP_CSV};
     use elements::script::Instruction;
-    use elements::{opcodes, script};
+    use elements::{opcodes, script, Sequence};
 
     use super::checksum::desc_checksum;
     use super::tr::Tr;
@@ -1239,9 +1239,8 @@ mod tests {
         elements::TxIn {
             previous_output: elements::OutPoint::default(),
             script_sig: script_sig,
-            sequence: 100,
+            sequence: Sequence::from_height(100),
             is_pegin: false,
-            has_issuance: false,
             asset_issuance: elements::AssetIssuance::default(),
             witness: txin_witness,
         }
@@ -1514,9 +1513,8 @@ mod tests {
         let mut txin = elements::TxIn {
             previous_output: elements::OutPoint::default(),
             script_sig: Script::new(),
-            sequence: 100,
+            sequence: Sequence::from_height(100),
             is_pegin: false,
-            has_issuance: false,
             asset_issuance: elements::AssetIssuance::default(),
             witness: elements::TxInWitness::default(),
         };

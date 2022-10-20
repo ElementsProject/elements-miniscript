@@ -17,9 +17,11 @@
 use std::str::FromStr;
 use std::{fmt, str};
 
+use elements::{LockTime, PackedLockTime, Sequence};
+
 use super::concrete::PolicyError;
 use super::ENTAILMENT_MAX_TERMINALS;
-use crate::{errstr, expression, timelock, Error, ForEachKey, MiniscriptKey, Translator};
+use crate::{errstr, expression, Error, ForEachKey, MiniscriptKey, Translator};
 
 /// Abstract policy which corresponds to the semantics of a Miniscript
 /// and which allows complex forms of analysis, e.g. filtering and
@@ -36,9 +38,9 @@ pub enum Policy<Pk: MiniscriptKey> {
     /// Signature and public key matching a given hash is required
     KeyHash(Pk::RawPkHash),
     /// An absolute locktime restriction
-    After(u32),
+    After(PackedLockTime),
     /// A relative locktime restriction
-    Older(u32),
+    Older(Sequence),
     /// A SHA256 whose preimage must be provided to satisfy the descriptor
     Sha256(Pk::Sha256),
     /// A SHA256d whose preimage must be provided to satisfy the descriptor
@@ -49,6 +51,23 @@ pub enum Policy<Pk: MiniscriptKey> {
     Hash160(Pk::Hash160),
     /// A set of descriptors, satisfactions must be provided for `k` of them
     Threshold(usize, Vec<Policy<Pk>>),
+}
+
+impl<Pk> Policy<Pk>
+where
+    Pk: MiniscriptKey,
+{
+    /// Construct a `Policy::After` from `n`. Helper function equivalent to
+    /// `Policy::After(PackedLockTime::from(LockTime::from_consensus(n)))`.
+    pub fn after(n: u32) -> Policy<Pk> {
+        Policy::After(PackedLockTime::from(LockTime::from_consensus(n)))
+    }
+
+    /// Construct a `Policy::Older` from `n`. Helper function equivalent to
+    /// `Policy::Older(Sequence::from_consensus(n))`.
+    pub fn older(n: u32) -> Policy<Pk> {
+        Policy::Older(Sequence::from_consensus(n))
+    }
 }
 
 impl<Pk: MiniscriptKey> ForEachKey<Pk> for Policy<Pk> {
@@ -343,10 +362,10 @@ impl_from_tree!(
                 Pk::RawPkHash::from_str(pk).map(Policy::KeyHash)
             }),
             ("after", 1) => expression::terminal(&top.args[0], |x| {
-                expression::parse_num::<u32>(x).map(Policy::After)
+                expression::parse_num::<u32>(x).map(|x| Policy::after(x))
             }),
             ("older", 1) => expression::terminal(&top.args[0], |x| {
-                expression::parse_num::<u32>(x).map(Policy::Older)
+                expression::parse_num::<u32>(x).map(|x| Policy::older(x))
             }),
             ("sha256", 1) => expression::terminal(&top.args[0], |x| {
                 Pk::Sha256::from_str(x).map(Policy::Sha256)
@@ -501,7 +520,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             | Policy::Ripemd160(..)
             | Policy::Hash160(..) => vec![],
             Policy::After(..) => vec![],
-            Policy::Older(t) => vec![t],
+            Policy::Older(t) => vec![t.to_consensus_u32()],
             Policy::Threshold(_, ref subs) => subs.iter().fold(vec![], |mut acc, x| {
                 acc.extend(x.real_relative_timelocks());
                 acc
@@ -529,7 +548,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             | Policy::Ripemd160(..)
             | Policy::Hash160(..) => vec![],
             Policy::Older(..) => vec![],
-            Policy::After(t) => vec![t],
+            Policy::After(t) => vec![t.0],
             Policy::Threshold(_, ref subs) => subs.iter().fold(vec![], |mut acc, x| {
                 acc.extend(x.real_absolute_timelocks());
                 acc
@@ -548,10 +567,14 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 
     /// Filter a policy by eliminating relative timelock constraints
     /// that are not satisfied at the given `age`.
-    pub fn at_age(mut self, age: u32) -> Policy<Pk> {
+    pub fn at_age(mut self, age: Sequence) -> Policy<Pk> {
         self = match self {
             Policy::Older(t) => {
-                if t > age {
+                if t.is_height_locked() && age.is_time_locked()
+                    || t.is_time_locked() && age.is_height_locked()
+                {
+                    Policy::Unsatisfiable
+                } else if t.to_consensus_u32() > age.to_consensus_u32() {
                     Policy::Unsatisfiable
                 } else {
                     Policy::Older(t)
@@ -567,15 +590,21 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 
     /// Filter a policy by eliminating absolute timelock constraints
     /// that are not satisfied at the given `n` (`n OP_CHECKLOCKTIMEVERIFY`).
-    pub fn at_lock_time(mut self, n: u32) -> Policy<Pk> {
+    pub fn at_lock_time(mut self, n: LockTime) -> Policy<Pk> {
+        use LockTime::*;
+
         self = match self {
             Policy::After(t) => {
-                if !timelock::absolute_timelocks_are_same_unit(t, n) {
-                    Policy::Unsatisfiable
-                } else if t > n {
+                let t = LockTime::from(t);
+                let is_satisfied_by = match (t, n) {
+                    (Blocks(t), Blocks(n)) => t <= n,
+                    (Seconds(t), Seconds(n)) => t <= n,
+                    _ => false,
+                };
+                if !is_satisfied_by {
                     Policy::Unsatisfiable
                 } else {
-                    Policy::After(t)
+                    Policy::After(t.into())
                 }
             }
             Policy::Threshold(k, subs) => {
@@ -680,23 +709,33 @@ mod tests {
     fn semantic_analysis() {
         let policy = StringPolicy::from_str("pkh()").unwrap();
         assert_eq!(policy, Policy::KeyHash("".to_owned()));
-        // For some reason rust looks for impl for PartialEq for u32 when comparing vectors
-        // and finds multiple implementations. Check is_empty as a simple workaround
         assert!(policy.relative_timelocks().is_empty());
         assert!(policy.absolute_timelocks().is_empty());
-        assert_eq!(policy.clone().at_age(0), policy.clone());
-        assert_eq!(policy.clone().at_age(10000), policy.clone());
+        assert_eq!(policy.clone().at_age(Sequence::ZERO), policy.clone());
+        assert_eq!(
+            policy.clone().at_age(Sequence::from_height(10000)),
+            policy.clone()
+        );
         assert_eq!(policy.n_keys(), 1);
         assert_eq!(policy.minimum_n_keys(), Some(1));
 
         let policy = StringPolicy::from_str("older(1000)").unwrap();
-        assert_eq!(policy, Policy::Older(1000));
+        assert_eq!(policy, Policy::Older(Sequence::from_height(1000)));
         assert!(policy.absolute_timelocks().is_empty());
         assert_eq!(policy.relative_timelocks(), vec![1000]);
-        assert_eq!(policy.clone().at_age(0), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_age(999), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_age(1000), policy.clone());
-        assert_eq!(policy.clone().at_age(10000), policy.clone());
+        assert_eq!(policy.clone().at_age(Sequence::ZERO), Policy::Unsatisfiable);
+        assert_eq!(
+            policy.clone().at_age(Sequence::from_height(999)),
+            Policy::Unsatisfiable
+        );
+        assert_eq!(
+            policy.clone().at_age(Sequence::from_height(1000)),
+            policy.clone()
+        );
+        assert_eq!(
+            policy.clone().at_age(Sequence::from_height(10000)),
+            policy.clone()
+        );
         assert_eq!(policy.n_keys(), 0);
         assert_eq!(policy.minimum_n_keys(), Some(0));
 
@@ -705,15 +744,30 @@ mod tests {
             policy,
             Policy::Threshold(
                 1,
-                vec![Policy::KeyHash("".to_owned()), Policy::Older(1000),]
+                vec![
+                    Policy::KeyHash("".to_owned()),
+                    Policy::Older(Sequence::from_height(1000)),
+                ]
             )
         );
         assert_eq!(policy.relative_timelocks(), vec![1000]);
         assert!(policy.absolute_timelocks().is_empty());
-        assert_eq!(policy.clone().at_age(0), Policy::KeyHash("".to_owned()));
-        assert_eq!(policy.clone().at_age(999), Policy::KeyHash("".to_owned()));
-        assert_eq!(policy.clone().at_age(1000), policy.clone().normalized());
-        assert_eq!(policy.clone().at_age(10000), policy.clone().normalized());
+        assert_eq!(
+            policy.clone().at_age(Sequence::ZERO),
+            Policy::KeyHash("".to_owned())
+        );
+        assert_eq!(
+            policy.clone().at_age(Sequence::from_height(999)),
+            Policy::KeyHash("".to_owned())
+        );
+        assert_eq!(
+            policy.clone().at_age(Sequence::from_height(1000)),
+            policy.clone().normalized()
+        );
+        assert_eq!(
+            policy.clone().at_age(Sequence::from_height(10000)),
+            policy.clone().normalized()
+        );
         assert_eq!(policy.n_keys(), 1);
         assert_eq!(policy.minimum_n_keys(), Some(0));
 
@@ -754,11 +808,11 @@ mod tests {
             Policy::Threshold(
                 2,
                 vec![
-                    Policy::Older(1000),
-                    Policy::Older(10000),
-                    Policy::Older(1000),
-                    Policy::Older(2000),
-                    Policy::Older(2000),
+                    Policy::Older(Sequence::from_height(1000)),
+                    Policy::Older(Sequence::from_height(10000)),
+                    Policy::Older(Sequence::from_height(1000)),
+                    Policy::Older(Sequence::from_height(2000)),
+                    Policy::Older(Sequence::from_height(2000)),
                 ]
             )
         );
@@ -778,9 +832,9 @@ mod tests {
             Policy::Threshold(
                 2,
                 vec![
-                    Policy::Older(1000),
-                    Policy::Older(10000),
-                    Policy::Older(1000),
+                    Policy::Older(Sequence::from_height(1000)),
+                    Policy::Older(Sequence::from_height(10000)),
+                    Policy::Older(Sequence::from_height(1000)),
                     Policy::Unsatisfiable,
                     Policy::Unsatisfiable,
                 ]
@@ -795,16 +849,36 @@ mod tests {
 
         // Block height 1000.
         let policy = StringPolicy::from_str("after(1000)").unwrap();
-        assert_eq!(policy, Policy::After(1000));
+        assert_eq!(policy, Policy::after(1000));
         assert_eq!(policy.absolute_timelocks(), vec![1000]);
         assert!(policy.relative_timelocks().is_empty());
-        assert_eq!(policy.clone().at_lock_time(0), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_lock_time(999), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_lock_time(1000), policy.clone());
-        assert_eq!(policy.clone().at_lock_time(10000), policy.clone());
+        assert_eq!(
+            policy.clone().at_lock_time(LockTime::ZERO),
+            Policy::Unsatisfiable
+        );
+        assert_eq!(
+            policy
+                .clone()
+                .at_lock_time(LockTime::from_height(999).expect("valid block height")),
+            Policy::Unsatisfiable
+        );
+        assert_eq!(
+            policy
+                .clone()
+                .at_lock_time(LockTime::from_height(1000).expect("valid block height")),
+            policy.clone()
+        );
+        assert_eq!(
+            policy
+                .clone()
+                .at_lock_time(LockTime::from_height(10000).expect("valid block height")),
+            policy.clone()
+        );
         // Pass a UNIX timestamp to at_lock_time while policy uses a block height.
         assert_eq!(
-            policy.clone().at_lock_time(500_000_001),
+            policy
+                .clone()
+                .at_lock_time(LockTime::from_time(500_000_001).expect("valid timestamp")),
             Policy::Unsatisfiable
         );
         assert_eq!(policy.n_keys(), 0);
@@ -812,25 +886,57 @@ mod tests {
 
         // UNIX timestamp of 10 seconds after the epoch.
         let policy = StringPolicy::from_str("after(500000010)").unwrap();
-        assert_eq!(policy, Policy::After(500_000_010));
+        assert_eq!(policy, Policy::after(500_000_010));
         assert_eq!(policy.absolute_timelocks(), vec![500_000_010]);
         assert!(policy.relative_timelocks().is_empty());
         // Pass a block height to at_lock_time while policy uses a UNIX timestapm.
-        assert_eq!(policy.clone().at_lock_time(0), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_lock_time(999), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_lock_time(1000), Policy::Unsatisfiable);
-        assert_eq!(policy.clone().at_lock_time(10000), Policy::Unsatisfiable);
+        assert_eq!(
+            policy.clone().at_lock_time(LockTime::ZERO),
+            Policy::Unsatisfiable
+        );
+        assert_eq!(
+            policy
+                .clone()
+                .at_lock_time(LockTime::from_height(999).expect("valid block height")),
+            Policy::Unsatisfiable
+        );
+        assert_eq!(
+            policy
+                .clone()
+                .at_lock_time(LockTime::from_height(1000).expect("valid block height")),
+            Policy::Unsatisfiable
+        );
+        assert_eq!(
+            policy
+                .clone()
+                .at_lock_time(LockTime::from_height(10000).expect("valid block height")),
+            Policy::Unsatisfiable
+        );
         // And now pass a UNIX timestamp to at_lock_time while policy also uses a timestamp.
         assert_eq!(
-            policy.clone().at_lock_time(500_000_000),
+            policy
+                .clone()
+                .at_lock_time(LockTime::from_time(500_000_000).expect("valid timestamp")),
             Policy::Unsatisfiable
         );
         assert_eq!(
-            policy.clone().at_lock_time(500_000_001),
+            policy
+                .clone()
+                .at_lock_time(LockTime::from_time(500_000_001).expect("valid timestamp")),
             Policy::Unsatisfiable
         );
-        assert_eq!(policy.clone().at_lock_time(500_000_010), policy.clone());
-        assert_eq!(policy.clone().at_lock_time(500_000_012), policy.clone());
+        assert_eq!(
+            policy
+                .clone()
+                .at_lock_time(LockTime::from_time(500_000_010).expect("valid timestamp")),
+            policy.clone()
+        );
+        assert_eq!(
+            policy
+                .clone()
+                .at_lock_time(LockTime::from_time(500_000_012).expect("valid timestamp")),
+            policy.clone()
+        );
         assert_eq!(policy.n_keys(), 0);
         assert_eq!(policy.minimum_n_keys(), Some(0));
     }
@@ -851,7 +957,7 @@ mod tests {
         let backup_policy = StringPolicy::from_str("thresh(2,pkh(A),pkh(B),pkh(C))").unwrap();
         assert!(!backup_policy
             .clone()
-            .entails(liquid_pol.clone().at_age(4095))
+            .entails(liquid_pol.clone().at_age(Sequence::from_height(4095)))
             .unwrap());
 
         // Finally test both spending paths

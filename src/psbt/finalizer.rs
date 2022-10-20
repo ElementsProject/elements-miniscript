@@ -22,7 +22,7 @@
 use bitcoin::{self, PublicKey, XOnlyPublicKey};
 use elements::secp256k1_zkp::{self, Secp256k1};
 use elements::taproot::LeafVersion;
-use elements::{self, confidential, Script, Transaction, TxOut};
+use elements::{self, confidential, Script, Sequence, Transaction, TxOut};
 
 use super::{sanity_check, Error, InputError, Psbt, PsbtInputSatisfier};
 use crate::descriptor::{LegacyCSFSCov, LegacyCovSatisfier};
@@ -296,7 +296,7 @@ pub fn _interpreter_inp_check<C: secp256k1_zkp::Verification>(
     // Now look at all the satisfied constraints. If everything is filled in
     // corrected, there should be no errors
 
-    let csv = psbt.inputs()[index].sequence.unwrap_or(0xffffffff);
+    let csv = psbt.inputs()[index].sequence.unwrap_or(Sequence::MAX);
     let _amt = get_amt(psbt, index).map_err(|e| Error::InputError(e, index))?;
 
     let interpreter = interpreter::Interpreter::from_txdata(spk, script_sig, witness, csv, cltv)

@@ -24,7 +24,7 @@ use std::str::FromStr;
 
 use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, Hash, HashEngine};
-use elements::{self, secp256k1_zkp, sighash, EcdsaSigHashType, SigHash};
+use elements::{self, secp256k1_zkp, sighash, EcdsaSigHashType, LockTime, Sequence, SigHash};
 
 use crate::extensions::{CovExtArgs, ParseableExt, TxEnv};
 use crate::miniscript::context::NoChecks;
@@ -47,8 +47,8 @@ pub struct Interpreter<'txin, Ext: Extension> {
     /// For non-Taproot spends, the scriptCode; for Taproot script-spends, this
     /// is the leaf script; for key-spends it is `None`.
     script_code: Option<elements::Script>,
-    age: u32,
-    lock_time: u32,
+    age: Sequence,
+    lock_time: LockTime,
 }
 
 // A type representing functions for checking signatures that accept both
@@ -208,8 +208,8 @@ impl<'txin> Interpreter<'txin, CovenantExt<CovExtArgs>> {
         spk: &elements::Script,
         script_sig: &'txin elements::Script,
         witness: &'txin [Vec<u8>],
-        age: u32,       // CSV, relative lock time.
-        lock_time: u32, // CLTV, absolute lock time.
+        age: Sequence,       // CSV, relative lock time.
+        lock_time: LockTime, // CLTV, absolute lock time.
     ) -> Result<Self, Error> {
         Interpreter::from_txdata_ext(spk, script_sig, witness, age, lock_time)
     }
@@ -229,8 +229,8 @@ where
         spk: &elements::Script,
         script_sig: &'txin elements::Script,
         witness: &'txin [Vec<u8>],
-        age: u32,       // CSV, relative lock time.
-        lock_time: u32, // CLTV, absolute lock time.
+        age: Sequence,       // CSV, relative lock time.
+        lock_time: LockTime, // CLTV, absolute lock time.
     ) -> Result<Self, Error> {
         let (inner, stack, script_code) = inner::from_txdata(spk, script_sig, witness)?;
         Ok(Interpreter {
@@ -578,12 +578,12 @@ pub enum SatisfiedConstraint<Ext: Extension> {
     ///Relative Timelock for CSV.
     RelativeTimelock {
         /// The value of RelativeTimelock
-        time: u32,
+        n: Sequence,
     },
     ///Absolute Timelock for CLTV.
     AbsoluteTimelock {
         /// The value of Absolute timelock
-        time: u32,
+        n: LockTime,
     },
 
     /// Elements
@@ -645,8 +645,8 @@ where
     state: Vec<NodeEvaluationState<'intp, Ext>>,
     stack: Stack<'txin>,
     txenv: Option<&'txin TxEnv<'txin, 'txin>>,
-    age: u32,
-    lock_time: u32,
+    age: Sequence,
+    lock_time: LockTime,
     cov: Option<&'intp BitcoinKey>,
     has_errored: bool,
 }
@@ -736,7 +736,7 @@ where
                 Terminal::After(ref n) => {
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_after(n, self.lock_time);
+                    let res = self.stack.evaluate_after(&n.into(), self.lock_time);
                     if res.is_some() {
                         return res;
                     }
@@ -1281,8 +1281,9 @@ mod tests {
             pks.push(pk);
             der_sigs.push(sigser);
 
-            let keypair = bitcoin::KeyPair::from_secret_key(&secp, sk);
-            x_only_pks.push(bitcoin::XOnlyPublicKey::from_keypair(&keypair));
+            let keypair = bitcoin::KeyPair::from_secret_key(&secp, &sk);
+            let (x_only_pk, _parity) = bitcoin::XOnlyPublicKey::from_keypair(&keypair);
+            x_only_pks.push(x_only_pk);
             let schnorr_sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &[0u8; 32]);
             let schnorr_sig = elements::SchnorrSig {
                 sig: schnorr_sig,
@@ -1331,8 +1332,8 @@ mod tests {
                     n_satisfied: 0,
                 }],
                 stack: stack,
-                age: 1002,
-                lock_time: 1002,
+                age: Sequence::from_height(1002),
+                lock_time: LockTime::from_height(1002).unwrap(),
                 cov: None,
                 has_errored: false,
                 txenv: None,
@@ -1399,7 +1400,9 @@ mod tests {
         let after_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             after_satisfied.unwrap(),
-            vec![SatisfiedConstraint::AbsoluteTimelock { time: 1000 }]
+            vec![SatisfiedConstraint::AbsoluteTimelock {
+                n: LockTime::from_height(1000).unwrap()
+            }]
         );
 
         //Check Older
@@ -1409,7 +1412,9 @@ mod tests {
         let older_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             older_satisfied.unwrap(),
-            vec![SatisfiedConstraint::RelativeTimelock { time: 1000 }]
+            vec![SatisfiedConstraint::RelativeTimelock {
+                n: Sequence::from_height(1000)
+            }]
         );
 
         //Check Sha256

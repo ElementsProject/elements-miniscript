@@ -23,7 +23,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use elements::{opcodes, script};
+use elements::{opcodes, script, LockTime, Sequence};
 
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 use crate::extensions::ParseableExt;
@@ -578,10 +578,10 @@ impl_from_tree!(
             }
             ("pk_h", 1) => expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkH)),
             ("after", 1) => expression::terminal(&top.args[0], |x| {
-                expression::parse_num::<u32>(x).map(Terminal::After)
+                expression::parse_num::<u32>(x).map(|x| Terminal::After(LockTime::from_consensus(x).into()))
             }),
             ("older", 1) => expression::terminal(&top.args[0], |x| {
-                expression::parse_num::<u32>(x).map(Terminal::Older)
+                expression::parse_num::<u32>(x).map(|x| Terminal::Older(Sequence::from_consensus(x)))
             }),
             ("sha256", 1) => expression::terminal(&top.args[0], |x| {
                 Pk::Sha256::from_str(x).map(Terminal::Sha256)
@@ -800,9 +800,11 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
                 .push_slice(&Pk::hash_to_hash160(hash)[..])
                 .push_opcode(opcodes::all::OP_EQUALVERIFY),
             Terminal::After(t) => builder
-                .push_int(t as i64)
+                .push_int(t.to_u32().into())
                 .push_opcode(opcodes::all::OP_CLTV),
-            Terminal::Older(t) => builder.push_int(t as i64).push_opcode(opcodes::all::OP_CSV),
+            Terminal::Older(t) => builder
+                .push_int(t.to_consensus_u32().into())
+                .push_opcode(opcodes::all::OP_CSV),
             Terminal::Sha256(ref h) => builder
                 .push_opcode(opcodes::all::OP_SIZE)
                 .push_int(32)
@@ -936,8 +938,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
         match *self {
             Terminal::PkK(ref pk) => Ctx::pk_len(pk),
             Terminal::PkH(..) | Terminal::RawPkH(..) => 24,
-            Terminal::After(n) => script_num_size(n as usize) + 1,
-            Terminal::Older(n) => script_num_size(n as usize) + 1,
+            Terminal::After(n) => script_num_size(n.to_u32() as usize) + 1,
+            Terminal::Older(n) => script_num_size(n.to_consensus_u32() as usize) + 1,
             Terminal::Sha256(..) => 33 + 6,
             Terminal::Hash256(..) => 33 + 6,
             Terminal::Ripemd160(..) => 21 + 6,

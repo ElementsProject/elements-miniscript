@@ -12,7 +12,7 @@ use elements::sighash::SigHashCache;
 use elements::taproot::{LeafVersion, TapLeafHash};
 use elements::{
     self, confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, SchnorrSig,
-    Script, TxIn, TxOut, Txid,
+    Script, Sequence, TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
 use miniscript::miniscript::iter;
@@ -22,6 +22,7 @@ use miniscript::{
 };
 use rand::RngCore;
 mod setup;
+use ::secp256k1::Scalar;
 use setup::test_util::{self, TestData, PARAMS};
 use setup::Call;
 use {actual_rand as rand, elements_miniscript as miniscript};
@@ -97,9 +98,8 @@ pub fn test_desc_satisfy(
     let txin = TxIn {
         previous_output: outpoint,
         is_pegin: false,
-        has_issuance: false,
         script_sig: Script::new(),
-        sequence: 1,
+        sequence: Sequence::from_height(1),
         asset_issuance: Default::default(),
         witness: Default::default(),
     };
@@ -146,10 +146,14 @@ pub fn test_desc_satisfy(
             let prevouts = [witness_utxo];
             let prevouts = sighash::Prevouts::All(&prevouts);
 
-            if let Some(mut internal_keypair) = internal_keypair {
+            if let Some(internal_keypair) = internal_keypair {
                 // ---------------------- Tr key spend --------------------
-                internal_keypair
-                    .tweak_add_assign(&secp, tr.spend_info().tap_tweak().as_ref())
+                let internal_keypair = internal_keypair
+                    .add_xonly_tweak(
+                        &secp,
+                        &Scalar::from_be_bytes(tr.spend_info().tap_tweak().into_inner())
+                            .expect("valid scalar"),
+                    )
                     .expect("Tweaking failed");
                 let sighash_msg = sighash_cache
                     .taproot_key_spend_signature_hash(
@@ -207,7 +211,7 @@ pub fn test_desc_satisfy(
                 // FIXME: uncomment when == is supported for secp256k1::KeyPair. (next major release)
                 // let x_only_pk = pks[xonly_keypairs.iter().position(|&x| x == keypair).unwrap()];
                 // Just recalc public key
-                let x_only_pk = secp256k1::XOnlyPublicKey::from_keypair(&keypair);
+                let (x_only_pk, _parity) = secp256k1::XOnlyPublicKey::from_keypair(&keypair);
                 psbt.inputs_mut()[0].tap_script_sigs.insert(
                     (x_only_pk, leaf_hash),
                     elements::SchnorrSig {

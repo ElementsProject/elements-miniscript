@@ -12,8 +12,8 @@ use bitcoin::hashes::{sha256d, Hash};
 use bitcoin::secp256k1::{self, Secp256k1};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::{
-    self, confidential, pset as psbt, secp256k1_zkp, AssetIssuance, OutPoint, Script, TxIn,
-    TxInWitness, TxOut, TxOutWitness, Txid,
+    self, confidential, pset as psbt, secp256k1_zkp, AssetIssuance, LockTime, OutPoint, Script,
+    Sequence, TxIn, TxInWitness, TxOut, TxOutWitness, Txid,
 };
 use elements_miniscript as miniscript;
 use elementsd::ElementsD;
@@ -90,15 +90,17 @@ pub fn test_from_cpp_ms(cl: &ElementsD, testdata: &TestData) {
     let mut psbts = vec![];
     for (desc, txid) in desc_vec.iter().zip(txids) {
         let mut psbt = Psbt::new_v2();
-        psbt.global.tx_data.fallback_locktime = Some(1_603_866_330); // time at 10/28/2020 @ 6:25am (UTC)
-                                                                     // figure out the outpoint from the txid
+        psbt.global.tx_data.fallback_locktime = Some(
+            LockTime::from_time(1_603_866_330)
+                .expect("valid timestamp")
+                .into(),
+        ); // 10/28/2020 @ 6:25am (UTC)
         let (outpoint, witness_utxo) = get_vout(&cl, txid, 100_000_000);
         let txin = TxIn {
             previous_output: outpoint,
             is_pegin: false,
-            has_issuance: false,
             script_sig: Script::new(),
-            sequence: 49, // We waited 50 blocks, keep 49 for safety
+            sequence: Sequence::from_height(49), // We waited 50 blocks, keep 49 for safety
             asset_issuance: AssetIssuance::default(),
             witness: TxInWitness::default(),
         };
@@ -183,13 +185,13 @@ pub fn test_from_cpp_ms(cl: &ElementsD, testdata: &TestData) {
         );
         // Finalize the transaction using psbt
         // Let miniscript do it's magic!
-        if let Err(e) = psbts[i].finalize_mall_mut(&secp, elements::BlockHash::default()) {
+        if let Err(e) = psbts[i].finalize_mall_mut(&secp, elements::BlockHash::all_zeros()) {
             // All miniscripts should satisfy
             panic!("Could not satisfy: error{} ms:{} at ind:{}", e[0], ms, i);
         } else {
             // default genesis hash
             let tx = psbts[i]
-                .extract(&secp, elements::BlockHash::default())
+                .extract(&secp, elements::BlockHash::all_zeros())
                 .unwrap();
 
             // Send the transactions to bitcoin node for mining.

@@ -7,8 +7,8 @@ use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SigHashCache;
 use elements::taproot::{LeafVersion, TapLeafHash};
 use elements::{
-    self, confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script, TxIn,
-    TxOut, Txid,
+    self, confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script,
+    Sequence, TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
 use miniscript::miniscript::iter;
@@ -62,9 +62,8 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     let txin = TxIn {
         previous_output: outpoint,
         is_pegin: false,
-        has_issuance: false,
         script_sig: Script::new(),
-        sequence: 1,
+        sequence: Sequence::from_height(1),
         asset_issuance: Default::default(),
         witness: Default::default(),
     };
@@ -141,7 +140,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
                 // FIXME: uncomment when == is supported for secp256k1::KeyPair. (next major release)
                 // let x_only_pk = pks[xonly_keypairs.iter().position(|&x| x == keypair).unwrap()];
                 // Just recalc public key
-                let x_only_pk = secp256k1::XOnlyPublicKey::from_keypair(&keypair);
+                let x_only_pk = secp256k1::XOnlyPublicKey::from_keypair(&keypair).0;
                 psbt.inputs_mut()[0].tap_script_sigs.insert(
                     (x_only_pk, leaf_hash),
                     elements::SchnorrSig {
