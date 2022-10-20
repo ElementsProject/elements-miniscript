@@ -125,7 +125,8 @@ pub(crate) use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
 pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
 // re-export imports
 pub use bitcoin_miniscript::{
-    hash256, DummyKey, DummyKeyHash, ForEachKey, MiniscriptKey, ToPublicKey,
+    hash256, DummyHash160Hash, DummyHash256Hash, DummyKey, DummyKeyHash, DummyRipemd160Hash,
+    DummySha256Hash, ForEachKey, MiniscriptKey, ToPublicKey,
 };
 pub(crate) use bitcoin_miniscript::{
     Descriptor as BtcDescriptor, Error as BtcError, Miniscript as BtcMiniscript,
@@ -148,7 +149,7 @@ pub mod psbt;
 mod test_utils;
 mod util;
 
-use std::{error, fmt, hash, str};
+use std::{error, fmt, str};
 
 use elements::hashes::sha256;
 use elements::secp256k1_zkp::Secp256k1;
@@ -216,85 +217,6 @@ where
     contracthash::tweak_key(secp, pk, contract)
 }
 
-/// Dummy keyhash which de/serializes to the empty string; useful for testing
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
-pub struct DummyHash256;
-
-impl str::FromStr for DummyHash256 {
-    type Err = &'static str;
-    fn from_str(x: &str) -> Result<DummyHash256, &'static str> {
-        if x.is_empty() {
-            Ok(DummyHash256)
-        } else {
-            Err("non empty dummy hash")
-        }
-    }
-}
-
-/// Dummy keyhash which de/serializes to the empty string; useful for testing
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
-pub struct DummyRipemd160Hash;
-
-impl str::FromStr for DummyRipemd160Hash {
-    type Err = &'static str;
-    fn from_str(x: &str) -> Result<DummyRipemd160Hash, &'static str> {
-        if x.is_empty() {
-            Ok(DummyRipemd160Hash)
-        } else {
-            Err("non empty dummy hash")
-        }
-    }
-}
-
-impl fmt::Display for DummyHash256 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("")
-    }
-}
-impl fmt::Display for DummyRipemd160Hash {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("")
-    }
-}
-
-impl hash::Hash for DummyHash256 {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        "DummySha256Hash".hash(state);
-    }
-}
-
-impl hash::Hash for DummyRipemd160Hash {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        "DummyRipemd160Hash".hash(state);
-    }
-}
-
-/// Dummy keyhash which de/serializes to the empty string; useful for testing
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
-pub struct DummyHash160Hash;
-
-impl str::FromStr for DummyHash160Hash {
-    type Err = &'static str;
-    fn from_str(x: &str) -> Result<DummyHash160Hash, &'static str> {
-        if x.is_empty() {
-            Ok(DummyHash160Hash)
-        } else {
-            Err("non empty dummy hash")
-        }
-    }
-}
-
-impl fmt::Display for DummyHash160Hash {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("")
-    }
-}
-
-impl hash::Hash for DummyHash160Hash {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        "DummyHash160Hash".hash(state);
-    }
-}
 /// Describes an object that can translate various keys and hashes from one key to the type
 /// associated with the other key. Used by the [`TranslatePk`] trait to do the actual translations.
 pub trait Translator<P, Q, E>
