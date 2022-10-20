@@ -15,11 +15,8 @@ use elements::{
     Script, Sequence, TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
-use miniscript::miniscript::iter;
 use miniscript::psbt::{PsbtExt, PsbtInputExt};
-use miniscript::{
-    elementssig_to_rawsig, Descriptor, Miniscript, MiniscriptKey, ScriptContext, ToPublicKey,
-};
+use miniscript::{elementssig_to_rawsig, Descriptor, Miniscript, ScriptContext, ToPublicKey};
 use rand::RngCore;
 mod setup;
 use ::secp256k1::Scalar;
@@ -180,17 +177,9 @@ pub fn test_desc_satisfy(
                 .iter_scripts()
                 .flat_map(|(_depth, ms)| {
                     let leaf_hash = TapLeafHash::from_script(&ms.encode(), LeafVersion::default());
-                    ms.iter_pk_pkh().filter_map(move |pk_pkh| match pk_pkh {
-                        iter::PkPkh::PlainPubkey(pk) => {
-                            let i = x_only_pks.iter().position(|&x| x.to_public_key() == pk);
-                            i.map(|idx| (xonly_keypairs[idx].clone(), leaf_hash))
-                        }
-                        iter::PkPkh::HashedPubkey(hash) => {
-                            let i = x_only_pks
-                                .iter()
-                                .position(|&x| x.to_public_key().to_pubkeyhash() == hash);
-                            i.map(|idx| (xonly_keypairs[idx].clone(), leaf_hash))
-                        }
+                    ms.iter_pk().filter_map(move |pk| {
+                        let i = x_only_pks.iter().position(|&x| x.to_public_key() == pk);
+                        i.map(|idx| (xonly_keypairs[idx].clone(), leaf_hash))
                     })
                 })
                 .collect();
@@ -327,18 +316,10 @@ fn find_sks_ms<Ctx: ScriptContext>(
     let sks = &testdata.secretdata.sks;
     let pks = &testdata.pubdata.pks;
     let sks = ms
-        .iter_pk_pkh()
-        .filter_map(|pk_pkh| match pk_pkh {
-            iter::PkPkh::PlainPubkey(pk) => {
-                let i = pks.iter().position(|&x| x.to_public_key() == pk);
-                i.map(|idx| (sks[idx]))
-            }
-            iter::PkPkh::HashedPubkey(hash) => {
-                let i = pks
-                    .iter()
-                    .position(|&x| x.to_public_key().to_pubkeyhash() == hash);
-                i.map(|idx| (sks[idx]))
-            }
+        .iter_pk()
+        .filter_map(|pk| {
+            let i = pks.iter().position(|&x| x.to_public_key() == pk);
+            i.map(|idx| (sks[idx]))
         })
         .collect();
     sks

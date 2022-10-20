@@ -22,12 +22,14 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::{cmp, i64, mem};
 
+use bitcoin::hashes::hash160;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use elements::hashes::sha256d;
 use elements::secp256k1_zkp::schnorr;
 use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, confidential, secp256k1_zkp, LockTime, OutPoint, Script, Sequence};
 
+use super::context::SigType;
 use crate::extensions::{CsfsMsg, ParseableExt};
 use crate::util::witness_size;
 use crate::{Miniscript, MiniscriptKey, ScriptContext, Terminal, ToPublicKey};
@@ -81,8 +83,8 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
         None
     }
 
-    /// Given a `Pkh`, lookup corresponding `Pk`
-    fn lookup_pkh_pk(&self, _: &Pk::RawPkHash) -> Option<Pk> {
+    /// Given a raw `Pkh`, lookup corresponding `Pk`
+    fn lookup_raw_pkh_pk(&self, _: &hash160::Hash) -> Option<Pk> {
         None
     }
 
@@ -90,7 +92,10 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
     /// Even if signatures for public key Hashes are not available, the users
     /// can use this map to provide pkh -> pk mapping which can be useful
     /// for dissatisfying pkh.
-    fn lookup_pkh_ecdsa_sig(&self, _: &Pk::RawPkHash) -> Option<(bitcoin::PublicKey, ElementsSig)> {
+    fn lookup_raw_pkh_ecdsa_sig(
+        &self,
+        _: &hash160::Hash,
+    ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
         None
     }
 
@@ -98,10 +103,10 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
     /// Even if signatures for public key Hashes are not available, the users
     /// can use this map to provide pkh -> pk mapping which can be useful
     /// for dissatisfying pkh.
-    fn lookup_pkh_tap_leaf_script_sig(
+    fn lookup_raw_pkh_tap_leaf_script_sig(
         &self,
-        _: &(Pk::RawPkHash, TapLeafHash),
-    ) -> Option<(bitcoin::XOnlyPublicKey, elements::SchnorrSig)> {
+        _: &(hash160::Hash, TapLeafHash),
+    ) -> Option<(XOnlyPublicKey, elements::SchnorrSig)> {
         None
     }
 
@@ -274,21 +279,21 @@ impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk>
     }
 }
 
-impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for HashMap<Pk::RawPkHash, (Pk, ElementsSig)>
+impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for HashMap<hash160::Hash, (Pk, ElementsSig)>
 where
     Pk: MiniscriptKey + ToPublicKey,
 {
     fn lookup_ecdsa_sig(&self, key: &Pk) -> Option<ElementsSig> {
-        self.get(&key.to_pubkeyhash()).map(|x| x.1)
+        self.get(&key.to_pubkeyhash(SigType::Ecdsa)).map(|x| x.1)
     }
 
-    fn lookup_pkh_pk(&self, pk_hash: &Pk::RawPkHash) -> Option<Pk> {
+    fn lookup_raw_pkh_pk(&self, pk_hash: &hash160::Hash) -> Option<Pk> {
         self.get(pk_hash).map(|x| x.0.clone())
     }
 
-    fn lookup_pkh_ecdsa_sig(
+    fn lookup_raw_pkh_ecdsa_sig(
         &self,
-        pk_hash: &Pk::RawPkHash,
+        pk_hash: &hash160::Hash,
     ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
         self.get(pk_hash)
             .map(|&(ref pk, sig)| (pk.to_public_key(), sig))
@@ -296,7 +301,7 @@ where
 }
 
 impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk>
-    for HashMap<(Pk::RawPkHash, TapLeafHash), (Pk, elements::SchnorrSig)>
+    for HashMap<(hash160::Hash, TapLeafHash), (Pk, elements::SchnorrSig)>
 where
     Pk: MiniscriptKey + ToPublicKey,
 {
@@ -305,12 +310,13 @@ where
         key: &Pk,
         h: &TapLeafHash,
     ) -> Option<elements::SchnorrSig> {
-        self.get(&(key.to_pubkeyhash(), *h)).map(|x| x.1)
+        self.get(&(key.to_pubkeyhash(SigType::Schnorr), *h))
+            .map(|x| x.1)
     }
 
-    fn lookup_pkh_tap_leaf_script_sig(
+    fn lookup_raw_pkh_tap_leaf_script_sig(
         &self,
-        pk_hash: &(Pk::RawPkHash, TapLeafHash),
+        pk_hash: &(hash160::Hash, TapLeafHash),
     ) -> Option<(XOnlyPublicKey, elements::SchnorrSig)> {
         self.get(pk_hash)
             .map(|&(ref pk, sig)| (pk.to_x_only_pubkey(), sig))
@@ -326,26 +332,26 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_tap_leaf_script_sig(p, h)
     }
 
-    fn lookup_pkh_pk(&self, pkh: &Pk::RawPkHash) -> Option<Pk> {
-        (**self).lookup_pkh_pk(pkh)
+    fn lookup_raw_pkh_pk(&self, pkh: &hash160::Hash) -> Option<Pk> {
+        (**self).lookup_raw_pkh_pk(pkh)
     }
 
-    fn lookup_pkh_ecdsa_sig(
+    fn lookup_raw_pkh_ecdsa_sig(
         &self,
-        pkh: &Pk::RawPkHash,
+        pkh: &hash160::Hash,
     ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
-        (**self).lookup_pkh_ecdsa_sig(pkh)
+        (**self).lookup_raw_pkh_ecdsa_sig(pkh)
     }
 
     fn lookup_tap_key_spend_sig(&self) -> Option<elements::SchnorrSig> {
         (**self).lookup_tap_key_spend_sig()
     }
 
-    fn lookup_pkh_tap_leaf_script_sig(
+    fn lookup_raw_pkh_tap_leaf_script_sig(
         &self,
-        pkh: &(Pk::RawPkHash, TapLeafHash),
+        pkh: &(hash160::Hash, TapLeafHash),
     ) -> Option<(XOnlyPublicKey, elements::SchnorrSig)> {
-        (**self).lookup_pkh_tap_leaf_script_sig(pkh)
+        (**self).lookup_raw_pkh_tap_leaf_script_sig(pkh)
     }
 
     fn lookup_tap_control_block_map(
@@ -452,22 +458,22 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_tap_key_spend_sig()
     }
 
-    fn lookup_pkh_pk(&self, pkh: &Pk::RawPkHash) -> Option<Pk> {
-        (**self).lookup_pkh_pk(pkh)
+    fn lookup_raw_pkh_pk(&self, pkh: &hash160::Hash) -> Option<Pk> {
+        (**self).lookup_raw_pkh_pk(pkh)
     }
 
-    fn lookup_pkh_ecdsa_sig(
+    fn lookup_raw_pkh_ecdsa_sig(
         &self,
-        pkh: &Pk::RawPkHash,
+        pkh: &hash160::Hash,
     ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
-        (**self).lookup_pkh_ecdsa_sig(pkh)
+        (**self).lookup_raw_pkh_ecdsa_sig(pkh)
     }
 
-    fn lookup_pkh_tap_leaf_script_sig(
+    fn lookup_raw_pkh_tap_leaf_script_sig(
         &self,
-        pkh: &(Pk::RawPkHash, TapLeafHash),
+        pkh: &(hash160::Hash, TapLeafHash),
     ) -> Option<(XOnlyPublicKey, elements::SchnorrSig)> {
-        (**self).lookup_pkh_tap_leaf_script_sig(pkh)
+        (**self).lookup_raw_pkh_tap_leaf_script_sig(pkh)
     }
 
     fn lookup_tap_control_block_map(
@@ -599,39 +605,39 @@ macro_rules! impl_tuple_satisfier {
                 None
             }
 
-            fn lookup_pkh_ecdsa_sig(
+            fn lookup_raw_pkh_ecdsa_sig(
                 &self,
-                key_hash: &Pk::RawPkHash,
+                key_hash: &hash160::Hash,
             ) -> Option<(bitcoin::PublicKey, ElementsSig)> {
                 let &($(ref $ty,)*) = self;
                 $(
-                    if let Some(result) = $ty.lookup_pkh_ecdsa_sig(key_hash) {
+                    if let Some(result) = $ty.lookup_raw_pkh_ecdsa_sig(key_hash) {
                         return Some(result);
                     }
                 )*
                 None
             }
 
-            fn lookup_pkh_tap_leaf_script_sig(
+            fn lookup_raw_pkh_tap_leaf_script_sig(
                 &self,
-                key_hash: &(Pk::RawPkHash, TapLeafHash),
+                key_hash: &(hash160::Hash, TapLeafHash),
             ) -> Option<(XOnlyPublicKey, elements::SchnorrSig)> {
                 let &($(ref $ty,)*) = self;
                 $(
-                    if let Some(result) = $ty.lookup_pkh_tap_leaf_script_sig(key_hash) {
+                    if let Some(result) = $ty.lookup_raw_pkh_tap_leaf_script_sig(key_hash) {
                         return Some(result);
                     }
                 )*
                 None
             }
 
-            fn lookup_pkh_pk(
+            fn lookup_raw_pkh_pk(
                 &self,
-                key_hash: &Pk::RawPkHash,
+                key_hash: &hash160::Hash,
             ) -> Option<Pk> {
                 let &($(ref $ty,)*) = self;
                 $(
-                    if let Some(result) = $ty.lookup_pkh_pk(key_hash) {
+                    if let Some(result) = $ty.lookup_raw_pkh_pk(key_hash) {
                         return Some(result);
                     }
                 )*
@@ -932,8 +938,8 @@ impl Witness {
     }
 
     /// Turn a public key related to a pkh into (part of) a satisfaction
-    pub fn pkh_public_key<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &Pk::RawPkHash) -> Self {
-        match sat.lookup_pkh_pk(pkh) {
+    fn pkh_public_key<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &hash160::Hash) -> Self {
+        match sat.lookup_raw_pkh_pk(pkh) {
             Some(pk) => Witness::Stack(vec![pk.to_public_key().to_bytes()]),
             // public key hashes are assumed to be unavailable
             // instead of impossible since it is the same as pub-key hashes
@@ -942,8 +948,8 @@ impl Witness {
     }
 
     /// Turn a key/signature pair related to a pkh into (part of) a satisfaction
-    pub fn pkh_signature<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &Pk::RawPkHash) -> Self {
-        match sat.lookup_pkh_ecdsa_sig(pkh) {
+    pub fn pkh_signature<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &hash160::Hash) -> Self {
+        match sat.lookup_raw_pkh_ecdsa_sig(pkh) {
             Some((pk, (sig, hashtype))) => {
                 let mut ret = sig.serialize_der().to_vec();
                 ret.push(hashtype.as_u32() as u8);
@@ -1316,7 +1322,7 @@ impl Satisfaction {
                 has_sig: true,
             },
             Terminal::PkH(ref pk) => Satisfaction {
-                stack: Witness::pkh_signature(stfr, &pk.to_pubkeyhash()),
+                stack: Witness::pkh_signature(stfr, &pk.to_pubkeyhash(Ctx::sig_type())),
                 has_sig: true,
             },
             Terminal::RawPkH(ref pkh) => Satisfaction {
@@ -1632,7 +1638,7 @@ impl Satisfaction {
             Terminal::PkH(ref pk) => Satisfaction {
                 stack: Witness::combine(
                     Witness::push_0(),
-                    Witness::pkh_public_key(stfr, &pk.to_pubkeyhash()),
+                    Witness::pkh_public_key(stfr, &pk.to_pubkeyhash(Ctx::sig_type())),
                 ),
                 has_sig: false,
             },

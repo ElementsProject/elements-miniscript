@@ -11,9 +11,8 @@ use elements::{
     Sequence, TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
-use miniscript::miniscript::iter;
 use miniscript::psbt::{PsbtInputExt, PsbtInputSatisfier};
-use miniscript::{Descriptor, MiniscriptKey, Satisfier, ToPublicKey};
+use miniscript::{Descriptor, Satisfier, ToPublicKey};
 use rand::RngCore;
 mod setup;
 use setup::test_util::{self, TestData, PARAMS};
@@ -109,17 +108,9 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
                 .iter_scripts()
                 .flat_map(|(_depth, ms)| {
                     let leaf_hash = TapLeafHash::from_script(&ms.encode(), LeafVersion::default());
-                    ms.iter_pk_pkh().filter_map(move |pk_pkh| match pk_pkh {
-                        iter::PkPkh::PlainPubkey(pk) => {
-                            let i = x_only_pks.iter().position(|&x| x.to_public_key() == pk);
-                            i.map(|idx| (xonly_keypairs[idx].clone(), leaf_hash))
-                        }
-                        iter::PkPkh::HashedPubkey(hash) => {
-                            let i = x_only_pks
-                                .iter()
-                                .position(|&x| x.to_public_key().to_pubkeyhash() == hash);
-                            i.map(|idx| (xonly_keypairs[idx].clone(), leaf_hash))
-                        }
+                    ms.iter_pk().filter_map(move |pk| {
+                        let i = x_only_pks.iter().position(|&x| x.to_public_key() == pk);
+                        i.map(|idx| (xonly_keypairs[idx].clone(), leaf_hash))
                     })
                 })
                 .collect();

@@ -66,6 +66,8 @@ pub enum LiftError {
     HeightTimelockCombination,
     /// Duplicate Public Keys
     BranchExceedResourceLimits,
+    /// Cannot lift raw descriptors
+    RawDescriptorLift,
 }
 
 impl fmt::Display for LiftError {
@@ -77,6 +79,7 @@ impl fmt::Display for LiftError {
             LiftError::BranchExceedResourceLimits => f.write_str(
                 "Cannot lift policies containing one branch that exceeds resource limits",
             ),
+            LiftError::RawDescriptorLift => f.write_str("Cannot lift raw descriptors"),
         }
     }
 }
@@ -86,7 +89,7 @@ impl error::Error for LiftError {
         use self::LiftError::*;
 
         match self {
-            HeightTimelockCombination | BranchExceedResourceLimits => None,
+            HeightTimelockCombination | BranchExceedResourceLimits | RawDescriptorLift => None,
         }
     }
 }
@@ -130,8 +133,10 @@ where
 {
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
         let ret = match *self {
-            Terminal::PkK(ref pk) | Terminal::PkH(ref pk) => Semantic::KeyHash(pk.to_pubkeyhash()),
-            Terminal::RawPkH(ref pkh) => Semantic::KeyHash(pkh.clone()),
+            Terminal::PkK(ref pk) | Terminal::PkH(ref pk) => Semantic::Key(pk.clone()),
+            Terminal::RawPkH(ref _pkh) => {
+                return Err(Error::LiftError(LiftError::RawDescriptorLift))
+            }
             Terminal::After(t) => Semantic::After(t),
             Terminal::Older(t) => Semantic::Older(t),
             Terminal::Sha256(ref h) => Semantic::Sha256(h.clone()),
@@ -167,12 +172,9 @@ where
                 let semantic_subs: Result<_, Error> = subs.iter().map(|s| s.node.lift()).collect();
                 Semantic::Threshold(k, semantic_subs?)
             }
-            Terminal::Multi(k, ref keys) | Terminal::MultiA(k, ref keys) => Semantic::Threshold(
-                k,
-                keys.iter()
-                    .map(|k| Semantic::KeyHash(k.to_pubkeyhash()))
-                    .collect(),
-            ),
+            Terminal::Multi(k, ref keys) | Terminal::MultiA(k, ref keys) => {
+                Semantic::Threshold(k, keys.iter().map(|k| Semantic::Key(k.clone())).collect())
+            }
             Terminal::Ext(ref _e) => Err(Error::CovError(CovError::CovenantLift))?,
         }
         .normalized();
@@ -209,7 +211,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Concrete<Pk> {
         let ret = match *self {
             Concrete::Unsatisfiable => Semantic::Unsatisfiable,
             Concrete::Trivial => Semantic::Trivial,
-            Concrete::Key(ref pk) => Semantic::KeyHash(pk.to_pubkeyhash()),
+            Concrete::Key(ref pk) => Semantic::Key(pk.clone()),
             Concrete::After(t) => Semantic::After(t),
             Concrete::Older(t) => Semantic::Older(t),
             Concrete::Sha256(ref h) => Semantic::Sha256(h.clone()),
@@ -241,7 +243,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for BtcPolicy<Pk> {
         match *self {
             BtcPolicy::Unsatisfiable => Ok(Semantic::Unsatisfiable),
             BtcPolicy::Trivial => Ok(Semantic::Trivial),
-            BtcPolicy::KeyHash(ref pkh) => Ok(Semantic::KeyHash(pkh.clone())),
+            BtcPolicy::Key(ref pkh) => Ok(Semantic::Key(pkh.clone())),
             BtcPolicy::Sha256(ref h) => Ok(Semantic::Sha256(h.clone())),
             BtcPolicy::Hash256(ref h) => Ok(Semantic::Hash256(h.clone())),
             BtcPolicy::Ripemd160(ref h) => Ok(Semantic::Ripemd160(h.clone())),
@@ -312,9 +314,9 @@ mod tests {
         concrete_policy_rtt("or(99@pk(),1@pk())");
         concrete_policy_rtt("and(pk(),or(99@pk(),1@older(12960)))");
 
-        semantic_policy_rtt("pkh()");
-        semantic_policy_rtt("or(pkh(),pkh())");
-        semantic_policy_rtt("and(pkh(),pkh())");
+        semantic_policy_rtt("pk()");
+        semantic_policy_rtt("or(pk(),pk())");
+        semantic_policy_rtt("and(pk(),pk())");
 
         //fuzzer crashes
         assert!(ConcretePol::from_str("thresh()").is_err());
@@ -393,11 +395,11 @@ mod tests {
                     Semantic::Threshold(
                         2,
                         vec![
-                            Semantic::KeyHash(key_a.pubkey_hash().as_hash()),
+                            Semantic::Key(key_a),
                             Semantic::Older(Sequence::from_height(42))
                         ]
                     ),
-                    Semantic::KeyHash(key_b.pubkey_hash().as_hash())
+                    Semantic::Key(key_b)
                 ]
             ),
             ms_str.lift().unwrap()

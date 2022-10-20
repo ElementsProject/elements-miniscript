@@ -175,7 +175,6 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Bare<Pk> {
     fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: F) -> bool
     where
         Pk: 'a,
-        Pk::RawPkHash: 'a,
     {
         self.ms.for_each_key(pred)
     }
@@ -306,7 +305,7 @@ impl<Pk: MiniscriptKey> fmt::Display for Pkh<Pk> {
 
 impl<Pk: MiniscriptKey> Liftable<Pk> for Pkh<Pk> {
     fn lift(&self) -> Result<semantic::Policy<Pk>, Error> {
-        Ok(semantic::Policy::KeyHash(self.pk.to_pubkeyhash()))
+        Ok(semantic::Policy::Key(self.pk.clone()))
     }
 }
 
@@ -341,7 +340,6 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Pkh<Pk> {
     fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
-        Pk::RawPkHash: 'a,
     {
         pred(&self.pk)
     }

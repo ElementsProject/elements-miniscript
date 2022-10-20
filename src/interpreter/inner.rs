@@ -14,18 +14,18 @@
 
 use bitcoin;
 use bitcoin::util::taproot::TAPROOT_ANNEX_PREFIX;
-use elements::hashes::{hash160, ripemd160, sha256, Hash};
+use elements::hashes::{hash160, sha256, Hash};
 use elements::schnorr::TapTweak;
 use elements::taproot::ControlBlock;
 use elements::{self, script};
 
-use super::{stack, BitcoinKey, Error, Stack, TypedHash160};
+use super::{stack, BitcoinKey, Error, Stack};
 use crate::descriptor::{CovOperations, LegacyCSFSCov};
 use crate::extensions::ParseableExt;
-use crate::miniscript::context::{NoChecks, ScriptContext};
+use crate::miniscript::context::{NoChecks, ScriptContext, SigType};
 use crate::util::is_v1_p2tr;
 use crate::{
-    hash256, BareCtx, Extension, Legacy, Miniscript, MiniscriptKey, Segwitv0, Tap, Translator,
+    BareCtx, ExtParams, Extension, Legacy, Miniscript, Segwitv0, Tap, ToPublicKey, Translator,
 };
 
 /// Attempts to parse a slice as a Bitcoin public key, checking compressedness
@@ -60,9 +60,11 @@ fn script_from_stack_elem<Ctx: ScriptContext, Ext: ParseableExt>(
     elem: &stack::Element,
 ) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
     match *elem {
-        stack::Element::Push(sl) => {
-            Miniscript::parse_insane(&elements::Script::from(sl.to_owned())).map_err(Error::from)
-        }
+        stack::Element::Push(sl) => Miniscript::parse_with_ext(
+            &elements::Script::from(sl.to_owned()),
+            &ExtParams::allow_all(),
+        )
+        .map_err(Error::from),
         stack::Element::Satisfied => {
             Miniscript::from_ast(crate::Terminal::True).map_err(Error::from)
         }
@@ -179,7 +181,8 @@ pub fn from_txdata<'txin, Ext: ParseableExt>(
             match ssig_stack.pop() {
                 Some(elem) => {
                     let pk = pk_from_stack_elem(&elem, false)?;
-                    if *spk == elements::Script::new_p2pkh(&pk.to_pubkeyhash().into()) {
+                    if *spk == elements::Script::new_p2pkh(&pk.to_pubkeyhash(SigType::Ecdsa).into())
+                    {
                         Ok((
                             Inner::PublicKey(pk.into(), PubkeyType::Pkh),
                             ssig_stack,
@@ -200,11 +203,12 @@ pub fn from_txdata<'txin, Ext: ParseableExt>(
             match wit_stack.pop() {
                 Some(elem) => {
                     let pk = pk_from_stack_elem(&elem, true)?;
-                    if *spk == elements::Script::new_v0_wpkh(&pk.to_pubkeyhash().into()) {
+                    let hash160 = pk.to_pubkeyhash(SigType::Ecdsa);
+                    if *spk == elements::Script::new_v0_wpkh(&hash160.into()) {
                         Ok((
                             Inner::PublicKey(pk.into(), PubkeyType::Wpkh),
                             wit_stack,
-                            Some(elements::Script::new_p2pkh(&pk.to_pubkeyhash().into())), // bip143, why..
+                            Some(elements::Script::new_p2pkh(&hash160.into())), // bip143, why..
                         ))
                     } else {
                         Err(Error::IncorrectWPubkeyHash)
@@ -323,17 +327,13 @@ pub fn from_txdata<'txin, Ext: ParseableExt>(
                                     Err(Error::NonEmptyScriptSig)
                                 } else {
                                     let pk = pk_from_stack_elem(&elem, true)?;
-                                    if slice
-                                        == &elements::Script::new_v0_wpkh(
-                                            &pk.to_pubkeyhash().into(),
-                                        )[..]
+                                    let hash160 = pk.to_pubkeyhash(SigType::Ecdsa);
+                                    if slice == &elements::Script::new_v0_wpkh(&hash160.into())[..]
                                     {
                                         Ok((
                                             Inner::PublicKey(pk.into(), PubkeyType::ShWpkh),
                                             wit_stack,
-                                            Some(elements::Script::new_p2pkh(
-                                                &pk.to_pubkeyhash().into(),
-                                            )), // bip143, why..
+                                            Some(elements::Script::new_p2pkh(&hash160.into())), // bip143, why..
                                         ))
                                     } else {
                                         Err(Error::IncorrectWScriptHash)
@@ -396,7 +396,10 @@ pub fn from_txdata<'txin, Ext: ParseableExt>(
     // ** bare script **
     } else if wit_stack.is_empty() {
         // Bare script parsed in BareCtx
-        let miniscript = Miniscript::<bitcoin::PublicKey, BareCtx, Ext>::parse_insane(spk)?;
+        let miniscript = Miniscript::<bitcoin::PublicKey, BareCtx, Ext>::parse_with_ext(
+            spk,
+            &ExtParams::allow_all(),
+        )?;
         let miniscript = miniscript.to_no_checks_ms();
         Ok((
             Inner::Script(miniscript, ScriptType::Bare),
@@ -432,25 +435,7 @@ impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
                 Ok(BitcoinKey::Fullkey(*pk))
             }
 
-            fn pkh(&mut self, pkh: &hash160::Hash) -> Result<TypedHash160, ()> {
-                Ok(TypedHash160::FullKey(*pkh))
-            }
-
-            fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
-                Ok(*sha256)
-            }
-
-            fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ()> {
-                Ok(*hash256)
-            }
-
-            fn ripemd160(&mut self, ripemd160: &ripemd160::Hash) -> Result<ripemd160::Hash, ()> {
-                Ok(*ripemd160)
-            }
-
-            fn hash160(&mut self, hash160: &hash160::Hash) -> Result<hash160::Hash, ()> {
-                Ok(*hash160)
-            }
+            translate_hash_clone!(bitcoin::PublicKey, BitcoinKey, ());
         }
 
         self.real_translate_pk(&mut TranslateFullPk)
@@ -470,25 +455,7 @@ impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
                 Ok(BitcoinKey::XOnlyPublicKey(*pk))
             }
 
-            fn pkh(&mut self, pkh: &hash160::Hash) -> Result<TypedHash160, ()> {
-                Ok(TypedHash160::XonlyKey(*pkh))
-            }
-
-            fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
-                Ok(*sha256)
-            }
-
-            fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ()> {
-                Ok(*hash256)
-            }
-
-            fn ripemd160(&mut self, ripemd160: &ripemd160::Hash) -> Result<ripemd160::Hash, ()> {
-                Ok(*ripemd160)
-            }
-
-            fn hash160(&mut self, hash160: &hash160::Hash) -> Result<hash160::Hash, ()> {
-                Ok(*hash160)
-            }
+            translate_hash_clone!(bitcoin::XOnlyPublicKey, BitcoinKey, ());
         }
         self.real_translate_pk(&mut TranslateXOnlyPk)
             .expect("Translation should succeed")
@@ -505,6 +472,7 @@ mod tests {
     use elements::{self, script, Script};
 
     use super::*;
+    use crate::miniscript::analyzable::ExtParams;
     use crate::NoExt;
 
     struct KeyTestData {
@@ -533,8 +501,8 @@ mod tests {
             )
             .unwrap();
 
-            let pkhash = key.to_pubkeyhash().into();
-            let wpkhash = key.to_pubkeyhash().into();
+            let pkhash = key.to_pubkeyhash(SigType::Ecdsa).into();
+            let wpkhash = key.to_pubkeyhash(SigType::Ecdsa).into();
             let wpkh_spk = elements::Script::new_v0_wpkh(&wpkhash);
             let wpkh_scripthash = hash160::Hash::hash(&wpkh_spk[..]).into();
 
@@ -853,11 +821,13 @@ mod tests {
     }
 
     fn ms_inner_script(ms: &str) -> (Miniscript<BitcoinKey, NoChecks, NoExt>, elements::Script) {
-        let ms = Miniscript::<bitcoin::PublicKey, Segwitv0, NoExt>::from_str_insane(ms).unwrap();
+        let ms = Miniscript::<bitcoin::PublicKey, Segwitv0>::from_str_ext(ms, &ExtParams::insane())
+            .unwrap();
         let spk = ms.encode();
         let miniscript = ms.to_no_checks_ms();
         (miniscript, spk)
     }
+
     #[test]
     fn script_bare() {
         let preimage = b"12345678----____12345678----____";

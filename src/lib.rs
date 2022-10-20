@@ -126,7 +126,7 @@ pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
 // re-export imports
 pub use bitcoin_miniscript::{
     hash256, DummyHash160Hash, DummyHash256Hash, DummyKey, DummyKeyHash, DummyRipemd160Hash,
-    DummySha256Hash, ForEachKey, MiniscriptKey, ToPublicKey,
+    DummySha256Hash, ForEachKey, MiniscriptKey, SigType, ToPublicKey,
 };
 pub(crate) use bitcoin_miniscript::{
     Descriptor as BtcDescriptor, Error as BtcError, Miniscript as BtcMiniscript,
@@ -136,6 +136,11 @@ pub(crate) use bitcoin_miniscript::{
 
 #[macro_use]
 mod macros;
+
+#[macro_use]
+mod pub_macros;
+
+pub use pub_macros::*;
 
 pub mod descriptor;
 pub mod expression;
@@ -158,6 +163,7 @@ use elements::{opcodes, script, secp256k1_zkp};
 pub use crate::descriptor::{DefiniteDescriptorKey, Descriptor, DescriptorPublicKey};
 pub use crate::extensions::{CovenantExt, Extension, NoExt, TxEnv};
 pub use crate::interpreter::Interpreter;
+pub use crate::miniscript::analyzable::{AnalysisError, ExtParams};
 pub use crate::miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0, Tap};
 pub use crate::miniscript::decode::Terminal;
 pub use crate::miniscript::satisfy::{
@@ -226,9 +232,6 @@ where
 {
     /// Translates public keys P -> Q.
     fn pk(&mut self, pk: &P) -> Result<Q, E>;
-
-    /// Translates public key hashes P::Hash -> Q::Hash.
-    fn pkh(&mut self, pkh: &P::RawPkHash) -> Result<Q::RawPkHash, E>;
 
     /// Provides the translation from P::Sha256 -> Q::Sha256
     fn sha256(&mut self, sha256: &P::Sha256) -> Result<Q::Sha256, E>;
@@ -651,7 +654,7 @@ mod tests {
         ).unwrap();
 
         let want = hash160::Hash::from_str("ac2e7daf42d2c97418fd9f78af2de552bb9c6a7a").unwrap();
-        let got = pk.to_pubkeyhash();
+        let got = pk.to_pubkeyhash(SigType::Ecdsa);
         assert_eq!(got, want)
     }
 
@@ -666,7 +669,7 @@ mod tests {
         .unwrap();
 
         let want = hash160::Hash::from_str("9511aa27ef39bbfa4e4f3dd15f4d66ea57f475b4").unwrap();
-        let got = pk.to_pubkeyhash();
+        let got = pk.to_pubkeyhash(SigType::Ecdsa);
         assert_eq!(got, want)
     }
 
@@ -680,14 +683,7 @@ mod tests {
         .unwrap();
 
         let want = hash160::Hash::from_str("eb8ac65f971ae688a94aeabf223506865e7e08f2").unwrap();
-        let got = pk.to_pubkeyhash();
+        let got = pk.to_pubkeyhash(SigType::Schnorr);
         assert_eq!(got, want)
-    }
-
-    #[test]
-    fn regression_string_key_hash() {
-        let pk = String::from("some-key-hash-string");
-        let hash = pk.to_pubkeyhash();
-        assert_eq!(hash, pk)
     }
 }

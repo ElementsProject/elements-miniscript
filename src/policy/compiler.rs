@@ -1214,7 +1214,7 @@ mod tests {
     use super::*;
     use crate::miniscript::{Legacy, Segwitv0, Tap};
     use crate::policy::Liftable;
-    use crate::{script_num_size, ElementsSig};
+    use crate::{script_num_size, ElementsSig, ToPublicKey};
 
     type SPolicy = Concrete<String>;
     type BPolicy = Concrete<bitcoin::PublicKey>;
@@ -1424,7 +1424,10 @@ mod tests {
             left_sat.insert(keys[i], elements_sig);
         }
         for i in 5..8 {
-            right_sat.insert(keys[i].to_pubkeyhash(), (keys[i], elements_sig));
+            right_sat.insert(
+                keys[i].to_pubkeyhash(SigType::Ecdsa),
+                (keys[i], elements_sig),
+            );
         }
 
         assert!(ms.satisfy(no_sat).is_err());

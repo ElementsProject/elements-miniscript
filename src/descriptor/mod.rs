@@ -755,7 +755,6 @@ impl<Pk: MiniscriptKey, T: Extension> ForEachKey<Pk> for Descriptor<Pk, T> {
     fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: F) -> bool
     where
         Pk: 'a,
-        Pk::RawPkHash: 'a,
     {
         match *self {
             Descriptor::Bare(ref bare) => bare.for_each_key(pred),
@@ -796,25 +795,7 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
                 Ok(pk.clone().at_derivation_index(self.0))
             }
 
-            fn pkh(&mut self, pkh: &DescriptorPublicKey) -> Result<DefiniteDescriptorKey, ()> {
-                Ok(pkh.clone().at_derivation_index(self.0))
-            }
-
-            fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
-                Ok(*sha256)
-            }
-
-            fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ()> {
-                Ok(*hash256)
-            }
-
-            fn ripemd160(&mut self, ripemd160: &ripemd160::Hash) -> Result<ripemd160::Hash, ()> {
-                Ok(*ripemd160)
-            }
-
-            fn hash160(&mut self, hash160: &hash160::Hash) -> Result<hash160::Hash, ()> {
-                Ok(*hash160)
-            }
+            translate_hash_clone!(DescriptorPublicKey, DescriptorPublicKey, ());
         }
         self.translate_pk(&mut Derivator(index))
             .expect("BIP 32 key index substitution cannot fail")
@@ -904,10 +885,6 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
                 parse_key(pk, &mut self.0, self.1)
             }
 
-            fn pkh(&mut self, pkh: &String) -> Result<DescriptorPublicKey, Error> {
-                parse_key(pkh, &mut self.0, self.1)
-            }
-
             fn sha256(&mut self, sha256: &String) -> Result<sha256::Hash, Error> {
                 let hash =
                     sha256::Hash::from_str(sha256).map_err(|e| Error::Unexpected(e.to_string()))?;
@@ -948,10 +925,6 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
         impl<'a> Translator<DescriptorPublicKey, String, ()> for KeyMapLookUp<'a> {
             fn pk(&mut self, pk: &DescriptorPublicKey) -> Result<String, ()> {
                 key_to_string(pk, self.0)
-            }
-
-            fn pkh(&mut self, pkh: &DescriptorPublicKey) -> Result<String, ()> {
-                key_to_string(pkh, self.0)
             }
 
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<String, ()> {
@@ -1054,37 +1027,7 @@ impl<Ext: Extension> Descriptor<DefiniteDescriptorKey, Ext> {
                 pk.derive_public_key(&self.0)
             }
 
-            fn pkh(
-                &mut self,
-                pkh: &DefiniteDescriptorKey,
-            ) -> Result<bitcoin::hashes::hash160::Hash, ConversionError> {
-                Ok(pkh.derive_public_key(&self.0)?.to_pubkeyhash())
-            }
-
-            fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ConversionError> {
-                Ok(*sha256)
-            }
-
-            fn hash256(
-                &mut self,
-                hash256: &hash256::Hash,
-            ) -> Result<hash256::Hash, ConversionError> {
-                Ok(*hash256)
-            }
-
-            fn ripemd160(
-                &mut self,
-                ripemd160: &ripemd160::Hash,
-            ) -> Result<ripemd160::Hash, ConversionError> {
-                Ok(*ripemd160)
-            }
-
-            fn hash160(
-                &mut self,
-                hash160: &hash160::Hash,
-            ) -> Result<hash160::Hash, ConversionError> {
-                Ok(*hash160)
-            }
+            translate_hash_clone!(DefiniteDescriptorKey, bitcoin::PublicKey, ConversionError);
         }
 
         let derived = self.translate_pk(&mut Derivator(secp))?;
@@ -1195,7 +1138,7 @@ mod tests {
     use crate::miniscript::satisfy::ElementsSig;
     #[cfg(feature = "compiler")]
     use crate::policy;
-    use crate::{hex_script, Descriptor, DummyKey, Error, Miniscript, Satisfier};
+    use crate::{hex_script, Descriptor, DummyKey, Error, Miniscript, NoExt, Satisfier};
 
     type StdDescriptor = Descriptor<PublicKey, CovenantExt<CovExtArgs>>;
     const TEST_PK: &'static str =
@@ -1667,8 +1610,8 @@ mod tests {
         assert_eq!(
             descriptor,
             format!(
-                "eltr({},{{pk({}),{{pk({}),or_d(pk({}),pkh(516ca378e588a7ed71336147e2a72848b20aca1a))}}}})#3cw4zduf",
-                p1, p2, p3, p4,
+                "eltr({},{{pk({}),{{pk({}),or_d(pk({}),pkh({}))}}}})#y9kzzx3w",
+                p1, p2, p3, p4, p5
             )
         )
     }

@@ -95,7 +95,6 @@ impl fmt::Display for LegacyPeginKey {
 }
 
 impl MiniscriptKey for LegacyPeginKey {
-    type RawPkHash = hash160::Hash;
     type Sha256 = sha256::Hash;
     type Hash256 = hash256::Hash;
     type Ripemd160 = ripemd160::Hash;
@@ -103,14 +102,6 @@ impl MiniscriptKey for LegacyPeginKey {
 
     fn is_uncompressed(&self) -> bool {
         false
-    }
-
-    fn to_pubkeyhash(&self) -> Self::RawPkHash {
-        let pk = match *self {
-            LegacyPeginKey::Functionary(ref pk) => pk,
-            LegacyPeginKey::NonFunctionary(ref pk) => pk,
-        };
-        MiniscriptKey::to_pubkeyhash(pk)
     }
 }
 
@@ -248,17 +239,12 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         };
         struct TranslateUnTweak;
 
-        impl bitcoin_miniscript::PkTranslator<LegacyPeginKey, bitcoin::PublicKey, ()> for TranslateUnTweak {
+        impl bitcoin_miniscript::Translator<LegacyPeginKey, bitcoin::PublicKey, ()> for TranslateUnTweak {
             fn pk(&mut self, pk: &LegacyPeginKey) -> Result<bitcoin::PublicKey, ()> {
                 Ok(*pk.as_untweaked())
             }
 
-            fn pkh(
-                &mut self,
-                _pkh: &<LegacyPeginKey as MiniscriptKey>::RawPkHash,
-            ) -> Result<<bitcoin::PublicKey as MiniscriptKey>::RawPkHash, ()> {
-                unreachable!("No keyhashes in elements descriptors")
-            }
+            bitcoin_miniscript::translate_hash_clone!(LegacyPeginKey, bitcoin::PublicKey, ());
         }
         let mut t = TranslateUnTweak;
 

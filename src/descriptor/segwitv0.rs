@@ -285,7 +285,6 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Wsh<Pk> {
     fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: F) -> bool
     where
         Pk: 'a,
-        Pk::RawPkHash: 'a,
     {
         match self.inner {
             WshInner::SortedMulti(ref smv) => smv.for_each_key(pred),
@@ -369,9 +368,7 @@ impl<Pk: MiniscriptKey> Wpkh<Pk> {
     pub(super) fn from_inner_tree(top: &expression::Tree<'_>) -> Result<Self, Error>
     where
         Pk: FromStr,
-        Pk::RawPkHash: FromStr,
         <Pk as FromStr>::Err: ToString,
-        <<Pk as MiniscriptKey>::RawPkHash as FromStr>::Err: ToString,
     {
         if top.name == "wpkh" && top.args.len() == 1 {
             Ok(Wpkh::new(expression::terminal(&top.args[0], |pk| {
@@ -468,7 +465,7 @@ impl<Pk: MiniscriptKey> fmt::Display for Wpkh<Pk> {
 
 impl<Pk: MiniscriptKey> Liftable<Pk> for Wpkh<Pk> {
     fn lift(&self) -> Result<semantic::Policy<Pk>, Error> {
-        Ok(semantic::Policy::KeyHash(self.pk.to_pubkeyhash()))
+        Ok(semantic::Policy::Key(self.pk.clone()))
     }
 }
 
@@ -503,7 +500,6 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Wpkh<Pk> {
     fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
-        Pk::RawPkHash: 'a,
     {
         pred(&self.pk)
     }
