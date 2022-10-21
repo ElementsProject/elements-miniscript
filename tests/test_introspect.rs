@@ -196,6 +196,7 @@ fn test_descs(cl: &ElementsD, testdata: &mut TestData) {
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(out_asset(1))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(curr_inp_asset,inp_asset(0))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(curr_inp_asset,out_asset(0))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(curr_out_asset,out_asset(0))))");
 
     // same tests for values
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(exp_value)))");
@@ -203,6 +204,7 @@ fn test_descs(cl: &ElementsD, testdata: &mut TestData) {
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(inp_value(0))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(out_value(1))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(curr_inp_value,inp_value(0))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(curr_out_value,out_value(0))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(out_value(0),out_value(0))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(out_value(1),out_value(1))))");
 
@@ -210,6 +212,7 @@ fn test_descs(cl: &ElementsD, testdata: &mut TestData) {
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(out_spk(1),out_spk(1))))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(spk_v1,spk_v1)))");
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(curr_inp_spk,inp_spk(0))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(curr_out_spk,out_spk(0))))");
 
     // Testing the current input index
     test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),curr_idx_eq(0)))");

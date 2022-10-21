@@ -67,6 +67,7 @@ Name                    | Script
 curr_inp_asset          | `PUSHCURRENTINPUTINDEX INPSECTINPUTASSET`
 inp_asset(i)            | `i INPSECTINPUTASSET`
 out_asset(i)            | `i INPSECTOUTPUTASSET`
+curr_out_asset          | `PUSHCURRENTINPUTINDEX INPSECTOUTPUTASSET`
 
 ### ValueExpr
 
@@ -80,6 +81,7 @@ Name                    | Script
 curr_inp_value          | `PUSHCURRENTINPUTINDEX INPSECTINPUTVALUE`
 inp_value(i)            | `i INPSECTINPUTVALUE`
 out_value(i)            | `i INPSECTOUTPUTVALUE`
+curr_out_value          | `PUSHCURRENTINPUTINDEX INPSECTOUTPUTVALUE`
 
 ### SpkExpr: Script PubKey Expression
 
@@ -94,6 +96,7 @@ Name                    | Script
 curr_inp_spk            | `PUSHCURRENTINPUTINDEX INPSECTINPUTSCRIPTPUBKEY`
 inp_spk(i)              | `i INPSECTINPUTSCRIPTPUBKEY`
 out_spk(i)              | `i INPSECTOUTPUTASSETSCRIPTPUBKEY`
+curr_out_spk            | `PUSHCURRENTINPUTINDEX INPSECTOUTPUTASSETSCRIPTPUBKEY`
 
 ## Introspection Operations
 

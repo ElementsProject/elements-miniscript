@@ -1071,7 +1071,8 @@ impl_from_str!(
                 Ok(tr) => Ok(Descriptor::Tr(tr)),
                 Err(_) => {
                     // Try parsing with extensions
-                    let tr = Tr::<Pk, T>::from_str(s)?;
+                    // descriptors are always parsed insane. This will improve once we use upstream ExtParams Api.
+                    let tr = Tr::<Pk, T>::from_str_insane(s)?;
                     Ok(Descriptor::TrExt(tr))
                 }
             }

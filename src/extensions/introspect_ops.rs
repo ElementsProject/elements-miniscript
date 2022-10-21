@@ -44,6 +44,9 @@ pub enum AssetExpr<T: ExtParam> {
     /// Explicit asset at the given output index
     /// i INPSECTOUTPUTASSET
     Output(usize),
+    /// Explicit asset at the output index corresponding to the input index
+    /// INSPECTCURRENTINPUTINDEX INPSECTOUTPUTASSET
+    CurrOutputAsset,
 }
 
 /// Enum representing operations with transaction values.
@@ -65,6 +68,10 @@ pub enum ValueExpr<T: ExtParam> {
     /// Value(possibly confidential) at the given output index
     /// i INPSECTOUTPUTVALUE
     Output(usize),
+    /// Value in the corresponding output of the current input index
+    /// Required for sighash single emulation
+    /// INSPECTCURRENTINPUTINDEX INPSECTINPUTVALUE
+    CurrOutputValue,
 }
 
 /// Enum representing operations with transaction script pubkeys.
@@ -89,6 +96,9 @@ pub enum SpkExpr<T: ExtParam> {
     /// Explicit asset at the given output index
     /// i INPSECTOUTPUTSCRIPTPUBKEY
     Output(usize),
+    /// Output spk matching the current executing index. Required for sighash single emulation
+    /// INSPECTCURRENTINPUTINDEX INPSECTOUTPUTSCRIPTPUBKEY
+    CurrOutputSpk,
 }
 
 /// Miniscript Fragment containing arith expressions
@@ -128,6 +138,7 @@ impl<T: ExtParam> AssetExpr<T> {
             AssetExpr::CurrInputAsset => 2,
             AssetExpr::Input(i) => script_num_size(*i) + 1,
             AssetExpr::Output(i) => script_num_size(*i) + 1,
+            AssetExpr::CurrOutputAsset => 2,
         }
     }
 
@@ -142,6 +153,7 @@ impl<T: ExtParam> AssetExpr<T> {
             AssetExpr::CurrInputAsset => AssetExpr::CurrInputAsset,
             AssetExpr::Input(i) => AssetExpr::Input(*i),
             AssetExpr::Output(i) => AssetExpr::Output(*i),
+            AssetExpr::CurrOutputAsset => AssetExpr::CurrOutputAsset,
         };
         Ok(res)
     }
@@ -154,6 +166,7 @@ impl<T: ExtParam> fmt::Display for AssetExpr<T> {
             AssetExpr::CurrInputAsset => write!(f, "curr_inp_asset"),
             AssetExpr::Input(i) => write!(f, "inp_asset({})", i),
             AssetExpr::Output(i) => write!(f, "out_asset({})", i),
+            AssetExpr::CurrOutputAsset => write!(f, "curr_out_asset"),
         }
     }
 }
@@ -165,6 +178,7 @@ impl<T: ExtParam> fmt::Debug for AssetExpr<T> {
             AssetExpr::CurrInputAsset => write!(f, "curr_inp_asset"),
             AssetExpr::Input(i) => write!(f, "inp_asset({:?})", i),
             AssetExpr::Output(i) => write!(f, "out_asset({:?})", i),
+            AssetExpr::CurrOutputAsset => write!(f, "curr_out_asset"),
         }
     }
 }
@@ -184,6 +198,7 @@ impl<T: ExtParam> AssetExpr<T> {
                 .map(AssetExpr::Input),
             ("out_asset", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
                 .map(AssetExpr::Output),
+            ("curr_out_asset", 0) => Ok(AssetExpr::CurrOutputAsset),
             (asset, 0) => Ok(AssetExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -202,6 +217,7 @@ impl<T: ExtParam> ValueExpr<T> {
             ValueExpr::CurrInputValue => 2,
             ValueExpr::Input(i) => script_num_size(*i) + 1,
             ValueExpr::Output(i) => script_num_size(*i) + 1,
+            ValueExpr::CurrOutputValue => 2,
         }
     }
 
@@ -216,6 +232,7 @@ impl<T: ExtParam> ValueExpr<T> {
             ValueExpr::CurrInputValue => ValueExpr::CurrInputValue,
             ValueExpr::Input(i) => ValueExpr::Input(*i),
             ValueExpr::Output(i) => ValueExpr::Output(*i),
+            ValueExpr::CurrOutputValue => ValueExpr::CurrOutputValue,
         };
         Ok(res)
     }
@@ -228,6 +245,7 @@ impl<T: ExtParam> fmt::Display for ValueExpr<T> {
             ValueExpr::CurrInputValue => write!(f, "curr_inp_value"),
             ValueExpr::Input(i) => write!(f, "inp_value({})", i),
             ValueExpr::Output(i) => write!(f, "out_value({})", i),
+            ValueExpr::CurrOutputValue => write!(f, "curr_out_value"),
         }
     }
 }
@@ -239,6 +257,7 @@ impl<T: ExtParam> fmt::Debug for ValueExpr<T> {
             ValueExpr::CurrInputValue => write!(f, "curr_inp_value"),
             ValueExpr::Input(i) => write!(f, "inp_value({:?})", i),
             ValueExpr::Output(i) => write!(f, "out_value({:?})", i),
+            ValueExpr::CurrOutputValue => write!(f, "curr_out_value"),
         }
     }
 }
@@ -258,6 +277,7 @@ impl<T: ExtParam> ValueExpr<T> {
                 .map(ValueExpr::Input),
             ("out_value", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
                 .map(ValueExpr::Output),
+            ("curr_out_value", 0) => Ok(ValueExpr::CurrOutputValue),
             (value, 0) => Ok(ValueExpr::Const(T::arg_from_str(value, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -276,6 +296,7 @@ impl<T: ExtParam> SpkExpr<T> {
             SpkExpr::CurrInputSpk => 2,
             SpkExpr::Input(i) => script_num_size(*i) + 1,
             SpkExpr::Output(i) => script_num_size(*i) + 1,
+            SpkExpr::CurrOutputSpk => 2,
         }
     }
 
@@ -290,6 +311,7 @@ impl<T: ExtParam> SpkExpr<T> {
             SpkExpr::CurrInputSpk => SpkExpr::CurrInputSpk,
             SpkExpr::Input(i) => SpkExpr::Input(*i),
             SpkExpr::Output(i) => SpkExpr::Output(*i),
+            SpkExpr::CurrOutputSpk => SpkExpr::CurrOutputSpk,
         };
         Ok(res)
     }
@@ -302,6 +324,7 @@ impl<T: ExtParam> fmt::Display for SpkExpr<T> {
             SpkExpr::CurrInputSpk => write!(f, "curr_inp_spk"),
             SpkExpr::Input(i) => write!(f, "inp_spk({})", i),
             SpkExpr::Output(i) => write!(f, "out_spk({})", i),
+            SpkExpr::CurrOutputSpk => write!(f, "curr_out_spk"),
         }
     }
 }
@@ -313,6 +336,7 @@ impl<T: ExtParam> fmt::Debug for SpkExpr<T> {
             SpkExpr::CurrInputSpk => write!(f, "curr_inp_spk"),
             SpkExpr::Input(i) => write!(f, "inp_spk({:?})", i),
             SpkExpr::Output(i) => write!(f, "out_spk({:?})", i),
+            SpkExpr::CurrOutputSpk => write!(f, "curr_out_spk"),
         }
     }
 }
@@ -332,6 +356,7 @@ impl<T: ExtParam> SpkExpr<T> {
                 .map(SpkExpr::Input),
             ("out_spk", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
                 .map(SpkExpr::Output),
+            ("curr_out_spk", 0) => Ok(SpkExpr::CurrOutputSpk),
             (asset, 0) => Ok(SpkExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -672,6 +697,9 @@ impl AssetExpr<CovExtArgs> {
             AssetExpr::CurrInputAsset => builder
                 .push_opcode(OP_PUSHCURRENTINPUTINDEX)
                 .push_opcode(OP_INSPECTINPUTASSET),
+            AssetExpr::CurrOutputAsset => builder
+                .push_opcode(OP_PUSHCURRENTINPUTINDEX)
+                .push_opcode(OP_INSPECTOUTPUTASSET),
             AssetExpr::Input(i) => builder
                 .push_int(*i as i64)
                 .push_opcode(OP_INSPECTINPUTASSET),
@@ -698,6 +726,15 @@ impl AssetExpr<CovExtArgs> {
                 }
                 Ok(env.spent_utxos()[env.idx()].asset)
             }
+            AssetExpr::CurrOutputAsset => {
+                if env.idx() >= env.tx().output.len() {
+                    return Err(EvalError::OutputIndexOutOfBounds(
+                        env.idx(),
+                        env.tx().output.len(),
+                    ));
+                }
+                Ok(env.tx().output[env.idx()].asset)
+            }
             AssetExpr::Input(i) => {
                 if *i >= env.spent_utxos().len() {
                     return Err(EvalError::UtxoIndexOutOfBounds(*i, env.spent_utxos().len()));
@@ -723,6 +760,8 @@ impl AssetExpr<CovExtArgs> {
             Some((AssetExpr::Const(CovExtArgs::Asset(asset)), e - 2))
         } else if let Some(&[Tk::CurrInp, Tk::InpAsset]) = tks.get(e.checked_sub(2)?..e) {
             Some((AssetExpr::CurrInputAsset, e - 2))
+        } else if let Some(&[Tk::CurrInp, Tk::OutAsset]) = tks.get(e.checked_sub(2)?..e) {
+            Some((AssetExpr::CurrOutputAsset, e - 2))
         } else if let Some(&[Tk::Num(i), Tk::InpAsset]) = tks.get(e.checked_sub(2)?..e) {
             Some((AssetExpr::Input(i as usize), e - 2))
         } else if let Some(&[Tk::Num(i), Tk::OutAsset]) = tks.get(e.checked_sub(2)?..e) {
@@ -758,6 +797,9 @@ impl ValueExpr<CovExtArgs> {
             ValueExpr::CurrInputValue => builder
                 .push_opcode(OP_PUSHCURRENTINPUTINDEX)
                 .push_opcode(OP_INSPECTINPUTVALUE),
+            ValueExpr::CurrOutputValue => builder
+                .push_opcode(OP_PUSHCURRENTINPUTINDEX)
+                .push_opcode(OP_INSPECTOUTPUTVALUE),
             ValueExpr::Input(i) => builder
                 .push_int(*i as i64)
                 .push_opcode(OP_INSPECTINPUTVALUE),
@@ -783,6 +825,15 @@ impl ValueExpr<CovExtArgs> {
                     ));
                 }
                 Ok(env.spent_utxos()[env.idx()].value)
+            }
+            ValueExpr::CurrOutputValue => {
+                if env.idx() >= env.tx().output.len() {
+                    return Err(EvalError::OutputIndexOutOfBounds(
+                        env.idx(),
+                        env.tx().output.len(),
+                    ));
+                }
+                Ok(env.tx().output[env.idx()].value)
             }
             ValueExpr::Input(i) => {
                 if *i >= env.spent_utxos().len() {
@@ -812,6 +863,8 @@ impl ValueExpr<CovExtArgs> {
             Some((ValueExpr::Const(CovExtArgs::Value(value)), e - 2))
         } else if let Some(&[Tk::CurrInp, Tk::InpValue]) = tks.get(e.checked_sub(2)?..e) {
             Some((ValueExpr::CurrInputValue, e - 2))
+        } else if let Some(&[Tk::CurrInp, Tk::OutValue]) = tks.get(e.checked_sub(2)?..e) {
+            Some((ValueExpr::CurrOutputValue, e - 2))
         } else if let Some(&[Tk::Num(i), Tk::InpValue]) = tks.get(e.checked_sub(2)?..e) {
             Some((ValueExpr::Input(i as usize), e - 2))
         } else if let Some(&[Tk::Num(i), Tk::OutValue]) = tks.get(e.checked_sub(2)?..e) {
@@ -840,6 +893,9 @@ impl SpkExpr<CovExtArgs> {
             SpkExpr::CurrInputSpk => builder
                 .push_opcode(OP_PUSHCURRENTINPUTINDEX)
                 .push_opcode(OP_INSPECTINPUTSCRIPTPUBKEY),
+            SpkExpr::CurrOutputSpk => builder
+                .push_opcode(OP_PUSHCURRENTINPUTINDEX)
+                .push_opcode(OP_INSPECTOUTPUTSCRIPTPUBKEY),
             SpkExpr::Input(i) => builder
                 .push_int(*i as i64)
                 .push_opcode(OP_INSPECTINPUTSCRIPTPUBKEY),
@@ -868,6 +924,15 @@ impl SpkExpr<CovExtArgs> {
                     ));
                 }
                 spk_to_components(&env.spent_utxos()[env.idx()].script_pubkey)
+            }
+            SpkExpr::CurrOutputSpk => {
+                if env.idx() >= env.tx().output.len() {
+                    return Err(EvalError::OutputIndexOutOfBounds(
+                        env.idx(),
+                        env.tx().output.len(),
+                    ));
+                }
+                spk_to_components(&env.tx().output[env.idx()].script_pubkey)
             }
             SpkExpr::Input(i) => {
                 if *i >= env.spent_utxos().len() {
@@ -903,6 +968,8 @@ impl SpkExpr<CovExtArgs> {
             Some((SpkExpr::Const(CovExtArgs::Script(Spk::new(script))), e - 2))
         } else if let Some(&[Tk::CurrInp, Tk::InpSpk]) = tks.get(e.checked_sub(2)?..e) {
             Some((SpkExpr::CurrInputSpk, e - 2))
+        } else if let Some(&[Tk::CurrInp, Tk::OutSpk]) = tks.get(e.checked_sub(2)?..e) {
+            Some((SpkExpr::CurrOutputSpk, e - 2))
         } else if let Some(&[Tk::Num(i), Tk::InpSpk]) = tks.get(e.checked_sub(2)?..e) {
             Some((SpkExpr::Input(i as usize), e - 2))
         } else if let Some(&[Tk::Num(i), Tk::OutSpk]) = tks.get(e.checked_sub(2)?..e) {
@@ -1208,6 +1275,7 @@ mod tests {
         _test_parse("is_exp_asset(out_asset(9))");
         _test_parse("asset_eq(ConfAst,ExpAst)");
         _test_parse("asset_eq(curr_inp_asset,out_asset(1))");
+        _test_parse("asset_eq(curr_inp_asset,curr_out_asset)");
         _test_parse("asset_eq(inp_asset(3),out_asset(1))");
 
         // same tests for values
@@ -1219,11 +1287,13 @@ mod tests {
         _test_parse("value_eq(ConfVal,ExpVal)");
         _test_parse("value_eq(curr_inp_value,out_value(1))");
         _test_parse("value_eq(inp_value(3),out_value(1))");
+        _test_parse("value_eq(curr_out_value,out_value(1))");
 
         // same tests for spks
         _test_parse("spk_eq(V0Spk,out_spk(1))");
         _test_parse("spk_eq(V1Spk,inp_spk(1))");
         _test_parse("spk_eq(curr_inp_spk,out_spk(1))");
+        _test_parse("spk_eq(curr_out_spk,out_spk(1))");
         _test_parse("spk_eq(inp_spk(3),out_spk(1))");
         _test_parse("spk_eq(out_spk(2),V1Spk)");
 
@@ -1236,6 +1306,10 @@ mod tests {
             "and_v(v:pk(K),and_v(v:is_exp_value(out_value(1)),is_exp_asset(out_asset(1))))",
         );
         _test_parse("and_v(v:pk(K),and_v(v:value_eq(ConfVal,ConfVal),spk_eq(V1Spk,V1Spk)))");
+        _test_parse("and_v(v:pk(K),and_v(v:value_eq(ConfVal,ConfVal),spk_eq(V1Spk,curr_out_spk)))");
+        _test_parse(
+            "and_v(v:pk(K),and_v(v:value_eq(curr_out_value,ConfVal),spk_eq(V1Spk,curr_out_spk)))",
+        );
         _test_parse("and_v(v:pk(K),and_v(v:value_eq(ConfVal,ConfVal),and_v(v:spk_eq(V1Spk,V1Spk),curr_idx_eq(1))))");
     }
 
