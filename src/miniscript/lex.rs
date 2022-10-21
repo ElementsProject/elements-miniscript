@@ -95,6 +95,7 @@ pub enum Token<'s> {
     OutAsset,
     OutSpk,
     InpSpk,
+    NumNeg1,
 }
 
 impl<'s> fmt::Display for Token<'s> {
@@ -452,6 +453,9 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token<'_>>, Error> {
                         }
                     }
                 }
+            }
+            script::Instruction::Op(opcodes::all::OP_PUSHNUM_NEG1) => {
+                ret.push(Token::NumNeg1);
             }
             script::Instruction::Op(opcodes::all::OP_PUSHBYTES_0) => {
                 ret.push(Token::Num(0));

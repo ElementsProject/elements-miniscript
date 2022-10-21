@@ -428,7 +428,7 @@ impl<T: ExtParam> Extension for CovOps<T> {
         Malleability {
             dissat: Dissat::Unknown, // many dissatisfactions possible
             safe: false,             // Unsafe as a top fragment
-            non_malleable: true,
+            non_malleable: true, // Script satisfaction is non-malleable, whole fragment tx could be malleable
         }
     }
 
@@ -518,11 +518,30 @@ where
 /// Wrapper around [`elements::Script`] for representing script pubkeys
 // Required because the fmt::Display of elements::Script does not print hex
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
-pub struct Spk(pub elements::Script);
+pub struct Spk(SpkInner);
+
+impl Spk {
+    /// Creates a new [`Spk`].
+    pub fn new(s: elements::Script) -> Self {
+        Spk(SpkInner::Script(s))
+    }
+}
+
+/// Script pubkey representing either a known script or a hash of legacy script
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+pub enum SpkInner {
+    /// A complete known script
+    Script(elements::Script),
+    /// An hashed legacy script pubkey
+    Hashed(sha256::Hash),
+}
 
 impl fmt::Display for Spk {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0.to_hex())
+        match &self.0 {
+            SpkInner::Script(s) => write!(f, "{}", s.to_hex()),
+            SpkInner::Hashed(_h) => write!(f, "hashed_spk"), // This should never be used
+        }
     }
 }
 
@@ -534,7 +553,7 @@ impl ArgFromStr for Spk {
             ));
         }
         let inner = elements::Script::from_hex(s).map_err(|e| Error::Unexpected(e.to_string()))?;
-        Ok(Spk(inner))
+        Ok(Spk::new(inner))
     }
 }
 
@@ -808,7 +827,10 @@ impl SpkExpr<CovExtArgs> {
     pub fn push_to_builder(&self, builder: script::Builder) -> script::Builder {
         match self {
             SpkExpr::Const(CovExtArgs::Script(s)) => {
-                let (ver, prog) = spk_to_components(&s.0);
+                let (ver, prog) = match &s.0 {
+                    SpkInner::Script(s) => spk_to_components(s),
+                    SpkInner::Hashed(h) => (-1, h.to_vec()),
+                };
                 builder.push_slice(&prog).push_int(ver as i64)
             }
             SpkExpr::Const(_) => unreachable!(
@@ -830,7 +852,10 @@ impl SpkExpr<CovExtArgs> {
     /// Evaluate this expression
     pub fn eval(&self, env: &TxEnv) -> Result<(i8, Vec<u8>), EvalError> {
         let res = match self {
-            SpkExpr::Const(CovExtArgs::Script(s)) => spk_to_components(&s.0),
+            SpkExpr::Const(CovExtArgs::Script(s)) => match &s.0 {
+                SpkInner::Script(s) => spk_to_components(s),
+                SpkInner::Hashed(h) => (-1, h.to_vec()),
+            },
             SpkExpr::Const(_) => unreachable!(
                 "Both constructors from_str and from_token_iter
             check that the correct variant is used in Script pubkey"
@@ -867,10 +892,15 @@ impl SpkExpr<CovExtArgs> {
         let e = end_pos; // short abbreviations for succinct readable code
         if let Some(&[Tk::Bytes32(spk_vec), Tk::Num(i)]) = tks.get(e.checked_sub(2)?..e) {
             let script = spk(i8::try_from(i).ok()?, spk_vec)?;
-            Some((SpkExpr::Const(CovExtArgs::Script(Spk(script))), e - 2))
+            Some((SpkExpr::Const(CovExtArgs::Script(Spk::new(script))), e - 2))
+        } else if let Some(&[Tk::Bytes32(spk_vec), Tk::NumNeg1]) = tks.get(e.checked_sub(2)?..e) {
+            let mut inner = [0u8; 32];
+            inner.copy_from_slice(spk_vec);
+            let hashed_spk = Spk(SpkInner::Hashed(sha256::Hash::from_inner(inner)));
+            Some((SpkExpr::Const(CovExtArgs::Script(hashed_spk)), e - 2))
         } else if let Some(&[Tk::Push(ref spk_vec), Tk::Num(i)]) = tks.get(e.checked_sub(2)?..e) {
             let script = spk(i8::try_from(i).ok()?, spk_vec)?;
-            Some((SpkExpr::Const(CovExtArgs::Script(Spk(script))), e - 2))
+            Some((SpkExpr::Const(CovExtArgs::Script(Spk::new(script))), e - 2))
         } else if let Some(&[Tk::CurrInp, Tk::InpSpk]) = tks.get(e.checked_sub(2)?..e) {
             Some((SpkExpr::CurrInputSpk, e - 2))
         } else if let Some(&[Tk::Num(i), Tk::InpSpk]) = tks.get(e.checked_sub(2)?..e) {
@@ -973,24 +1003,45 @@ impl CovOps<CovExtArgs> {
             &[Tk::FromAltStack, Tk::Equal, Tk::ToAltStack, Tk::Equal, Tk::FromAltStack, Tk::BoolAnd],
         ) = tks.get(e.checked_sub(6)?..e)
         {
-            if let Some((y, e)) = AssetExpr::from_tokens(tks, e - 6) {
+            let res = if let Some((y, e)) = AssetExpr::from_tokens(tks, e - 6) {
                 if tks.get(e - 1) != Some(&Tk::ToAltStack) {
                     return None;
                 }
-                let (x, e) = AssetExpr::from_tokens(tks, e - 1)?;
-                Some((CovOps::AssetEq(x, y), e))
-            } else if let Some((y, e)) = ValueExpr::from_tokens(tks, e - 6) {
+                if let Some((x, e)) = AssetExpr::from_tokens(tks, e - 1) {
+                    Some((CovOps::AssetEq(x, y), e))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if res.is_some() {
+                return res;
+            }
+            let res = if let Some((y, e)) = ValueExpr::from_tokens(tks, e - 6) {
                 if tks.get(e - 1) != Some(&Tk::ToAltStack) {
                     return None;
                 }
-                let (x, e) = ValueExpr::from_tokens(tks, e - 1)?;
-                Some((CovOps::ValueEq(x, y), e))
-            } else if let Some((y, e)) = SpkExpr::from_tokens(tks, e - 6) {
+                if let Some((x, e)) = ValueExpr::from_tokens(tks, e - 1) {
+                    Some((CovOps::ValueEq(x, y), e))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if res.is_some() {
+                return res;
+            }
+            if let Some((y, e)) = SpkExpr::from_tokens(tks, e - 6) {
                 if tks.get(e - 1) != Some(&Tk::ToAltStack) {
                     return None;
                 }
-                let (x, e) = SpkExpr::from_tokens(tks, e - 1)?;
-                Some((CovOps::SpkEq(x, y), e))
+                if let Some((x, e)) = SpkExpr::from_tokens(tks, e - 1) {
+                    Some((CovOps::SpkEq(x, y), e))
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -1174,6 +1225,7 @@ mod tests {
         _test_parse("spk_eq(V1Spk,inp_spk(1))");
         _test_parse("spk_eq(curr_inp_spk,out_spk(1))");
         _test_parse("spk_eq(inp_spk(3),out_spk(1))");
+        _test_parse("spk_eq(out_spk(2),V1Spk)");
 
         // Testing the current input index
         _test_parse("curr_idx_eq(1)");

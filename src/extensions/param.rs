@@ -126,7 +126,7 @@ impl CovExtArgs {
 
     /// Creates a new script pubkey of [`CovExtArgs`]
     pub fn spk(spk: elements::Script) -> Self {
-        Self::from(Spk(spk))
+        Self::from(Spk::new(spk))
     }
 }
 
