@@ -26,6 +26,7 @@ use crate::miniscript::limits::{
 };
 use crate::miniscript::types;
 use crate::util::witness_to_scriptsig;
+pub use crate::SigType;
 use crate::{hash256, Error, Extension, Miniscript, MiniscriptKey, Terminal};
 
 /// Error for Script Context
@@ -200,7 +201,6 @@ impl fmt::Display for ScriptContextError {
 pub trait ScriptContext:
     fmt::Debug + Clone + Ord + PartialOrd + Eq + PartialEq + hash::Hash + private::Sealed
 where
-    Self::Key: MiniscriptKey<RawPkHash = hash160::Hash>,
     Self::Key: MiniscriptKey<Sha256 = sha256::Hash>,
     Self::Key: MiniscriptKey<Hash256 = hash256::Hash>,
     Self::Key: MiniscriptKey<Ripemd160 = ripemd160::Hash>,
@@ -367,14 +367,6 @@ where
 
     /// Local helper function to display error messages with context
     fn name_str() -> &'static str;
-}
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SigType {
-    /// Ecdsa signature
-    Ecdsa,
-    /// Schnorr Signature
-    Schnorr,
 }
 
 /// Legacy ScriptContext
@@ -836,9 +828,9 @@ impl ScriptContext for BareCtx {
 
     fn pk_len<Pk: MiniscriptKey>(pk: &Pk) -> usize {
         if pk.is_uncompressed() {
-            65
+            66
         } else {
-            33
+            34
         }
     }
 

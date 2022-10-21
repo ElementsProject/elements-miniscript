@@ -6,13 +6,14 @@ use std::sync::{Arc, Mutex};
 use std::{fmt, hash};
 
 use elements::taproot::{
-    LeafVersion, TaprootBuilder, TaprootBuilderError, TaprootSpendInfo, TAPROOT_CONTROL_BASE_SIZE,
+    LeafVersion, TaprootBuilder, TaprootSpendInfo, TAPROOT_CONTROL_BASE_SIZE,
     TAPROOT_CONTROL_MAX_NODE_COUNT, TAPROOT_CONTROL_NODE_SIZE,
 };
 use elements::{self, opcodes, secp256k1_zkp, Script};
 
-use super::checksum::{desc_checksum, verify_checksum};
+use super::checksum::verify_checksum;
 use super::ELMTS_STR;
+use crate::descriptor::checksum;
 use crate::expression::{self, FromTree};
 use crate::extensions::ParseableExt;
 use crate::miniscript::Miniscript;
@@ -20,8 +21,8 @@ use crate::policy::semantic::Policy;
 use crate::policy::Liftable;
 use crate::util::{varint_len, witness_size};
 use crate::{
-    errstr, Error, Extension, ForEachKey, MiniscriptKey, NoExt, Satisfier, Tap,
-    ToPublicKey, TranslateExt, TranslatePk, Translator,
+    errstr, Error, Extension, ForEachKey, MiniscriptKey, NoExt, Satisfier, Tap, ToPublicKey,
+    TranslateExt, TranslatePk, Translator,
 };
 
 /// A Taproot Tree representation.
@@ -197,14 +198,6 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
         }
     }
 
-    fn to_string_no_checksum(&self) -> String {
-        let key = &self.internal_key;
-        match self.tree {
-            Some(ref s) => format!("{}tr({},{})", ELMTS_STR, key, s),
-            None => format!("{}tr({})", ELMTS_STR, key),
-        }
-    }
-
     /// Obtain the internal key of [`Tr`] descriptor
     pub fn internal_key(&self) -> &Pk {
         &self.internal_key
@@ -259,26 +252,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
             // Assert builder cannot error here because we have a well formed descriptor
             match builder.finalize(&secp, self.internal_key.to_x_only_pubkey()) {
                 Ok(data) => data,
-                Err(e) => match e {
-                    TaprootBuilderError::InvalidMerkleTreeDepth(_) => {
-                        unreachable!("Depth checked in struct construction")
-                    }
-                    TaprootBuilderError::NodeNotInDfsOrder => {
-                        unreachable!("Insertion is called in DFS order")
-                    }
-                    TaprootBuilderError::OverCompleteTree => {
-                        unreachable!("Taptree is a well formed tree")
-                    }
-                    TaprootBuilderError::InvalidInternalKey(_) => {
-                        unreachable!("Internal key checked for validity")
-                    }
-                    TaprootBuilderError::IncompleteTree => {
-                        unreachable!("Taptree is a well formed tree")
-                    }
-                    TaprootBuilderError::EmptyTree => {
-                        unreachable!("Taptree is a well formed tree with atleast 1 element")
-                    }
-                },
+                Err(_) => unreachable!("We know the builder can be finalized"),
             }
         };
         let spend_info = Arc::new(data);
@@ -304,27 +278,37 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
     /// # Errors
     /// When the descriptor is impossible to safisfy (ex: sh(OP_FALSE)).
     pub fn max_satisfaction_weight(&self) -> Result<usize, Error> {
-        let mut max_wieght = Some(65);
-        for (depth, ms) in self.iter_scripts() {
-            let script_size = ms.script_size();
-            let max_sat_elems = match ms.max_satisfaction_witness_elements() {
-                Ok(elem) => elem,
-                Err(..) => continue,
-            };
-            let max_sat_size = match ms.max_satisfaction_size() {
-                Ok(sz) => sz,
-                Err(..) => continue,
-            };
-            let control_block_sz = control_block_len(depth);
-            let wit_size = 4 + // scriptSig len byte
-            control_block_sz + // first element control block
-            varint_len(script_size) +
-            script_size + // second element script len with prefix
-            varint_len(max_sat_elems) +
-            max_sat_size; // witness
-            max_wieght = cmp::max(max_wieght, Some(wit_size));
-        }
-        max_wieght.ok_or(Error::ImpossibleSatisfaction)
+        let tree = match self.taptree() {
+            // key spend path:
+            // scriptSigLen(4) + stackLen(1) + stack[Sig]Len(1) + stack[Sig](65)
+            None => return Ok(4 + 1 + 1 + 65),
+            // script path spend..
+            Some(tree) => tree,
+        };
+
+        tree.iter()
+            .filter_map(|(depth, ms)| {
+                let script_size = ms.script_size();
+                let max_sat_elems = ms.max_satisfaction_witness_elements().ok()?;
+                let max_sat_size = ms.max_satisfaction_size().ok()?;
+                let control_block_size = control_block_len(depth);
+                Some(
+                    // scriptSig len byte
+                    4 +
+                    // witness field stack len (+2 for control block & script)
+                    varint_len(max_sat_elems + 2) +
+                    // size of elements to satisfy script
+                    max_sat_size +
+                    // second to last element: script
+                    varint_len(script_size) +
+                    script_size +
+                    // last element: control block
+                    varint_len(control_block_size) +
+                    control_block_size,
+                )
+            })
+            .max()
+            .ok_or(Error::ImpossibleSatisfaction)
     }
 }
 
@@ -500,10 +484,15 @@ impl<Pk: MiniscriptKey, Ext: Extension> fmt::Debug for Tr<Pk, Ext> {
 }
 
 impl<Pk: MiniscriptKey, Ext: Extension> fmt::Display for Tr<Pk, Ext> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let desc = self.to_string_no_checksum();
-        let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
-        write!(f, "{}#{}", &desc, &checksum)
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use fmt::Write;
+        let mut wrapped_f = checksum::Formatter::new(f);
+        let key = &self.internal_key;
+        match self.tree {
+            Some(ref s) => write!(wrapped_f, "{}tr({},{})", ELMTS_STR, key, s)?,
+            None => write!(wrapped_f, "{}tr({})", ELMTS_STR, key)?,
+        }
+        wrapped_f.write_checksum_if_not_alt()
     }
 }
 
@@ -600,12 +589,9 @@ impl<Pk: MiniscriptKey, Ext: Extension> Liftable<Pk> for Tr<Pk, Ext> {
         match &self.tree {
             Some(root) => Ok(Policy::Threshold(
                 1,
-                vec![
-                    Policy::KeyHash(self.internal_key.to_pubkeyhash()),
-                    root.lift()?,
-                ],
+                vec![Policy::Key(self.internal_key.clone()), root.lift()?],
             )),
-            None => Ok(Policy::KeyHash(self.internal_key.to_pubkeyhash())),
+            None => Ok(Policy::Key(self.internal_key.clone())),
         }
     }
 }
@@ -614,7 +600,6 @@ impl<Pk: MiniscriptKey, Ext: Extension> ForEachKey<Pk> for Tr<Pk, Ext> {
     fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
-        Pk::RawPkHash: 'a,
     {
         let script_keys_res = self
             .iter_scripts()

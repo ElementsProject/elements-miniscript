@@ -4,11 +4,10 @@
 use std::cmp;
 use std::iter::once;
 
+use elements::{LockTime, PackedLockTime, Sequence};
+
 use super::{Error, ErrorKind, Property, ScriptContext};
 use crate::miniscript::context::SigType;
-use crate::miniscript::limits::{
-    LOCKTIME_THRESHOLD, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG,
-};
 use crate::{script_num_size, Extension, MiniscriptKey, Terminal};
 
 /// Timelock information for satisfaction of a fragment.
@@ -337,9 +336,9 @@ impl Property for ExtData {
         unreachable!()
     }
 
-    fn from_after(t: u32) -> Self {
+    fn from_after(t: LockTime) -> Self {
         ExtData {
-            pk_cost: script_num_size(t as usize) + 1,
+            pk_cost: script_num_size(t.to_consensus_u32() as usize) + 1,
             has_free_verify: false,
             ops: OpLimits::new(1, Some(0), None),
             stack_elem_count_sat: Some(0),
@@ -349,8 +348,8 @@ impl Property for ExtData {
             timelock_info: TimelockInfo {
                 csv_with_height: false,
                 csv_with_time: false,
-                cltv_with_height: t < LOCKTIME_THRESHOLD,
-                cltv_with_time: t >= LOCKTIME_THRESHOLD,
+                cltv_with_height: t.is_block_height(),
+                cltv_with_time: t.is_block_time(),
                 contains_combination: false,
             },
             exec_stack_elem_count_sat: Some(1), // <t>
@@ -358,9 +357,9 @@ impl Property for ExtData {
         }
     }
 
-    fn from_older(t: u32) -> Self {
+    fn from_older(t: Sequence) -> Self {
         ExtData {
-            pk_cost: script_num_size(t as usize) + 1,
+            pk_cost: script_num_size(t.to_consensus_u32() as usize) + 1,
             has_free_verify: false,
             ops: OpLimits::new(1, Some(0), None),
             stack_elem_count_sat: Some(0),
@@ -368,8 +367,8 @@ impl Property for ExtData {
             max_sat_size: Some((0, 0)),
             max_dissat_size: None,
             timelock_info: TimelockInfo {
-                csv_with_height: (t & SEQUENCE_LOCKTIME_TYPE_FLAG) == 0,
-                csv_with_time: (t & SEQUENCE_LOCKTIME_TYPE_FLAG) != 0,
+                csv_with_height: t.is_height_locked(),
+                csv_with_time: t.is_time_locked(),
                 cltv_with_height: false,
                 cltv_with_time: false,
                 contains_combination: false,
@@ -938,16 +937,16 @@ impl Property for ExtData {
                 // Note that for CLTV this is a limitation not of Bitcoin but Miniscript. The
                 // number on the stack would be a 5 bytes signed integer but Miniscript's B type
                 // only consumes 4 bytes from the stack.
-                if t == 0 || (t & SEQUENCE_LOCKTIME_DISABLE_FLAG) != 0 {
+                if t == PackedLockTime::ZERO {
                     return Err(Error {
                         fragment: fragment.clone(),
                         error: ErrorKind::InvalidTime,
                     });
                 }
-                Ok(Self::from_after(t))
+                Ok(Self::from_after(t.into()))
             }
             Terminal::Older(t) => {
-                if t == 0 || (t & SEQUENCE_LOCKTIME_DISABLE_FLAG) != 0 {
+                if t == Sequence::ZERO || !t.is_relative_lock_time() {
                     return Err(Error {
                         fragment: fragment.clone(),
                         error: ErrorKind::InvalidTime,

@@ -755,7 +755,6 @@ impl<Pk: MiniscriptKey, T: Extension> ForEachKey<Pk> for Descriptor<Pk, T> {
     fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: F) -> bool
     where
         Pk: 'a,
-        Pk::RawPkHash: 'a,
     {
         match *self {
             Descriptor::Bare(ref bare) => bare.for_each_key(pred),
@@ -796,25 +795,7 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
                 Ok(pk.clone().at_derivation_index(self.0))
             }
 
-            fn pkh(&mut self, pkh: &DescriptorPublicKey) -> Result<DefiniteDescriptorKey, ()> {
-                Ok(pkh.clone().at_derivation_index(self.0))
-            }
-
-            fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ()> {
-                Ok(*sha256)
-            }
-
-            fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ()> {
-                Ok(*hash256)
-            }
-
-            fn ripemd160(&mut self, ripemd160: &ripemd160::Hash) -> Result<ripemd160::Hash, ()> {
-                Ok(*ripemd160)
-            }
-
-            fn hash160(&mut self, hash160: &hash160::Hash) -> Result<hash160::Hash, ()> {
-                Ok(*hash160)
-            }
+            translate_hash_clone!(DescriptorPublicKey, DescriptorPublicKey, ());
         }
         self.translate_pk(&mut Derivator(index))
             .expect("BIP 32 key index substitution cannot fail")
@@ -904,10 +885,6 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
                 parse_key(pk, &mut self.0, self.1)
             }
 
-            fn pkh(&mut self, pkh: &String) -> Result<DescriptorPublicKey, Error> {
-                parse_key(pkh, &mut self.0, self.1)
-            }
-
             fn sha256(&mut self, sha256: &String) -> Result<sha256::Hash, Error> {
                 let hash =
                     sha256::Hash::from_str(sha256).map_err(|e| Error::Unexpected(e.to_string()))?;
@@ -948,10 +925,6 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
         impl<'a> Translator<DescriptorPublicKey, String, ()> for KeyMapLookUp<'a> {
             fn pk(&mut self, pk: &DescriptorPublicKey) -> Result<String, ()> {
                 key_to_string(pk, self.0)
-            }
-
-            fn pkh(&mut self, pkh: &DescriptorPublicKey) -> Result<String, ()> {
-                key_to_string(pkh, self.0)
             }
 
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<String, ()> {
@@ -1054,28 +1027,7 @@ impl<Ext: Extension> Descriptor<DefiniteDescriptorKey, Ext> {
                 pk.derive_public_key(&self.0)
             }
 
-            fn pkh(
-                &mut self,
-                pkh: &DefiniteDescriptorKey,
-            ) -> Result<bitcoin::hashes::hash160::Hash, ConversionError> {
-                Ok(pkh.derive_public_key(&self.0)?.to_pubkeyhash())
-            }
-
-            fn sha256(&mut self, sha256: &sha256::Hash) -> Result<sha256::Hash, ConversionError> {
-                Ok(*sha256)
-            }
-
-            fn hash256(&mut self, hash256: &hash256::Hash) -> Result<hash256::Hash, ConversionError> {
-                Ok(*hash256)
-            }
-
-            fn ripemd160(&mut self, ripemd160: &ripemd160::Hash) -> Result<ripemd160::Hash, ConversionError> {
-                Ok(*ripemd160)
-            }
-
-            fn hash160(&mut self, hash160: &hash160::Hash) -> Result<hash160::Hash, ConversionError> {
-                Ok(*hash160)
-            }
+            translate_hash_clone!(DefiniteDescriptorKey, bitcoin::PublicKey, ConversionError);
         }
 
         let derived = self.translate_pk(&mut Derivator(secp))?;
@@ -1134,14 +1086,14 @@ impl_from_str!(
 impl<Pk: MiniscriptKey, T: Extension> fmt::Debug for Descriptor<Pk, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Descriptor::Bare(ref sub) => write!(f, "{:?}", sub),
-            Descriptor::Pkh(ref pkh) => write!(f, "{:?}", pkh),
-            Descriptor::Wpkh(ref wpkh) => write!(f, "{:?}", wpkh),
-            Descriptor::Sh(ref sub) => write!(f, "{:?}", sub),
-            Descriptor::Wsh(ref sub) => write!(f, "{:?}", sub),
-            Descriptor::LegacyCSFSCov(ref cov) => write!(f, "{:?}", cov),
-            Descriptor::Tr(ref tr) => write!(f, "{:?}", tr),
-            Descriptor::TrExt(ref tr) => write!(f, "{:?}", tr),
+            Descriptor::Bare(ref sub) => fmt::Debug::fmt(sub, f),
+            Descriptor::Pkh(ref pkh) => fmt::Debug::fmt(pkh, f),
+            Descriptor::Wpkh(ref wpkh) => fmt::Debug::fmt(wpkh, f),
+            Descriptor::Sh(ref sub) => fmt::Debug::fmt(sub, f),
+            Descriptor::Wsh(ref sub) => fmt::Debug::fmt(sub, f),
+            Descriptor::Tr(ref tr) => fmt::Debug::fmt(tr, f),
+            Descriptor::TrExt(ref tr) => fmt::Debug::fmt(tr, f),
+            Descriptor::LegacyCSFSCov(ref cov) => fmt::Debug::fmt(cov, f),
         }
     }
 }
@@ -1149,14 +1101,14 @@ impl<Pk: MiniscriptKey, T: Extension> fmt::Debug for Descriptor<Pk, T> {
 impl<Pk: MiniscriptKey, T: Extension> fmt::Display for Descriptor<Pk, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Descriptor::Bare(ref sub) => write!(f, "{}", sub),
-            Descriptor::Pkh(ref pkh) => write!(f, "{}", pkh),
-            Descriptor::Wpkh(ref wpkh) => write!(f, "{}", wpkh),
-            Descriptor::Sh(ref sub) => write!(f, "{}", sub),
-            Descriptor::Wsh(ref sub) => write!(f, "{}", sub),
-            Descriptor::LegacyCSFSCov(ref cov) => write!(f, "{}", cov),
-            Descriptor::Tr(ref tr) => write!(f, "{}", tr),
-            Descriptor::TrExt(ref tr) => write!(f, "{}", tr),
+            Descriptor::Bare(ref sub) => fmt::Display::fmt(sub, f),
+            Descriptor::Pkh(ref pkh) => fmt::Display::fmt(pkh, f),
+            Descriptor::Wpkh(ref wpkh) => fmt::Display::fmt(wpkh, f),
+            Descriptor::Sh(ref sub) => fmt::Display::fmt(sub, f),
+            Descriptor::Wsh(ref sub) => fmt::Display::fmt(sub, f),
+            Descriptor::Tr(ref tr) => fmt::Display::fmt(tr, f),
+            Descriptor::TrExt(ref tr) => fmt::Display::fmt(tr, f),
+            Descriptor::LegacyCSFSCov(ref cov) => fmt::Display::fmt(cov, f),
         }
     }
 }
@@ -1176,7 +1128,7 @@ mod tests {
     use elements::hashes::{hash160, sha256};
     use elements::opcodes::all::{OP_CLTV, OP_CSV};
     use elements::script::Instruction;
-    use elements::{opcodes, script};
+    use elements::{opcodes, script, Sequence};
 
     use super::checksum::desc_checksum;
     use super::tr::Tr;
@@ -1186,7 +1138,7 @@ mod tests {
     use crate::miniscript::satisfy::ElementsSig;
     #[cfg(feature = "compiler")]
     use crate::policy;
-    use crate::{hex_script, Descriptor, DummyKey, Error, Miniscript, Satisfier};
+    use crate::{hex_script, Descriptor, DummyKey, Error, Miniscript, NoExt, Satisfier};
 
     type StdDescriptor = Descriptor<PublicKey, CovenantExt<CovExtArgs>>;
     const TEST_PK: &'static str =
@@ -1230,9 +1182,8 @@ mod tests {
         elements::TxIn {
             previous_output: elements::OutPoint::default(),
             script_sig: script_sig,
-            sequence: 100,
+            sequence: Sequence::from_height(100),
             is_pegin: false,
-            has_issuance: false,
             asset_issuance: elements::AssetIssuance::default(),
             witness: txin_witness,
         }
@@ -1505,9 +1456,8 @@ mod tests {
         let mut txin = elements::TxIn {
             previous_output: elements::OutPoint::default(),
             script_sig: Script::new(),
-            sequence: 100,
+            sequence: Sequence::from_height(100),
             is_pegin: false,
-            has_issuance: false,
             asset_issuance: elements::AssetIssuance::default(),
             witness: elements::TxInWitness::default(),
         };
@@ -1660,8 +1610,8 @@ mod tests {
         assert_eq!(
             descriptor,
             format!(
-                "eltr({},{{pk({}),{{pk({}),or_d(pk({}),pkh(516ca378e588a7ed71336147e2a72848b20aca1a))}}}})#3cw4zduf",
-                p1, p2, p3, p4,
+                "eltr({},{{pk({}),{{pk({}),or_d(pk({}),pkh({}))}}}})#y9kzzx3w",
+                p1, p2, p3, p4, p5
             )
         )
     }
@@ -2077,6 +2027,86 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
         assert_eq!(
             descriptor.find_derivation_index_for_spk(&secp, &script_at_0_1, 0..10),
             Ok(Some((1, expected_concrete)))
+        );
+    }
+
+    #[test]
+    fn display_alternate() {
+        let bare = StdDescriptor::from_str(
+            "elpk(020000000000000000000000000000000000000000000000000000000000000002)",
+        )
+        .unwrap();
+        assert_eq!(
+            format!("{}", bare),
+            "elpk(020000000000000000000000000000000000000000000000000000000000000002)#vlpqwfjv",
+        );
+        assert_eq!(
+            format!("{:#}", bare),
+            "elpk(020000000000000000000000000000000000000000000000000000000000000002)",
+        );
+
+        let pkh = StdDescriptor::from_str(
+            "elpkh(020000000000000000000000000000000000000000000000000000000000000002)",
+        )
+        .unwrap();
+        assert_eq!(
+            format!("{}", pkh),
+            "elpkh(020000000000000000000000000000000000000000000000000000000000000002)#jzq8e832",
+        );
+        assert_eq!(
+            format!("{:#}", pkh),
+            "elpkh(020000000000000000000000000000000000000000000000000000000000000002)",
+        );
+
+        let wpkh = StdDescriptor::from_str(
+            "elwpkh(020000000000000000000000000000000000000000000000000000000000000002)",
+        )
+        .unwrap();
+        assert_eq!(
+            format!("{}", wpkh),
+            "elwpkh(020000000000000000000000000000000000000000000000000000000000000002)#vxhqdpz9",
+        );
+        assert_eq!(
+            format!("{:#}", wpkh),
+            "elwpkh(020000000000000000000000000000000000000000000000000000000000000002)",
+        );
+
+        let shwpkh = StdDescriptor::from_str(
+            "elsh(wpkh(020000000000000000000000000000000000000000000000000000000000000002))",
+        )
+        .unwrap();
+        assert_eq!(
+            format!("{}", shwpkh),
+            "elsh(wpkh(020000000000000000000000000000000000000000000000000000000000000002))#h9ajn2ft",
+        );
+        assert_eq!(
+            format!("{:#}", shwpkh),
+            "elsh(wpkh(020000000000000000000000000000000000000000000000000000000000000002))",
+        );
+
+        let wsh = StdDescriptor::from_str("elwsh(1)").unwrap();
+        assert_eq!(format!("{}", wsh), "elwsh(1)#s78w5gmj");
+        assert_eq!(format!("{:#}", wsh), "elwsh(1)");
+
+        let sh = StdDescriptor::from_str("elsh(1)").unwrap();
+        assert_eq!(format!("{}", sh), "elsh(1)#k4aqrx5p");
+        assert_eq!(format!("{:#}", sh), "elsh(1)");
+
+        let shwsh = StdDescriptor::from_str("elsh(wsh(1))").unwrap();
+        assert_eq!(format!("{}", shwsh), "elsh(wsh(1))#d05z4wjl");
+        assert_eq!(format!("{:#}", shwsh), "elsh(wsh(1))");
+
+        let tr = StdDescriptor::from_str(
+            "eltr(020000000000000000000000000000000000000000000000000000000000000002)",
+        )
+        .unwrap();
+        assert_eq!(
+            format!("{}", tr),
+            "eltr(020000000000000000000000000000000000000000000000000000000000000002)#e874qu8z",
+        );
+        assert_eq!(
+            format!("{:#}", tr),
+            "eltr(020000000000000000000000000000000000000000000000000000000000000002)",
         );
     }
 }

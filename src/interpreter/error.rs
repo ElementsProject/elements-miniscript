@@ -27,6 +27,8 @@ use crate::extensions::EvalError;
 pub enum Error {
     /// Could not satisfy, absolute locktime not met
     AbsoluteLocktimeNotMet(u32),
+    /// Could not satisfy, lock time values are different units
+    AbsoluteLocktimeComparisonInvalid(u32, u32),
     /// Cannot Infer a taproot descriptor
     /// Key spends cannot infer the internal key of the descriptor
     /// Inferring script spends is possible, but is hidden nodes are currently
@@ -142,6 +144,11 @@ impl fmt::Display for Error {
                 "required absolute locktime CLTV of {} blocks, not met",
                 n
             ),
+            Error::AbsoluteLocktimeComparisonInvalid(n, lock_time) => write!(
+                f,
+                "could not satisfy, lock time values are different units n: {} lock_time: {}",
+                n, lock_time
+            ),
             Error::CannotInferTrDescriptors => write!(f, "Cannot infer taproot descriptors"),
             Error::ControlBlockParse(ref e) => write!(f, "Control block parse error {}", e),
             Error::ControlBlockVerificationError => {
@@ -224,6 +231,7 @@ impl error::Error for Error {
 
         match self {
             AbsoluteLocktimeNotMet(_)
+            | AbsoluteLocktimeComparisonInvalid(_, _)
             | CannotInferTrDescriptors
             | ControlBlockVerificationError
             | CouldNotEvaluate

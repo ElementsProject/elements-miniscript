@@ -24,10 +24,10 @@ use std::str::FromStr;
 
 use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, Hash, HashEngine};
-use elements::{self, secp256k1_zkp, sighash, EcdsaSigHashType, SigHash};
+use elements::{self, secp256k1_zkp, sighash, EcdsaSigHashType, LockTime, Sequence, SigHash};
 
 use crate::extensions::{CovExtArgs, ParseableExt, TxEnv};
-use crate::miniscript::context::NoChecks;
+use crate::miniscript::context::{NoChecks, SigType};
 use crate::miniscript::ScriptContext;
 use crate::{hash256, util, Descriptor, ElementsSig, Miniscript, Terminal, ToPublicKey};
 
@@ -47,8 +47,8 @@ pub struct Interpreter<'txin, Ext: Extension> {
     /// For non-Taproot spends, the scriptCode; for Taproot script-spends, this
     /// is the leaf script; for key-spends it is `None`.
     script_code: Option<elements::Script>,
-    age: u32,
-    lock_time: u32,
+    age: Sequence,
+    lock_time: LockTime,
 }
 
 // A type representing functions for checking signatures that accept both
@@ -104,32 +104,12 @@ pub enum BitcoinKey {
     XOnlyPublicKey(bitcoin::XOnlyPublicKey),
 }
 
-impl ToPublicKey for BitcoinKey {
-    fn to_public_key(&self) -> bitcoin::PublicKey {
+impl BitcoinKey {
+    fn to_pubkeyhash(&self, sig_type: SigType) -> hash160::Hash {
         match self {
-            BitcoinKey::Fullkey(key) => *key,
-            BitcoinKey::XOnlyPublicKey(xpk) => xpk.to_public_key(),
+            BitcoinKey::Fullkey(pk) => pk.to_pubkeyhash(sig_type),
+            BitcoinKey::XOnlyPublicKey(pk) => pk.to_pubkeyhash(sig_type),
         }
-    }
-
-    fn hash_to_hash160(hash: &<Self as MiniscriptKey>::RawPkHash) -> hash160::Hash {
-        hash.hash160()
-    }
-
-    fn to_sha256(hash: &<Self as MiniscriptKey>::Sha256) -> sha256::Hash {
-        *hash
-    }
-
-    fn to_hash256(hash: &<Self as MiniscriptKey>::Hash256) -> hash256::Hash {
-        *hash
-    }
-
-    fn to_ripemd160(hash: &<Self as MiniscriptKey>::Ripemd160) -> ripemd160::Hash {
-        *hash
-    }
-
-    fn to_hash160(hash: &<Self as MiniscriptKey>::Hash160) -> hash160::Hash {
-        *hash
     }
 }
 
@@ -155,45 +135,11 @@ impl From<bitcoin::XOnlyPublicKey> for BitcoinKey {
     }
 }
 
-/// Output type typed hash for Interpreter extension type
-/// While parsing we need to remember how to the hash was parsed so that we can
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TypedHash160 {
-    /// Hash to be checked against 32 byte keys
-    XonlyKey(hash160::Hash),
-    /// Hash to be checked against 33/65 byte keys
-    FullKey(hash160::Hash),
-}
-
-impl fmt::Display for TypedHash160 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TypedHash160::FullKey(pkh) | TypedHash160::XonlyKey(pkh) => pkh.fmt(f),
-        }
-    }
-}
-
-impl TypedHash160 {
-    fn hash160(&self) -> hash160::Hash {
-        match self {
-            TypedHash160::XonlyKey(hash) | TypedHash160::FullKey(hash) => *hash,
-        }
-    }
-}
-
 impl MiniscriptKey for BitcoinKey {
-    type RawPkHash = TypedHash160;
     type Sha256 = sha256::Hash;
     type Hash256 = hash256::Hash;
     type Ripemd160 = ripemd160::Hash;
     type Hash160 = hash160::Hash;
-
-    fn to_pubkeyhash(&self) -> Self::RawPkHash {
-        match self {
-            BitcoinKey::Fullkey(pk) => TypedHash160::FullKey(pk.to_pubkeyhash()),
-            BitcoinKey::XOnlyPublicKey(pk) => TypedHash160::XonlyKey(pk.to_pubkeyhash()),
-        }
-    }
 }
 
 impl<'txin> Interpreter<'txin, CovenantExt<CovExtArgs>> {
@@ -208,8 +154,8 @@ impl<'txin> Interpreter<'txin, CovenantExt<CovExtArgs>> {
         spk: &elements::Script,
         script_sig: &'txin elements::Script,
         witness: &'txin [Vec<u8>],
-        age: u32,       // CSV, relative lock time.
-        lock_time: u32, // CLTV, absolute lock time.
+        age: Sequence,       // CSV, relative lock time.
+        lock_time: LockTime, // CLTV, absolute lock time.
     ) -> Result<Self, Error> {
         Interpreter::from_txdata_ext(spk, script_sig, witness, age, lock_time)
     }
@@ -229,8 +175,8 @@ where
         spk: &elements::Script,
         script_sig: &'txin elements::Script,
         witness: &'txin [Vec<u8>],
-        age: u32,       // CSV, relative lock time.
-        lock_time: u32, // CLTV, absolute lock time.
+        age: Sequence,       // CSV, relative lock time.
+        lock_time: LockTime, // CLTV, absolute lock time.
     ) -> Result<Self, Error> {
         let (inner, stack, script_code) = inner::from_txdata(spk, script_sig, witness)?;
         Ok(Interpreter {
@@ -282,6 +228,7 @@ where
             },
             has_errored: false,
             txenv: txenv,
+            sig_type: self.sig_type(),
         }
     }
 
@@ -525,6 +472,23 @@ where
         }
     }
 
+    /// Signature type of the spend
+    pub fn sig_type(&self) -> SigType {
+        match self.inner {
+            inner::Inner::PublicKey(_, inner::PubkeyType::Tr) => SigType::Schnorr,
+            inner::Inner::Script(_, inner::ScriptType::Tr) => SigType::Schnorr,
+            inner::Inner::PublicKey(_, inner::PubkeyType::Pk)
+            | inner::Inner::PublicKey(_, inner::PubkeyType::Pkh)
+            | inner::Inner::PublicKey(_, inner::PubkeyType::Wpkh)
+            | inner::Inner::PublicKey(_, inner::PubkeyType::ShWpkh)
+            | inner::Inner::Script(_, inner::ScriptType::Bare)
+            | inner::Inner::Script(_, inner::ScriptType::Sh)
+            | inner::Inner::Script(_, inner::ScriptType::Wsh)
+            | inner::Inner::Script(_, inner::ScriptType::ShWsh)
+            | inner::Inner::CovScript(_, _) => SigType::Ecdsa,
+        }
+    }
+
     /// Outputs a "descriptor" which reproduces the spent coins
     ///
     /// This may not represent the original descriptor used to produce the transaction,
@@ -578,12 +542,12 @@ pub enum SatisfiedConstraint<Ext: Extension> {
     ///Relative Timelock for CSV.
     RelativeTimelock {
         /// The value of RelativeTimelock
-        time: u32,
+        n: Sequence,
     },
     ///Absolute Timelock for CLTV.
     AbsoluteTimelock {
         /// The value of Absolute timelock
-        time: u32,
+        n: LockTime,
     },
 
     /// Elements
@@ -645,10 +609,11 @@ where
     state: Vec<NodeEvaluationState<'intp, Ext>>,
     stack: Stack<'txin>,
     txenv: Option<&'txin TxEnv<'txin, 'txin>>,
-    age: u32,
-    lock_time: u32,
+    age: Sequence,
+    lock_time: LockTime,
     cov: Option<&'intp BitcoinKey>,
     has_errored: bool,
+    sig_type: SigType,
 }
 
 ///Iterator for Iter
@@ -718,9 +683,11 @@ where
                 Terminal::PkH(ref pk) => {
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self
-                        .stack
-                        .evaluate_pkh(&mut self.verify_sig, pk.to_pubkeyhash());
+                    let res = self.stack.evaluate_pkh(
+                        &mut self.verify_sig,
+                        pk.to_pubkeyhash(self.sig_type),
+                        self.sig_type,
+                    );
                     if res.is_some() {
                         return res;
                     }
@@ -728,7 +695,9 @@ where
                 Terminal::RawPkH(ref pkh) => {
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_pkh(&mut self.verify_sig, *pkh);
+                    let res = self
+                        .stack
+                        .evaluate_pkh(&mut self.verify_sig, *pkh, self.sig_type);
                     if res.is_some() {
                         return res;
                     }
@@ -736,7 +705,7 @@ where
                 Terminal::After(ref n) => {
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_after(n, self.lock_time);
+                    let res = self.stack.evaluate_after(&n.into(), self.lock_time);
                     if res.is_some() {
                         return res;
                     }
@@ -1238,8 +1207,9 @@ mod tests {
 
     use super::inner::ToNoChecks;
     use super::*;
+    use crate::miniscript::analyzable::ExtParams;
     use crate::miniscript::context::NoChecks;
-    use crate::{ElementsSig, Miniscript, MiniscriptKey, NoExt, ToPublicKey};
+    use crate::{ElementsSig, Miniscript, NoExt, ToPublicKey};
 
     fn setup_keys_sigs(
         n: usize,
@@ -1281,8 +1251,9 @@ mod tests {
             pks.push(pk);
             der_sigs.push(sigser);
 
-            let keypair = bitcoin::KeyPair::from_secret_key(&secp, sk);
-            x_only_pks.push(bitcoin::XOnlyPublicKey::from_keypair(&keypair));
+            let keypair = bitcoin::KeyPair::from_secret_key(&secp, &sk);
+            let (x_only_pk, _parity) = bitcoin::XOnlyPublicKey::from_keypair(&keypair);
+            x_only_pks.push(x_only_pk);
             let schnorr_sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &[0u8; 32]);
             let schnorr_sig = elements::SchnorrSig {
                 sig: schnorr_sig,
@@ -1331,11 +1302,12 @@ mod tests {
                     n_satisfied: 0,
                 }],
                 stack: stack,
-                age: 1002,
-                lock_time: 1002,
+                age: Sequence::from_height(1002),
+                lock_time: LockTime::from_height(1002).unwrap(),
                 cov: None,
                 has_errored: false,
                 txenv: None,
+                sig_type: SigType::Ecdsa,
             }
         }
 
@@ -1387,7 +1359,7 @@ mod tests {
         assert_eq!(
             pkh_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKeyHash {
-                keyhash: pks[1].to_pubkeyhash(),
+                keyhash: pks[1].to_pubkeyhash(SigType::Ecdsa),
                 key_sig: KeySigPair::Ecdsa(pks[1], ecdsa_sigs[1])
             }]
         );
@@ -1399,7 +1371,9 @@ mod tests {
         let after_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             after_satisfied.unwrap(),
-            vec![SatisfiedConstraint::AbsoluteTimelock { time: 1000 }]
+            vec![SatisfiedConstraint::AbsoluteTimelock {
+                n: LockTime::from_height(1000).unwrap()
+            }]
         );
 
         //Check Older
@@ -1409,7 +1383,9 @@ mod tests {
         let older_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
             older_satisfied.unwrap(),
-            vec![SatisfiedConstraint::RelativeTimelock { time: 1000 }]
+            vec![SatisfiedConstraint::RelativeTimelock {
+                n: Sequence::from_height(1000)
+            }]
         );
 
         //Check Sha256
@@ -1488,7 +1464,7 @@ mod tests {
                     key_sig: KeySigPair::Ecdsa(pks[0], ecdsa_sigs[0])
                 },
                 SatisfiedConstraint::PublicKeyHash {
-                    keyhash: pks[1].to_pubkeyhash(),
+                    keyhash: pks[1].to_pubkeyhash(SigType::Ecdsa),
                     key_sig: KeySigPair::Ecdsa(pks[1], ecdsa_sigs[1])
                 }
             ]
@@ -1562,7 +1538,7 @@ mod tests {
         assert_eq!(
             and_or_satisfied.unwrap(),
             vec![SatisfiedConstraint::PublicKeyHash {
-                keyhash: pks[1].to_pubkeyhash(),
+                keyhash: pks[1].to_pubkeyhash(SigType::Ecdsa),
                 key_sig: KeySigPair::Ecdsa(pks[1], ecdsa_sigs[1])
             }]
         );
@@ -1802,14 +1778,15 @@ mod tests {
     // By design there is no support for parse a miniscript with BitcoinKey
     // because it does not implement FromStr
     fn no_checks_ms(ms: &str) -> Miniscript<BitcoinKey, NoChecks> {
+        // Parsing should allow raw hashes in the interpreter
         let elem: Miniscript<bitcoin::PublicKey, NoChecks> =
-            Miniscript::from_str_insane(ms).unwrap();
+            Miniscript::from_str_ext(ms, &ExtParams::allow_all()).unwrap();
         elem.to_no_checks_ms()
     }
 
     fn x_only_no_checks_ms(ms: &str) -> Miniscript<BitcoinKey, NoChecks> {
         let elem: Miniscript<bitcoin::XOnlyPublicKey, NoChecks> =
-            Miniscript::from_str_insane(ms).unwrap();
+            Miniscript::from_str_ext(ms, &ExtParams::allow_all()).unwrap();
         elem.to_no_checks_ms()
     }
 }

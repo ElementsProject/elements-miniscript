@@ -22,8 +22,9 @@ use core::fmt;
 
 use elements::{self, script, secp256k1_zkp, Script};
 
-use super::checksum::{desc_checksum, verify_checksum};
+use super::checksum::verify_checksum;
 use super::{SortedMultiVec, Wpkh, Wsh, ELMTS_STR};
+use crate::descriptor::checksum;
 use crate::expression::{self, FromTree};
 use crate::miniscript::context::ScriptContext;
 use crate::policy::{semantic, Liftable};
@@ -58,7 +59,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Sh<Pk> {
     fn lift(&self) -> Result<semantic::Policy<Pk>, Error> {
         match self.inner {
             ShInner::Wsh(ref wsh) => wsh.lift(),
-            ShInner::Wpkh(ref pk) => Ok(semantic::Policy::KeyHash(pk.as_inner().to_pubkeyhash())),
+            ShInner::Wpkh(ref pk) => Ok(semantic::Policy::Key(pk.as_inner().clone())),
             ShInner::SortedMulti(ref smv) => smv.lift(),
             ShInner::Ms(ref ms) => ms.lift(),
         }
@@ -77,15 +78,24 @@ impl<Pk: MiniscriptKey> fmt::Debug for Sh<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Sh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let desc = match self.inner {
-            ShInner::Wsh(ref wsh) => format!("{}sh({})", ELMTS_STR, wsh.to_string_no_checksum()),
-            ShInner::Wpkh(ref pk) => format!("{}sh({})", ELMTS_STR, pk.to_string_no_checksum()),
-            ShInner::SortedMulti(ref smv) => format!("{}sh({})", ELMTS_STR, smv),
-            ShInner::Ms(ref ms) => format!("{}sh({})", ELMTS_STR, ms),
-        };
-        let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
-        write!(f, "{}#{}", &desc, &checksum)
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use fmt::Write;
+        let mut wrapped_f = checksum::Formatter::new(f);
+        match self.inner {
+            ShInner::Wsh(ref wsh) => {
+                write!(wrapped_f, "{}sh(", ELMTS_STR)?;
+                wsh.to_string_no_el_pref(&mut wrapped_f)?;
+                write!(wrapped_f, ")")?;
+            }
+            ShInner::Wpkh(ref pk) => {
+                write!(wrapped_f, "{}sh(", ELMTS_STR)?;
+                pk.to_string_no_el_pref(&mut wrapped_f)?;
+                write!(wrapped_f, ")")?;
+            }
+            ShInner::SortedMulti(ref smv) => write!(wrapped_f, "{}sh({})", ELMTS_STR, smv)?,
+            ShInner::Ms(ref ms) => write!(wrapped_f, "{}sh({})", ELMTS_STR, ms)?,
+        }
+        wrapped_f.write_checksum_if_not_alt()
     }
 }
 
@@ -376,7 +386,6 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Sh<Pk> {
     fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: F) -> bool
     where
         Pk: 'a,
-        Pk::RawPkHash: 'a,
     {
         match self.inner {
             ShInner::Wsh(ref wsh) => wsh.for_each_key(pred),

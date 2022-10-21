@@ -16,16 +16,13 @@
 
 use std::ops::Index;
 
-use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, Hash};
-use elements::{self, opcodes, script};
+use elements::{self, opcodes, script, LockTime, Sequence};
 
 use super::error::PkEvalErrInner;
-use super::{
-    verify_sersig, BitcoinKey, Error, HashLockType, KeySigPair, SatisfiedConstraint, TypedHash160,
-};
-use crate::hash256;
-use crate::Extension;
+use super::{verify_sersig, BitcoinKey, Error, HashLockType, KeySigPair, SatisfiedConstraint};
+use crate::miniscript::context::SigType;
+use crate::{hash256, Extension};
 
 /// Definition of Stack Element of the Stack used for interpretation of Miniscript.
 /// All stack elements with vec![] go to Dissatisfied and vec![1] are marked to Satisfied.
@@ -196,26 +193,27 @@ impl<'txin> Stack<'txin> {
     pub(super) fn evaluate_pkh<'intp, Ext: Extension>(
         &mut self,
         verify_sig: &mut Box<dyn FnMut(&KeySigPair) -> bool + 'intp>,
-        pkh: TypedHash160,
+        pkh: hash160::Hash,
+        sig_type: SigType,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         // Parse a bitcoin key from witness data slice depending on hash context
         // when we encounter a pkh(hash)
         // Depending on the tag of hash, we parse the as full key or x-only-key
         // TODO: All keys parse errors are currently captured in a single BadPubErr
         // We don't really store information about which key error.
-        fn bitcoin_key_from_slice(sl: &[u8], tag: TypedHash160) -> Option<BitcoinKey> {
-            let key: BitcoinKey = match tag {
-                TypedHash160::XonlyKey(_) => bitcoin::XOnlyPublicKey::from_slice(sl).ok()?.into(),
-                TypedHash160::FullKey(_) => bitcoin::PublicKey::from_slice(sl).ok()?.into(),
+        fn bitcoin_key_from_slice(sl: &[u8], sig_type: SigType) -> Option<BitcoinKey> {
+            let key: BitcoinKey = match sig_type {
+                SigType::Schnorr => bitcoin::XOnlyPublicKey::from_slice(sl).ok()?.into(),
+                SigType::Ecdsa => bitcoin::PublicKey::from_slice(sl).ok()?.into(),
             };
             Some(key)
         }
         if let Some(Element::Push(pk)) = self.pop() {
             let pk_hash = hash160::Hash::hash(pk);
-            if pk_hash != pkh.hash160() {
-                return Some(Err(Error::PkHashVerifyFail(pkh.hash160())));
+            if pk_hash != pkh {
+                return Some(Err(Error::PkHashVerifyFail(pkh)));
             }
-            match bitcoin_key_from_slice(pk, pkh) {
+            match bitcoin_key_from_slice(pk, sig_type) {
                 Some(pk) => {
                     if let Some(sigser) = self.pop() {
                         match sigser {
@@ -229,7 +227,7 @@ impl<'txin> Stack<'txin> {
                                     Ok(key_sig) => {
                                         self.push(Element::Satisfied);
                                         Some(Ok(SatisfiedConstraint::PublicKeyHash {
-                                            keyhash: pkh.hash160(),
+                                            keyhash: pkh,
                                             key_sig,
                                         }))
                                     }
@@ -257,14 +255,27 @@ impl<'txin> Stack<'txin> {
     /// booleans
     pub(super) fn evaluate_after<Ext: Extension>(
         &mut self,
-        n: &u32,
-        lock_time: u32,
+        n: &LockTime,
+        lock_time: LockTime,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
-        if lock_time >= *n {
+        use LockTime::*;
+
+        let is_satisfied = match (*n, lock_time) {
+            (Blocks(n), Blocks(lock_time)) => n <= lock_time,
+            (Seconds(n), Seconds(lock_time)) => n <= lock_time,
+            _ => {
+                return Some(Err(Error::AbsoluteLocktimeComparisonInvalid(
+                    n.to_consensus_u32(),
+                    lock_time.to_consensus_u32(),
+                )))
+            }
+        };
+
+        if is_satisfied {
             self.push(Element::Satisfied);
-            Some(Ok(SatisfiedConstraint::AbsoluteTimelock { time: *n }))
+            Some(Ok(SatisfiedConstraint::AbsoluteTimelock { n: *n }))
         } else {
-            Some(Err(Error::AbsoluteLocktimeNotMet(*n)))
+            Some(Err(Error::AbsoluteLocktimeNotMet(n.to_consensus_u32())))
         }
     }
 
@@ -276,14 +287,14 @@ impl<'txin> Stack<'txin> {
     /// booleans
     pub(super) fn evaluate_older<Ext: Extension>(
         &mut self,
-        n: &u32,
-        age: u32,
+        n: &Sequence,
+        age: Sequence,
     ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
         if age >= *n {
             self.push(Element::Satisfied);
-            Some(Ok(SatisfiedConstraint::RelativeTimelock { time: *n }))
+            Some(Ok(SatisfiedConstraint::RelativeTimelock { n: *n }))
         } else {
-            Some(Err(Error::RelativeLocktimeNotMet(*n)))
+            Some(Err(Error::RelativeLocktimeNotMet(n.to_consensus_u32())))
         }
     }
 

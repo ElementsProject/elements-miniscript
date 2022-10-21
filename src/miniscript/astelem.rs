@@ -23,7 +23,9 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use elements::{opcodes, script};
+use bitcoin::hashes::hash160;
+use elements::{opcodes, script, LockTime, Sequence};
+
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 use crate::extensions::ParseableExt;
 use crate::miniscript::context::SigType;
@@ -31,8 +33,8 @@ use crate::miniscript::types::{self, Property};
 use crate::miniscript::ScriptContext;
 use crate::util::MsKeyBuilder;
 use crate::{
-    errstr, expression, script_num_size, Error, ExtTranslator, Extension, ForEachKey,
-    Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslateExt, TranslatePk, Translator,
+    errstr, expression, script_num_size, Error, ExtTranslator, Extension, ForEachKey, Miniscript,
+    MiniscriptKey, Terminal, ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ext> {
@@ -96,7 +98,6 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
     pub(super) fn real_for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: &mut F) -> bool
     where
         Pk: 'a,
-        Pk::RawPkHash: 'a,
     {
         match *self {
             Terminal::PkK(ref p) => pred(p),
@@ -150,7 +151,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
         let frag: Terminal<Q, CtxQ, _> = match *self {
             Terminal::PkK(ref p) => Terminal::PkK(t.pk(p)?),
             Terminal::PkH(ref p) => Terminal::PkH(t.pk(p)?),
-            Terminal::RawPkH(ref p) => Terminal::RawPkH(t.pkh(p)?),
+            Terminal::RawPkH(ref p) => Terminal::RawPkH(*p),
             Terminal::After(n) => Terminal::After(n),
             Terminal::Older(n) => Terminal::Older(n),
             Terminal::Sha256(ref x) => Terminal::Sha256(t.sha256(&x)?),
@@ -302,7 +303,6 @@ where
     fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool
     where
         Pk: 'a,
-        Pk::RawPkHash: 'a,
     {
         self.real_for_each_key(&mut pred)
     }
@@ -482,10 +482,14 @@ where
                         } else if let Terminal::RawPkH(ref pkh) = sub.node {
                             // `RawPkH` is currently unsupported in the descriptor spec
                             // alias: pkh(K) = c:pk_h(K)
-                            return write!(f, "pkh({})", pkh);
+                            // We temporarily display there using raw_pkh, but these descriptors
+                            // are not defined in the spec yet. These are prefixed with `expr`
+                            // in the descriptor string.
+                            // We do not support parsing these descriptors yet.
+                            return write!(f, "expr_raw_pkh({})", pkh);
                         } else if let Terminal::PkH(ref pk) = sub.node {
                             // alias: pkh(K) = c:pk_h(K)
-                            return write!(f, "pkh({})", &pk.to_pubkeyhash());
+                            return write!(f, "pkh({})", pk);
                         }
                     }
 
@@ -572,15 +576,18 @@ impl_from_tree!(
             }
         }
         let mut unwrapped = match (frag_name, top.args.len()) {
+            ("expr_raw_pkh", 1) => expression::terminal(&top.args[0], |x| {
+                hash160::Hash::from_str(x).map(Terminal::RawPkH)
+            }),
             ("pk_k", 1) => {
                 expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkK))
             }
             ("pk_h", 1) => expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkH)),
             ("after", 1) => expression::terminal(&top.args[0], |x| {
-                expression::parse_num::<u32>(x).map(Terminal::After)
+                expression::parse_num::<u32>(x).map(|x| Terminal::After(LockTime::from_consensus(x).into()))
             }),
             ("older", 1) => expression::terminal(&top.args[0], |x| {
-                expression::parse_num::<u32>(x).map(Terminal::Older)
+                expression::parse_num::<u32>(x).map(|x| Terminal::Older(Sequence::from_consensus(x)))
             }),
             ("sha256", 1) => expression::terminal(&top.args[0], |x| {
                 Pk::Sha256::from_str(x).map(Terminal::Sha256)
@@ -796,12 +803,14 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
             Terminal::RawPkH(ref hash) => builder
                 .push_opcode(opcodes::all::OP_DUP)
                 .push_opcode(opcodes::all::OP_HASH160)
-                .push_slice(&Pk::hash_to_hash160(hash)[..])
+                .push_slice(&hash)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY),
             Terminal::After(t) => builder
-                .push_int(t as i64)
+                .push_int(t.to_u32().into())
                 .push_opcode(opcodes::all::OP_CLTV),
-            Terminal::Older(t) => builder.push_int(t as i64).push_opcode(opcodes::all::OP_CSV),
+            Terminal::Older(t) => builder
+                .push_int(t.to_consensus_u32().into())
+                .push_opcode(opcodes::all::OP_CSV),
             Terminal::Sha256(ref h) => builder
                 .push_opcode(opcodes::all::OP_SIZE)
                 .push_int(32)
@@ -935,8 +944,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
         match *self {
             Terminal::PkK(ref pk) => Ctx::pk_len(pk),
             Terminal::PkH(..) | Terminal::RawPkH(..) => 24,
-            Terminal::After(n) => script_num_size(n as usize) + 1,
-            Terminal::Older(n) => script_num_size(n as usize) + 1,
+            Terminal::After(n) => script_num_size(n.to_u32() as usize) + 1,
+            Terminal::Older(n) => script_num_size(n.to_consensus_u32() as usize) + 1,
             Terminal::Sha256(..) => 33 + 6,
             Terminal::Hash256(..) => 33 + 6,
             Terminal::Ripemd160(..) => 21 + 6,

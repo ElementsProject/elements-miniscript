@@ -110,9 +110,9 @@ compile_error!(
     "elements-miniscript currently only supports architectures with pointers wider than 16 bits"
 );
 
-pub use {bitcoin, elements};
 #[cfg(feature = "serde")]
 pub use actual_serde as serde;
+pub use {bitcoin, elements};
 #[cfg(all(test, feature = "unstable"))]
 extern crate test;
 
@@ -123,18 +123,24 @@ extern crate test;
 pub(crate) use bitcoin_miniscript::expression::{FromTree as BtcFromTree, Tree as BtcTree};
 pub(crate) use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
 pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
+// re-export imports
+pub use bitcoin_miniscript::{
+    hash256, DummyHash160Hash, DummyHash256Hash, DummyKey, DummyKeyHash, DummyRipemd160Hash,
+    DummySha256Hash, ForEachKey, MiniscriptKey, SigType, ToPublicKey,
+};
 pub(crate) use bitcoin_miniscript::{
     Descriptor as BtcDescriptor, Error as BtcError, Miniscript as BtcMiniscript,
     Satisfier as BtcSatisfier, Segwitv0 as BtcSegwitv0, Terminal as BtcTerminal,
-};
-// re-export imports
-pub use bitcoin_miniscript::{
-    hash256, DummyKey, DummyKeyHash, ForEachKey, MiniscriptKey, ToPublicKey,
 };
 // End imports
 
 #[macro_use]
 mod macros;
+
+#[macro_use]
+mod pub_macros;
+
+pub use pub_macros::*;
 
 pub mod descriptor;
 pub mod expression;
@@ -143,13 +149,12 @@ pub mod interpreter;
 pub mod miniscript;
 pub mod policy;
 pub mod psbt;
-pub mod timelock;
 
 #[cfg(test)]
 mod test_utils;
 mod util;
 
-use std::{error, fmt, hash, str};
+use std::{error, fmt, str};
 
 use elements::hashes::sha256;
 use elements::secp256k1_zkp::Secp256k1;
@@ -158,6 +163,7 @@ use elements::{opcodes, script, secp256k1_zkp};
 pub use crate::descriptor::{DefiniteDescriptorKey, Descriptor, DescriptorPublicKey};
 pub use crate::extensions::{CovenantExt, Extension, NoExt, TxEnv};
 pub use crate::interpreter::Interpreter;
+pub use crate::miniscript::analyzable::{AnalysisError, ExtParams};
 pub use crate::miniscript::context::{BareCtx, Legacy, ScriptContext, Segwitv0, Tap};
 pub use crate::miniscript::decode::Terminal;
 pub use crate::miniscript::satisfy::{
@@ -166,6 +172,7 @@ pub use crate::miniscript::satisfy::{
 pub use crate::miniscript::Miniscript;
 // minimal implementation of contract hash module
 mod contracthash {
+    use bitcoin::secp256k1::Scalar;
     use bitcoin::PublicKey;
     use elements::hashes::{sha256, Hash, HashEngine, Hmac, HmacEngine};
     use elements::secp256k1_zkp::{self, Secp256k1};
@@ -173,14 +180,19 @@ mod contracthash {
     /// Tweak a single key using some arbitrary data
     pub(super) fn tweak_key<C: secp256k1_zkp::Verification>(
         secp: &Secp256k1<C>,
-        mut key: PublicKey,
+        key: PublicKey,
         contract: &[u8],
     ) -> PublicKey {
         let hmac_result = compute_tweak(&key, contract);
-        key.inner
-            .add_exp_assign(secp, &hmac_result[..])
+        let secp_key = key
+            .inner
+            .add_exp_tweak(
+                secp,
+                &Scalar::from_be_bytes(hmac_result.into_inner())
+                    .expect("Result of hash must be a valid point"),
+            )
             .expect("HMAC cannot produce invalid tweak");
-        key
+        bitcoin::PublicKey::new(secp_key)
     }
 
     /// Compute a tweak from some given data for the given public key
@@ -211,85 +223,6 @@ where
     contracthash::tweak_key(secp, pk, contract)
 }
 
-/// Dummy keyhash which de/serializes to the empty string; useful for testing
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
-pub struct DummyHash256;
-
-impl str::FromStr for DummyHash256 {
-    type Err = &'static str;
-    fn from_str(x: &str) -> Result<DummyHash256, &'static str> {
-        if x.is_empty() {
-            Ok(DummyHash256)
-        } else {
-            Err("non empty dummy hash")
-        }
-    }
-}
-
-/// Dummy keyhash which de/serializes to the empty string; useful for testing
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
-pub struct DummyRipemd160Hash;
-
-impl str::FromStr for DummyRipemd160Hash {
-    type Err = &'static str;
-    fn from_str(x: &str) -> Result<DummyRipemd160Hash, &'static str> {
-        if x.is_empty() {
-            Ok(DummyRipemd160Hash)
-        } else {
-            Err("non empty dummy hash")
-        }
-    }
-}
-
-impl fmt::Display for DummyHash256 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("")
-    }
-}
-impl fmt::Display for DummyRipemd160Hash {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("")
-    }
-}
-
-impl hash::Hash for DummyHash256 {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        "DummySha256Hash".hash(state);
-    }
-}
-
-impl hash::Hash for DummyRipemd160Hash {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        "DummyRipemd160Hash".hash(state);
-    }
-}
-
-/// Dummy keyhash which de/serializes to the empty string; useful for testing
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
-pub struct DummyHash160Hash;
-
-impl str::FromStr for DummyHash160Hash {
-    type Err = &'static str;
-    fn from_str(x: &str) -> Result<DummyHash160Hash, &'static str> {
-        if x.is_empty() {
-            Ok(DummyHash160Hash)
-        } else {
-            Err("non empty dummy hash")
-        }
-    }
-}
-
-impl fmt::Display for DummyHash160Hash {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("")
-    }
-}
-
-impl hash::Hash for DummyHash160Hash {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        "DummyHash160Hash".hash(state);
-    }
-}
 /// Describes an object that can translate various keys and hashes from one key to the type
 /// associated with the other key. Used by the [`TranslatePk`] trait to do the actual translations.
 pub trait Translator<P, Q, E>
@@ -299,9 +232,6 @@ where
 {
     /// Translates public keys P -> Q.
     fn pk(&mut self, pk: &P) -> Result<Q, E>;
-
-    /// Translates public key hashes P::Hash -> Q::Hash.
-    fn pkh(&mut self, pkh: &P::RawPkHash) -> Result<Q::RawPkHash, E>;
 
     /// Provides the translation from P::Sha256 -> Q::Sha256
     fn sha256(&mut self, sha256: &P::Sha256) -> Result<Q::Sha256, E>;
@@ -704,4 +634,56 @@ fn push_opcode_size(script_size: usize) -> usize {
 fn hex_script(s: &str) -> elements::Script {
     let v: Vec<u8> = elements::hashes::hex::FromHex::from_hex(s).unwrap();
     elements::Script::from(v)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use bitcoin::hashes::hash160;
+
+    use super::*;
+
+    #[test]
+    fn regression_bitcoin_key_hash() {
+        use bitcoin::PublicKey;
+
+        // Uncompressed key.
+        let pk = PublicKey::from_str(
+            "042e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af191923a2964c177f5b5923ae500fca49e99492d534aa3759d6b25a8bc971b133"
+        ).unwrap();
+
+        let want = hash160::Hash::from_str("ac2e7daf42d2c97418fd9f78af2de552bb9c6a7a").unwrap();
+        let got = pk.to_pubkeyhash(SigType::Ecdsa);
+        assert_eq!(got, want)
+    }
+
+    #[test]
+    fn regression_secp256k1_key_hash() {
+        use bitcoin::secp256k1::PublicKey;
+
+        // Compressed key.
+        let pk = PublicKey::from_str(
+            "032e58afe51f9ed8ad3cc7897f634d881fdbe49a81564629ded8156bebd2ffd1af",
+        )
+        .unwrap();
+
+        let want = hash160::Hash::from_str("9511aa27ef39bbfa4e4f3dd15f4d66ea57f475b4").unwrap();
+        let got = pk.to_pubkeyhash(SigType::Ecdsa);
+        assert_eq!(got, want)
+    }
+
+    #[test]
+    fn regression_xonly_key_hash() {
+        use bitcoin::secp256k1::XOnlyPublicKey;
+
+        let pk = XOnlyPublicKey::from_str(
+            "cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115",
+        )
+        .unwrap();
+
+        let want = hash160::Hash::from_str("eb8ac65f971ae688a94aeabf223506865e7e08f2").unwrap();
+        let got = pk.to_pubkeyhash(SigType::Schnorr);
+        assert_eq!(got, want)
+    }
 }

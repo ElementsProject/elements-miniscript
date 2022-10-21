@@ -26,10 +26,11 @@ use bitcoin::secp256k1;
 use elements::hashes::hex::FromHex;
 use elements::{confidential, encode, AddressParams, BlockHash};
 use miniscript::descriptor::{SinglePub, SinglePubKey};
-use miniscript::extensions::{param::ExtParamTranslator, CovExtArgs, CsfsKey, CsfsMsg};
+use miniscript::extensions::param::ExtParamTranslator;
+use miniscript::extensions::{CovExtArgs, CsfsKey, CsfsMsg};
 use miniscript::{
-    hash256, CovenantExt, Descriptor, DescriptorPublicKey, Error, Miniscript, ScriptContext, TranslateExt,
-    TranslatePk, Translator,
+    hash256, CovenantExt, Descriptor, DescriptorPublicKey, Error, Miniscript, ScriptContext,
+    TranslateExt, TranslatePk, Translator,
 };
 use rand::RngCore;
 use {actual_rand as rand, elements_miniscript as miniscript};
@@ -97,8 +98,8 @@ fn setup_keys(
     let mut x_only_pks = vec![];
 
     for i in 0..n {
-        let keypair = bitcoin::KeyPair::from_secret_key(&secp_sign, sks[i]);
-        let xpk = bitcoin::XOnlyPublicKey::from_keypair(&keypair);
+        let keypair = bitcoin::KeyPair::from_secret_key(&secp_sign, &sks[i]);
+        let (xpk, _parity) = bitcoin::XOnlyPublicKey::from_keypair(&keypair);
         x_only_keypairs.push(keypair);
         x_only_pks.push(xpk);
     }
@@ -250,10 +251,6 @@ impl<'a> Translator<String, DescriptorPublicKey, ()> for StrDescPubKeyTranslator
         }
     }
 
-    fn pkh(&mut self, pkh: &String) -> Result<DescriptorPublicKey, ()> {
-        self.pk(pkh)
-    }
-
     fn sha256(&mut self, sha256: &String) -> Result<sha256::Hash, ()> {
         let sha = sha256::Hash::from_str(sha256).unwrap();
         Ok(sha)
@@ -309,10 +306,6 @@ impl<'a> Translator<String, DescriptorPublicKey, ()> for StrTranslatorLoose<'a> 
                 key: SinglePubKey::FullKey(random_pk(59)),
             }))
         }
-    }
-
-    fn pkh(&mut self, pkh: &String) -> Result<DescriptorPublicKey, ()> {
-        self.pk(pkh)
     }
 
     fn sha256(&mut self, sha256: &String) -> Result<sha256::Hash, ()> {

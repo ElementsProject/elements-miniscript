@@ -23,6 +23,7 @@ use std::{error, fmt};
 
 use elements::hashes::{hash160, ripemd160, sha256, Hash};
 
+use crate::elements::{LockTime, PackedLockTime, Sequence};
 use crate::extensions::ParseableExt;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::limits::{MAX_BLOCK_WEIGHT, MAX_PUBKEYS_PER_MULTISIG};
@@ -118,6 +119,12 @@ enum NonTerm {
     EndIfElse,
 }
 /// All AST elements
+/// This variant is the inner Miniscript variant that allows the user to bypass
+/// some of the miniscript rules. You should *never* construct Terminal directly.
+/// This is only exposed to external user to allow matching on the [`crate::Miniscript`]
+///
+/// The average user should always use the [`crate::Descriptor`] APIs. Advanced users
+/// who want deal with Miniscript ASTs should use the [`crate::Miniscript`] APIs.
 #[allow(broken_intra_doc_links)]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension = NoExt> {
@@ -130,13 +137,17 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension = NoExt>
     PkK(Pk),
     /// `DUP HASH160 <keyhash> EQUALVERIFY`
     PkH(Pk),
-    /// Only for parsing PkH for Script
-    RawPkH(Pk::RawPkHash),
+    /// Only for parsing PkH for Script. These raw descriptors are not yet specified in miniscript.
+    /// We only this variant internally for inferring miniscripts from raw Scripts.
+    /// It is not possible to construct this variant from any of the Miniscript APIs.
+    /// We don't have a generic over here because we don't want to user to have any abstract reasoning
+    /// over raw descriptors.
+    RawPkH(hash160::Hash),
     // timelocks
     /// `n CHECKLOCKTIMEVERIFY`
-    After(u32),
+    After(PackedLockTime),
     /// `n CHECKSEQUENCEVERIFY`
-    Older(u32),
+    Older(Sequence),
     // hashlocks
     /// `SIZE 32 EQUALVERIFY SHA256 <hash> EQUAL`
     Sha256(Pk::Sha256),
@@ -394,9 +405,9 @@ pub fn parse<Ctx: ScriptContext, Ext: ParseableExt>(
                     },
                     // timelocks
                     Tk::CheckSequenceVerify, Tk::Num(n)
-                        => term.reduce0(Terminal::Older(n))?,
+                        => term.reduce0(Terminal::Older(Sequence::from_consensus(n)))?,
                     Tk::CheckLockTimeVerify, Tk::Num(n)
-                        => term.reduce0(Terminal::After(n))?,
+                        => term.reduce0(Terminal::After(LockTime::from_consensus(n).into()))?,
                     // hashlocks
                     Tk::Equal => match_token!(
                         tokens,

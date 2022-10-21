@@ -21,6 +21,8 @@
 //! The format represents EC public keys abstractly to allow wallets to replace
 //! these with BIP32 paths, pay-to-contract instructions, etc.
 //!
+use elements::Sequence;
+
 use crate::{error, fmt};
 
 #[cfg(feature = "compiler")]
@@ -64,6 +66,8 @@ pub enum LiftError {
     HeightTimelockCombination,
     /// Duplicate Public Keys
     BranchExceedResourceLimits,
+    /// Cannot lift raw descriptors
+    RawDescriptorLift,
 }
 
 impl fmt::Display for LiftError {
@@ -75,6 +79,7 @@ impl fmt::Display for LiftError {
             LiftError::BranchExceedResourceLimits => f.write_str(
                 "Cannot lift policies containing one branch that exceeds resource limits",
             ),
+            LiftError::RawDescriptorLift => f.write_str("Cannot lift raw descriptors"),
         }
     }
 }
@@ -84,7 +89,7 @@ impl error::Error for LiftError {
         use self::LiftError::*;
 
         match self {
-            HeightTimelockCombination | BranchExceedResourceLimits => None,
+            HeightTimelockCombination | BranchExceedResourceLimits | RawDescriptorLift => None,
         }
     }
 }
@@ -128,8 +133,10 @@ where
 {
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
         let ret = match *self {
-            Terminal::PkK(ref pk) | Terminal::PkH(ref pk) => Semantic::KeyHash(pk.to_pubkeyhash()),
-            Terminal::RawPkH(ref pkh) => Semantic::KeyHash(pkh.clone()),
+            Terminal::PkK(ref pk) | Terminal::PkH(ref pk) => Semantic::Key(pk.clone()),
+            Terminal::RawPkH(ref _pkh) => {
+                return Err(Error::LiftError(LiftError::RawDescriptorLift))
+            }
             Terminal::After(t) => Semantic::After(t),
             Terminal::Older(t) => Semantic::Older(t),
             Terminal::Sha256(ref h) => Semantic::Sha256(h.clone()),
@@ -165,12 +172,9 @@ where
                 let semantic_subs: Result<_, Error> = subs.iter().map(|s| s.node.lift()).collect();
                 Semantic::Threshold(k, semantic_subs?)
             }
-            Terminal::Multi(k, ref keys) | Terminal::MultiA(k, ref keys) => Semantic::Threshold(
-                k,
-                keys.iter()
-                    .map(|k| Semantic::KeyHash(k.to_pubkeyhash()))
-                    .collect(),
-            ),
+            Terminal::Multi(k, ref keys) | Terminal::MultiA(k, ref keys) => {
+                Semantic::Threshold(k, keys.iter().map(|k| Semantic::Key(k.clone())).collect())
+            }
             Terminal::Ext(ref _e) => Err(Error::CovError(CovError::CovenantLift))?,
         }
         .normalized();
@@ -207,7 +211,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Concrete<Pk> {
         let ret = match *self {
             Concrete::Unsatisfiable => Semantic::Unsatisfiable,
             Concrete::Trivial => Semantic::Trivial,
-            Concrete::Key(ref pk) => Semantic::KeyHash(pk.to_pubkeyhash()),
+            Concrete::Key(ref pk) => Semantic::Key(pk.clone()),
             Concrete::After(t) => Semantic::After(t),
             Concrete::Older(t) => Semantic::Older(t),
             Concrete::Sha256(ref h) => Semantic::Sha256(h.clone()),
@@ -239,13 +243,13 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for BtcPolicy<Pk> {
         match *self {
             BtcPolicy::Unsatisfiable => Ok(Semantic::Unsatisfiable),
             BtcPolicy::Trivial => Ok(Semantic::Trivial),
-            BtcPolicy::KeyHash(ref pkh) => Ok(Semantic::KeyHash(pkh.clone())),
+            BtcPolicy::Key(ref pkh) => Ok(Semantic::Key(pkh.clone())),
             BtcPolicy::Sha256(ref h) => Ok(Semantic::Sha256(h.clone())),
             BtcPolicy::Hash256(ref h) => Ok(Semantic::Hash256(h.clone())),
             BtcPolicy::Ripemd160(ref h) => Ok(Semantic::Ripemd160(h.clone())),
             BtcPolicy::Hash160(ref h) => Ok(Semantic::Hash160(h.clone())),
-            BtcPolicy::After(n) => Ok(Semantic::After(n)),
-            BtcPolicy::Older(n) => Ok(Semantic::Older(n)),
+            BtcPolicy::After(n) => Ok(Semantic::After(elements::PackedLockTime(n.to_u32()))),
+            BtcPolicy::Older(n) => Ok(Semantic::Older(Sequence(n.to_consensus_u32()))),
             BtcPolicy::Threshold(k, ref subs) => {
                 let new_subs: Result<Vec<Semantic<Pk>>, _> =
                     subs.iter().map(|sub| Liftable::lift(sub)).collect();
@@ -262,10 +266,13 @@ mod tests {
     use std::sync::Arc;
 
     use bitcoin;
+    use elements::Sequence;
 
     use super::super::miniscript::context::Segwitv0;
     use super::super::miniscript::Miniscript;
     use super::{Concrete, Liftable, Semantic};
+    #[cfg(feature = "compiler")]
+    use crate::descriptor::Tr;
     use crate::DummyKey;
     #[cfg(feature = "compiler")]
     use crate::{descriptor::TapTree, Descriptor, Tap};
@@ -307,9 +314,9 @@ mod tests {
         concrete_policy_rtt("or(99@pk(),1@pk())");
         concrete_policy_rtt("and(pk(),or(99@pk(),1@older(12960)))");
 
-        semantic_policy_rtt("pkh()");
-        semantic_policy_rtt("or(pkh(),pkh())");
-        semantic_policy_rtt("and(pkh(),pkh())");
+        semantic_policy_rtt("pk()");
+        semantic_policy_rtt("or(pk(),pk())");
+        semantic_policy_rtt("and(pk(),pk())");
 
         //fuzzer crashes
         assert!(ConcretePol::from_str("thresh()").is_err());
@@ -388,11 +395,11 @@ mod tests {
                     Semantic::Threshold(
                         2,
                         vec![
-                            Semantic::KeyHash(key_a.pubkey_hash().as_hash()),
-                            Semantic::Older(42)
+                            Semantic::Key(key_a),
+                            Semantic::Older(Sequence::from_height(42))
                         ]
                     ),
-                    Semantic::KeyHash(key_b.pubkey_hash().as_hash())
+                    Semantic::Key(key_b)
                 ]
             ),
             ms_str.lift().unwrap()
@@ -514,5 +521,88 @@ mod tests {
             let expected_descriptor = Descriptor::new_tr("E".to_string(), Some(tree)).unwrap();
             assert_eq!(descriptor, expected_descriptor);
         }
+    }
+
+    #[test]
+    #[cfg(feature = "compiler")]
+    fn experimental_taproot_compile() {
+        let unspendable_key = "UNSPEND".to_string();
+
+        {
+            let pol = Concrete::<String>::from_str(
+                "thresh(7,pk(A),pk(B),pk(C),pk(D),pk(E),pk(F),pk(G),pk(H))",
+            )
+            .unwrap();
+            let desc = pol
+                .compile_tr_private_experimental(Some(unspendable_key.clone()))
+                .unwrap();
+            let expected_desc = Descriptor::Tr(
+                Tr::<String>::from_str(
+                    "eltr(UNSPEND ,{
+                {
+                    {multi_a(7,B,C,D,E,F,G,H),multi_a(7,A,C,D,E,F,G,H)},
+                    {multi_a(7,A,B,D,E,F,G,H),multi_a(7,A,B,C,E,F,G,H)}
+                },
+                {
+                    {multi_a(7,A,B,C,D,F,G,H),multi_a(7,A,B,C,D,E,G,H)}
+                   ,{multi_a(7,A,B,C,D,E,F,H),multi_a(7,A,B,C,D,E,F,G)}
+                }})"
+                    .replace(&['\t', ' ', '\n'][..], "")
+                    .as_str(),
+                )
+                .unwrap(),
+            );
+            assert_eq!(desc, expected_desc);
+        }
+
+        {
+            let pol =
+                Concrete::<String>::from_str("thresh(3,pk(A),pk(B),pk(C),pk(D),pk(E))").unwrap();
+            let desc = pol
+                .compile_tr_private_experimental(Some(unspendable_key.clone()))
+                .unwrap();
+            let expected_desc = Descriptor::Tr(
+                Tr::<String>::from_str(
+                    "eltr(UNSPEND,
+                    {{
+                        {multi_a(3,A,D,E),multi_a(3,A,C,E)},
+                        {multi_a(3,A,C,D),multi_a(3,A,B,E)}\
+                    },
+                    {
+                        {multi_a(3,A,B,D),multi_a(3,A,B,C)},
+                        {
+                            {multi_a(3,C,D,E),multi_a(3,B,D,E)},
+                            {multi_a(3,B,C,E),multi_a(3,B,C,D)}
+                    }}})"
+                        .replace(&['\t', ' ', '\n'][..], "")
+                        .as_str(),
+                )
+                .unwrap(),
+            );
+            assert_eq!(desc, expected_desc);
+        }
+    }
+}
+
+#[cfg(all(test, feature = "compiler", feature = "unstable"))]
+mod benches {
+    use core::str::FromStr;
+
+    use test::{black_box, Bencher};
+
+    use super::{Concrete, Error};
+    use crate::descriptor::Descriptor;
+    type TapDesc = Result<Descriptor<String>, Error>;
+
+    #[bench]
+    pub fn compile_large_tap(bh: &mut Bencher) {
+        let pol = Concrete::<String>::from_str(
+            "thresh(20,pk(A),pk(B),pk(C),pk(D),pk(E),pk(F),pk(G),pk(H),pk(I),pk(J),pk(K),pk(L),pk(M),pk(N),pk(O),pk(P),pk(Q),pk(R),pk(S),pk(T),pk(U),pk(V),pk(W),pk(X),pk(Y),pk(Z))",
+        )
+        .expect("parsing");
+        bh.iter(|| {
+            let pt: TapDesc = pol.compile_tr_private_experimental(Some("UNSPEND".to_string()));
+            black_box(pt).unwrap();
+        });
     }
 }

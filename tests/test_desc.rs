@@ -12,16 +12,14 @@ use elements::sighash::SigHashCache;
 use elements::taproot::{LeafVersion, TapLeafHash};
 use elements::{
     self, confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, SchnorrSig,
-    Script, TxIn, TxOut, Txid,
+    Script, Sequence, TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
-use miniscript::miniscript::iter;
 use miniscript::psbt::{PsbtExt, PsbtInputExt};
-use miniscript::{
-    elementssig_to_rawsig, Descriptor, Miniscript, MiniscriptKey, ScriptContext, ToPublicKey,
-};
+use miniscript::{elementssig_to_rawsig, Descriptor, Miniscript, ScriptContext, ToPublicKey};
 use rand::RngCore;
 mod setup;
+use ::secp256k1::Scalar;
 use setup::test_util::{self, TestData, PARAMS};
 use setup::Call;
 use {actual_rand as rand, elements_miniscript as miniscript};
@@ -86,8 +84,8 @@ pub fn test_desc_satisfy(
     let desc_address = desc_address.map_err(|_x| DescError::AddressComputationError)?;
 
     // Next send some btc to each address corresponding to the miniscript
-    let txid = cl.send_to_address(&desc_address, "1");  // 1 BTC
-    // Wait for the funds to mature.
+    let txid = cl.send_to_address(&desc_address, "1"); // 1 BTC
+                                                       // Wait for the funds to mature.
     cl.generate(2);
     // Create a PSBT for each transaction.
     // Spend one input and spend one output for simplicity.
@@ -97,9 +95,8 @@ pub fn test_desc_satisfy(
     let txin = TxIn {
         previous_output: outpoint,
         is_pegin: false,
-        has_issuance: false,
         script_sig: Script::new(),
-        sequence: 1,
+        sequence: Sequence::from_height(1),
         asset_issuance: Default::default(),
         witness: Default::default(),
     };
@@ -146,10 +143,14 @@ pub fn test_desc_satisfy(
             let prevouts = [witness_utxo];
             let prevouts = sighash::Prevouts::All(&prevouts);
 
-            if let Some(mut internal_keypair) = internal_keypair {
+            if let Some(internal_keypair) = internal_keypair {
                 // ---------------------- Tr key spend --------------------
-                internal_keypair
-                    .tweak_add_assign(&secp, tr.spend_info().tap_tweak().as_ref())
+                let internal_keypair = internal_keypair
+                    .add_xonly_tweak(
+                        &secp,
+                        &Scalar::from_be_bytes(tr.spend_info().tap_tweak().into_inner())
+                            .expect("valid scalar"),
+                    )
                     .expect("Tweaking failed");
                 let sighash_msg = sighash_cache
                     .taproot_key_spend_signature_hash(
@@ -176,17 +177,9 @@ pub fn test_desc_satisfy(
                 .iter_scripts()
                 .flat_map(|(_depth, ms)| {
                     let leaf_hash = TapLeafHash::from_script(&ms.encode(), LeafVersion::default());
-                    ms.iter_pk_pkh().filter_map(move |pk_pkh| match pk_pkh {
-                        iter::PkPkh::PlainPubkey(pk) => {
-                            let i = x_only_pks.iter().position(|&x| x.to_public_key() == pk);
-                            i.map(|idx| (xonly_keypairs[idx].clone(), leaf_hash))
-                        }
-                        iter::PkPkh::HashedPubkey(hash) => {
-                            let i = x_only_pks
-                                .iter()
-                                .position(|&x| x.to_public_key().to_pubkeyhash() == hash);
-                            i.map(|idx| (xonly_keypairs[idx].clone(), leaf_hash))
-                        }
+                    ms.iter_pk().filter_map(move |pk| {
+                        let i = x_only_pks.iter().position(|&x| x.to_public_key() == pk);
+                        i.map(|idx| (xonly_keypairs[idx].clone(), leaf_hash))
                     })
                 })
                 .collect();
@@ -207,7 +200,7 @@ pub fn test_desc_satisfy(
                 // FIXME: uncomment when == is supported for secp256k1::KeyPair. (next major release)
                 // let x_only_pk = pks[xonly_keypairs.iter().position(|&x| x == keypair).unwrap()];
                 // Just recalc public key
-                let x_only_pk = secp256k1::XOnlyPublicKey::from_keypair(&keypair);
+                let (x_only_pk, _parity) = secp256k1::XOnlyPublicKey::from_keypair(&keypair);
                 psbt.inputs_mut()[0].tap_script_sigs.insert(
                     (x_only_pk, leaf_hash),
                     elements::SchnorrSig {
@@ -312,7 +305,7 @@ pub fn test_desc_satisfy(
         .as_u64()
         .unwrap();
     assert!(num_conf > 0);
-    return Ok(tx.input[0].witness.script_witness.clone())
+    return Ok(tx.input[0].witness.script_witness.clone());
 }
 
 // Find all secret corresponding to the known public keys in ms
@@ -323,18 +316,10 @@ fn find_sks_ms<Ctx: ScriptContext>(
     let sks = &testdata.secretdata.sks;
     let pks = &testdata.pubdata.pks;
     let sks = ms
-        .iter_pk_pkh()
-        .filter_map(|pk_pkh| match pk_pkh {
-            iter::PkPkh::PlainPubkey(pk) => {
-                let i = pks.iter().position(|&x| x.to_public_key() == pk);
-                i.map(|idx| (sks[idx]))
-            }
-            iter::PkPkh::HashedPubkey(hash) => {
-                let i = pks
-                    .iter()
-                    .position(|&x| x.to_public_key().to_pubkeyhash() == hash);
-                i.map(|idx| (sks[idx]))
-            }
+        .iter_pk()
+        .filter_map(|pk| {
+            let i = pks.iter().position(|&x| x.to_public_key() == pk);
+            i.map(|idx| (sks[idx]))
         })
         .collect();
     sks

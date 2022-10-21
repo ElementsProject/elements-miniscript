@@ -7,13 +7,12 @@ use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SigHashCache;
 use elements::taproot::{LeafVersion, TapLeafHash};
 use elements::{
-    self, confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script, TxIn,
-    TxOut, Txid,
+    self, confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script,
+    Sequence, TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
-use miniscript::miniscript::iter;
 use miniscript::psbt::{PsbtInputExt, PsbtInputSatisfier};
-use miniscript::{Descriptor, MiniscriptKey, Satisfier, ToPublicKey};
+use miniscript::{Descriptor, Satisfier, ToPublicKey};
 use rand::RngCore;
 mod setup;
 use setup::test_util::{self, TestData, PARAMS};
@@ -51,8 +50,8 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     let desc_address = derived_desc.address(&PARAMS).unwrap(); // No blinding
 
     // Next send some btc to each address corresponding to the miniscript
-    let txid = cl.send_to_address(&desc_address, "1");  // 1 BTC
-    // Wait for the funds to mature.
+    let txid = cl.send_to_address(&desc_address, "1"); // 1 BTC
+                                                       // Wait for the funds to mature.
     cl.generate(2);
     // Create a PSBT for each transaction.
     // Spend one input and spend one output for simplicity.
@@ -62,9 +61,8 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     let txin = TxIn {
         previous_output: outpoint,
         is_pegin: false,
-        has_issuance: false,
         script_sig: Script::new(),
-        sequence: 1,
+        sequence: Sequence::from_height(1),
         asset_issuance: Default::default(),
         witness: Default::default(),
     };
@@ -110,17 +108,9 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
                 .iter_scripts()
                 .flat_map(|(_depth, ms)| {
                     let leaf_hash = TapLeafHash::from_script(&ms.encode(), LeafVersion::default());
-                    ms.iter_pk_pkh().filter_map(move |pk_pkh| match pk_pkh {
-                        iter::PkPkh::PlainPubkey(pk) => {
-                            let i = x_only_pks.iter().position(|&x| x.to_public_key() == pk);
-                            i.map(|idx| (xonly_keypairs[idx].clone(), leaf_hash))
-                        }
-                        iter::PkPkh::HashedPubkey(hash) => {
-                            let i = x_only_pks
-                                .iter()
-                                .position(|&x| x.to_public_key().to_pubkeyhash() == hash);
-                            i.map(|idx| (xonly_keypairs[idx].clone(), leaf_hash))
-                        }
+                    ms.iter_pk().filter_map(move |pk| {
+                        let i = x_only_pks.iter().position(|&x| x.to_public_key() == pk);
+                        i.map(|idx| (xonly_keypairs[idx].clone(), leaf_hash))
                     })
                 })
                 .collect();
@@ -141,7 +131,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
                 // FIXME: uncomment when == is supported for secp256k1::KeyPair. (next major release)
                 // let x_only_pk = pks[xonly_keypairs.iter().position(|&x| x == keypair).unwrap()];
                 // Just recalc public key
-                let x_only_pk = secp256k1::XOnlyPublicKey::from_keypair(&keypair);
+                let x_only_pk = secp256k1::XOnlyPublicKey::from_keypair(&keypair).0;
                 psbt.inputs_mut()[0].tap_script_sigs.insert(
                     (x_only_pk, leaf_hash),
                     elements::SchnorrSig {

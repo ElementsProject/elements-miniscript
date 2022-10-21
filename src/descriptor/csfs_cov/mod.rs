@@ -64,7 +64,8 @@ mod tests {
     use elements::secp256k1_zkp::ZERO_TWEAK;
     use elements::{
         self, confidential, opcodes, script, secp256k1_zkp, AssetId, AssetIssuance,
-        EcdsaSigHashType, OutPoint, Script, Transaction, TxIn, TxInWitness, TxOut, Txid,
+        EcdsaSigHashType, LockTime, OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn,
+        TxInWitness, TxOut, Txid,
     };
 
     use super::cov::*;
@@ -190,7 +191,7 @@ mod tests {
         // Now create a transaction spending this.
         let mut spend_tx = Transaction {
             version: 2,
-            lock_time: 0,
+            lock_time: PackedLockTime::ZERO,
             input: vec![txin_from_txid_vout(
                 "141f79c7c254ee3a9a9bc76b4f60564385b784bdfc1882b25154617801fe2237",
                 1,
@@ -260,7 +261,14 @@ mod tests {
 
         // A pair of satisfiers is also a satisfier
         let (wit, ss) = desc.get_satisfaction((cov_sat, pk_sat))?;
-        let interpreter = Interpreter::from_txdata(&desc.script_pubkey(), &ss, &wit, 0, 0).unwrap();
+        let interpreter = Interpreter::from_txdata(
+            &desc.script_pubkey(),
+            &ss,
+            &wit,
+            Sequence::ZERO,
+            LockTime::ZERO,
+        )
+        .unwrap();
 
         assert!(wit[0].len() <= 73);
         assert!(wit[1].len() == 4); // version
@@ -385,7 +393,7 @@ mod tests {
         // Now create a transaction spending this.
         let mut spend_tx = Transaction {
             version: 2,
-            lock_time: 0,
+            lock_time: PackedLockTime::ZERO,
             input: vec![txin_from_txid_vout(
                 "7c8e615c8da947fefd2d9b6f83f313a9b59d249c93a5f232287633195b461cb7",
                 0,
@@ -450,7 +458,14 @@ mod tests {
 
         // A pair of satisfiers is also a satisfier
         let (wit, ss) = desc.get_satisfaction((cov_sat, pk_sat)).unwrap();
-        let interpreter = Interpreter::from_txdata(&desc.script_pubkey(), &ss, &wit, 0, 0).unwrap();
+        let interpreter = Interpreter::from_txdata(
+            &desc.script_pubkey(),
+            &ss,
+            &wit,
+            Sequence::ZERO,
+            LockTime::ZERO,
+        )
+        .unwrap();
         // Check that everything is executed correctly with dummysigs
         let constraints: Result<Vec<_>, _> = interpreter.iter_assume_sigs().collect();
         constraints.expect("Covenant incorrect satisfaction");
@@ -458,7 +473,7 @@ mod tests {
         // 1) Send 0.002 btc to above address
         // 2) Create a tx by filling up txid
         // 3) Send the tx
-        assert_eq!(witness_size(&wit), 384);
+        assert_eq!(witness_size(&wit), 385);
         assert_eq!(wit.len(), 13);
         // spend_tx.input[0].witness.script_witness = wit;
         // use elements::encode::serialize_hex;
@@ -472,9 +487,8 @@ mod tests {
                 txid: Txid::from_str(txid).unwrap(),
                 vout: vout,
             },
-            sequence: 0xfffffffe,
+            sequence: Sequence::MAX,
             is_pegin: false,
-            has_issuance: false,
             // perhaps make this an option in elements upstream?
             asset_issuance: AssetIssuance {
                 asset_blinding_nonce: secp256k1_zkp::ZERO_TWEAK,

@@ -6,8 +6,10 @@ use std::str::FromStr;
 use bitcoin::hashes::{hash160, ripemd160, sha256};
 use bitcoin::secp256k1;
 
-use crate::extensions::{param::ExtParamTranslator, CovExtArgs};
-use crate::{hash256, MiniscriptKey, Translator};
+use crate::extensions::param::ExtParamTranslator;
+use crate::extensions::CovExtArgs;
+use crate::miniscript::context::SigType;
+use crate::{hash256, ToPublicKey, Translator};
 
 /// Translate from a String MiniscriptKey type to bitcoin::PublicKey
 /// If the hashmap is populated, this will lookup for keys in HashMap
@@ -30,13 +32,6 @@ impl Translator<String, bitcoin::PublicKey, ()> for StrKeyTranslator {
             .unwrap()
         });
         Ok(key)
-    }
-
-    fn pkh(&mut self, pkh: &String) -> Result<hash160::Hash, ()> {
-        let hash = self.pkh_map.get(pkh).copied().unwrap_or_else(|| {
-            hash160::Hash::from_str("be8f27af36217ba89c793c419f058cd4e2a54e26").unwrap()
-        });
-        Ok(hash)
     }
 
     fn sha256(&mut self, _sha256: &String) -> Result<sha256::Hash, ()> {
@@ -86,13 +81,6 @@ impl Translator<String, bitcoin::XOnlyPublicKey, ()> for StrXOnlyKeyTranslator {
             .unwrap()
         });
         Ok(key)
-    }
-
-    fn pkh(&mut self, pkh: &String) -> Result<hash160::Hash, ()> {
-        let hash = self.pkh_map.get(pkh).copied().unwrap_or_else(|| {
-            hash160::Hash::from_str("be8f27af36217ba89c793c419f058cd4e2a54e26").unwrap()
-        });
-        Ok(hash)
     }
 
     fn sha256(&mut self, _sha256: &String) -> Result<sha256::Hash, ()> {
@@ -151,7 +139,7 @@ impl StrKeyTranslator {
         for (i, c) in (b'A'..b'Z').enumerate() {
             let key = String::from_utf8(vec![c]).unwrap();
             pk_map.insert(key.clone(), pks[i]);
-            pkh_map.insert(key, pks[i].to_pubkeyhash());
+            pkh_map.insert(key, pks[i].to_pubkeyhash(SigType::Ecdsa));
         }
         // We don't bother filling in sha256_map preimages in default implementation as it not unnecessary
         // for sane miniscripts
@@ -172,8 +160,9 @@ impl StrXOnlyKeyTranslator {
         let pks: Vec<_> = sks
             .iter()
             .map(|sk| {
-                let keypair = secp256k1::KeyPair::from_secret_key(&secp, *sk);
-                bitcoin::XOnlyPublicKey::from_keypair(&keypair)
+                let keypair = secp256k1::KeyPair::from_secret_key(&secp, sk);
+                let (pk, _parity) = bitcoin::XOnlyPublicKey::from_keypair(&keypair);
+                pk
             })
             .collect();
         let mut pk_map = HashMap::new();
@@ -181,7 +170,7 @@ impl StrXOnlyKeyTranslator {
         for (i, c) in (b'A'..b'Z').enumerate() {
             let key = String::from_utf8(vec![c]).unwrap();
             pk_map.insert(key.clone(), pks[i]);
-            pkh_map.insert(key, pks[i].to_pubkeyhash());
+            pkh_map.insert(key, pks[i].to_pubkeyhash(SigType::Schnorr));
         }
         // We don't bother filling in sha256_map preimages in default implementation as it not unnecessary
         // for sane miniscripts

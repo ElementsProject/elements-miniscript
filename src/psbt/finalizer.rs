@@ -22,14 +22,14 @@
 use bitcoin::{self, PublicKey, XOnlyPublicKey};
 use elements::secp256k1_zkp::{self, Secp256k1};
 use elements::taproot::LeafVersion;
-use elements::{self, confidential, Script, Transaction, TxOut};
+use elements::{self, confidential, Script, Sequence, Transaction, TxOut};
 
 use super::{sanity_check, Error, InputError, Psbt, PsbtInputSatisfier};
 use crate::descriptor::{LegacyCSFSCov, LegacyCovSatisfier};
 use crate::extensions::{CovExtArgs, TxEnv};
 use crate::{
-    interpreter, util, BareCtx, CovenantExt, Descriptor, Legacy, Miniscript, MiniscriptKey,
-    Satisfier, Segwitv0, Tap,
+    interpreter, util, BareCtx, CovenantExt, Descriptor, ExtParams, Legacy, Miniscript, Satisfier,
+    Segwitv0, SigType, Tap, ToPublicKey,
 };
 
 // Get the amount being spent for the psbt input
@@ -73,12 +73,14 @@ where
                 // We don't know how to satisfy non default version scripts yet
                 continue;
             }
-            let ms = match Miniscript::<XOnlyPublicKey, Tap, CovenantExt<CovExtArgs>>::parse_insane(
-                script,
-            ) {
-                Ok(ms) => ms,
-                Err(..) => continue, // try another script
-            };
+            let ms =
+                match Miniscript::<XOnlyPublicKey, Tap, CovenantExt<CovExtArgs>>::parse_with_ext(
+                    script,
+                    &ExtParams::allow_all(),
+                ) {
+                    Ok(ms) => ms,
+                    Err(..) => continue, // try another script
+                };
             let mut wit = if allow_mall {
                 match ms.satisfy_malleable(sat) {
                     Ok(ms) => ms,
@@ -163,7 +165,7 @@ pub(super) fn get_descriptor(
     } else if script_pubkey.is_p2pkh() {
         // 2. `Pkh`: creates a `PkH` descriptor if partial_sigs has the corresponding pk
         let partial_sig_contains_pk = inp.partial_sigs.iter().find(|&(&pk, _sig)| {
-            *script_pubkey == elements::Script::new_p2pkh(&pk.to_pubkeyhash().into())
+            *script_pubkey == elements::Script::new_p2pkh(&pk.to_pubkeyhash(SigType::Ecdsa).into())
         });
         match partial_sig_contains_pk {
             Some((pk, _sig)) => Ok(Descriptor::new_pkh(pk.to_owned())),
@@ -172,7 +174,8 @@ pub(super) fn get_descriptor(
     } else if script_pubkey.is_v0_p2wpkh() {
         // 3. `Wpkh`: creates a `wpkh` descriptor if the partial sig has corresponding pk.
         let partial_sig_contains_pk = inp.partial_sigs.iter().find(|&(&pk, _sig)| {
-            *script_pubkey == elements::Script::new_v0_wpkh(&pk.to_pubkeyhash().into())
+            *script_pubkey
+                == elements::Script::new_v0_wpkh(&pk.to_pubkeyhash(SigType::Ecdsa).into())
         });
         match partial_sig_contains_pk {
             Some((pk, _sig)) => Ok(Descriptor::new_wpkh(pk.to_owned())?),
@@ -194,8 +197,10 @@ pub(super) fn get_descriptor(
             match LegacyCSFSCov::parse_insane(witness_script) {
                 Ok(cov) => Ok(Descriptor::LegacyCSFSCov(cov)),
                 Err(_) => {
-                    let ms =
-                        Miniscript::<bitcoin::PublicKey, Segwitv0>::parse_insane(witness_script)?;
+                    let ms = Miniscript::<bitcoin::PublicKey, Segwitv0>::parse_with_ext(
+                        witness_script,
+                        &ExtParams::allow_all(),
+                    )?;
                     Ok(Descriptor::new_wsh(ms)?)
                 }
             }
@@ -221,8 +226,9 @@ pub(super) fn get_descriptor(
                                 p2wsh_expected: redeem_script.clone(),
                             });
                         }
-                        let ms = Miniscript::<bitcoin::PublicKey, Segwitv0>::parse_insane(
+                        let ms = Miniscript::<bitcoin::PublicKey, Segwitv0>::parse_with_ext(
                             witness_script,
+                            &ExtParams::allow_all(),
                         )?;
                         Ok(Descriptor::new_sh_wsh(ms)?)
                     } else {
@@ -249,8 +255,10 @@ pub(super) fn get_descriptor(
                         return Err(InputError::NonEmptyWitnessScript);
                     }
                     if let Some(ref redeem_script) = inp.redeem_script {
-                        let ms =
-                            Miniscript::<bitcoin::PublicKey, Legacy>::parse_insane(redeem_script)?;
+                        let ms = Miniscript::<bitcoin::PublicKey, Legacy>::parse_with_ext(
+                            redeem_script,
+                            &ExtParams::allow_all(),
+                        )?;
                         Ok(Descriptor::new_sh(ms)?)
                     } else {
                         Err(InputError::MissingWitnessScript)
@@ -266,7 +274,10 @@ pub(super) fn get_descriptor(
         if inp.redeem_script.is_some() {
             return Err(InputError::NonEmptyRedeemScript);
         }
-        let ms = Miniscript::<bitcoin::PublicKey, BareCtx>::parse_insane(script_pubkey)?;
+        let ms = Miniscript::<bitcoin::PublicKey, BareCtx>::parse_with_ext(
+            script_pubkey,
+            &ExtParams::allow_all(),
+        )?;
         Ok(Descriptor::new_bare(ms)?)
     }
 }
@@ -296,7 +307,7 @@ pub fn _interpreter_inp_check<C: secp256k1_zkp::Verification>(
     // Now look at all the satisfied constraints. If everything is filled in
     // corrected, there should be no errors
 
-    let csv = psbt.inputs()[index].sequence.unwrap_or(0xffffffff);
+    let csv = psbt.inputs()[index].sequence.unwrap_or(Sequence::MAX);
     let _amt = get_amt(psbt, index).map_err(|e| Error::InputError(e, index))?;
 
     let interpreter = interpreter::Interpreter::from_txdata(spk, script_sig, witness, csv, cltv)

@@ -3,11 +3,12 @@ extern crate elements_miniscript as miniscript;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use bitcoin::hashes::{hash160, ripemd160, sha256};
 use bitcoin::util::address::WitnessVersion;
 use miniscript::descriptor::DescriptorType;
 use miniscript::policy::Concrete;
-use miniscript::{hash256, Descriptor, Miniscript, NoExt, Tap, TranslatePk, Translator};
+use miniscript::{
+    translate_hash_fail, Descriptor, Miniscript, NoExt, Tap, TranslatePk, Translator,
+};
 use secp256k1::{rand, KeyPair};
 
 // Refer to https://github.com/sanket1729/adv_btc_workshop/blob/master/workshop.md#creating-a-taproot-descriptor
@@ -22,25 +23,10 @@ impl Translator<String, bitcoin::XOnlyPublicKey, ()> for StrPkTranslator {
         self.pk_map.get(pk).copied().ok_or(())
     }
 
-    fn pkh(&mut self, _pkh: &String) -> Result<hash160::Hash, ()> {
-        unreachable!("Policy doesn't contain any pkh fragment");
-    }
-
-    fn sha256(&mut self, _sha256: &String) -> Result<sha256::Hash, ()> {
-        unreachable!("Policy does not contain any sha256 fragment");
-    }
-
-    fn hash256(&mut self, _sha256: &String) -> Result<hash256::Hash, ()> {
-        unreachable!("Policy does not contain any hash256 fragment");
-    }
-
-    fn ripemd160(&mut self, _ripemd160: &String) -> Result<ripemd160::Hash, ()> {
-        unreachable!("Policy does not contain any ripemd160 fragment");
-    }
-
-    fn hash160(&mut self, _hash160: &String) -> Result<hash160::Hash, ()> {
-        unreachable!("Policy does not contain any hash160 fragment");
-    }
+    // We don't need to implement these methods as we are not using them in the policy
+    // Fail if we encounter any hash fragments.
+    // See also translate_hash_clone! macro
+    translate_hash_fail!(String, bitcoin::XOnlyPublicKey, ());
 }
 
 fn main() {
@@ -103,7 +89,7 @@ fn main() {
     let secp = secp256k1::Secp256k1::new();
     let key_pair = KeyPair::new(&secp, &mut rand::thread_rng());
     // Random unspendable XOnlyPublicKey provided for compilation to Taproot Descriptor
-    let unspendable_pubkey = bitcoin::XOnlyPublicKey::from_keypair(&key_pair);
+    let (unspendable_pubkey, _parity) = bitcoin::XOnlyPublicKey::from_keypair(&key_pair);
 
     pk_map.insert("UNSPENDABLE_KEY".to_string(), unspendable_pubkey);
     let pubkeys = hardcoded_xonlypubkeys();
@@ -117,14 +103,16 @@ fn main() {
 
     // Max Satisfaction Weight for compilation, corresponding to the script-path spend
     // `multi_a(2,PUBKEY_1,PUBKEY_2) at taptree depth 1, having
-    // Max Witness Size = scriptSig len + control_block size + varint(script_size) + script_size +
-    //                     varint(max satisfaction elements) + max satisfaction size
-    //                  = 4 + 65 + 1 + 70 + 1 + 132
+    // Max Witness Size = scriptSig len + witnessStack len + varint(control_block_size) +
+    //                    control_block size + varint(script_size) + script_size + max_satisfaction_size
+    //                  = 4 + 1 + 1 + 65 + 1 + 70 + 132 = 274
     let max_sat_wt = real_desc.max_satisfaction_weight().unwrap();
-    assert_eq!(max_sat_wt, 273);
+    assert_eq!(max_sat_wt, 274);
 
     // Compute the bitcoin address and check if it matches
-    let addr = real_desc.address(&elements::AddressParams::ELEMENTS).unwrap();
+    let addr = real_desc
+        .address(&elements::AddressParams::ELEMENTS)
+        .unwrap();
     let expected_addr = elements::Address::from_str(
         "ert1pxx6wkfdnnx97akwws8l8xdmx5n03qftvx2t269k4sn9adm2emz0sdnytn4",
     )
