@@ -22,8 +22,9 @@ use core::fmt;
 
 use elements::{self, script, secp256k1_zkp, Script};
 
-use super::checksum::{desc_checksum, verify_checksum};
+use super::checksum::verify_checksum;
 use super::ELMTS_STR;
+use crate::descriptor::checksum;
 use crate::expression::{self, FromTree};
 use crate::miniscript::context::ScriptContext;
 use crate::policy::{semantic, Liftable};
@@ -130,10 +131,11 @@ impl<Pk: MiniscriptKey> fmt::Debug for Bare<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Bare<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let desc = format!("{}{}", ELMTS_STR, self.ms);
-        let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
-        write!(f, "{}#{}", &desc, &checksum)
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use fmt::Write;
+        let mut wrapped_f = checksum::Formatter::new(f);
+        write!(wrapped_f, "{}{}", ELMTS_STR, self.ms)?;
+        wrapped_f.write_checksum_if_not_alt()
     }
 }
 
@@ -296,10 +298,11 @@ impl<Pk: MiniscriptKey> fmt::Debug for Pkh<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Pkh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let desc = format!("{}pkh({})", ELMTS_STR, self.pk);
-        let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
-        write!(f, "{}#{}", &desc, &checksum)
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use fmt::Write;
+        let mut wrapped_f = checksum::Formatter::new(f);
+        write!(wrapped_f, "{}pkh({})", ELMTS_STR, self.pk)?;
+        wrapped_f.write_checksum_if_not_alt()
     }
 }
 

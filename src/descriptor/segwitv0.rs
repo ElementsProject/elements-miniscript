@@ -17,12 +17,14 @@
 //! of wsh, wpkh and sortedmulti inside wsh.
 
 use core::fmt;
+use std::fmt::Write;
 use std::str::FromStr;
 
 use elements::{self, secp256k1_zkp, Address, Script};
 
-use super::checksum::{desc_checksum, verify_checksum};
+use super::checksum::verify_checksum;
 use super::{SortedMultiVec, ELMTS_STR};
+use crate::descriptor::checksum;
 use crate::expression::{self, FromTree};
 use crate::miniscript::context::{ScriptContext, ScriptContextError};
 use crate::policy::{semantic, Liftable};
@@ -67,11 +69,11 @@ impl<Pk: MiniscriptKey> Wsh<Pk> {
         })
     }
 
-    /// Get the descriptor without the checksum, without the el prefix
-    pub(crate) fn to_string_no_checksum(&self) -> String {
+    /// Get the descriptor without the checksum and the el prefix
+    pub fn to_string_no_el_pref(&self, f: &mut checksum::Formatter) -> fmt::Result {
         match self.inner {
-            WshInner::SortedMulti(ref smv) => format!("wsh({})", smv),
-            WshInner::Ms(ref ms) => format!("wsh({})", ms),
+            WshInner::SortedMulti(ref smv) => write!(f, "wsh({})", smv),
+            WshInner::Ms(ref ms) => write!(f, "wsh({})", ms),
         }
     }
 
@@ -264,10 +266,13 @@ impl<Pk: MiniscriptKey> fmt::Debug for Wsh<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Wsh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let desc = format!("{}{}", ELMTS_STR, self.to_string_no_checksum());
-        let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
-        write!(f, "{}#{}", &desc, &checksum)
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut wrapped_f = checksum::Formatter::new(f);
+        match self.inner {
+            WshInner::SortedMulti(ref smv) => write!(wrapped_f, "{}wsh({})", ELMTS_STR, smv)?,
+            WshInner::Ms(ref ms) => write!(wrapped_f, "{}wsh({})", ELMTS_STR, ms)?,
+        }
+        wrapped_f.write_checksum_if_not_alt()
     }
 }
 
@@ -338,9 +343,9 @@ impl<Pk: MiniscriptKey> Wpkh<Pk> {
         &self.pk
     }
 
-    /// Get the descriptor without the checksum without the el prefix
-    pub(crate) fn to_string_no_checksum(&self) -> String {
-        format!("wpkh({})", self.pk)
+    /// Get the descriptor without the checksum and no el prefix
+    pub fn to_string_no_el_pref(&self, f: &mut checksum::Formatter) -> fmt::Result {
+        write!(f, "wpkh({})", self.pk)
     }
 
     /// Checks whether the descriptor is safe.
@@ -456,10 +461,10 @@ impl<Pk: MiniscriptKey> fmt::Debug for Wpkh<Pk> {
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Wpkh<Pk> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let desc = format!("{}{}", ELMTS_STR, self.to_string_no_checksum());
-        let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
-        write!(f, "{}#{}", &desc, &checksum)
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut wrapped_f = checksum::Formatter::new(f);
+        write!(wrapped_f, "{}wpkh({})", ELMTS_STR, self.pk)?;
+        wrapped_f.write_checksum_if_not_alt()
     }
 }
 

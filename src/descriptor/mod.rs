@@ -1086,14 +1086,14 @@ impl_from_str!(
 impl<Pk: MiniscriptKey, T: Extension> fmt::Debug for Descriptor<Pk, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Descriptor::Bare(ref sub) => write!(f, "{:?}", sub),
-            Descriptor::Pkh(ref pkh) => write!(f, "{:?}", pkh),
-            Descriptor::Wpkh(ref wpkh) => write!(f, "{:?}", wpkh),
-            Descriptor::Sh(ref sub) => write!(f, "{:?}", sub),
-            Descriptor::Wsh(ref sub) => write!(f, "{:?}", sub),
-            Descriptor::LegacyCSFSCov(ref cov) => write!(f, "{:?}", cov),
-            Descriptor::Tr(ref tr) => write!(f, "{:?}", tr),
-            Descriptor::TrExt(ref tr) => write!(f, "{:?}", tr),
+            Descriptor::Bare(ref sub) => fmt::Debug::fmt(sub, f),
+            Descriptor::Pkh(ref pkh) => fmt::Debug::fmt(pkh, f),
+            Descriptor::Wpkh(ref wpkh) => fmt::Debug::fmt(wpkh, f),
+            Descriptor::Sh(ref sub) => fmt::Debug::fmt(sub, f),
+            Descriptor::Wsh(ref sub) => fmt::Debug::fmt(sub, f),
+            Descriptor::Tr(ref tr) => fmt::Debug::fmt(tr, f),
+            Descriptor::TrExt(ref tr) => fmt::Debug::fmt(tr, f),
+            Descriptor::LegacyCSFSCov(ref cov) => fmt::Debug::fmt(cov, f),
         }
     }
 }
@@ -1101,14 +1101,14 @@ impl<Pk: MiniscriptKey, T: Extension> fmt::Debug for Descriptor<Pk, T> {
 impl<Pk: MiniscriptKey, T: Extension> fmt::Display for Descriptor<Pk, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Descriptor::Bare(ref sub) => write!(f, "{}", sub),
-            Descriptor::Pkh(ref pkh) => write!(f, "{}", pkh),
-            Descriptor::Wpkh(ref wpkh) => write!(f, "{}", wpkh),
-            Descriptor::Sh(ref sub) => write!(f, "{}", sub),
-            Descriptor::Wsh(ref sub) => write!(f, "{}", sub),
-            Descriptor::LegacyCSFSCov(ref cov) => write!(f, "{}", cov),
-            Descriptor::Tr(ref tr) => write!(f, "{}", tr),
-            Descriptor::TrExt(ref tr) => write!(f, "{}", tr),
+            Descriptor::Bare(ref sub) => fmt::Display::fmt(sub, f),
+            Descriptor::Pkh(ref pkh) => fmt::Display::fmt(pkh, f),
+            Descriptor::Wpkh(ref wpkh) => fmt::Display::fmt(wpkh, f),
+            Descriptor::Sh(ref sub) => fmt::Display::fmt(sub, f),
+            Descriptor::Wsh(ref sub) => fmt::Display::fmt(sub, f),
+            Descriptor::Tr(ref tr) => fmt::Display::fmt(tr, f),
+            Descriptor::TrExt(ref tr) => fmt::Display::fmt(tr, f),
+            Descriptor::LegacyCSFSCov(ref cov) => fmt::Display::fmt(cov, f),
         }
     }
 }
@@ -2027,6 +2027,86 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
         assert_eq!(
             descriptor.find_derivation_index_for_spk(&secp, &script_at_0_1, 0..10),
             Ok(Some((1, expected_concrete)))
+        );
+    }
+
+    #[test]
+    fn display_alternate() {
+        let bare = StdDescriptor::from_str(
+            "elpk(020000000000000000000000000000000000000000000000000000000000000002)",
+        )
+        .unwrap();
+        assert_eq!(
+            format!("{}", bare),
+            "elpk(020000000000000000000000000000000000000000000000000000000000000002)#vlpqwfjv",
+        );
+        assert_eq!(
+            format!("{:#}", bare),
+            "elpk(020000000000000000000000000000000000000000000000000000000000000002)",
+        );
+
+        let pkh = StdDescriptor::from_str(
+            "elpkh(020000000000000000000000000000000000000000000000000000000000000002)",
+        )
+        .unwrap();
+        assert_eq!(
+            format!("{}", pkh),
+            "elpkh(020000000000000000000000000000000000000000000000000000000000000002)#jzq8e832",
+        );
+        assert_eq!(
+            format!("{:#}", pkh),
+            "elpkh(020000000000000000000000000000000000000000000000000000000000000002)",
+        );
+
+        let wpkh = StdDescriptor::from_str(
+            "elwpkh(020000000000000000000000000000000000000000000000000000000000000002)",
+        )
+        .unwrap();
+        assert_eq!(
+            format!("{}", wpkh),
+            "elwpkh(020000000000000000000000000000000000000000000000000000000000000002)#vxhqdpz9",
+        );
+        assert_eq!(
+            format!("{:#}", wpkh),
+            "elwpkh(020000000000000000000000000000000000000000000000000000000000000002)",
+        );
+
+        let shwpkh = StdDescriptor::from_str(
+            "elsh(wpkh(020000000000000000000000000000000000000000000000000000000000000002))",
+        )
+        .unwrap();
+        assert_eq!(
+            format!("{}", shwpkh),
+            "elsh(wpkh(020000000000000000000000000000000000000000000000000000000000000002))#h9ajn2ft",
+        );
+        assert_eq!(
+            format!("{:#}", shwpkh),
+            "elsh(wpkh(020000000000000000000000000000000000000000000000000000000000000002))",
+        );
+
+        let wsh = StdDescriptor::from_str("elwsh(1)").unwrap();
+        assert_eq!(format!("{}", wsh), "elwsh(1)#s78w5gmj");
+        assert_eq!(format!("{:#}", wsh), "elwsh(1)");
+
+        let sh = StdDescriptor::from_str("elsh(1)").unwrap();
+        assert_eq!(format!("{}", sh), "elsh(1)#k4aqrx5p");
+        assert_eq!(format!("{:#}", sh), "elsh(1)");
+
+        let shwsh = StdDescriptor::from_str("elsh(wsh(1))").unwrap();
+        assert_eq!(format!("{}", shwsh), "elsh(wsh(1))#d05z4wjl");
+        assert_eq!(format!("{:#}", shwsh), "elsh(wsh(1))");
+
+        let tr = StdDescriptor::from_str(
+            "eltr(020000000000000000000000000000000000000000000000000000000000000002)",
+        )
+        .unwrap();
+        assert_eq!(
+            format!("{}", tr),
+            "eltr(020000000000000000000000000000000000000000000000000000000000000002)#e874qu8z",
+        );
+        assert_eq!(
+            format!("{:#}", tr),
+            "eltr(020000000000000000000000000000000000000000000000000000000000000002)",
         );
     }
 }

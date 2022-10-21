@@ -11,8 +11,9 @@ use elements::taproot::{
 };
 use elements::{self, opcodes, secp256k1_zkp, Script};
 
-use super::checksum::{desc_checksum, verify_checksum};
+use super::checksum::verify_checksum;
 use super::ELMTS_STR;
+use crate::descriptor::checksum;
 use crate::expression::{self, FromTree};
 use crate::extensions::ParseableExt;
 use crate::miniscript::Miniscript;
@@ -194,14 +195,6 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
             })
         } else {
             Err(Error::MaxRecursiveDepthExceeded)
-        }
-    }
-
-    fn to_string_no_checksum(&self) -> String {
-        let key = &self.internal_key;
-        match self.tree {
-            Some(ref s) => format!("{}tr({},{})", ELMTS_STR, key, s),
-            None => format!("{}tr({})", ELMTS_STR, key),
         }
     }
 
@@ -491,10 +484,15 @@ impl<Pk: MiniscriptKey, Ext: Extension> fmt::Debug for Tr<Pk, Ext> {
 }
 
 impl<Pk: MiniscriptKey, Ext: Extension> fmt::Display for Tr<Pk, Ext> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let desc = self.to_string_no_checksum();
-        let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
-        write!(f, "{}#{}", &desc, &checksum)
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use fmt::Write;
+        let mut wrapped_f = checksum::Formatter::new(f);
+        let key = &self.internal_key;
+        match self.tree {
+            Some(ref s) => write!(wrapped_f, "{}tr({},{})", ELMTS_STR, key, s)?,
+            None => write!(wrapped_f, "{}tr({})", ELMTS_STR, key)?,
+        }
+        wrapped_f.write_checksum_if_not_alt()
     }
 }
 
