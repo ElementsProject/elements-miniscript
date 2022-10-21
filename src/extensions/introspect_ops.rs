@@ -418,16 +418,16 @@ impl<T: ExtParam> Extension for CovOps<T> {
     fn corr_prop(&self) -> Correctness {
         Correctness {
             base: Base::B,
-            input: Input::Zero, // No input from stack
-            dissatisfiable: true,
+            input: Input::Zero,    // No input from stack
+            dissatisfiable: false, // No dissatisfactions possible from stack inputs
             unit: true,
         }
     }
 
     fn mall_prop(&self) -> Malleability {
         Malleability {
-            dissat: Dissat::Unknown, // many dissatisfactions possible
-            safe: false,             // Unsafe as a top fragment
+            dissat: Dissat::None, // No dissatisfactions from stack inputs
+            safe: false,          // Unsafe as a top fragment
             non_malleable: true, // Script satisfaction is non-malleable, whole fragment tx could be malleable
         }
     }

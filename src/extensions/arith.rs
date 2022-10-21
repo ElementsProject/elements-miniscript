@@ -811,16 +811,16 @@ impl Extension for Arith {
     fn corr_prop(&self) -> Correctness {
         Correctness {
             base: Base::B,
-            input: Input::Zero, // No input from stack
-            dissatisfiable: true,
+            input: Input::Zero,    // No input from stack
+            dissatisfiable: false, // No dissatisfactions from stack
             unit: true,
         }
     }
 
     fn mall_prop(&self) -> Malleability {
         Malleability {
-            dissat: Dissat::Unknown, // many dissatisfactions possible
-            safe: false,             // Unsafe as a top fragment
+            dissat: Dissat::None, // No dissatisfactions from stack inputs
+            safe: false,          // Unsafe as a top fragment
             non_malleable: true, // There can exist multiple satisfactions for expressions. inp_v(0) = out_v(0), but
                                  // we only deal with script satisfactions here.
         }
