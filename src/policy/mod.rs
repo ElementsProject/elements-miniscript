@@ -592,7 +592,6 @@ mod benches {
 
     use super::{Concrete, Error};
     use crate::descriptor::Descriptor;
-    use crate::prelude::*;
     type TapDesc = Result<Descriptor<String>, Error>;
 
     #[bench]
