@@ -94,7 +94,7 @@ mod tests {
         string_rtt("elcovwsh(A,or_i(pk(B),pk(C)))");
         string_rtt("elcovwsh(A,multi(2,B,C,D))");
         string_rtt("elcovwsh(A,and_v(v:pk(B),pk(C)))");
-        string_rtt("elcovwsh(A,thresh(2,ver_eq(1),s:pk(C),s:pk(B)))");
+        string_rtt("elcovwsh(A,thresh(2,l:ver_eq(1),s:pk(C),s:pk(B)))");
         string_rtt("elcovwsh(A,outputs_pref(01020304))");
     }
 

@@ -48,14 +48,14 @@ impl Extension for LegacyVerEq {
         Correctness {
             base: Base::B,
             input: Input::Zero,
-            dissatisfiable: true,
+            dissatisfiable: false, // No dissat from stack inputs
             unit: true,
         }
     }
 
     fn mall_prop(&self) -> Malleability {
         Malleability {
-            dissat: Dissat::Unknown, // multi-dissat
+            dissat: Dissat::None, // No dissatisfactions from stack inputs
             safe: false,
             non_malleable: true,
         }
