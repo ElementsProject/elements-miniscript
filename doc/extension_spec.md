@@ -4,6 +4,21 @@ Extensions allow users to extend miniscript to have new leaf nodes. This documen
 extensions implemented for elements-miniscript with the tapscript opcodes. Users can
 also implement custom extensions using [`Extension`] trait.
 
+# Index expressions (`IdxExpr`)
+- Pushes a single CScriptNum on stack top. This is used to represent the index of the input or output. `IndexExpr` must
+compute values between [-2^31, 2^31 - 1]. When `IndexExpr` is finally used as an index in some parent fragment, additionally
+it's value must fall within bounds. For example, `inp_spk(IdxExpr_i)`, `IdxExpr_i` must be between `0`(inclusive) and
+`num_inputs`(exclusive)
+
+Name                    | Script
+---                     | ---
+curr_idx                | `PUSHCURRENTINPUTINDEX`
+`i` `<i64>`             | `i` (`i` as `CScriptNum`)
+idx_add(x,y)            | `[X] [Y] ADD`
+idx_sub(x,y)            | `[X] [Y] SUB`
+idx_mul(x,y)            | `[X] SCIPTNUMTOLE64 [Y] OP_SCIPTNUMTOLE64 MUL64 <1> EQUALVERIFY LE64TOSCIPTNUM`
+idx_div(x,y)            | `[X] SCIPTNUMTOLE64 [Y] OP_SCIPTNUMTOLE64 DIV64 <1> EQUALVERIFY  NIP LE64TOSCIPTNUM`
+
 # Value Arithmetic extensions (`NumExpr`)
 
 - Pushes single singed 64 bit LE number on stack top. Since these expressions push a 8 byte number, it does not directly
@@ -16,12 +31,12 @@ fit in the miniscript model. These are used in fragments in one of the compariso
 
 Name                    | Script
 ---                     | ---
-i(i64 number)           | `8-byte-LE-push of <i>`
+`value` `<i64>`         | `8-byte-LE-push of <value>`
 curr_inp_v              | `INSPECTCURRENTINPUTINDEX INPSECTINPUTVALUE <1> EQUALVERIFY`
-inp_v(i)                | `i INPSECTINPUTVALUE <1> EQUALVERIFY`
-out_v(i)                | `i INPSECTOUTPUTVALUE <1> EQUALVERIFY`
-inp_issue_v(i)          | `i OP_INSPECTINPUTISSUANCE DROP DROP <1> EQUALVERIFY NIP NIP`
-inp_reissue_v(i)        | `i OP_INSPECTINPUTISSUANCE DROP DROP DROP DROP <1> EQUALVERIFY`
+inp_v(IdxExpr_i)        | `[IdxExpr_i] INPSECTINPUTVALUE <1> EQUALVERIFY`
+out_v(IdxExpr_i)        | `[IdxExpr_i] INPSECTOUTPUTVALUE <1> EQUALVERIFY`
+inp_issue_v(IdxExpr_i)  | `[IdxExpr_i] OP_INSPECTINPUTISSUANCE DROP DROP <1> EQUALVERIFY NIP NIP`
+inp_reissue_v(IdxExpr_i)| `[IdxExpr_i] OP_INSPECTINPUTISSUANCE DROP DROP DROP DROP <1> EQUALVERIFY`
 bitinv(x)               | `[X] INVERT`
 neg(x)                  | `[X] NEG64 <1> EQUALVERIFY`
 add(x,y)                | `[X] [Y] ADD64 <1> EQUALVERIFY`
@@ -64,9 +79,9 @@ current input value and fourth output value. This would abort if any of the valu
 Name                    | Script
 ---                     | ---
 `asset`(33 byte hex)    | `[32-byte comm] [1 byte pref]` of this asset
-curr_inp_asset          | `PUSHCURRENTINPUTINDEX INPSECTINPUTASSET`
-inp_asset(i)            | `i INPSECTINPUTASSET`
-out_asset(i)            | `i INPSECTOUTPUTASSET`
+curr_inp_asset          | `INSPECTCURRENTINPUTINDEX INPSECTINPUTASSET`
+inp_asset(IdxExpr_i)    | `[IdxExpr_i] INPSECTINPUTASSET`
+out_asset(IdxExpr_i)    | `[IdxExpr_i] INPSECTOUTPUTASSET`
 
 ### ValueExpr
 
@@ -77,9 +92,9 @@ out_asset(i)            | `i INPSECTOUTPUTASSET`
 Name                    | Script
 ---                     | ---
 `value`(33/9 byte hex)  | `[32-byte comm/8 byte LE] [1 byte pref]` of this Value
-curr_inp_value          | `PUSHCURRENTINPUTINDEX INPSECTINPUTVALUE`
-inp_value(i)            | `i INPSECTINPUTVALUE`
-out_value(i)            | `i INPSECTOUTPUTVALUE`
+curr_inp_value          | `INSPECTCURRENTINPUTINDEX INPSECTINPUTVALUE`
+inp_value(IdxExpr_i)    | `[IdxExpr_i] INPSECTINPUTVALUE`
+out_value(IdxExpr_i)    | `[IdxExpr_i] INPSECTOUTPUTVALUE`
 
 ### SpkExpr: Script PubKey Expression
 
@@ -91,9 +106,9 @@ out_value(i)            | `i INPSECTOUTPUTVALUE`
 Name                    | Script
 ---                     | ---
 `spk`(script_hex)       | `[program] [witness version]` of this spk (`<Sha2Hash(Script)> <-1>`) for legacy
-curr_inp_spk            | `PUSHCURRENTINPUTINDEX INPSECTINPUTSCRIPTPUBKEY`
-inp_spk(i)              | `i INPSECTINPUTSCRIPTPUBKEY`
-out_spk(i)              | `i INPSECTOUTPUTASSETSCRIPTPUBKEY`
+curr_inp_spk            | `INSPECTCURRENTINPUTINDEX INPSECTINPUTSCRIPTPUBKEY`
+inp_spk(IdxExpr_i)      | `[IdxExpr_i] INPSECTINPUTSCRIPTPUBKEY`
+out_spk(IdxExpr_i)      | `[IdxExpr_i] INPSECTOUTPUTASSETSCRIPTPUBKEY`
 
 ## Introspection Operations
 
@@ -110,4 +125,5 @@ is_exp_value(ValueExpr_X)               | `[ValueExpr_X] <1> EQUAL NIP`
 asset_eq(AssetExpr_X,AssetExpr_Y)       | `[AssetExpr_X] TOALTSTACK [AssetExpr_Y] FROMALTSTACK EQUAL TOALTSTACK EQUAL FROMALTSTACK BOOLAND`
 value_eq(ValueExpr_X,ValueExpr_Y)       | `[ValueExpr_X] TOALTSTACK [ValueExpr_Y] FROMALTSTACK EQUAL TOALTSTACK EQUAL FROMALTSTACK BOOLAND`
 spk_eq(SpkExpr_X,SpkExpr_Y)             | `[SpkExpr_X] TOALTSTACK [SpkExpr_Y] FROMALTSTACK EQUAL TOALTSTACK EQUAL FROMALTSTACK BOOLAND`
-curr_idx_eq(i)                          | `<i> PUSHCURRENTINPUTINDEX EQUAL`
+curr_idx_eq(i)	                        | `i PUSHCURRENTINPUTINDEX EQUAL`
+idx_eq(IdxExpr_i, IdxExpr_j)            | `[IdxExpr_i] PUSHCURRENTINPUTINDEX EQUAL`
