@@ -96,6 +96,8 @@ pub enum Token<'s> {
     OutSpk,
     InpSpk,
     NumNeg1,
+    ScriptNumToLe64,
+    Le64ToScriptNum,
 }
 
 impl<'s> fmt::Display for Token<'s> {
@@ -304,6 +306,12 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token<'_>>, Error> {
             }
             script::Instruction::Op(opcodes::all::OP_INVERT) => {
                 ret.push(Token::Invert);
+            }
+            script::Instruction::Op(opcodes::all::OP_SCRIPTNUMTOLE64) => {
+                ret.push(Token::ScriptNumToLe64);
+            }
+            script::Instruction::Op(opcodes::all::OP_LE64TOSCRIPTNUM) => {
+                ret.push(Token::Le64ToScriptNum);
             }
             script::Instruction::Op(opcodes::all::OP_CHECKMULTISIG) => {
                 ret.push(Token::CheckMultiSig);
