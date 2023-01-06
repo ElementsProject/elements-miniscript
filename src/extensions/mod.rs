@@ -19,6 +19,7 @@ use crate::{policy, Error, ExtTranslator, MiniscriptKey, Satisfier, ToPublicKey,
 #[allow(unused_imports)]
 mod arith;
 mod csfs;
+mod index_ops;
 mod introspect_ops;
 mod outputs_pref;
 pub mod param;
@@ -26,6 +27,7 @@ mod tx_ver;
 
 pub use arith::{Arith, EvalError, Expr, ExprInner};
 pub use csfs::{CheckSigFromStack, CsfsKey, CsfsMsg};
+pub use index_ops::IdxExpr;
 pub use introspect_ops::{AssetExpr, CovOps, Spk, SpkExpr, ValueExpr};
 
 pub use self::outputs_pref::LegacyOutputsPref;

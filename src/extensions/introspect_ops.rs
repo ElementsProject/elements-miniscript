@@ -11,6 +11,7 @@ use elements::confidential::Asset;
 use elements::opcodes::all::*;
 use elements::{confidential, encode, script, Address, AddressParams};
 
+use super::index_ops::IdxExpr;
 use super::param::{ExtParamTranslator, TranslateExtParam};
 use super::{ArgFromStr, CovExtArgs, EvalError, ExtParam, ParseableExt, TxEnv};
 use crate::expression::{FromTree, Tree};
@@ -40,10 +41,10 @@ pub enum AssetExpr<T: ExtParam> {
     CurrInputAsset,
     /// Explicit asset at the given input index
     /// i INPSECTINPUTASSET
-    Input(usize),
+    Input(IdxExpr),
     /// Explicit asset at the given output index
     /// i INPSECTOUTPUTASSET
-    Output(usize),
+    Output(IdxExpr),
 }
 
 /// Enum representing operations with transaction values.
@@ -61,10 +62,10 @@ pub enum ValueExpr<T: ExtParam> {
     CurrInputValue,
     ///  Value(possibly confidential) at the given input index
     /// i INPSECTINPUTVALUE
-    Input(usize),
+    Input(IdxExpr),
     /// Value(possibly confidential) at the given output index
     /// i INPSECTOUTPUTVALUE
-    Output(usize),
+    Output(IdxExpr),
 }
 
 /// Enum representing operations with transaction script pubkeys.
@@ -85,10 +86,10 @@ pub enum SpkExpr<T: ExtParam> {
     CurrInputSpk,
     /// Explicit asset at the given input index
     /// i INPSECTINPUTSCRIPTPUBKEY
-    Input(usize),
+    Input(IdxExpr),
     /// Explicit asset at the given output index
     /// i INPSECTOUTPUTSCRIPTPUBKEY
-    Output(usize),
+    Output(IdxExpr),
 }
 
 /// Miniscript Fragment containing arith expressions
@@ -118,6 +119,9 @@ pub enum CovOps<T: ExtParam> {
     /// Current input index equality
     /// <i> PUSHCURRENTINPUTINDEX EQUAL
     CurrIndEq(usize),
+    /// Index equality
+    /// [X] [Y] EQUAL
+    IdxEq(IdxExpr, IdxExpr),
 }
 
 impl<T: ExtParam> AssetExpr<T> {
@@ -126,8 +130,8 @@ impl<T: ExtParam> AssetExpr<T> {
         match self {
             AssetExpr::Const(_) => 33 + 1,
             AssetExpr::CurrInputAsset => 2,
-            AssetExpr::Input(i) => script_num_size(*i) + 1,
-            AssetExpr::Output(i) => script_num_size(*i) + 1,
+            AssetExpr::Input(i) => i.script_size() + 1,
+            AssetExpr::Output(i) => i.script_size() + 1,
         }
     }
 
@@ -140,8 +144,8 @@ impl<T: ExtParam> AssetExpr<T> {
         let res = match self {
             AssetExpr::Const(c) => AssetExpr::Const(t.ext(c)?),
             AssetExpr::CurrInputAsset => AssetExpr::CurrInputAsset,
-            AssetExpr::Input(i) => AssetExpr::Input(*i),
-            AssetExpr::Output(i) => AssetExpr::Output(*i),
+            AssetExpr::Input(i) => AssetExpr::Input(i.clone()),
+            AssetExpr::Output(i) => AssetExpr::Output(i.clone()),
         };
         Ok(res)
     }
@@ -180,10 +184,8 @@ impl<T: ExtParam> AssetExpr<T> {
     fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("curr_inp_asset", 0) => Ok(AssetExpr::CurrInputAsset),
-            ("inp_asset", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
-                .map(AssetExpr::Input),
-            ("out_asset", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
-                .map(AssetExpr::Output),
+            ("inp_asset", 1) => expression::unary(&top, AssetExpr::Input),
+            ("out_asset", 1) => expression::unary(&top, AssetExpr::Output),
             (asset, 0) => Ok(AssetExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -200,8 +202,8 @@ impl<T: ExtParam> ValueExpr<T> {
         match self {
             ValueExpr::Const(_c) => 33 + 1, // Worst case size for fee estimation
             ValueExpr::CurrInputValue => 2,
-            ValueExpr::Input(i) => script_num_size(*i) + 1,
-            ValueExpr::Output(i) => script_num_size(*i) + 1,
+            ValueExpr::Input(i) => i.script_size() + 1,
+            ValueExpr::Output(i) => i.script_size() + 1,
         }
     }
 
@@ -214,8 +216,8 @@ impl<T: ExtParam> ValueExpr<T> {
         let res = match self {
             ValueExpr::Const(c) => ValueExpr::Const(t.ext(c)?),
             ValueExpr::CurrInputValue => ValueExpr::CurrInputValue,
-            ValueExpr::Input(i) => ValueExpr::Input(*i),
-            ValueExpr::Output(i) => ValueExpr::Output(*i),
+            ValueExpr::Input(i) => ValueExpr::Input(i.clone()),
+            ValueExpr::Output(i) => ValueExpr::Output(i.clone()),
         };
         Ok(res)
     }
@@ -254,10 +256,8 @@ impl<T: ExtParam> ValueExpr<T> {
     fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("curr_inp_value", 0) => Ok(ValueExpr::CurrInputValue),
-            ("inp_value", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
-                .map(ValueExpr::Input),
-            ("out_value", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
-                .map(ValueExpr::Output),
+            ("inp_value", 1) => expression::unary(&top, ValueExpr::Input),
+            ("out_value", 1) => expression::unary(&top, ValueExpr::Output),
             (value, 0) => Ok(ValueExpr::Const(T::arg_from_str(value, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -274,8 +274,8 @@ impl<T: ExtParam> SpkExpr<T> {
         match self {
             SpkExpr::Const(_c) => 32 + 1 + 1,
             SpkExpr::CurrInputSpk => 2,
-            SpkExpr::Input(i) => script_num_size(*i) + 1,
-            SpkExpr::Output(i) => script_num_size(*i) + 1,
+            SpkExpr::Input(i) => i.script_size() + 1,
+            SpkExpr::Output(i) => i.script_size() + 1,
         }
     }
 
@@ -288,8 +288,8 @@ impl<T: ExtParam> SpkExpr<T> {
         let res = match self {
             SpkExpr::Const(c) => SpkExpr::Const(t.ext(c)?),
             SpkExpr::CurrInputSpk => SpkExpr::CurrInputSpk,
-            SpkExpr::Input(i) => SpkExpr::Input(*i),
-            SpkExpr::Output(i) => SpkExpr::Output(*i),
+            SpkExpr::Input(i) => SpkExpr::Input(i.clone()),
+            SpkExpr::Output(i) => SpkExpr::Output(i.clone()),
         };
         Ok(res)
     }
@@ -328,10 +328,8 @@ impl<T: ExtParam> SpkExpr<T> {
     fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("curr_inp_spk", 0) => Ok(SpkExpr::CurrInputSpk),
-            ("inp_spk", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
-                .map(SpkExpr::Input),
-            ("out_spk", 1) => expression::terminal(&top.args[0], expression::parse_num::<usize>)
-                .map(SpkExpr::Output),
+            ("inp_spk", 1) => expression::unary(&top, SpkExpr::Input),
+            ("out_spk", 1) => expression::unary(&top, SpkExpr::Output),
             (asset, 0) => Ok(SpkExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -351,6 +349,7 @@ impl<T: ExtParam> fmt::Display for CovOps<T> {
             CovOps::ValueEq(a, b) => write!(f, "value_eq({},{})", a, b),
             CovOps::SpkEq(a, b) => write!(f, "spk_eq({},{})", a, b),
             CovOps::CurrIndEq(i) => write!(f, "curr_idx_eq({})", i),
+            CovOps::IdxEq(a, b) => write!(f, "idx_eq({},{})", a, b),
         }
     }
 }
@@ -364,6 +363,7 @@ impl<T: ExtParam> fmt::Debug for CovOps<T> {
             CovOps::ValueEq(a, b) => write!(f, "value_eq({:?},{:?})", a, b),
             CovOps::SpkEq(a, b) => write!(f, "spk_eq({:?},{:?})", a, b),
             CovOps::CurrIndEq(i) => write!(f, "curr_idx_eq({:?})", i),
+            CovOps::IdxEq(a, b) => write!(f, "idx_eq({},{})", a, b),
         }
     }
 }
@@ -404,6 +404,11 @@ impl<T: ExtParam> FromTree for CovOps<T> {
             ("curr_idx_eq", 1) => {
                 expression::terminal(&top.args[0], expression::parse_num::<usize>)
                     .map(CovOps::CurrIndEq)
+            }
+            ("idx_eq", 2) => {
+                let l = IdxExpr::from_tree(&top.args[0])?;
+                let r = IdxExpr::from_tree(&top.args[1])?;
+                Ok(CovOps::IdxEq(l, r))
             }
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -465,6 +470,7 @@ impl<T: ExtParam> Extension for CovOps<T> {
             CovOps::ValueEq(a, b) => a.script_size() + b.script_size() + 7,
             CovOps::SpkEq(a, b) => a.script_size() + b.script_size() + 7,
             CovOps::CurrIndEq(i) => script_num_size(*i) + 2,
+            CovOps::IdxEq(a, b) => a.script_size() + b.script_size() + 1,
         }
     }
 
@@ -672,11 +678,9 @@ impl AssetExpr<CovExtArgs> {
             AssetExpr::CurrInputAsset => builder
                 .push_opcode(OP_PUSHCURRENTINPUTINDEX)
                 .push_opcode(OP_INSPECTINPUTASSET),
-            AssetExpr::Input(i) => builder
-                .push_int(*i as i64)
-                .push_opcode(OP_INSPECTINPUTASSET),
-            AssetExpr::Output(i) => builder
-                .push_int(*i as i64)
+            AssetExpr::Input(i) => i.push_to_builder(builder).push_opcode(OP_INSPECTINPUTASSET),
+            AssetExpr::Output(i) => i
+                .push_to_builder(builder)
                 .push_opcode(OP_INSPECTOUTPUTASSET),
         }
     }
@@ -699,16 +703,18 @@ impl AssetExpr<CovExtArgs> {
                 Ok(env.spent_utxos()[env.idx()].asset)
             }
             AssetExpr::Input(i) => {
-                if *i >= env.spent_utxos().len() {
-                    return Err(EvalError::UtxoIndexOutOfBounds(*i, env.spent_utxos().len()));
+                let i = i.eval(env)?;
+                if i >= env.spent_utxos().len() {
+                    return Err(EvalError::UtxoIndexOutOfBounds(i, env.spent_utxos().len()));
                 }
-                Ok(env.spent_utxos()[*i].asset)
+                Ok(env.spent_utxos()[i].asset)
             }
             AssetExpr::Output(i) => {
-                if *i >= env.tx().output.len() {
-                    return Err(EvalError::OutputIndexOutOfBounds(*i, env.tx().output.len()));
+                let i = i.eval(env)?;
+                if i >= env.tx().output.len() {
+                    return Err(EvalError::OutputIndexOutOfBounds(i, env.tx().output.len()));
                 }
-                Ok(env.tx().output[*i].asset)
+                Ok(env.tx().output[i].asset)
             }
         }
     }
@@ -723,10 +729,12 @@ impl AssetExpr<CovExtArgs> {
             Some((AssetExpr::Const(CovExtArgs::Asset(asset)), e - 2))
         } else if let Some(&[Tk::CurrInp, Tk::InpAsset]) = tks.get(e.checked_sub(2)?..e) {
             Some((AssetExpr::CurrInputAsset, e - 2))
-        } else if let Some(&[Tk::Num(i), Tk::InpAsset]) = tks.get(e.checked_sub(2)?..e) {
-            Some((AssetExpr::Input(i as usize), e - 2))
-        } else if let Some(&[Tk::Num(i), Tk::OutAsset]) = tks.get(e.checked_sub(2)?..e) {
-            Some((AssetExpr::Output(i as usize), e - 2))
+        } else if let Some(&[Tk::InpAsset]) = tks.get(e.checked_sub(1)?..e) {
+            let (idx_expr, e) = IdxExpr::from_tokens(tks, e - 1)?;
+            Some((AssetExpr::Input(idx_expr), e))
+        } else if let Some(&[Tk::OutAsset]) = tks.get(e.checked_sub(1)?..e) {
+            let (idx_expr, e) = IdxExpr::from_tokens(tks, e - 1)?;
+            Some((AssetExpr::Output(idx_expr), e))
         } else {
             None
         }
@@ -758,11 +766,9 @@ impl ValueExpr<CovExtArgs> {
             ValueExpr::CurrInputValue => builder
                 .push_opcode(OP_PUSHCURRENTINPUTINDEX)
                 .push_opcode(OP_INSPECTINPUTVALUE),
-            ValueExpr::Input(i) => builder
-                .push_int(*i as i64)
-                .push_opcode(OP_INSPECTINPUTVALUE),
-            ValueExpr::Output(i) => builder
-                .push_int(*i as i64)
+            ValueExpr::Input(i) => i.push_to_builder(builder).push_opcode(OP_INSPECTINPUTVALUE),
+            ValueExpr::Output(i) => i
+                .push_to_builder(builder)
                 .push_opcode(OP_INSPECTOUTPUTVALUE),
         }
     }
@@ -785,16 +791,18 @@ impl ValueExpr<CovExtArgs> {
                 Ok(env.spent_utxos()[env.idx()].value)
             }
             ValueExpr::Input(i) => {
-                if *i >= env.spent_utxos().len() {
-                    return Err(EvalError::UtxoIndexOutOfBounds(*i, env.spent_utxos().len()));
+                let i = i.eval(env)?;
+                if i >= env.spent_utxos().len() {
+                    return Err(EvalError::UtxoIndexOutOfBounds(i, env.spent_utxos().len()));
                 }
-                Ok(env.spent_utxos()[*i].value)
+                Ok(env.spent_utxos()[i].value)
             }
             ValueExpr::Output(i) => {
-                if *i >= env.tx().output.len() {
-                    return Err(EvalError::OutputIndexOutOfBounds(*i, env.tx().output.len()));
+                let i = i.eval(env)?;
+                if i >= env.tx().output.len() {
+                    return Err(EvalError::OutputIndexOutOfBounds(i, env.tx().output.len()));
                 }
-                Ok(env.tx().output[*i].value)
+                Ok(env.tx().output[i].value)
             }
         }
     }
@@ -812,10 +820,12 @@ impl ValueExpr<CovExtArgs> {
             Some((ValueExpr::Const(CovExtArgs::Value(value)), e - 2))
         } else if let Some(&[Tk::CurrInp, Tk::InpValue]) = tks.get(e.checked_sub(2)?..e) {
             Some((ValueExpr::CurrInputValue, e - 2))
-        } else if let Some(&[Tk::Num(i), Tk::InpValue]) = tks.get(e.checked_sub(2)?..e) {
-            Some((ValueExpr::Input(i as usize), e - 2))
-        } else if let Some(&[Tk::Num(i), Tk::OutValue]) = tks.get(e.checked_sub(2)?..e) {
-            Some((ValueExpr::Output(i as usize), e - 2))
+        } else if let Some(&[Tk::InpValue]) = tks.get(e.checked_sub(1)?..e) {
+            let (idx_expr, e) = IdxExpr::from_tokens(tks, e - 1)?;
+            Some((ValueExpr::Input(idx_expr), e))
+        } else if let Some(&[Tk::OutValue]) = tks.get(e.checked_sub(1)?..e) {
+            let (idx_expr, e) = IdxExpr::from_tokens(tks, e - 1)?;
+            Some((ValueExpr::Output(idx_expr), e))
         } else {
             None
         }
@@ -840,11 +850,11 @@ impl SpkExpr<CovExtArgs> {
             SpkExpr::CurrInputSpk => builder
                 .push_opcode(OP_PUSHCURRENTINPUTINDEX)
                 .push_opcode(OP_INSPECTINPUTSCRIPTPUBKEY),
-            SpkExpr::Input(i) => builder
-                .push_int(*i as i64)
+            SpkExpr::Input(i) => i
+                .push_to_builder(builder)
                 .push_opcode(OP_INSPECTINPUTSCRIPTPUBKEY),
-            SpkExpr::Output(i) => builder
-                .push_int(*i as i64)
+            SpkExpr::Output(i) => i
+                .push_to_builder(builder)
                 .push_opcode(OP_INSPECTOUTPUTSCRIPTPUBKEY),
         }
     }
@@ -870,16 +880,18 @@ impl SpkExpr<CovExtArgs> {
                 spk_to_components(&env.spent_utxos()[env.idx()].script_pubkey)
             }
             SpkExpr::Input(i) => {
-                if *i >= env.spent_utxos().len() {
-                    return Err(EvalError::UtxoIndexOutOfBounds(*i, env.spent_utxos().len()));
+                let i = i.eval(env)?;
+                if i >= env.spent_utxos().len() {
+                    return Err(EvalError::UtxoIndexOutOfBounds(i, env.spent_utxos().len()));
                 }
-                spk_to_components(&(env.spent_utxos()[*i].script_pubkey))
+                spk_to_components(&(env.spent_utxos()[i].script_pubkey))
             }
             SpkExpr::Output(i) => {
-                if *i >= env.tx().output.len() {
-                    return Err(EvalError::OutputIndexOutOfBounds(*i, env.tx().output.len()));
+                let i = i.eval(env)?;
+                if i >= env.tx().output.len() {
+                    return Err(EvalError::OutputIndexOutOfBounds(i, env.tx().output.len()));
                 }
-                spk_to_components(&(env.tx().output[*i].script_pubkey))
+                spk_to_components(&(env.tx().output[i].script_pubkey))
             }
         };
         Ok(res)
@@ -903,10 +915,12 @@ impl SpkExpr<CovExtArgs> {
             Some((SpkExpr::Const(CovExtArgs::Script(Spk::new(script))), e - 2))
         } else if let Some(&[Tk::CurrInp, Tk::InpSpk]) = tks.get(e.checked_sub(2)?..e) {
             Some((SpkExpr::CurrInputSpk, e - 2))
-        } else if let Some(&[Tk::Num(i), Tk::InpSpk]) = tks.get(e.checked_sub(2)?..e) {
-            Some((SpkExpr::Input(i as usize), e - 2))
-        } else if let Some(&[Tk::Num(i), Tk::OutSpk]) = tks.get(e.checked_sub(2)?..e) {
-            Some((SpkExpr::Output(i as usize), e - 2))
+        } else if let Some(&[Tk::InpSpk]) = tks.get(e.checked_sub(1)?..e) {
+            let (idx_expr, e) = IdxExpr::from_tokens(tks, e - 1)?;
+            Some((SpkExpr::Input(idx_expr), e))
+        } else if let Some(&[Tk::OutSpk]) = tks.get(e.checked_sub(1)?..e) {
+            let (idx_expr, e) = IdxExpr::from_tokens(tks, e - 1)?;
+            Some((SpkExpr::Output(idx_expr), e))
         } else {
             None
         }
@@ -970,6 +984,12 @@ impl CovOps<CovExtArgs> {
                 .push_int(*i as i64)
                 .push_opcode(OP_PUSHCURRENTINPUTINDEX)
                 .push_opcode(OP_EQUAL),
+            CovOps::IdxEq(x, y) => {
+                // pushes [idx_x] [idx_y] on top. Check that both prefixes and values match.
+                let builder = x.push_to_builder(builder);
+                let builder = y.push_to_builder(builder);
+                builder.push_opcode(OP_EQUAL)
+            }
         }
     }
 
@@ -982,6 +1002,7 @@ impl CovOps<CovExtArgs> {
             CovOps::ValueEq(x, y) => Ok(x.eval(env)? == y.eval(env)?),
             CovOps::SpkEq(x, y) => Ok(x.eval(env)? == y.eval(env)?),
             CovOps::CurrIndEq(i) => Ok(*i == env.idx()),
+            CovOps::IdxEq(x, y) => Ok(x.eval(env)? == y.eval(env)?),
         }
     }
 
@@ -991,6 +1012,10 @@ impl CovOps<CovExtArgs> {
         let e = tks.len();
         if let Some(&[Tk::Num(i), Tk::CurrInp, Tk::Equal]) = tks.get(e.checked_sub(3)?..e) {
             Some((CovOps::CurrIndEq(i as usize), e - 3))
+        } else if let Some(&[Tk::Equal]) = tks.get(e.checked_sub(1)?..e) {
+            let (y, e) = IdxExpr::from_tokens(tks, e - 1)?;
+            let (x, e) = IdxExpr::from_tokens(tks, e)?;
+            Some((CovOps::IdxEq(x, y), e))
         } else if let Some(&[Tk::Num(1), Tk::Equal, Tk::Nip]) = tks.get(e.checked_sub(3)?..e) {
             if let Some((asset, e)) = AssetExpr::from_tokens(tks, e - 3) {
                 Some((CovOps::IsExpAsset(asset), e))
@@ -1186,6 +1211,7 @@ where
             }
             CovOps::SpkEq(x, y) => Ok(CovOps::SpkEq(x._translate_ext(t)?, y._translate_ext(t)?)),
             CovOps::CurrIndEq(i) => Ok(CovOps::CurrIndEq(*i)),
+            CovOps::IdxEq(x, y) => Ok(CovOps::IdxEq(x.clone(), y.clone())),
         }
     }
 }
@@ -1197,6 +1223,26 @@ mod tests {
     use super::*;
     use crate::test_utils::{StrExtTranslator, StrXOnlyKeyTranslator};
     use crate::{Miniscript, Segwitv0, Tap, TranslatePk};
+
+    #[test]
+    fn test_index_ops() {
+        // index ops tests with different index types
+        _test_parse("is_exp_asset(inp_asset(curr_idx))");
+        _test_parse("is_exp_asset(inp_asset(idx_add(9,curr_idx)))");
+        _test_parse("is_exp_asset(inp_asset(idx_sub(9,curr_idx)))");
+        _test_parse("is_exp_asset(inp_asset(idx_mul(9,curr_idx)))");
+        _test_parse("is_exp_asset(inp_asset(idx_div(9,curr_idx)))");
+        _test_parse("is_exp_asset(inp_asset(idx_mul(1,idx_add(9,curr_idx))))");
+        _test_parse("is_exp_asset(inp_asset(idx_sub(idx_mul(1,idx_add(9,curr_idx)),1)))");
+
+        // test type parent fragments
+        _test_parse("is_exp_asset(out_asset(idx_add(9,curr_idx)))");
+        _test_parse("is_exp_value(inp_value(idx_add(9,curr_idx)))");
+        _test_parse("is_exp_value(out_value(idx_add(9,curr_idx)))");
+        _test_parse("spk_eq(inp_spk(idx_add(9,curr_idx)),out_spk(idx_sub(9,curr_idx)))");
+
+        _test_parse("idx_eq(10,idx_add(9,curr_idx))");
+    }
 
     #[test]
     fn cov_parse() {
