@@ -60,8 +60,8 @@ To use these with miniscript fragments, we can use them inside comparison extens
 Name                                    | Script
 ---                                     | ---
 num64_eq(NumExpr_X,NumExpr_Y)           | `[NumExpr_X] [NumExpr_Y] EQUAL`
-num64_le(NumExpr_X,NumExpr_Y)           | `[NumExpr_X] [NumExpr_Y] LESSTHAN64`
-num64_ge(NumExpr_X,NumExpr_Y)           | `[NumExpr_X] [NumExpr_Y] GREATERTHAN64`
+num64_lt(NumExpr_X,NumExpr_Y)           | `[NumExpr_X] [NumExpr_Y] LESSTHAN64`
+num64_gt(NumExpr_X,NumExpr_Y)           | `[NumExpr_X] [NumExpr_Y] GREATERTHAN64`
 num64_leq(NumExpr_X,NumExpr_Y)          | `[NumExpr_X] [NumExpr_Y] LESSTHANOREQUAL64`
 num64_geq(NumExpr_X,NumExpr_Y)          | `[NumExpr_X] [NumExpr_Y] GREATERTHANOREQUAL64`
 
