@@ -196,49 +196,47 @@ impl Expr {
     }
 
     /// Evaluate this expression
-    fn eval(
-        &self,
-        curr_ind: usize,
-        tx: &elements::Transaction,
-        utxos: &[elements::TxOut],
-    ) -> Result<i64, EvalError> {
+    fn eval(&self, env: &TxEnv) -> Result<i64, EvalError> {
         match &self.inner {
             ExprInner::Const(c) => Ok(*c),
             ExprInner::CurrInputIdx => {
-                if curr_ind >= utxos.len() {
-                    return Err(EvalError::UtxoIndexOutOfBounds(curr_ind, utxos.len()));
+                if env.idx >= env.spent_utxos.len() {
+                    return Err(EvalError::UtxoIndexOutOfBounds(
+                        env.idx,
+                        env.spent_utxos.len(),
+                    ));
                 }
-                utxos[curr_ind]
+                env.spent_utxos[env.idx]
                     .value
                     .explicit()
                     .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
-                    .ok_or(EvalError::NonExplicitInput(curr_ind))
+                    .ok_or(EvalError::NonExplicitInput(env.idx))
             }
             ExprInner::Input(i) => {
-                if *i >= utxos.len() {
-                    return Err(EvalError::UtxoIndexOutOfBounds(*i, utxos.len()));
+                if *i >= env.spent_utxos.len() {
+                    return Err(EvalError::UtxoIndexOutOfBounds(*i, env.spent_utxos.len()));
                 }
-                utxos[*i]
+                env.spent_utxos[*i]
                     .value
                     .explicit()
                     .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
                     .ok_or(EvalError::NonExplicitInput(*i))
             }
             ExprInner::Output(i) => {
-                if *i >= tx.output.len() {
-                    return Err(EvalError::OutputIndexOutOfBounds(*i, tx.output.len()));
+                if *i >= env.tx.output.len() {
+                    return Err(EvalError::OutputIndexOutOfBounds(*i, env.tx.output.len()));
                 }
-                tx.output[*i]
+                env.tx.output[*i]
                     .value
                     .explicit()
                     .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
                     .ok_or(EvalError::NonExplicitOutput(*i))
             }
             ExprInner::InputIssue(i) => {
-                if *i >= tx.input.len() {
-                    return Err(EvalError::InputIndexOutOfBounds(*i, tx.input.len()));
+                if *i >= env.tx.input.len() {
+                    return Err(EvalError::InputIndexOutOfBounds(*i, env.tx.input.len()));
                 }
-                tx.input[*i]
+                env.tx.input[*i]
                     .asset_issuance
                     .amount
                     .explicit()
@@ -246,10 +244,10 @@ impl Expr {
                     .ok_or(EvalError::NonExplicitInputIssuance(*i))
             }
             ExprInner::InputReIssue(i) => {
-                if *i >= tx.input.len() {
-                    return Err(EvalError::InputIndexOutOfBounds(*i, tx.input.len()));
+                if *i >= env.tx.input.len() {
+                    return Err(EvalError::InputIndexOutOfBounds(*i, env.tx.input.len()));
                 }
-                tx.input[*i]
+                env.tx.input[*i]
                     .asset_issuance
                     .inflation_keys
                     .explicit()
@@ -257,51 +255,51 @@ impl Expr {
                     .ok_or(EvalError::NonExplicitInputReIssuance(*i))
             }
             ExprInner::Add(x, y) => {
-                let x = x.eval(curr_ind, tx, utxos)?;
-                let y = y.eval(curr_ind, tx, utxos)?;
+                let x = x.eval(env)?;
+                let y = y.eval(env)?;
                 x.checked_add(y).ok_or(EvalError::AddOverflow(x, y))
             }
             ExprInner::Sub(x, y) => {
-                let x = x.eval(curr_ind, tx, utxos)?;
-                let y = y.eval(curr_ind, tx, utxos)?;
+                let x = x.eval(env)?;
+                let y = y.eval(env)?;
                 x.checked_sub(y).ok_or(EvalError::SubOverflow(x, y))
             }
             ExprInner::Mul(x, y) => {
-                let x = x.eval(curr_ind, tx, utxos)?;
-                let y = y.eval(curr_ind, tx, utxos)?;
+                let x = x.eval(env)?;
+                let y = y.eval(env)?;
                 x.checked_mul(y).ok_or(EvalError::MulOverflow(x, y))
             }
             ExprInner::Div(x, y) => {
-                let x = x.eval(curr_ind, tx, utxos)?;
-                let y = y.eval(curr_ind, tx, utxos)?;
+                let x = x.eval(env)?;
+                let y = y.eval(env)?;
                 x.checked_div_euclid(y).ok_or(EvalError::DivOverflow(x, y))
             }
             ExprInner::Mod(x, y) => {
-                let x = x.eval(curr_ind, tx, utxos)?;
-                let y = y.eval(curr_ind, tx, utxos)?;
+                let x = x.eval(env)?;
+                let y = y.eval(env)?;
                 x.checked_rem_euclid(y).ok_or(EvalError::ModOverflow(x, y))
             }
             ExprInner::BitAnd(x, y) => {
-                let x = x.eval(curr_ind, tx, utxos)?;
-                let y = y.eval(curr_ind, tx, utxos)?;
+                let x = x.eval(env)?;
+                let y = y.eval(env)?;
                 Ok(x & y)
             }
             ExprInner::BitOr(x, y) => {
-                let x = x.eval(curr_ind, tx, utxos)?;
-                let y = y.eval(curr_ind, tx, utxos)?;
+                let x = x.eval(env)?;
+                let y = y.eval(env)?;
                 Ok(x | y)
             }
             ExprInner::Xor(x, y) => {
-                let x = x.eval(curr_ind, tx, utxos)?;
-                let y = y.eval(curr_ind, tx, utxos)?;
+                let x = x.eval(env)?;
+                let y = y.eval(env)?;
                 Ok(x ^ y)
             }
             ExprInner::Invert(x) => {
-                let x = x.eval(curr_ind, tx, utxos)?;
+                let x = x.eval(env)?;
                 Ok(!x)
             }
             ExprInner::Negate(x) => {
-                let x = x.eval(curr_ind, tx, utxos)?;
+                let x = x.eval(env)?;
                 x.checked_neg().ok_or(EvalError::NegOverflow(x))
             }
         }
@@ -562,18 +560,13 @@ impl Arith {
     }
 
     /// Evaluate this expression with context given transaction and spent utxos
-    pub fn eval(
-        &self,
-        curr_ind: usize,
-        tx: &elements::Transaction,
-        utxos: &[elements::TxOut],
-    ) -> Result<bool, EvalError> {
+    pub fn eval(&self, env: &TxEnv) -> Result<bool, EvalError> {
         let res = match self {
-            Arith::Eq(x, y) => x.eval(curr_ind, tx, utxos)? == y.eval(curr_ind, tx, utxos)?,
-            Arith::Lt(x, y) => x.eval(curr_ind, tx, utxos)? < y.eval(curr_ind, tx, utxos)?,
-            Arith::Leq(x, y) => x.eval(curr_ind, tx, utxos)? <= y.eval(curr_ind, tx, utxos)?,
-            Arith::Gt(x, y) => x.eval(curr_ind, tx, utxos)? > y.eval(curr_ind, tx, utxos)?,
-            Arith::Geq(x, y) => x.eval(curr_ind, tx, utxos)? >= y.eval(curr_ind, tx, utxos)?,
+            Arith::Eq(x, y) => x.eval(env)? == y.eval(env)?,
+            Arith::Lt(x, y) => x.eval(env)? < y.eval(env)?,
+            Arith::Leq(x, y) => x.eval(env)? <= y.eval(env)?,
+            Arith::Gt(x, y) => x.eval(env)? > y.eval(env)?,
+            Arith::Geq(x, y) => x.eval(env)? >= y.eval(env)?,
         };
         Ok(res)
     }
@@ -880,14 +873,13 @@ impl ParseableExt for Arith {
             sat.lookup_curr_inp(),
         ) {
             (Some(tx), Some(utxos), Some(curr_idx)) => (tx, utxos, curr_idx),
-            _ => {
-                return Satisfaction {
-                    stack: Witness::Impossible,
-                    has_sig: false,
-                }
-            }
+            _ => return Satisfaction::impossible(),
         };
-        let wit = match self.eval(curr_idx, tx, utxos) {
+        let env = match TxEnv::new(tx, utxos, curr_idx) {
+            Some(env) => env,
+            None => return Satisfaction::impossible(),
+        };
+        let wit = match self.eval(&env) {
             Ok(false) => Witness::Unavailable,
             Ok(true) => Witness::empty(),
             Err(_e) => Witness::Impossible,
@@ -909,14 +901,13 @@ impl ParseableExt for Arith {
             sat.lookup_curr_inp(),
         ) {
             (Some(tx), Some(utxos), Some(curr_idx)) => (tx, utxos, curr_idx),
-            _ => {
-                return Satisfaction {
-                    stack: Witness::Impossible,
-                    has_sig: false,
-                }
-            }
+            _ => return Satisfaction::impossible(),
         };
-        let wit = match self.eval(curr_idx, tx, utxos) {
+        let env = match TxEnv::new(tx, utxos, curr_idx) {
+            Some(env) => env,
+            None => return Satisfaction::impossible(),
+        };
+        let wit = match self.eval(&env) {
             Ok(false) => Witness::empty(),
             Ok(true) => Witness::Unavailable,
             Err(_e) => Witness::Impossible,
@@ -951,7 +942,7 @@ impl ParseableExt for Arith {
             .as_ref()
             .ok_or(interpreter::Error::ArithError(EvalError::TxEnvNotPresent))?;
 
-        match self.eval(txenv.idx(), txenv.tx(), txenv.spent_utxos()) {
+        match self.eval(txenv) {
             Ok(true) => {
                 stack.push(interpreter::Element::Satisfied);
                 Ok(true)

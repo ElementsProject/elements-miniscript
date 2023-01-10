@@ -1044,6 +1044,14 @@ pub struct Satisfaction {
 }
 
 impl Satisfaction {
+    /// Construct a satisfaction that is impossible to satisfy with no sig
+    pub fn impossible() -> Self {
+        Satisfaction {
+            stack: Witness::Impossible,
+            has_sig: false,
+        }
+    }
+
     // produce a non-malleable satisafaction for thesh frag
     fn thresh<Pk, Ctx, Sat, Ext, F>(
         k: usize,
