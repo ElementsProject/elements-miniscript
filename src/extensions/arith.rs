@@ -7,7 +7,7 @@ use elements::opcodes::all::*;
 use elements::sighash::Prevouts;
 use elements::{opcodes, script, Transaction};
 
-use super::{ExtParam, ParseableExt, TxEnv};
+use super::{ExtParam, IdxExpr, ParseableExt, TxEnv};
 use crate::expression::{FromTree, Tree};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -41,21 +41,21 @@ pub enum ExprInner {
     CurrInputIdx,
     /// Explicit amount at the given input index
     /// i INPSECTINPUTVALUE <1> EQUALVERIFY
-    Input(usize),
+    Input(IdxExpr),
     /// Explicit amount at the given output index
     /// i INPSECTOUTPUTVALUE <1> EQUALVERIFY
-    Output(usize),
+    Output(IdxExpr),
     /// Explicit issuance amount at this input index
     /// i OP_INSPECTINPUTISSUANCE DROP DROP <1> EQUALVERIFY NIP NIP
     // NIP drops the second to top stack item
     // issuance stack after push where the right is stack top
     // [<inflation keys> <inflation_pref> <value> <value_pref> <entropy> <blindingnonce>]
-    InputIssue(usize),
+    InputIssue(IdxExpr),
     /// Explicit re-issuance amount at this input index
     /// i OP_INSPECTINPUTISSUANCE DROP DROP DROP DROP <1> EQUALVERIFY
     // issuance stack after push where the right is stack top
     // [<inflation keys> <inflation_pref> <value> <value_pref> <entropy> <blindingnonce>]
-    InputReIssue(usize),
+    InputReIssue(IdxExpr),
 
     /* Two children */
     /// Add two Arith expressions.
@@ -132,19 +132,19 @@ impl Expr {
             ExprInner::Const(_c) => (8 + 1, 0),
             ExprInner::CurrInputIdx => (4, 0), // INSPECTCURRENTINPUTINDEX INPSECTINPUTVALUE <1> EQUALVERIFY
             ExprInner::Input(i) => (
-                script_num_size(*i) + 3, // i INPSECTINPUTVALUE <1> EQUALVERIFY
+                i.script_size() + 3, // i INPSECTINPUTVALUE <1> EQUALVERIFY
                 0,
             ),
             ExprInner::Output(i) => (
-                script_num_size(*i) + 3, // i INPSECTOUTPUTVALUE <1> EQUALVERIFY
+                i.script_size() + 3, // i INPSECTOUTPUTVALUE <1> EQUALVERIFY
                 0,
             ),
             ExprInner::InputIssue(i) => (
-                script_num_size(*i) + 7, // i OP_INSPECTINPUTISSUANCE DROP DROP <1> EQUALVERIFY NIP NIP
+                i.script_size() + 7, // i OP_INSPECTINPUTISSUANCE DROP DROP <1> EQUALVERIFY NIP NIP
                 0,
             ),
             ExprInner::InputReIssue(i) => (
-                script_num_size(*i) + 7, // i OP_INSPECTINPUTISSUANCE DROP DROP DROP DROP <1> EQUALVERIFY
+                i.script_size() + 7, // i OP_INSPECTINPUTISSUANCE DROP DROP DROP DROP <1> EQUALVERIFY
                 0,
             ),
             ExprInner::Add(x, y) => (
@@ -213,46 +213,50 @@ impl Expr {
                     .ok_or(EvalError::NonExplicitInput(env.idx))
             }
             ExprInner::Input(i) => {
-                if *i >= env.spent_utxos.len() {
-                    return Err(EvalError::UtxoIndexOutOfBounds(*i, env.spent_utxos.len()));
+                let i = i.eval(env)?;
+                if i >= env.spent_utxos.len() {
+                    return Err(EvalError::UtxoIndexOutOfBounds(i, env.spent_utxos.len()));
                 }
-                env.spent_utxos[*i]
+                env.spent_utxos[i]
                     .value
                     .explicit()
                     .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
-                    .ok_or(EvalError::NonExplicitInput(*i))
+                    .ok_or(EvalError::NonExplicitInput(i))
             }
             ExprInner::Output(i) => {
-                if *i >= env.tx.output.len() {
-                    return Err(EvalError::OutputIndexOutOfBounds(*i, env.tx.output.len()));
+                let i = i.eval(env)?;
+                if i >= env.tx.output.len() {
+                    return Err(EvalError::OutputIndexOutOfBounds(i, env.tx.output.len()));
                 }
-                env.tx.output[*i]
+                env.tx.output[i]
                     .value
                     .explicit()
                     .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
-                    .ok_or(EvalError::NonExplicitOutput(*i))
+                    .ok_or(EvalError::NonExplicitOutput(i))
             }
             ExprInner::InputIssue(i) => {
-                if *i >= env.tx.input.len() {
-                    return Err(EvalError::InputIndexOutOfBounds(*i, env.tx.input.len()));
+                let i = i.eval(env)?;
+                if i >= env.tx.input.len() {
+                    return Err(EvalError::InputIndexOutOfBounds(i, env.tx.input.len()));
                 }
-                env.tx.input[*i]
+                env.tx.input[i]
                     .asset_issuance
                     .amount
                     .explicit()
                     .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
-                    .ok_or(EvalError::NonExplicitInputIssuance(*i))
+                    .ok_or(EvalError::NonExplicitInputIssuance(i))
             }
             ExprInner::InputReIssue(i) => {
-                if *i >= env.tx.input.len() {
-                    return Err(EvalError::InputIndexOutOfBounds(*i, env.tx.input.len()));
+                let i = i.eval(env)?;
+                if i >= env.tx.input.len() {
+                    return Err(EvalError::InputIndexOutOfBounds(i, env.tx.input.len()));
                 }
-                env.tx.input[*i]
+                env.tx.input[i]
                     .asset_issuance
                     .inflation_keys
                     .explicit()
                     .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
-                    .ok_or(EvalError::NonExplicitInputReIssuance(*i))
+                    .ok_or(EvalError::NonExplicitInputReIssuance(i))
             }
             ExprInner::Add(x, y) => {
                 let x = x.eval(env)?;
@@ -314,18 +318,18 @@ impl Expr {
                 .push_opcode(OP_INSPECTINPUTVALUE)
                 .push_int(1)
                 .push_opcode(OP_EQUALVERIFY),
-            ExprInner::Input(i) => builder
-                .push_int(*i as i64)
+            ExprInner::Input(i) => i
+                .push_to_builder(builder)
                 .push_opcode(OP_INSPECTINPUTVALUE)
                 .push_int(1)
                 .push_opcode(OP_EQUALVERIFY),
-            ExprInner::Output(i) => builder
-                .push_int(*i as i64)
+            ExprInner::Output(i) => i
+                .push_to_builder(builder)
                 .push_opcode(OP_INSPECTOUTPUTVALUE)
                 .push_int(1)
                 .push_opcode(OP_EQUALVERIFY),
-            ExprInner::InputIssue(i) => builder
-                .push_int(*i as i64)
+            ExprInner::InputIssue(i) => i
+                .push_to_builder(builder)
                 .push_opcode(OP_INSPECTINPUTISSUANCE)
                 .push_opcode(OP_DROP)
                 .push_opcode(OP_DROP)
@@ -333,8 +337,8 @@ impl Expr {
                 .push_opcode(OP_EQUALVERIFY)
                 .push_opcode(OP_NIP)
                 .push_opcode(OP_NIP),
-            ExprInner::InputReIssue(i) => builder
-                .push_int(*i as i64)
+            ExprInner::InputReIssue(i) => i
+                .push_to_builder(builder)
                 .push_opcode(OP_INSPECTINPUTISSUANCE)
                 .push_opcode(OP_DROP)
                 .push_opcode(OP_DROP)
@@ -489,24 +493,28 @@ impl Expr {
             let (x, end_pos) = Self::from_tokens(tokens, end_pos)?;
             let expr = Expr::from_inner(ExprInner::Mod(Box::new(x), Box::new(y)));
             Some((expr, end_pos))
-        } else if let Some(&[Tk::Num(i), Tk::InpValue, Tk::Num(1), Tk::Equal, Tk::Verify]) =
-            tks.get(e.checked_sub(5)?..e)
+        } else if let Some(&[Tk::InpValue, Tk::Num(1), Tk::Equal, Tk::Verify]) =
+            tks.get(e.checked_sub(4)?..e)
         {
-            Some((Expr::from_inner(ExprInner::Input(i as usize)), e - 5))
-        } else if let Some(&[Tk::Num(i), Tk::OutValue, Tk::Num(1), Tk::Equal, Tk::Verify]) =
-            tks.get(e.checked_sub(5)?..e)
+            let (i, e) = IdxExpr::from_tokens(tks, e - 4)?;
+            Some((Expr::from_inner(ExprInner::Input(i)), e))
+        } else if let Some(&[Tk::OutValue, Tk::Num(1), Tk::Equal, Tk::Verify]) =
+            tks.get(e.checked_sub(4)?..e)
         {
-            Some((Expr::from_inner(ExprInner::Output(i as usize)), e - 5))
+            let (i, e) = IdxExpr::from_tokens(tks, e - 4)?;
+            Some((Expr::from_inner(ExprInner::Output(i)), e))
         } else if let Some(
-            &[Tk::Num(i), Tk::InpIssue, Tk::Drop, Tk::Drop, Tk::Num(1), Tk::Equal, Tk::Verify, Tk::Nip, Tk::Nip],
-        ) = tks.get(e.checked_sub(9)?..e)
+            &[Tk::InpIssue, Tk::Drop, Tk::Drop, Tk::Num(1), Tk::Equal, Tk::Verify, Tk::Nip, Tk::Nip],
+        ) = tks.get(e.checked_sub(8)?..e)
         {
-            Some((Expr::from_inner(ExprInner::InputIssue(i as usize)), e - 9))
+            let (i, e) = IdxExpr::from_tokens(tks, e - 8)?;
+            Some((Expr::from_inner(ExprInner::InputIssue(i)), e))
         } else if let Some(
-            &[Tk::Num(i), Tk::InpIssue, Tk::Drop, Tk::Drop, Tk::Drop, Tk::Drop, Tk::Num(1), Tk::Equal, Tk::Verify],
-        ) = tks.get(e.checked_sub(9)?..e)
+            &[Tk::InpIssue, Tk::Drop, Tk::Drop, Tk::Drop, Tk::Drop, Tk::Num(1), Tk::Equal, Tk::Verify],
+        ) = tks.get(e.checked_sub(8)?..e)
         {
-            Some((Expr::from_inner(ExprInner::InputReIssue(i as usize)), e - 9))
+            let (i, e) = IdxExpr::from_tokens(tks, e - 8)?;
+            Some((Expr::from_inner(ExprInner::InputReIssue(i)), e))
         } else {
             None
         }
@@ -686,14 +694,6 @@ impl FromTree for Box<Expr> {
 
 impl FromTree for Expr {
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
-        fn term<F>(top: &expression::Tree<'_>, frag: F) -> Result<Expr, Error>
-        where
-            F: FnOnce(usize) -> ExprInner,
-        {
-            let index = expression::terminal(&top.args[0], expression::parse_num::<usize>)?;
-            Ok(Expr::from_inner(frag(index)))
-        }
-
         fn unary<F>(top: &expression::Tree<'_>, frag: F) -> Result<Expr, Error>
         where
             F: FnOnce(Box<Expr>) -> ExprInner,
@@ -711,11 +711,17 @@ impl FromTree for Expr {
             Ok(Expr::from_inner(frag(Box::new(l), Box::new(r))))
         }
         match (top.name, top.args.len()) {
-            ("inp_v", 1) => term(top, ExprInner::Input),
+            ("inp_v", 1) => Ok(Expr::from_inner(expression::unary(top, ExprInner::Input)?)),
             ("curr_inp_v", 0) => Ok(Expr::from_inner(ExprInner::CurrInputIdx)),
-            ("out_v", 1) => term(top, ExprInner::Output),
-            ("inp_issue_v", 1) => term(top, ExprInner::InputIssue),
-            ("inp_reissue_v", 1) => term(top, ExprInner::InputReIssue),
+            ("out_v", 1) => Ok(Expr::from_inner(expression::unary(top, ExprInner::Output)?)),
+            ("inp_issue_v", 1) => Ok(Expr::from_inner(expression::unary(
+                top,
+                ExprInner::InputIssue,
+            )?)),
+            ("inp_reissue_v", 1) => Ok(Expr::from_inner(expression::unary(
+                top,
+                ExprInner::InputReIssue,
+            )?)),
             ("add", 2) => binary(top, ExprInner::Add),
             ("sub", 2) => binary(top, ExprInner::Sub),
             ("mul", 2) => binary(top, ExprInner::Mul),
@@ -1036,7 +1042,22 @@ mod tests {
     use crate::{Miniscript, Segwitv0, Tap, TranslatePk};
 
     #[test]
+    fn test_index_ops_with_arith() {
+        // index ops tests with different index types
+        _arith_parse("num64_eq(out_v(idx_sub(5,curr_idx)),inp_v(idx_add(0,curr_idx)))");
+        _arith_parse("num64_eq(out_v(idx_mul(5,curr_idx)),inp_v(idx_div(0,curr_idx)))");
+
+        _arith_parse(
+            "num64_eq(inp_issue_v(idx_sub(5,curr_idx)),inp_reissue_v(idx_add(0,curr_idx)))",
+        );
+        _arith_parse(
+            "num64_eq(inp_issue_v(idx_sub(5,curr_idx)),inp_reissue_v(idx_add(0,curr_idx)))",
+        );
+    }
+
+    #[test]
     fn arith_parse() {
+        _arith_parse("num64_geq(sub(mul(1,0),mul(0,curr_inp_v)),0)");
         _arith_parse("num64_gt(curr_inp_v,mul(1,out_v(0)))");
         // This does not test the evaluation
         _arith_parse("num64_eq(8,8)");
