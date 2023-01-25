@@ -1,10 +1,10 @@
 extern crate elements_miniscript as miniscript;
 extern crate regex;
-use miniscript::{policy, DummyKey};
+use miniscript::policy;
 use regex::Regex;
 use std::str::FromStr;
 
-type DummyPolicy = policy::Concrete<DummyKey>;
+type DummyPolicy = policy::Concrete<String>;
 
 fn do_test(data: &[u8]) {
     let data_str = String::from_utf8_lossy(data);

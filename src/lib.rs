@@ -125,8 +125,7 @@ pub(crate) use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
 pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
 // re-export imports
 pub use bitcoin_miniscript::{
-    hash256, DummyHash160Hash, DummyHash256Hash, DummyKey, DummyKeyHash, DummyRipemd160Hash,
-    DummySha256Hash, ForEachKey, MiniscriptKey, SigType, ToPublicKey,
+    hash256, ForEachKey, MiniscriptKey, SigType, ToPublicKey,
 };
 pub(crate) use bitcoin_miniscript::{
     Descriptor as BtcDescriptor, Error as BtcError, Miniscript as BtcMiniscript,

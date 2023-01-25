@@ -273,12 +273,11 @@ mod tests {
     use super::{Concrete, Liftable, Semantic};
     #[cfg(feature = "compiler")]
     use crate::descriptor::Tr;
-    use crate::DummyKey;
     #[cfg(feature = "compiler")]
     use crate::{descriptor::TapTree, Descriptor, Tap};
 
-    type ConcretePol = Concrete<DummyKey>;
-    type SemanticPol = Semantic<DummyKey>;
+    type ConcretePol = Concrete<String>;
+    type SemanticPol = Semantic<String>;
 
     fn concrete_policy_rtt(s: &str) {
         let conc = ConcretePol::from_str(s).unwrap();
