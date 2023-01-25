@@ -207,6 +207,16 @@ fn test_descs(cl: &ElementsD, testdata: &TestData) {
     test_desc_satisfy(
         cl,
         testdata,
+        "tr(X!,and_v(v:pk(X1),num64_eq(inp_v(idx_sub(2,2)),100000000)))",
+    );
+    test_desc_satisfy(
+        cl,
+        testdata,
+        "tr(X!,and_v(v:pk(X1),num64_eq(inp_v(idx_sub(idx_div(4,idx_mul(2,2)),1)),100000000)))",
+    );
+    test_desc_satisfy(
+        cl,
+        testdata,
         "tr(X!,and_v(v:pk(X1),num64_eq(inp_v(0),100000000)))",
     );
     test_desc_satisfy(
