@@ -1,9 +1,9 @@
 extern crate elements_miniscript as miniscript;
 
-use miniscript::{policy, DummyKey};
+use miniscript::policy;
 use std::str::FromStr;
 
-type DummyPolicy = policy::Semantic<DummyKey>;
+type DummyPolicy = policy::Semantic<String>;
 
 fn do_test(data: &[u8]) {
     let data_str = String::from_utf8_lossy(data);

@@ -1,13 +1,13 @@
 extern crate elements_miniscript as miniscript;
 
 use miniscript::Segwitv0;
-use miniscript::{policy, DummyKey, Miniscript};
+use miniscript::{policy, Miniscript};
 use policy::Liftable;
 
 use std::str::FromStr;
 
-type DummyScript = Miniscript<DummyKey, Segwitv0>;
-type DummyPolicy = policy::Concrete<DummyKey>;
+type DummyScript = Miniscript<String, Segwitv0>;
+type DummyPolicy = policy::Concrete<String>;
 
 fn do_test(data: &[u8]) {
     let data_str = String::from_utf8_lossy(data);
