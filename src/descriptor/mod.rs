@@ -1117,7 +1117,6 @@ serde_string_impl_pk!(Descriptor, "a script descriptor", T; Extension);
 
 #[cfg(test)]
 mod tests {
-    use std::cmp;
     use std::collections::HashMap;
     use std::str::FromStr;
 
@@ -1134,7 +1133,7 @@ mod tests {
     use super::tr::Tr;
     use super::*;
     use crate::descriptor::key::Wildcard;
-    use crate::descriptor::{DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey};
+    use crate::descriptor::{DescriptorPublicKey, DescriptorXKey};
     use crate::miniscript::satisfy::ElementsSig;
     #[cfg(feature = "compiler")]
     use crate::policy;
@@ -1143,23 +1142,6 @@ mod tests {
     type StdDescriptor = Descriptor<PublicKey, CovenantExt<CovExtArgs>>;
     const TEST_PK: &'static str =
         "elpk(020000000000000000000000000000000000000000000000000000000000000002)";
-
-    impl cmp::PartialEq for DescriptorSecretKey {
-        fn eq(&self, other: &Self) -> bool {
-            match (self, other) {
-                (&DescriptorSecretKey::Single(ref a), &DescriptorSecretKey::Single(ref b)) => {
-                    a.origin == b.origin && a.key == b.key
-                }
-                (&DescriptorSecretKey::XPrv(ref a), &DescriptorSecretKey::XPrv(ref b)) => {
-                    a.origin == b.origin
-                        && a.xkey == b.xkey
-                        && a.derivation_path == b.derivation_path
-                        && a.wildcard == b.wildcard
-                }
-                _ => false,
-            }
-        }
-    }
 
     fn roundtrip_descriptor(s: &str) {
         let desc = Descriptor::<String>::from_str(&s).unwrap();
