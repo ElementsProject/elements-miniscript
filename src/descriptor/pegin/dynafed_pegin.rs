@@ -276,7 +276,7 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
         Pk: ToPublicKey,
     {
         // tweaking does not change max satisfaction weight
-        let w = self.fed_desc.max_satisfaction_weight()?;
+        let w = self.fed_desc.max_weight_to_satisfy()?;
         Ok(w)
     }
 

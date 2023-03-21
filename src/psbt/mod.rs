@@ -1073,7 +1073,11 @@ impl Translator<DefiniteDescriptorKey, bitcoin::PublicKey, descriptor::Conversio
         let derived = xpk.derive_public_key(&self.1)?;
         self.0.insert(
             derived.to_public_key(),
-            (xpk.master_fingerprint(), xpk.full_derivation_path()),
+            (
+                xpk.master_fingerprint(),
+                xpk.full_derivation_path()
+                    .ok_or(descriptor::ConversionError::MultiKey)?,
+            ),
         );
         Ok(derived)
     }
@@ -1204,7 +1208,7 @@ fn update_item_with_descriptor_helper<F: PsbtFields>(
 
         // NOTE: they will both always be Tr
         if let (Descriptor::Tr(tr_derived), Descriptor::Tr(tr_xpk)) = (&derived, descriptor) {
-            update_tr_psbt_helper(item, tr_derived, tr_xpk);
+            update_tr_psbt_helper(item, tr_derived, tr_xpk)?;
         }
 
         derived
@@ -1220,7 +1224,7 @@ fn update_item_with_descriptor_helper<F: PsbtFields>(
 
         // NOTE: they will both always be Tr
         if let (Descriptor::TrExt(tr_derived), Descriptor::TrExt(tr_xpk)) = (&derived, descriptor) {
-            update_tr_psbt_helper(item, tr_derived, tr_xpk);
+            update_tr_psbt_helper(item, tr_derived, tr_xpk)?;
         }
 
         derived
@@ -1266,7 +1270,8 @@ fn update_tr_psbt_helper<Ext, Ext2, F: PsbtFields>(
     item: &mut F,
     tr_derived: &Tr<bitcoin::PublicKey, Ext>,
     tr_xpk: &Tr<DefiniteDescriptorKey, Ext2>,
-) where
+) -> Result<(), descriptor::ConversionError>
+where
     Ext: ParseableExt,
     Ext2: Extension,
 {
@@ -1281,7 +1286,12 @@ fn update_tr_psbt_helper<Ext, Ext2, F: PsbtFields>(
         ik_derived,
         (
             vec![],
-            (ik_xpk.master_fingerprint(), ik_xpk.full_derivation_path()),
+            (
+                ik_xpk.master_fingerprint(),
+                ik_xpk
+                    .full_derivation_path()
+                    .ok_or(descriptor::ConversionError::MultiKey)?,
+            ),
         ),
     );
 
@@ -1313,10 +1323,14 @@ fn update_tr_psbt_helper<Ext, Ext2, F: PsbtFields>(
                         tapleaf_hashes.push(tapleaf_hash);
                     }
                 })
-                .or_insert_with(|| {
+                .or_insert({
                     (
                         vec![tapleaf_hash],
-                        (xpk.master_fingerprint(), xpk.full_derivation_path()),
+                        (
+                            xpk.master_fingerprint(),
+                            xpk.full_derivation_path()
+                                .ok_or(descriptor::ConversionError::MultiKey)?,
+                        ),
                     )
                 });
         }
@@ -1338,6 +1352,7 @@ fn update_tr_psbt_helper<Ext, Ext2, F: PsbtFields>(
         }
         _ => {}
     }
+    Ok(())
 }
 
 // Get a script from witness script pubkey hash
