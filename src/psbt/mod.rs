@@ -327,6 +327,14 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
             .copied()
     }
 
+    fn lookup_raw_pkh_pk(&self, pkh: &hash160::Hash) -> Option<bitcoin::PublicKey> {
+        self.psbt.inputs()[self.index]
+            .bip32_derivation
+            .iter()
+            .find(|&(pubkey, _)| pubkey.to_pubkeyhash(SigType::Ecdsa) == *pkh)
+            .map(|(pubkey, _)| *pubkey)
+    }
+
     fn lookup_tap_control_block_map(
         &self,
     ) -> Option<&BTreeMap<ControlBlock, (elements::Script, LeafVersion)>> {

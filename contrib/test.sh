@@ -69,6 +69,7 @@ then
     cargo run --example verify_tx > /dev/null
     cargo run --example xpub_descriptors
     cargo run --example taproot --features=compiler
+    cargo run --example psbt_sign_finalize
 fi
 
 # Bench if told to (this only works with the nightly toolchain)

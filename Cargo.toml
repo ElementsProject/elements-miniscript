@@ -51,3 +51,6 @@ name = "xpub_descriptors"
 [[example]]
 name = "taproot"
 required-features = ["compiler"]
+
+[[example]]
+name = "psbt_sign_finalize"

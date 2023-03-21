@@ -362,7 +362,7 @@ where
             match *self {
                 Terminal::PkK(ref pk) => write!(f, "pk_k({:?})", pk),
                 Terminal::PkH(ref pk) => write!(f, "pk_h({:?})", pk),
-                Terminal::RawPkH(ref pkh) => write!(f, "pk_h({:?})", pkh),
+                Terminal::RawPkH(ref pkh) => write!(f, "expr_raw_pk_h({:?})", pkh),
                 Terminal::After(t) => write!(f, "after({})", t),
                 Terminal::Older(t) => write!(f, "older({})", t),
                 Terminal::Sha256(ref h) => write!(f, "sha256({})", h),
@@ -422,7 +422,7 @@ where
         match *self {
             Terminal::PkK(ref pk) => write!(f, "pk_k({})", pk),
             Terminal::PkH(ref pk) => write!(f, "pk_h({})", pk),
-            Terminal::RawPkH(ref pkh) => write!(f, "pk_h({})", pkh),
+            Terminal::RawPkH(ref pkh) => write!(f, "expr_raw_pk_h({})", pkh),
             Terminal::After(t) => write!(f, "after({})", t),
             Terminal::Older(t) => write!(f, "older({})", t),
             Terminal::Sha256(ref h) => write!(f, "sha256({})", h),

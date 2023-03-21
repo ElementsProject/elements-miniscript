@@ -124,9 +124,7 @@ pub(crate) use bitcoin_miniscript::expression::{FromTree as BtcFromTree, Tree as
 pub(crate) use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
 pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
 // re-export imports
-pub use bitcoin_miniscript::{
-    hash256, ForEachKey, MiniscriptKey, SigType, ToPublicKey,
-};
+pub use bitcoin_miniscript::{hash256, ForEachKey, MiniscriptKey, SigType, ToPublicKey};
 pub(crate) use bitcoin_miniscript::{
     Descriptor as BtcDescriptor, Error as BtcError, Miniscript as BtcMiniscript,
     Satisfier as BtcSatisfier, Segwitv0 as BtcSegwitv0, Terminal as BtcTerminal,

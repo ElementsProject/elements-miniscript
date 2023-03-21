@@ -548,9 +548,7 @@ mod tests {
     use crate::miniscript::Terminal;
     use crate::policy::Liftable;
     use crate::test_utils::{StrKeyTranslator, StrXOnlyKeyTranslator};
-    use crate::{
-        hex_script, CovenantExt, ExtParams, NoExt, Satisfier, ToPublicKey, TranslatePk,
-    };
+    use crate::{hex_script, CovenantExt, ExtParams, NoExt, Satisfier, ToPublicKey, TranslatePk};
 
     type Tapscript = Miniscript<XOnlyPublicKey, Tap, NoExt>;
     type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt<CovExtArgs>>;
@@ -754,7 +752,11 @@ mod tests {
             ext: ExtData::cast_check(ExtData::from_pk_k::<Segwitv0>()).unwrap(),
             phantom: PhantomData,
         };
-        dummy_string_rtt(pkk_ms, "[B/onduesm]c:[K/onduesm]pk_k(\"dummy\")", "pk(dummy)");
+        dummy_string_rtt(
+            pkk_ms,
+            "[B/onduesm]c:[K/onduesm]pk_k(\"dummy\")",
+            "pk(dummy)",
+        );
 
         let pkh_ms: Miniscript<String, Segwitv0> = Miniscript {
             node: Terminal::Check(Arc::new(Miniscript {
