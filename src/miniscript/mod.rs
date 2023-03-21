@@ -732,7 +732,7 @@ mod tests {
 
         let pkk_ms: Miniscript<String, Segwitv0> = Miniscript {
             node: Terminal::Check(Arc::new(Miniscript {
-                node: Terminal::PkK("dummy".into()),
+                node: Terminal::PkK(String::from("")),
                 ty: Type::from_pk_k::<Segwitv0>(),
                 ext: types::extra_props::ExtData::from_pk_k::<Segwitv0>(),
                 phantom: PhantomData,
@@ -741,15 +741,11 @@ mod tests {
             ext: ExtData::cast_check(ExtData::from_pk_k::<Segwitv0>()).unwrap(),
             phantom: PhantomData,
         };
-        dummy_string_rtt(
-            pkk_ms,
-            "[B/onduesm]c:[K/onduesm]pk_k(\"dummy\")",
-            "pk(dummy)",
-        );
+        dummy_string_rtt(pkk_ms, "[B/onduesm]c:[K/onduesm]pk_k(\"\")", "pk()");
 
         let pkh_ms: Miniscript<String, Segwitv0> = Miniscript {
             node: Terminal::Check(Arc::new(Miniscript {
-                node: Terminal::PkH("dummy".into()),
+                node: Terminal::PkH(String::from("")),
                 ty: Type::from_pk_h::<Segwitv0>(),
                 ext: types::extra_props::ExtData::from_pk_h::<Segwitv0>(),
                 phantom: PhantomData,
@@ -759,8 +755,8 @@ mod tests {
             phantom: PhantomData,
         };
 
-        let expected_debug = "[B/nduesm]c:[K/nduesm]pk_h(\"dummy\")";
-        let expected_display = "pkh(dummy)";
+        let expected_debug = "[B/nduesm]c:[K/nduesm]pk_h(\"\")";
+        let expected_display = "pkh()";
 
         assert_eq!(pkh_ms.ty.corr.base, types::Base::B);
         let debug = format!("{:?}", pkh_ms);
