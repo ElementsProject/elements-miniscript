@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 // SPDX-License-Identifier: CC0-1.0
 use std::str::FromStr;
 use std::{error, fmt};
