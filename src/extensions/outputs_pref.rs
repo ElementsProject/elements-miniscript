@@ -30,9 +30,9 @@ use crate::{expression, interpreter, Error, Extension, MiniscriptKey, Satisfier,
 /// Even if the witness does not require 7 pushes, the user should push
 /// 7 elements with possibly empty values.
 ///
-/// CAT CAT CAT CAT CAT CAT <pref> SWAP CAT /*Now we hashoutputs on stack */
-/// HASH256
-/// DEPTH <10> SUB PICK EQUALVERIFY
+/// `CAT CAT CAT CAT CAT CAT <pref> SWAP CAT` /*Now we hashoutputs on stack */
+/// `HASH256`
+/// `DEPTH <10> SUB PICK EQUALVERIFY`
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
 pub struct LegacyOutputsPref {
     /// the version of transaction

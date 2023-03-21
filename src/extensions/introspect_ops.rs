@@ -34,16 +34,16 @@ use crate::{
 pub enum AssetExpr<T: ExtParam> {
     /* leaf fragments/terminals */
     /// A constant asset id
-    /// Minimal push of this <asset_id>
+    /// Minimal push of this `<asset_id>`
     Const(T),
     /// Asset under the current executing input
-    /// INSPECTCURRENTINPUTINDEX INPSECTINPUTASSET
+    /// `INSPECTCURRENTINPUTINDEX INPSECTINPUTASSET`
     CurrInputAsset,
     /// Explicit asset at the given input index
-    /// i INPSECTINPUTASSET
+    /// `i INPSECTINPUTASSET`
     Input(IdxExpr),
     /// Explicit asset at the given output index
-    /// i INPSECTOUTPUTASSET
+    /// `i INPSECTOUTPUTASSET`
     Output(IdxExpr),
 }
 
@@ -58,13 +58,13 @@ pub enum ValueExpr<T: ExtParam> {
     /// A constant Value
     Const(T),
     /// Value under the current executing input
-    /// INSPECTCURRENTINPUTINDEX INPSECTINPUTVALUE
+    /// `INSPECTCURRENTINPUTINDEX INPSECTINPUTVALUE`
     CurrInputValue,
     ///  Value(possibly confidential) at the given input index
-    /// i INPSECTINPUTVALUE
+    /// `i INPSECTINPUTVALUE`
     Input(IdxExpr),
     /// Value(possibly confidential) at the given output index
-    /// i INPSECTOUTPUTVALUE
+    /// `i INPSECTOUTPUTVALUE`
     Output(IdxExpr),
 }
 
@@ -82,13 +82,13 @@ pub enum SpkExpr<T: ExtParam> {
     /// Pushes -1 if the legacy script pubkeys followed by sha256 hash of script pubkey
     Const(T),
     /// Script pubkey under the current executing input
-    /// INSPECTCURRENTINPUTINDEX INPSECTINPUTSCRIPTPUBKEY
+    /// `INSPECTCURRENTINPUTINDEX INPSECTINPUTSCRIPTPUBKEY`
     CurrInputSpk,
     /// Explicit asset at the given input index
-    /// i INPSECTINPUTSCRIPTPUBKEY
+    /// `i INPSECTINPUTSCRIPTPUBKEY`
     Input(IdxExpr),
     /// Explicit asset at the given output index
-    /// i INPSECTOUTPUTSCRIPTPUBKEY
+    /// `i INPSECTOUTPUTSCRIPTPUBKEY`
     Output(IdxExpr),
 }
 
@@ -99,28 +99,28 @@ pub enum SpkExpr<T: ExtParam> {
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
 pub enum CovOps<T: ExtParam> {
     /// Checks that asset is explicit
-    /// [X] <1> EQUAL NIP
+    /// `[X] <1> EQUAL NIP`
     IsExpAsset(AssetExpr<T>),
     /// Checks if the value is explicit
-    /// [X] <1> EQUAL NIP
+    /// `[X] <1> EQUAL NIP`
     /// The script translation is same as that of IsExpAsset, but the data structure
     /// distinguishes them for clarity.
     IsExpValue(ValueExpr<T>),
     /// Checks that both assets are equal (maybe confidential)
-    /// [X] TOALTSTACK [Y] FROMALTSTACK EQUAL TOALTSTACK EQUAL FROMALTSTACK BOOLAND
+    /// `[X] TOALTSTACK [Y] FROMALTSTACK EQUAL TOALTSTACK EQUAL FROMALTSTACK BOOLAND`
     AssetEq(AssetExpr<T>, AssetExpr<T>),
     /// Checks that both values are equal (maybe confidential)
-    /// [X] TOALTSTACK [Y] FROMALTSTACK EQUAL TOALTSTACK EQUAL FROMALTSTACK BOOLAND
+    /// `[X] TOALTSTACK [Y] FROMALTSTACK EQUAL TOALTSTACK EQUAL FROMALTSTACK BOOLAND`
     ValueEq(ValueExpr<T>, ValueExpr<T>),
     /// Script pubkey equal. Checks the witness version and program. Also works for
     /// legacy programs.
-    /// [X] TOALTSTACK [Y] FROMALTSTACK EQUAL TOALTSTACK EQUAL FROMALTSTACK BOOLAND
+    /// `[X] TOALTSTACK [Y] FROMALTSTACK EQUAL TOALTSTACK EQUAL FROMALTSTACK BOOLAND`
     SpkEq(SpkExpr<T>, SpkExpr<T>),
     /// Current input index equality
-    /// <i> PUSHCURRENTINPUTINDEX EQUAL
+    /// `<i> PUSHCURRENTINPUTINDEX EQUAL`
     CurrIndEq(usize),
     /// Index equality
-    /// [X] [Y] EQUAL
+    /// `[X] [Y] EQUAL`
     IdxEq(IdxExpr, IdxExpr),
 }
 
@@ -720,7 +720,7 @@ impl AssetExpr<CovExtArgs> {
     }
 
     /// Returns (self, start_pos) parsed reversed form tokens starting with index end_pos
-    /// Expression is parsed from tokens[start:end_pos]
+    /// Expression is parsed from tokens`[start:end_pos]`
     pub fn from_tokens(tokens: &[Tk], end_pos: usize) -> Option<(Self, usize)> {
         let tks = tokens;
         let e = end_pos; // short abbreviations for succinct readable code
@@ -808,7 +808,7 @@ impl ValueExpr<CovExtArgs> {
     }
 
     /// Returns (self, start_pos) parsed reversed form tokens starting with index end_pos
-    /// Expression is parsed from tokens[start:end_pos]
+    /// Expression is parsed from tokens`[start:end_pos]`
     pub fn from_tokens(tokens: &[Tk], end_pos: usize) -> Option<(Self, usize)> {
         let tks = tokens;
         let e = end_pos; // short abbreviations for succinct readable code
@@ -898,7 +898,7 @@ impl SpkExpr<CovExtArgs> {
     }
 
     /// Returns (self, start_pos) parsed reversed form tokens starting with index end_pos
-    /// Expression is parsed from tokens[start:end_pos]
+    /// Expression is parsed from tokens`[start:end_pos]`
     pub fn from_tokens(tokens: &[Tk], end_pos: usize) -> Option<(Self, usize)> {
         let tks = tokens;
         let e = end_pos; // short abbreviations for succinct readable code
@@ -1007,7 +1007,7 @@ impl CovOps<CovExtArgs> {
     }
 
     /// Returns (self, start_pos) parsed reversed form tokens starting with index end_pos
-    /// Expression is parsed from tokens[start:end_pos]
+    /// Expression is parsed from tokens`[start:end_pos]`
     pub fn from_tokens(tks: &[Tk]) -> Option<(Self, usize)> {
         let e = tks.len();
         if let Some(&[Tk::Num(i), Tk::CurrInp, Tk::Equal]) = tks.get(e.checked_sub(3)?..e) {

@@ -63,7 +63,7 @@ pub trait Extension: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash {
     }
 
     /// Create an instance of this object from a Tree with root name and children as
-    /// Vec<Tree>.
+    /// `Vec<Tree>`.
     // Ideally, we would want a FromTree implementation here, but that is not possible
     // as we would need to create a new Tree by removing wrappers from root.
     fn from_name_tree(_name: &str, children: &[Tree<'_>]) -> Result<Self, ()>;

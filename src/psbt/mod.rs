@@ -288,7 +288,7 @@ pub struct PsbtInputSatisfier<'psbt> {
 
 /// Psbt Input Satisfier with Covenant support. Users should be
 /// using the high level [`finalizer::finalize`] API.
-/// The [`CovSatisfier`] should be consistent with the extracted transaction.
+/// The [`LegacyCovSatisfier`] should be consistent with the extracted transaction.
 pub type PsbtCovInputSatisfier<'psbt> =
     (PsbtInputSatisfier<'psbt>, LegacyCovSatisfier<'psbt, 'psbt>);
 
@@ -477,7 +477,7 @@ pub trait PsbtExt {
     /// finalized psbt which involves checking the signatures/ preimages/timelocks.
     ///
     /// Input finalization also fails if it is not possible to satisfy any of the inputs non-malleably
-    /// See [finalizer::finalize_mall] if you want to allow malleable satisfactions
+    /// See `finalize_mall_*` if you want to allow malleable satisfactions
     ///
     /// For finalizing individual inputs, see also [`PsbtExt::finalize_inp`]
     ///
@@ -612,7 +612,7 @@ pub trait PsbtExt {
 
     /// Get the sighash message(data to sign) at input index `idx` based on the sighash
     /// flag specified in the [`Psbt`] sighash field. If the input sighash flag psbt field is `None`
-    /// the [`SchnorrSigHashType::Default`](elements::util::sighash::SchnorrSigHashType::Default) is chosen
+    /// the [`SchnorrSigHashType::Default`](elements::sighash::SchnorrSigHashType::Default) is chosen
     /// for for taproot spends, otherwise [`EcdsaSignatureHashType::All`](elements::EcdsaSigHashType::All) is chosen.
     /// If the utxo at `idx` is a taproot output, returns a [`PsbtSigHashMsg::TapSigHash`] variant.
     /// If the utxo at `idx` is a pre-taproot output, returns a [`PsbtSigHashMsg::EcdsaSigHash`] variant.

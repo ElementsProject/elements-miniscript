@@ -24,4 +24,5 @@
 
 pub mod dynafed_pegin;
 pub mod legacy_pegin;
+pub use self::dynafed_pegin::Pegin;
 pub use self::legacy_pegin::{LegacyPegin, LegacyPeginKey};

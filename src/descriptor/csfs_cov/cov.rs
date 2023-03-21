@@ -193,8 +193,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> LegacyCSFSCov<Pk, Ext> {
 
     /// Script code for signing with covenant publickey.
     /// Use this script_code for sighash method when signing
-    /// with the covenant pk. Use the [DescriptorTrait] script_code
-    /// method for getting sighash for regular miniscripts.
+    /// with the covenant pk.
     pub fn cov_script_code(&self) -> Script
     where
         Pk: ToPublicKey,
@@ -279,8 +278,8 @@ impl<Ext: ParseableExt> LegacyCSFSCov<bitcoin::PublicKey, Ext> {
     }
 
     /// Parse a descriptor with additional local sanity checks.
-    /// See [Miniscript::sanity_check] for all the checks. Use
-    /// [parse_insane] to allow parsing insane scripts
+    /// See [`Miniscript::sanity_check`] for all the checks. Use
+    /// [`Miniscript::parse_insane`] to allow parsing insane scripts
     pub fn parse(script: &script::Script) -> Result<Self, Error> {
         let cov = Self::parse_insane(script)?;
         cov.ms.sanity_check()?;
@@ -430,7 +429,7 @@ where
 
     /// This returns the entire explicit script as the script code.
     /// You will need this script code when singing with pks that
-    /// inside Miniscript. Use the [cov_script_code] method to
+    /// inside Miniscript. Use the [`Self::cov_script_code`] method to
     /// get the script code for signing with covenant pk
     pub fn ecdsa_sighash_script_code(&self) -> Script
     where

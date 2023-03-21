@@ -220,7 +220,7 @@ where
     type Output;
 
     /// Translates a struct from one generic to another where the translations
-    /// for Pk are provided by the given [`Translator`].
+    /// for Pk are provided by the given [`ExtParamTranslator`].
     fn translate_ext<T, E>(&self, translator: &mut T) -> Result<Self::Output, E>
     where
         T: ExtParamTranslator<PArg, QArg, E>;

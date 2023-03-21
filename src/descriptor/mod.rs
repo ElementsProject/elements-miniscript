@@ -175,7 +175,8 @@ pub enum DescriptorInfo {
     },
     /// Pegin descriptor
     /// Only provides information about the bitcoin side of descriptor
-    /// Use [DescriptorTrait::user_desc] method to obtain the user descriptor
+    /// Use the corresponding [`pegin::LegacyPegin::into_user_descriptor`] or
+    /// [`pegin::Pegin::into_user_descriptor`] method to obtain the user descriptor.
     /// and call DescriptorType method on it on to find information about
     /// the user claim descriptor.
     Pegin {
@@ -187,12 +188,12 @@ pub enum DescriptorInfo {
 }
 
 impl DescriptorInfo {
-    /// Compute the [DescriptorInfo] for the given descriptor string
+    /// Compute the [`DescriptorInfo`] for the given descriptor string
     /// This method should when the user is unsure whether they are parsing
     /// Bitcoin Descriptor, Elements Descriptor or Pegin Descriptors.
     /// This also returns information whether the descriptor contains any secrets
-    /// of the type [DescriptorSecretKey]. If the descriptor contains secret, users
-    /// should use the method [DescriptorPublicKey::parse_descriptor] to obtain the
+    /// of the type [`DescriptorSecretKey`]. If the descriptor contains secret, users
+    /// should use the method [`Descriptor::parse_descriptor`] to obtain the
     /// Descriptor and a secret key to public key mapping
     pub fn from_desc_str<T: Extension>(s: &str) -> Result<Self, Error> {
         // Parse as a string descriptor

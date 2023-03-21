@@ -27,7 +27,7 @@ pub trait CovOperations: Sized {
     /// len must be 33
     fn chk_amt(self) -> Self;
     /// Assuming the 10 sighash components + 1 sig on the top of
-    /// stack for segwit sighash as created by [init_stack]
+    /// stack for segwit sighash as created by init_stack
     /// CAT all of them and check sig from stack
     fn verify_cov(self, key: &bitcoin::PublicKey) -> Self;
 
