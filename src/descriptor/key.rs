@@ -9,6 +9,8 @@ use elements::hashes::hex::FromHex;
 use elements::hashes::{hash160, ripemd160, sha256, Hash, HashEngine};
 use elements::secp256k1_zkp::{Secp256k1, Signing, Verification};
 
+#[cfg(feature = "serde")]
+use crate::serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::{hash256, MiniscriptKey, ToPublicKey};
 
 /// Single public key without any origin or range information
@@ -1130,6 +1132,27 @@ impl Borrow<DescriptorPublicKey> for DefiniteDescriptorKey {
     }
 }
 
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for DescriptorPublicKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        DescriptorPublicKey::from_str(&s).map_err(crate::serde::de::Error::custom)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for DescriptorPublicKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::str::FromStr;
@@ -1137,6 +1160,8 @@ mod test {
     use bitcoin::secp256k1;
     use bitcoin::util::bip32;
     use elements::secp256k1_zkp;
+    #[cfg(feature = "serde")]
+    use serde_test::{assert_tokens, Token};
 
     use super::{
         DescriptorKeyParseError, DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey,
@@ -1513,5 +1538,13 @@ mod test {
         DescriptorPublicKey::from_str("tpubDBrgjcxBxnXyL575sHdkpKohWu5qHKoQ7TJXKNrYznh5fVEGBv89hA8ENW7A8MFVpFUSvgLqc4Nj1WZcpePX6rrxviVtPowvMuGF5rdT2Vi/2/4/<0;>").unwrap_err();
         DescriptorPublicKey::from_str("tpubDBrgjcxBxnXyL575sHdkpKohWu5qHKoQ7TJXKNrYznh5fVEGBv89hA8ENW7A8MFVpFUSvgLqc4Nj1WZcpePX6rrxviVtPowvMuGF5rdT2Vi/2/4/<;1>").unwrap_err();
         DescriptorPublicKey::from_str("tpubDBrgjcxBxnXyL575sHdkpKohWu5qHKoQ7TJXKNrYznh5fVEGBv89hA8ENW7A8MFVpFUSvgLqc4Nj1WZcpePX6rrxviVtPowvMuGF5rdT2Vi/2/4/<0;1;>").unwrap_err();
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_descriptor_public_key_serde() {
+        let desc = "[abcdef00/0'/1']tpubDBrgjcxBxnXyL575sHdkpKohWu5qHKoQ7TJXKNrYznh5fVEGBv89hA8ENW7A8MFVpFUSvgLqc4Nj1WZcpePX6rrxviVtPowvMuGF5rdT2Vi/2";
+        let public_key = DescriptorPublicKey::from_str(desc).unwrap();
+        assert_tokens(&public_key, &[Token::String(desc)]);
     }
 }
