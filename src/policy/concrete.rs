@@ -482,7 +482,13 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// Compile the [`Policy`] into desc_ctx [`Descriptor`]
     ///
     /// In case of [Tr][`DescriptorCtx::Tr`], `internal_key` is used for the Taproot comilation when
-    /// no public key can be inferred from the given policy
+    /// no public key can be inferred from the given policy.
+    ///
+    /// # NOTE:
+    ///
+    /// It is **not recommended** to use policy as a stable identifier for a miniscript.
+    /// You should use the policy compiler once, and then use the miniscript output as a stable identifier.
+    /// See the compiler document in doc/compiler.md for more details.
     #[cfg(feature = "compiler")]
     pub fn compile_to_descriptor<Ctx: ScriptContext>(
         &self,
@@ -505,6 +511,12 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     }
 
     /// Compile the descriptor into an optimized `Miniscript` representation
+    ///
+    /// # NOTE:
+    ///
+    /// It is **not recommended** to use policy as a stable identifier for a miniscript.
+    /// You should use the policy compiler once, and then use the miniscript output as a stable identifier.
+    /// See the compiler document in doc/compiler.md for more details.
     #[cfg(feature = "compiler")]
     pub fn compile<Ctx: ScriptContext>(&self) -> Result<Miniscript<Pk, Ctx>, CompilerError> {
         self.is_valid()?;
