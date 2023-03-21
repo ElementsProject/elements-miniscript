@@ -7,21 +7,17 @@ FEATURES="compiler serde rand base64"
 cargo --version
 rustc --version
 
+# Pin dependencies required to build with Rust 1.41.1
+if cargo --version | grep "1\.41\.0"; then
+    cargo update -p serde --precise 1.0.156
+    cargo update -p syn --precise 1.0.107
+fi
+
 # Format if told to
 if [ "$DO_FMT" = true ]
 then
     rustup component add rustfmt
     cargo fmt -- --check
-fi
-
-# Pin dependencies required to build with Rust 1.41.1
-if cargo --version | grep "1\.41\.0"; then
-    cargo update -p once_cell --precise 1.13.1
-fi
-
-# Pin dependencies required to build with Rust 1.47.0
-if cargo --version | grep "1\.47\.0"; then
-    cargo update -p once_cell --precise 1.13.1
 fi
 
 # Fuzz if told to

@@ -88,6 +88,9 @@
 //! ```
 //!
 //!
+
+#![cfg_attr(all(test, feature = "unstable"), feature(test))]
+// Coding conventions
 #![allow(bare_trait_objects)]
 #![deny(non_camel_case_types)]
 #![deny(non_snake_case)]
