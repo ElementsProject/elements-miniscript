@@ -1,16 +1,5 @@
-// Miniscript
-// Written in 2019 by
-//     Andrew Poelstra <apoelstra@wpsoftware.net>
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2019 by Andrew Poelstra <apoelstra@wpsoftware.net>
+// SPDX-License-Identifier: CC0-1.0
 
 //! # Policy Compiler
 //!
@@ -1218,7 +1207,7 @@ mod tests {
 
     type SPolicy = Concrete<String>;
     type BPolicy = Concrete<bitcoin::PublicKey>;
-    type DummyTapAstElemExt = policy::compiler::AstElemExt<String, Tap>;
+    type TapAstElemExt = policy::compiler::AstElemExt<String, Tap>;
     type SegwitMiniScript = Miniscript<bitcoin::PublicKey, Segwitv0>;
 
     fn pubkeys_and_a_sig(n: usize) -> (Vec<bitcoin::PublicKey>, secp256k1_zkp::ecdsa::Signature) {
@@ -1308,8 +1297,7 @@ mod tests {
     #[test]
     fn compile_q() {
         let policy = SPolicy::from_str("or(1@and(pk(A),pk(B)),127@pk(C))").expect("parsing");
-        let compilation: DummyTapAstElemExt =
-            best_t(&mut BTreeMap::new(), &policy, 1.0, None).unwrap();
+        let compilation: TapAstElemExt = best_t(&mut BTreeMap::new(), &policy, 1.0, None).unwrap();
 
         assert_eq!(compilation.cost_1d(1.0, None), 87.0 + 67.0390625);
         assert_eq!(
@@ -1321,8 +1309,7 @@ mod tests {
         let policy = SPolicy::from_str(
                 "and(and(and(or(127@thresh(2,pk(A),pk(B),thresh(2,or(127@pk(A),1@pk(B)),after(100),or(and(pk(C),after(200)),and(pk(D),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925))),pk(E))),1@pk(F)),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925)),or(127@pk(G),1@after(300))),or(127@after(400),pk(H)))"
             ).expect("parsing");
-        let compilation: DummyTapAstElemExt =
-            best_t(&mut BTreeMap::new(), &policy, 1.0, None).unwrap();
+        let compilation: TapAstElemExt = best_t(&mut BTreeMap::new(), &policy, 1.0, None).unwrap();
 
         assert_eq!(compilation.cost_1d(1.0, None), 433.0 + 275.7909749348958);
         assert_eq!(

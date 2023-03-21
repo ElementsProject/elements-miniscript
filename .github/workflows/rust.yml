@@ -6,10 +6,6 @@ jobs:
   lint_fuzz_stable:
     name: Lint + Fuzz
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust:
-          - 1.58.0
     steps:
       - name: Checkout Crate
         uses: actions/checkout@v2
@@ -19,7 +15,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: ${{ matrix.rust }}
+          toolchain: 1.58.0
           override: true
       - name: Running fuzzer
         env:
@@ -46,6 +42,23 @@ jobs:
       - name: Building docs
         env:
           DO_DOCS: true
+        run: ./contrib/test.sh
+
+  Int-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Crate
+        uses: actions/checkout@v2
+      - name: Checkout Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Running integration tests
+        env:
+          DO_BITCOIND_TESTS: true
         run: ./contrib/test.sh
 
   Tests:

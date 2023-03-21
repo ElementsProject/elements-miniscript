@@ -34,63 +34,63 @@ use crate::{
 pub enum ExprInner {
     /* leaf fragments/terminals */
     /// A constant i64 value
-    /// Minimal push of this <i64>
+    /// Minimal push of this `<i64>`
     Const(i64),
     /// Value under the current executing input
-    /// INSPECTCURRENTINPUTINDEX INPSECTINPUTVALUE <1> EQUALVERIFY
+    /// `INSPECTCURRENTINPUTINDEX INPSECTINPUTVALUE <1> EQUALVERIFY`
     CurrInputIdx,
     /// Explicit amount at the given input index
-    /// i INPSECTINPUTVALUE <1> EQUALVERIFY
+    /// `i INPSECTINPUTVALUE <1> EQUALVERIFY`
     Input(IdxExpr),
     /// Explicit amount at the given output index
-    /// i INPSECTOUTPUTVALUE <1> EQUALVERIFY
+    /// `i INPSECTOUTPUTVALUE <1> EQUALVERIFY`
     Output(IdxExpr),
     /// Explicit issuance amount at this input index
-    /// i OP_INSPECTINPUTISSUANCE DROP DROP <1> EQUALVERIFY NIP NIP
+    /// `i OP_INSPECTINPUTISSUANCE DROP DROP <1> EQUALVERIFY NIP NIP`
     // NIP drops the second to top stack item
     // issuance stack after push where the right is stack top
     // [<inflation keys> <inflation_pref> <value> <value_pref> <entropy> <blindingnonce>]
     InputIssue(IdxExpr),
     /// Explicit re-issuance amount at this input index
-    /// i OP_INSPECTINPUTISSUANCE DROP DROP DROP DROP <1> EQUALVERIFY
+    /// `i OP_INSPECTINPUTISSUANCE DROP DROP DROP DROP <1> EQUALVERIFY`
     // issuance stack after push where the right is stack top
     // [<inflation keys> <inflation_pref> <value> <value_pref> <entropy> <blindingnonce>]
     InputReIssue(IdxExpr),
 
     /* Two children */
     /// Add two Arith expressions.
-    /// [X] [Y] ADD64 <1> EQUALVERIFY
+    /// `[X] [Y] ADD64 <1> EQUALVERIFY`
     Add(Box<Expr>, Box<Expr>),
     /// Subtract (X-Y)
-    /// [X] [Y] SUB64 <1> EQUALVERIFY
+    /// `[X] [Y] SUB64 <1> EQUALVERIFY`
     Sub(Box<Expr>, Box<Expr>),
     /// Multiply two Expr expressions. (a*b)
-    /// [X] [Y] MUL64 <1> EQUALVERIFY
+    /// `[X] [Y] MUL64 <1> EQUALVERIFY`
     Mul(Box<Expr>, Box<Expr>),
     /// Divide two Expr expressions. (a//b)
     /// The division operation pushes the quotient(a//b) such that the remainder a%b
     /// (must be non-negative and less than |b|).
-    /// [X] [Y] DIV64 <1> EQUALVERIFY NIP
+    /// `[X] [Y] DIV64 <1> EQUALVERIFY NIP`
     Div(Box<Expr>, Box<Expr>),
     /// Modulo operation (a % b)
     /// The division operation the remainder a%b (must be non-negative and less than |b|).
-    /// [X] [Y] DIV64 <1> EQUALVERIFY DROP
+    /// `[X] [Y] DIV64 <1> EQUALVERIFY DROP`
     Mod(Box<Expr>, Box<Expr>),
     /// BitWise And (a & b)
-    /// [X] [Y] AND (cannot fail)
+    /// `[X] [Y] AND` (cannot fail)
     BitAnd(Box<Expr>, Box<Expr>),
     /// BitWise or (a | b)
-    /// [X] [Y] OR (cannot fail)
+    /// `[X] [Y] OR` (cannot fail)
     BitOr(Box<Expr>, Box<Expr>),
     /// BitWise or (a ^ b)
-    /// [X] [Y] XOR (cannot fail)
+    /// `[X] [Y] XOR` (cannot fail)
     Xor(Box<Expr>, Box<Expr>),
     /* One child*/
     /// BitWise invert (!a)
-    /// [X] INVERT (cannot fail)
+    /// `[X] INVERT` (cannot fail)
     Invert(Box<Expr>),
     /// Negate -a
-    /// [X] NEG64 <1> EQUALVERIFY
+    /// `[X] NEG64 <1> EQUALVERIFY`
     Negate(Box<Expr>),
 }
 
@@ -528,19 +528,19 @@ impl Expr {
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
 pub enum Arith {
     /// Eq
-    /// [X] [Y] EQUAL
+    /// `[X] [Y] EQUAL`
     Eq(Expr, Expr),
     /// Lt
-    /// [X] [Y] LESSTHAN
+    /// `[X] [Y] LESSTHAN`
     Lt(Expr, Expr),
     /// Leq
-    /// [X] [Y] LESSTHANOREQUAL
+    /// `[X] [Y] LESSTHANOREQUAL`
     Leq(Expr, Expr),
     /// Gt
-    /// [X] [Y] GREATERTHAN
+    /// `[X] [Y] GREATERTHAN`
     Gt(Expr, Expr),
     /// Geq
-    /// [X] [Y] GREATERTHANOREQUAL
+    /// `[X] [Y] GREATERTHANOREQUAL`
     Geq(Expr, Expr),
 }
 

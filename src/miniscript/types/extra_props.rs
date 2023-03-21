@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: CC0-1.0
+
 //! Other miscellaneous type properties which are not related to
 //! correctness or malleability.
 
@@ -442,9 +444,9 @@ impl Property for ExtData {
     }
 
     fn cast_verify(self) -> Result<Self, ErrorKind> {
-        let verify_cost = if self.has_free_verify { 0 } else { 1 };
+        let verify_cost = usize::from(!self.has_free_verify);
         Ok(ExtData {
-            pk_cost: self.pk_cost + if self.has_free_verify { 0 } else { 1 },
+            pk_cost: self.pk_cost + usize::from(!self.has_free_verify),
             has_free_verify: false,
             ops: OpLimits::new(verify_cost + self.ops.count, self.ops.sat, None),
             stack_elem_count_sat: self.stack_elem_count_sat,
@@ -706,7 +708,6 @@ impl Property for ExtData {
                 (None, None) => None,
             },
             timelock_info: TimelockInfo::combine_or(l.timelock_info, r.timelock_info),
-            // TODO: fix elem count dissat bug
             exec_stack_elem_count_sat: cmp::max(
                 l.exec_stack_elem_count_sat,
                 r.exec_stack_elem_count_sat,
@@ -1037,10 +1038,7 @@ impl Property for ExtData {
 // costy satisfactions are satisfied, the most costy dissatisfactions are dissatisfied).
 //
 // Args are of form: (<count_sat>, <count_dissat>)
-fn sat_minus_dissat<'r, 's>(
-    a: &'r (Option<usize>, usize),
-    b: &'s (Option<usize>, usize),
-) -> std::cmp::Ordering {
+fn sat_minus_dissat(a: &(Option<usize>, usize), b: &(Option<usize>, usize)) -> cmp::Ordering {
     a.0.map(|x| x as isize - a.1 as isize)
         .cmp(&b.0.map(|x| x as isize - b.1 as isize))
 }
@@ -1051,10 +1049,10 @@ fn sat_minus_dissat<'r, 's>(
 // costy satisfactions are satisfied, the most costy dissatisfactions are dissatisfied).
 //
 // Args are of form: (<count_sat>, <count_dissat>)
-fn sat_minus_option_dissat<'r, 's>(
-    a: &'r (Option<usize>, Option<usize>),
-    b: &'s (Option<usize>, Option<usize>),
-) -> std::cmp::Ordering {
+fn sat_minus_option_dissat(
+    a: &(Option<usize>, Option<usize>),
+    b: &(Option<usize>, Option<usize>),
+) -> cmp::Ordering {
     a.0.map(|x| a.1.map(|y| x as isize - y as isize))
         .cmp(&b.0.map(|x| b.1.map(|y| x as isize - y as isize)))
 }
@@ -1063,10 +1061,11 @@ fn sat_minus_option_dissat<'r, 's>(
 //
 // Args are of form: (<max_sat_size>, <count_dissat_size>)
 // max_[dis]sat_size of form: (<cost_of_witness>, <cost_of_sciptsig>)
-fn sat_minus_dissat_witness<'r, 's>(
-    a: &'r (Option<(usize, usize)>, Option<(usize, usize)>),
-    b: &'s (Option<(usize, usize)>, Option<(usize, usize)>),
-) -> std::cmp::Ordering {
+#[allow(clippy::type_complexity)]
+fn sat_minus_dissat_witness(
+    a: &(Option<(usize, usize)>, Option<(usize, usize)>),
+    b: &(Option<(usize, usize)>, Option<(usize, usize)>),
+) -> cmp::Ordering {
     a.0.map(|x| a.1.map(|y| x.0 as isize - y.0 as isize))
         .cmp(&b.0.map(|x| b.1.map(|y| x.0 as isize - y.0 as isize)))
 }

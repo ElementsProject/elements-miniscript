@@ -1,16 +1,5 @@
-// Miniscript
-// Written in 2019 by
-//     Andrew Poelstra <apoelstra@wpsoftware.net>
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2019 by Andrew Poelstra <apoelstra@wpsoftware.net>
+// SPDX-License-Identifier: CC0-1.0
 
 //! Malleability-related Type properties
 
@@ -112,6 +101,14 @@ impl Property for Malleability {
     }
 
     fn from_multi(_: usize, _: usize) -> Self {
+        Malleability {
+            dissat: Dissat::Unique,
+            safe: true,
+            non_malleable: true,
+        }
+    }
+
+    fn from_multi_a(_: usize, _: usize) -> Self {
         Malleability {
             dissat: Dissat::Unique,
             safe: true,
@@ -313,7 +310,7 @@ impl Property for Malleability {
         let mut all_are_non_malleable = true;
         for i in 0..n {
             let subtype = sub_ck(i)?;
-            safe_count += if subtype.safe { 1 } else { 0 };
+            safe_count += usize::from(subtype.safe);
             all_are_dissat_unique &= subtype.dissat == Dissat::Unique;
             all_are_non_malleable &= subtype.non_malleable;
         }

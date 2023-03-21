@@ -1,16 +1,5 @@
-// Miniscript
-// Written in 2019 by
-//     Andrew Poelstra <apoelstra@wpsoftware.net>
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2019 by Andrew Poelstra <apoelstra@wpsoftware.net>
+// SPDX-License-Identifier: CC0-1.0
 
 //! Abstract Policies
 
@@ -223,7 +212,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     pub(crate) fn satisfy_constraint(self, witness: &Policy<Pk>, available: bool) -> Policy<Pk> {
         debug_assert!(self.clone().normalized() == self);
         // only for internal purposes, safe to use unreachable!
-        if let Policy::Threshold(..) = *witness {
+        if let Policy::Threshold { .. } = *witness {
             unreachable!()
         }
         let ret = match self {
@@ -548,9 +537,8 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             Policy::Older(t) => {
                 if t.is_height_locked() && age.is_time_locked()
                     || t.is_time_locked() && age.is_height_locked()
+                    || t.to_consensus_u32() > age.to_consensus_u32()
                 {
-                    Policy::Unsatisfiable
-                } else if t.to_consensus_u32() > age.to_consensus_u32() {
                     Policy::Unsatisfiable
                 } else {
                     Policy::Older(t)
@@ -693,11 +681,8 @@ mod tests {
         assert_eq!(policy, Policy::Key("".to_owned()));
         assert!(policy.relative_timelocks().is_empty());
         assert!(policy.absolute_timelocks().is_empty());
-        assert_eq!(policy.clone().at_age(Sequence::ZERO), policy.clone());
-        assert_eq!(
-            policy.clone().at_age(Sequence::from_height(10000)),
-            policy.clone()
-        );
+        assert_eq!(policy.clone().at_age(Sequence::ZERO), policy);
+        assert_eq!(policy.clone().at_age(Sequence::from_height(10000)), policy);
         assert_eq!(policy.n_keys(), 1);
         assert_eq!(policy.minimum_n_keys(), Some(1));
 
@@ -710,14 +695,8 @@ mod tests {
             policy.clone().at_age(Sequence::from_height(999)),
             Policy::Unsatisfiable
         );
-        assert_eq!(
-            policy.clone().at_age(Sequence::from_height(1000)),
-            policy.clone()
-        );
-        assert_eq!(
-            policy.clone().at_age(Sequence::from_height(10000)),
-            policy.clone()
-        );
+        assert_eq!(policy.clone().at_age(Sequence::from_height(1000)), policy);
+        assert_eq!(policy.clone().at_age(Sequence::from_height(10000)), policy);
         assert_eq!(policy.n_keys(), 0);
         assert_eq!(policy.minimum_n_keys(), Some(0));
 
@@ -842,13 +821,13 @@ mod tests {
             policy
                 .clone()
                 .at_lock_time(LockTime::from_height(1000).expect("valid block height")),
-            policy.clone()
+            policy
         );
         assert_eq!(
             policy
                 .clone()
                 .at_lock_time(LockTime::from_height(10000).expect("valid block height")),
-            policy.clone()
+            policy
         );
         // Pass a UNIX timestamp to at_lock_time while policy uses a block height.
         assert_eq!(
@@ -905,13 +884,13 @@ mod tests {
             policy
                 .clone()
                 .at_lock_time(LockTime::from_time(500_000_010).expect("valid timestamp")),
-            policy.clone()
+            policy
         );
         assert_eq!(
             policy
                 .clone()
                 .at_lock_time(LockTime::from_time(500_000_012).expect("valid timestamp")),
-            policy.clone()
+            policy
         );
         assert_eq!(policy.n_keys(), 0);
         assert_eq!(policy.minimum_n_keys(), Some(0));
@@ -932,7 +911,6 @@ mod tests {
         // test liquid backup policy before the emergency timeout
         let backup_policy = StringPolicy::from_str("thresh(2,pk(A),pk(B),pk(C))").unwrap();
         assert!(!backup_policy
-            .clone()
             .entails(liquid_pol.clone().at_age(Sequence::from_height(4095)))
             .unwrap());
 
@@ -941,9 +919,7 @@ mod tests {
         let backup_policy_after_expiry =
             StringPolicy::from_str("and(older(4096),thresh(2,pk(A),pk(B),pk(C)))").unwrap();
         assert!(fed_pol.entails(liquid_pol.clone()).unwrap());
-        assert!(backup_policy_after_expiry
-            .entails(liquid_pol.clone())
-            .unwrap());
+        assert!(backup_policy_after_expiry.entails(liquid_pol).unwrap());
     }
 
     #[test]

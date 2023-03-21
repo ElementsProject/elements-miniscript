@@ -1,16 +1,5 @@
-// Miniscript
-// Written in 2018 by
-//     Andrew Poelstra <apoelstra@wpsoftware.net>
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2018 by Andrew Poelstra <apoelstra@wpsoftware.net>
+// SPDX-License-Identifier: CC0-1.0
 
 //! # Output Descriptors
 //!
@@ -59,12 +48,14 @@ pub use self::blinded::Blinded;
 pub use self::segwitv0::{Wpkh, Wsh, WshInner};
 pub use self::sh::{Sh, ShInner};
 pub use self::sortedmulti::SortedMultiVec;
-mod checksum;
+
+pub mod checksum;
 mod key;
 pub use self::csfs_cov::{CovError, CovOperations, LegacyCSFSCov, LegacyCovSatisfier};
 pub use self::key::{
-    ConversionError, DefiniteDescriptorKey, DescriptorKeyParseError, DescriptorPublicKey,
-    DescriptorSecretKey, DescriptorXKey, InnerXKey, SinglePriv, SinglePub, SinglePubKey, Wildcard,
+    ConversionError, DefiniteDescriptorKey, DerivPaths, DescriptorKeyParseError,
+    DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey, InnerXKey,
+    SinglePriv, SinglePub, SinglePubKey, Wildcard,
 };
 pub use self::tr::{TapTree, Tr};
 /// Alias type for a map of public key to secret key
@@ -184,7 +175,8 @@ pub enum DescriptorInfo {
     },
     /// Pegin descriptor
     /// Only provides information about the bitcoin side of descriptor
-    /// Use [DescriptorTrait::user_desc] method to obtain the user descriptor
+    /// Use the corresponding [`pegin::LegacyPegin::into_user_descriptor`] or
+    /// [`pegin::Pegin::into_user_descriptor`] method to obtain the user descriptor.
     /// and call DescriptorType method on it on to find information about
     /// the user claim descriptor.
     Pegin {
@@ -196,12 +188,12 @@ pub enum DescriptorInfo {
 }
 
 impl DescriptorInfo {
-    /// Compute the [DescriptorInfo] for the given descriptor string
+    /// Compute the [`DescriptorInfo`] for the given descriptor string
     /// This method should when the user is unsure whether they are parsing
     /// Bitcoin Descriptor, Elements Descriptor or Pegin Descriptors.
     /// This also returns information whether the descriptor contains any secrets
-    /// of the type [DescriptorSecretKey]. If the descriptor contains secret, users
-    /// should use the method [DescriptorPublicKey::parse_descriptor] to obtain the
+    /// of the type [`DescriptorSecretKey`]. If the descriptor contains secret, users
+    /// should use the method [`Descriptor::parse_descriptor`] to obtain the
     /// Descriptor and a secret key to public key mapping
     pub fn from_desc_str<T: Extension>(s: &str) -> Result<Self, Error> {
         // Parse as a string descriptor
@@ -472,6 +464,58 @@ impl<Pk: MiniscriptKey, Ext: Extension> Descriptor<Pk, Ext> {
         }
     }
 
+    /// Computes an upper bound on the difference between a non-satisfied
+    /// `TxIn`'s `segwit_weight` and a satisfied `TxIn`'s `segwit_weight`
+    ///
+    /// Since this method uses `segwit_weight` instead of `legacy_weight`,
+    /// if you want to include only legacy inputs in your transaction,
+    /// you should remove 1WU from each input's `max_weight_to_satisfy`
+    /// for a more accurate estimate.
+    ///
+    /// In other words, for segwit inputs or legacy inputs included in
+    /// segwit transactions, the following will hold for each input if
+    /// that input was satisfied with the largest possible witness:
+    /// ```ignore
+    /// for i in 0..transaction.input.len() {
+    ///     assert_eq!(
+    ///         descriptor_for_input[i].max_weight_to_satisfy(),
+    ///         transaction.input[i].segwit_weight() - Txin::default().segwit_weight()
+    ///     );
+    /// }
+    /// ```
+    ///
+    /// Instead, for legacy transactions, the following will hold for each input
+    /// if that input was satisfied with the largest possible witness:
+    /// ```ignore
+    /// for i in 0..transaction.input.len() {
+    ///     assert_eq!(
+    ///         descriptor_for_input[i].max_weight_to_satisfy(),
+    ///         transaction.input[i].legacy_weight() - Txin::default().legacy_weight()
+    ///     );
+    /// }
+    /// ```
+    ///
+    /// Assumes all ECDSA signatures are 73 bytes, including push opcode and
+    /// sighash suffix.
+    /// Assumes all Schnorr signatures are 66 bytes, including push opcode and
+    /// sighash suffix.
+    ///
+    /// # Errors
+    /// When the descriptor is impossible to safisfy (ex: sh(OP_FALSE)).
+    pub fn max_weight_to_satisfy(&self) -> Result<usize, Error> {
+        let weight = match *self {
+            Descriptor::Bare(ref bare) => bare.max_weight_to_satisfy()?,
+            Descriptor::Pkh(ref pkh) => pkh.max_weight_to_satisfy(),
+            Descriptor::Wpkh(ref wpkh) => wpkh.max_weight_to_satisfy(),
+            Descriptor::Wsh(ref wsh) => wsh.max_weight_to_satisfy()?,
+            Descriptor::Sh(ref sh) => sh.max_weight_to_satisfy()?,
+            Descriptor::Tr(ref tr) => tr.max_weight_to_satisfy()?,
+            Descriptor::TrExt(ref tr) => tr.max_weight_to_satisfy()?,
+            Descriptor::LegacyCSFSCov(ref csfs) => csfs.max_satisfaction_weight()?,
+        };
+        Ok(weight)
+    }
+
     /// Computes an upper bound on the weight of a satisfying witness to the
     /// transaction.
     ///
@@ -481,6 +525,8 @@ impl<Pk: MiniscriptKey, Ext: Extension> Descriptor<Pk, Ext> {
     ///
     /// # Errors
     /// When the descriptor is impossible to safisfy (ex: sh(OP_FALSE)).
+    #[deprecated(note = "use max_weight_to_satisfy instead")]
+    #[allow(deprecated)]
     pub fn max_satisfaction_weight(&self) -> Result<usize, Error> {
         let weight = match *self {
             Descriptor::Bare(ref bare) => bare.max_satisfaction_weight()?,
@@ -784,26 +830,33 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     /// Replaces all wildcards (i.e. `/*`) in the descriptor with a particular derivation index,
     /// turning it into a *definite* descriptor.
     ///
-    /// # Panics
-    ///
-    /// If index ≥ 2^31
-    pub fn at_derivation_index(&self, index: u32) -> Descriptor<DefiniteDescriptorKey, Ext> {
+    /// # Errors
+    /// - If index ≥ 2^31
+    pub fn at_derivation_index(
+        &self,
+        index: u32,
+    ) -> Result<Descriptor<DefiniteDescriptorKey, Ext>, ConversionError> {
         struct Derivator(u32);
 
-        impl Translator<DescriptorPublicKey, DefiniteDescriptorKey, ()> for Derivator {
-            fn pk(&mut self, pk: &DescriptorPublicKey) -> Result<DefiniteDescriptorKey, ()> {
-                Ok(pk.clone().at_derivation_index(self.0))
+        impl Translator<DescriptorPublicKey, DefiniteDescriptorKey, ConversionError> for Derivator {
+            fn pk(
+                &mut self,
+                pk: &DescriptorPublicKey,
+            ) -> Result<DefiniteDescriptorKey, ConversionError> {
+                pk.clone().at_derivation_index(self.0)
             }
 
-            translate_hash_clone!(DescriptorPublicKey, DescriptorPublicKey, ());
+            translate_hash_clone!(DescriptorPublicKey, DescriptorPublicKey, ConversionError);
         }
         self.translate_pk(&mut Derivator(index))
-            .expect("BIP 32 key index substitution cannot fail")
     }
 
     #[deprecated(note = "use at_derivation_index instead")]
-    /// Deprecated name for [`at_derivation_index`].
-    pub fn derive(&self, index: u32) -> Descriptor<DefiniteDescriptorKey, Ext> {
+    /// Deprecated name for [`Self::at_derivation_index`].
+    pub fn derive(
+        &self,
+        index: u32,
+    ) -> Result<Descriptor<DefiniteDescriptorKey, Ext>, ConversionError> {
         self.at_derivation_index(index)
     }
 
@@ -820,8 +873,8 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     ///     .expect("Valid ranged descriptor");
     /// # let index = 42;
     /// # let secp = Secp256k1::verification_only();
-    /// let derived_descriptor = descriptor.at_derivation_index(index).derived_descriptor(&secp);
-    /// # assert_eq!(descriptor.derived_descriptor(&secp, index), derived_descriptor);
+    /// let derived_descriptor = descriptor.at_derivation_index(index).unwrap().derived_descriptor(&secp).unwrap();
+    /// # assert_eq!(descriptor.derived_descriptor(&secp, index).unwrap(), derived_descriptor);
     /// ```
     ///
     /// and is only here really here for backwards compatbility.
@@ -838,7 +891,7 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
         secp: &secp256k1_zkp::Secp256k1<C>,
         index: u32,
     ) -> Result<Descriptor<bitcoin::PublicKey, Ext>, ConversionError> {
-        self.at_derivation_index(index).derived_descriptor(&secp)
+        self.at_derivation_index(index)?.derived_descriptor(secp)
     }
 
     /// Parse a descriptor that may contain secret keys
@@ -850,7 +903,7 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
         s: &str,
     ) -> Result<(Descriptor<DescriptorPublicKey, Ext>, KeyMap), Error> {
         fn parse_key<C: secp256k1::Signing>(
-            s: &String,
+            s: &str,
             key_map: &mut KeyMap,
             secp: &secp256k1::Secp256k1<C>,
         ) -> Result<DescriptorPublicKey, Error> {
@@ -957,6 +1010,69 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
 
         descriptor.to_string()
     }
+
+    /// Whether this descriptor contains a key that has multiple derivation paths.
+    pub fn is_multipath(&self) -> bool {
+        self.for_any_key(DescriptorPublicKey::is_multipath)
+    }
+
+    /// Get as many descriptors as different paths in this descriptor.
+    ///
+    /// For multipath descriptors it will return as many descriptors as there is
+    /// "parallel" paths. For regular descriptors it will just return itself.
+    #[allow(clippy::blocks_in_if_conditions)]
+    pub fn into_single_descriptors(self) -> Result<Vec<Self>, Error> {
+        // All single-path descriptors contained in this descriptor.
+        let mut descriptors = Vec::new();
+        // We (ab)use `for_any_key` to gather the number of separate descriptors.
+        if !self.for_any_key(|key| {
+            // All multipath keys must have the same number of indexes at the "multi-index"
+            // step. So we can return early if we already populated the vector.
+            if !descriptors.is_empty() {
+                return true;
+            }
+
+            match key {
+                DescriptorPublicKey::Single(..) | DescriptorPublicKey::XPub(..) => false,
+                DescriptorPublicKey::MultiXPub(xpub) => {
+                    for _ in 0..xpub.derivation_paths.paths().len() {
+                        descriptors.push(self.clone());
+                    }
+                    true
+                }
+            }
+        }) {
+            // If there is no multipath key, return early.
+            return Ok(vec![self]);
+        }
+        assert!(!descriptors.is_empty());
+
+        // Now, transform the multipath key of each descriptor into a single-key using each index.
+        struct IndexChoser(usize);
+        impl Translator<DescriptorPublicKey, DescriptorPublicKey, Error> for IndexChoser {
+            fn pk(&mut self, pk: &DescriptorPublicKey) -> Result<DescriptorPublicKey, Error> {
+                match pk {
+                    DescriptorPublicKey::Single(..) | DescriptorPublicKey::XPub(..) => {
+                        Ok(pk.clone())
+                    }
+                    DescriptorPublicKey::MultiXPub(_) => pk
+                        .clone()
+                        .into_single_keys()
+                        .get(self.0)
+                        .cloned()
+                        .ok_or(Error::MultipathDescLenMismatch),
+                }
+            }
+            translate_hash_clone!(DescriptorPublicKey, DescriptorPublicKey, Error);
+        }
+
+        for (i, desc) in descriptors.iter_mut().enumerate() {
+            let mut index_choser = IndexChoser(i);
+            *desc = desc.translate_pk(&mut index_choser)?;
+        }
+
+        Ok(descriptors)
+    }
 }
 
 impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
@@ -986,6 +1102,42 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     }
 }
 
+impl<Pk: MiniscriptKey, Ext: Extension> Descriptor<Pk, Ext> {
+    /// Whether this descriptor is a multipath descriptor that contains any 2 multipath keys
+    /// with a different number of derivation paths.
+    /// Such a descriptor is invalid according to BIP389.
+    pub fn multipath_length_mismatch(&self) -> bool {
+        // (Ab)use `for_each_key` to record the number of derivation paths a multipath key has.
+        #[derive(PartialEq)]
+        enum MultipathLenChecker {
+            SinglePath,
+            MultipathLen(usize),
+            LenMismatch,
+        }
+
+        let mut checker = MultipathLenChecker::SinglePath;
+        self.for_each_key(|key| {
+            match key.num_der_paths() {
+                0 | 1 => {}
+                n => match checker {
+                    MultipathLenChecker::SinglePath => {
+                        checker = MultipathLenChecker::MultipathLen(n);
+                    }
+                    MultipathLenChecker::MultipathLen(len) => {
+                        if len != n {
+                            checker = MultipathLenChecker::LenMismatch;
+                        }
+                    }
+                    MultipathLenChecker::LenMismatch => {}
+                },
+            }
+            true
+        });
+
+        checker == MultipathLenChecker::LenMismatch
+    }
+}
+
 impl<Ext: Extension> Descriptor<DefiniteDescriptorKey, Ext> {
     /// Convert all the public keys in the descriptor to [`bitcoin::PublicKey`] by deriving them or
     /// otherwise converting them. All [`bitcoin::XOnlyPublicKey`]s are converted to by adding a
@@ -1003,7 +1155,7 @@ impl<Ext: Extension> Descriptor<DefiniteDescriptorKey, Ext> {
     /// let secp = secp256k1::Secp256k1::verification_only();
     /// let descriptor = Descriptor::<DescriptorPublicKey>::from_str("eltr(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*)")
     ///     .expect("Valid ranged descriptor");
-    /// let result = descriptor.at_derivation_index(0).derived_descriptor(&secp).expect("Non-hardened derivation");
+    /// let result = descriptor.at_derivation_index(0).unwrap().derived_descriptor(&secp).expect("Non-hardened derivation");
     /// assert_eq!(result.to_string(), "eltr(03cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115)#hr5pt2wj");
     /// ```
     ///
@@ -1024,7 +1176,7 @@ impl<Ext: Extension> Descriptor<DefiniteDescriptorKey, Ext> {
                 &mut self,
                 pk: &DefiniteDescriptorKey,
             ) -> Result<bitcoin::PublicKey, ConversionError> {
-                pk.derive_public_key(&self.0)
+                pk.derive_public_key(self.0)
             }
 
             translate_hash_clone!(DefiniteDescriptorKey, bitcoin::PublicKey, ConversionError);
@@ -1065,21 +1217,27 @@ impl_from_str!(
         // tr tree parsing has special code
         // Tr::from_str will check the checksum
         // match "tr(" to handle more extensibly
-        if s.starts_with(&format!("{}tr", ELMTS_STR)) {
+        let desc = if s.starts_with(&format!("{}tr", ELMTS_STR)) {
             // First try parsing without extensions
             match Tr::<Pk, NoExt>::from_str(s) {
-                Ok(tr) => Ok(Descriptor::Tr(tr)),
+                Ok(tr) => Descriptor::Tr(tr),
                 Err(_) => {
                     // Try parsing with extensions
                     let tr = Tr::<Pk, T>::from_str(s)?;
-                    Ok(Descriptor::TrExt(tr))
+                    Descriptor::TrExt(tr)
                 }
             }
         } else {
             let desc_str = verify_checksum(s)?;
             let top = expression::Tree::from_str(desc_str)?;
-            expression::FromTree::from_tree(&top)
+            expression::FromTree::from_tree(&top)?
+        };
+
+        if desc.multipath_length_mismatch() {
+            return Err(Error::MultipathDescLenMismatch);
         }
+
+        Ok(desc)
     }
 );
 
@@ -1117,7 +1275,6 @@ serde_string_impl_pk!(Descriptor, "a script descriptor", T; Extension);
 
 #[cfg(test)]
 mod tests {
-    use std::cmp;
     use std::collections::HashMap;
     use std::str::FromStr;
 
@@ -1134,7 +1291,7 @@ mod tests {
     use super::tr::Tr;
     use super::*;
     use crate::descriptor::key::Wildcard;
-    use crate::descriptor::{DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey};
+    use crate::descriptor::{DescriptorPublicKey, DescriptorXKey};
     use crate::miniscript::satisfy::ElementsSig;
     #[cfg(feature = "compiler")]
     use crate::policy;
@@ -1144,25 +1301,8 @@ mod tests {
     const TEST_PK: &'static str =
         "elpk(020000000000000000000000000000000000000000000000000000000000000002)";
 
-    impl cmp::PartialEq for DescriptorSecretKey {
-        fn eq(&self, other: &Self) -> bool {
-            match (self, other) {
-                (&DescriptorSecretKey::Single(ref a), &DescriptorSecretKey::Single(ref b)) => {
-                    a.origin == b.origin && a.key == b.key
-                }
-                (&DescriptorSecretKey::XPrv(ref a), &DescriptorSecretKey::XPrv(ref b)) => {
-                    a.origin == b.origin
-                        && a.xkey == b.xkey
-                        && a.derivation_path == b.derivation_path
-                        && a.wildcard == b.wildcard
-                }
-                _ => false,
-            }
-        }
-    }
-
     fn roundtrip_descriptor(s: &str) {
-        let desc = Descriptor::<String>::from_str(&s).unwrap();
+        let desc = Descriptor::<String>::from_str(s).unwrap();
         let output = desc.to_string();
         let normalize_aliases = s.replace("c:pk_k(", "pk(").replace("c:pk_h(", "pkh(");
         assert_eq!(
@@ -1241,9 +1381,9 @@ mod tests {
 
     #[test]
     pub fn script_pubkey() {
-        let bare = StdDescriptor::from_str(&format!(
-            "elmulti(1,020000000000000000000000000000000000000000000000000000000000000002)"
-        ))
+        let bare = StdDescriptor::from_str(
+            "elmulti(1,020000000000000000000000000000000000000000000000000000000000000002)",
+        )
         .unwrap();
         assert_eq!(
             bare.script_pubkey(),
@@ -1461,7 +1601,7 @@ mod tests {
             asset_issuance: elements::AssetIssuance::default(),
             witness: elements::TxInWitness::default(),
         };
-        let bare: Descriptor<_, NoExt> = Descriptor::new_bare(ms.clone()).unwrap();
+        let bare: Descriptor<_, NoExt> = Descriptor::new_bare(ms).unwrap();
 
         bare.satisfy(&mut txin, &satisfier).expect("satisfaction");
         assert_eq!(
@@ -1864,12 +2004,14 @@ mod tests {
             // Same address
             let addr_one = desc_one
                 .at_derivation_index(index)
+                .unwrap()
                 .derived_descriptor(&secp_ctx)
                 .unwrap()
                 .address(&elements::AddressParams::ELEMENTS)
                 .unwrap();
             let addr_two = desc_two
                 .at_derivation_index(index)
+                .unwrap()
                 .derived_descriptor(&secp_ctx)
                 .unwrap()
                 .address(&elements::AddressParams::ELEMENTS)
@@ -1934,8 +2076,8 @@ mod tests {
             "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))##tjq09x4t"
         );
 
-        Descriptor::<_, NoExt>::parse_descriptor(&secp, "elsh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#9s2ngs7u").expect("Valid descriptor with checksum");
-        Descriptor::<_, NoExt>::parse_descriptor(&secp, "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#uklept69").expect("Valid descriptor with checksum");
+        Descriptor::<_, NoExt>::parse_descriptor(secp, "elsh(multi(2,[00000000/111'/222]xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc,xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L/0))#9s2ngs7u").expect("Valid descriptor with checksum");
+        Descriptor::<_, NoExt>::parse_descriptor(secp, "elsh(multi(2,[00000000/111'/222]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0))#uklept69").expect("Valid descriptor with checksum");
     }
 
     #[test]
@@ -1947,7 +2089,7 @@ pk(xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHW
 pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
         let policy: policy::concrete::Policy<DescriptorPublicKey> = descriptor_str.parse().unwrap();
         let descriptor = Descriptor::<_, NoExt>::new_sh(policy.compile().unwrap()).unwrap();
-        let definite_descriptor = descriptor.at_derivation_index(42);
+        let definite_descriptor = descriptor.at_derivation_index(42).unwrap();
 
         let res_descriptor_str = "thresh(2,\
 pk([d34db33f/44'/0'/0']xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL/1/42),\
@@ -1967,7 +2109,7 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
         let secp = &secp256k1_zkp::Secp256k1::signing_only();
         let descriptor_str = "elwpkh(xprv9s21ZrQH143K4CTb63EaMxja1YiTnSEWKMbn23uoEnAzxjdUJRQkazCAtzxGm4LSoTSVTptoV9RbchnKPW9HxKtZumdyxyikZFDLhogJ5Uj/44'/0'/0'/0/*)#xldrpn5u";
         let (descriptor, keymap) =
-            Descriptor::<DescriptorPublicKey>::parse_descriptor(&secp, descriptor_str).unwrap();
+            Descriptor::<DescriptorPublicKey>::parse_descriptor(secp, descriptor_str).unwrap();
 
         let expected = "elwpkh([a12b02f4/44'/0'/0']xpub6BzhLAQUDcBUfHRQHZxDF2AbcJqp4Kaeq6bzJpXrjrWuK26ymTFwkEFbxPra2bJ7yeZKbDjfDeFwxe93JMqpo5SsPJH6dZdvV9kMzJkAZ69/0/*)#20ufqv7z";
         assert_eq!(expected, descriptor.to_string());
@@ -2113,5 +2255,40 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
     #[test]
     fn test_regression_29() {
         let _ = Descriptor::<String>::from_str("eltr(,thresh(1,spk_eq(,00)))");
+    }
+
+    #[test]
+    fn multipath_descriptors() {
+        // We can parse a multipath descriptors, and make it into separate single-path descriptors.
+        let desc = Descriptor::<DescriptorPublicKey, NoExt>::from_str("elwsh(andor(pk(tpubDEN9WSToTyy9ZQfaYqSKfmVqmq1VVLNtYfj3Vkqh67et57eJ5sTKZQBkHqSwPUsoSskJeaYnPttHe2VrkCsKA27kUaN9SDc5zhqeLzKa1rr/0'/<7';8h;20>/*),older(10000),pk(tpubD8LYfn6njiA2inCoxwM7EuN3cuLVcaHAwLYeups13dpevd3nHLRdK9NdQksWXrhLQVxcUZRpnp5CkJ1FhE61WRAsHxDNAkvGkoQkAeWDYjV/8/4567/<0;1;987>/*)))").unwrap();
+        assert!(desc.is_multipath());
+        assert!(!desc.multipath_length_mismatch());
+        assert_eq!(desc.into_single_descriptors().unwrap(), vec![
+            Descriptor::from_str("elwsh(andor(pk(tpubDEN9WSToTyy9ZQfaYqSKfmVqmq1VVLNtYfj3Vkqh67et57eJ5sTKZQBkHqSwPUsoSskJeaYnPttHe2VrkCsKA27kUaN9SDc5zhqeLzKa1rr/0'/7'/*),older(10000),pk(tpubD8LYfn6njiA2inCoxwM7EuN3cuLVcaHAwLYeups13dpevd3nHLRdK9NdQksWXrhLQVxcUZRpnp5CkJ1FhE61WRAsHxDNAkvGkoQkAeWDYjV/8/4567/0/*)))").unwrap(),
+            Descriptor::from_str("elwsh(andor(pk(tpubDEN9WSToTyy9ZQfaYqSKfmVqmq1VVLNtYfj3Vkqh67et57eJ5sTKZQBkHqSwPUsoSskJeaYnPttHe2VrkCsKA27kUaN9SDc5zhqeLzKa1rr/0'/8h/*),older(10000),pk(tpubD8LYfn6njiA2inCoxwM7EuN3cuLVcaHAwLYeups13dpevd3nHLRdK9NdQksWXrhLQVxcUZRpnp5CkJ1FhE61WRAsHxDNAkvGkoQkAeWDYjV/8/4567/1/*)))").unwrap(),
+            Descriptor::from_str("elwsh(andor(pk(tpubDEN9WSToTyy9ZQfaYqSKfmVqmq1VVLNtYfj3Vkqh67et57eJ5sTKZQBkHqSwPUsoSskJeaYnPttHe2VrkCsKA27kUaN9SDc5zhqeLzKa1rr/0'/20/*),older(10000),pk(tpubD8LYfn6njiA2inCoxwM7EuN3cuLVcaHAwLYeups13dpevd3nHLRdK9NdQksWXrhLQVxcUZRpnp5CkJ1FhE61WRAsHxDNAkvGkoQkAeWDYjV/8/4567/987/*)))").unwrap()
+        ]);
+
+        // Even if only one of the keys is multipath.
+        let desc = Descriptor::<DescriptorPublicKey, NoExt>::from_str("elwsh(andor(pk(tpubDEN9WSToTyy9ZQfaYqSKfmVqmq1VVLNtYfj3Vkqh67et57eJ5sTKZQBkHqSwPUsoSskJeaYnPttHe2VrkCsKA27kUaN9SDc5zhqeLzKa1rr/0'/<0;1>/*),older(10000),pk(tpubD8LYfn6njiA2inCoxwM7EuN3cuLVcaHAwLYeups13dpevd3nHLRdK9NdQksWXrhLQVxcUZRpnp5CkJ1FhE61WRAsHxDNAkvGkoQkAeWDYjV/8/4567/*)))").unwrap();
+        assert!(desc.is_multipath());
+        assert!(!desc.multipath_length_mismatch());
+        assert_eq!(desc.into_single_descriptors().unwrap(), vec![
+            Descriptor::from_str("elwsh(andor(pk(tpubDEN9WSToTyy9ZQfaYqSKfmVqmq1VVLNtYfj3Vkqh67et57eJ5sTKZQBkHqSwPUsoSskJeaYnPttHe2VrkCsKA27kUaN9SDc5zhqeLzKa1rr/0'/0/*),older(10000),pk(tpubD8LYfn6njiA2inCoxwM7EuN3cuLVcaHAwLYeups13dpevd3nHLRdK9NdQksWXrhLQVxcUZRpnp5CkJ1FhE61WRAsHxDNAkvGkoQkAeWDYjV/8/4567/*)))").unwrap(),
+            Descriptor::from_str("elwsh(andor(pk(tpubDEN9WSToTyy9ZQfaYqSKfmVqmq1VVLNtYfj3Vkqh67et57eJ5sTKZQBkHqSwPUsoSskJeaYnPttHe2VrkCsKA27kUaN9SDc5zhqeLzKa1rr/0'/1/*),older(10000),pk(tpubD8LYfn6njiA2inCoxwM7EuN3cuLVcaHAwLYeups13dpevd3nHLRdK9NdQksWXrhLQVxcUZRpnp5CkJ1FhE61WRAsHxDNAkvGkoQkAeWDYjV/8/4567/*)))").unwrap(),
+        ]);
+
+        // We can detect regular single-path descriptors.
+        let notmulti_desc = Descriptor::<DescriptorPublicKey, NoExt>::from_str("elwsh(andor(pk(tpubDEN9WSToTyy9ZQfaYqSKfmVqmq1VVLNtYfj3Vkqh67et57eJ5sTKZQBkHqSwPUsoSskJeaYnPttHe2VrkCsKA27kUaN9SDc5zhqeLzKa1rr/0'/*),older(10000),pk(tpubD8LYfn6njiA2inCoxwM7EuN3cuLVcaHAwLYeups13dpevd3nHLRdK9NdQksWXrhLQVxcUZRpnp5CkJ1FhE61WRAsHxDNAkvGkoQkAeWDYjV/8/4567/*)))").unwrap();
+        assert!(!notmulti_desc.is_multipath());
+        assert!(!notmulti_desc.multipath_length_mismatch());
+        assert_eq!(
+            notmulti_desc.clone().into_single_descriptors().unwrap(),
+            vec![notmulti_desc]
+        );
+
+        // We refuse to parse multipath descriptors with a mismatch in the number of derivation paths between keys.
+        Descriptor::<DescriptorPublicKey>::from_str("elwsh(andor(pk(tpubDEN9WSToTyy9ZQfaYqSKfmVqmq1VVLNtYfj3Vkqh67et57eJ5sTKZQBkHqSwPUsoSskJeaYnPttHe2VrkCsKA27kUaN9SDc5zhqeLzKa1rr/0'/<0;1>/*),older(10000),pk(tpubD8LYfn6njiA2inCoxwM7EuN3cuLVcaHAwLYeups13dpevd3nHLRdK9NdQksWXrhLQVxcUZRpnp5CkJ1FhE61WRAsHxDNAkvGkoQkAeWDYjV/8/<0;1;2;3;4>/*)))").unwrap_err();
+        Descriptor::<DescriptorPublicKey>::from_str("elwsh(andor(pk(tpubDEN9WSToTyy9ZQfaYqSKfmVqmq1VVLNtYfj3Vkqh67et57eJ5sTKZQBkHqSwPUsoSskJeaYnPttHe2VrkCsKA27kUaN9SDc5zhqeLzKa1rr/0'/<0;1;2;3>/*),older(10000),pk(tpubD8LYfn6njiA2inCoxwM7EuN3cuLVcaHAwLYeups13dpevd3nHLRdK9NdQksWXrhLQVxcUZRpnp5CkJ1FhE61WRAsHxDNAkvGkoQkAeWDYjV/8/<0;1;2>/*)))").unwrap_err();
     }
 }

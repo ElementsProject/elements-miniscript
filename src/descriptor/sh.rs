@@ -1,15 +1,5 @@
-// Miniscript
-// Written in 2020 by rust-miniscript developers
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2020 by the rust-miniscript developers
+// SPDX-License-Identifier: CC0-1.0
 
 //! # P2SH Descriptors
 //!
@@ -214,15 +204,66 @@ impl<Pk: MiniscriptKey> Sh<Pk> {
         }
     }
 
+    /// Computes an upper bound on the difference between a non-satisfied
+    /// `TxIn`'s `segwit_weight` and a satisfied `TxIn`'s `segwit_weight`
+    ///
+    /// Since this method uses `segwit_weight` instead of `legacy_weight`,
+    /// if you want to include only legacy inputs in your transaction,
+    /// you should remove 1WU from each input's `max_weight_to_satisfy`
+    /// for a more accurate estimate.
+    ///
+    /// Assumes all ec-signatures are 73 bytes, including push opcode and
+    /// sighash suffix.
+    ///
+    /// # Errors
+    /// When the descriptor is impossible to safisfy (ex: sh(OP_FALSE)).
+    pub fn max_weight_to_satisfy(&self) -> Result<usize, Error> {
+        let (scriptsig_size, witness_size) = match self.inner {
+            // add weighted script sig, len byte stays the same
+            ShInner::Wsh(ref wsh) => {
+                // scriptSig: OP_34 <OP_0 OP_32 <32-byte-hash>>
+                let scriptsig_size = 1 + 1 + 1 + 32;
+                let witness_size = wsh.max_weight_to_satisfy()?;
+                (scriptsig_size, witness_size)
+            }
+            ShInner::SortedMulti(ref smv) => {
+                let ss = smv.script_size();
+                let ps = push_opcode_size(ss);
+                let scriptsig_size = ps + ss + smv.max_satisfaction_size();
+                (scriptsig_size, 0)
+            }
+            // add weighted script sig, len byte stays the same
+            ShInner::Wpkh(ref wpkh) => {
+                // scriptSig: OP_22 <OP_0 OP_20 <20-byte-hash>>
+                let scriptsig_size = 1 + 1 + 1 + 20;
+                let witness_size = wpkh.max_weight_to_satisfy();
+                (scriptsig_size, witness_size)
+            }
+            ShInner::Ms(ref ms) => {
+                let ss = ms.script_size();
+                let ps = push_opcode_size(ss);
+                let scriptsig_size = ps + ss + ms.max_satisfaction_size()?;
+                (scriptsig_size, 0)
+            }
+        };
+
+        // scriptSigLen varint difference between non-satisfied (0) and satisfied
+        let scriptsig_varint_diff = varint_len(scriptsig_size) - varint_len(0);
+
+        Ok(4 * (scriptsig_varint_diff + scriptsig_size) + witness_size)
+    }
+
     /// Computes an upper bound on the weight of a satisfying witness to the
     /// transaction.
     ///
-    /// Assumes all ec-signatures are 73 bytes, including push opcode and
+    /// Assumes all ECDSA signatures are 73 bytes, including push opcode and
     /// sighash suffix. Includes the weight of the VarInts encoding the
     /// scriptSig and witness stack length.
     ///
     /// # Errors
     /// When the descriptor is impossible to safisfy (ex: sh(OP_FALSE)).
+    #[deprecated(note = "use max_weight_to_satisfy instead")]
+    #[allow(deprecated)]
     pub fn max_satisfaction_weight(&self) -> Result<usize, Error> {
         Ok(match self.inner {
             // add weighted script sig, len byte stays the same

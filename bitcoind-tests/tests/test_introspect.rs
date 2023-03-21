@@ -3,11 +3,12 @@
 //! Arith expression fragment integration tests
 //!
 
+use miniscript::elements;
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SigHashCache;
 use elements::taproot::{LeafVersion, TapLeafHash};
 use elements::{
-    self, confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script,
+    confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script,
     Sequence, TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
@@ -44,7 +45,8 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
 
     let definite_desc = test_util::parse_test_desc(&desc, &testdata.pubdata)
         .unwrap()
-        .at_derivation_index(0);
+        .at_derivation_index(0)
+        .unwrap();
 
     let derived_desc = definite_desc.derived_descriptor(&secp).unwrap();
     let desc_address = derived_desc.address(&PARAMS).unwrap(); // No blinding
@@ -182,98 +184,62 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     tx.input[0].witness.script_witness.clone()
 }
 
-fn test_descs(cl: &ElementsD, testdata: &TestData) {
+#[rustfmt::skip]
+fn test_descs(cl: &ElementsD, testdata: &mut TestData) {
     // K : Compressed key available
     // K!: Compressed key with corresponding secret key unknown
     // X: X-only key available
     // X!: X-only key with corresponding secret key unknown
 
     // Test 1: Simple spend with internal key
-    let wit = test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_eq(8,8)))");
-    assert!(wit.len() == 3);
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(exp_asset)))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(curr_inp_asset)))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(inp_asset(0))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(out_asset(1))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(curr_inp_asset,inp_asset(0))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(curr_inp_asset,out_asset(0))))");
 
-    let wit = test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_geq(9,8)))");
-    assert!(wit.len() == 3);
+    // Test indexOps
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(inp_asset(curr_idx))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(inp_asset(idx_sub(idx_add(curr_idx,1),1)))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(inp_asset(idx_div(idx_mul(curr_idx,2),2)))))");
 
-    let wit = test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_gt(9,8)))");
-    assert!(wit.len() == 3);
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(inp_asset(0),inp_asset(idx_sub(idx_add(curr_idx,1),1)))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(out_asset(0),out_asset(idx_sub(idx_add(curr_idx,1),1)))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(inp_value(0),inp_value(idx_sub(idx_add(curr_idx,1),1)))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(out_value(0),out_value(idx_sub(idx_add(curr_idx,1),1)))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(inp_spk(0),inp_spk(idx_sub(idx_add(curr_idx,1),1)))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(out_spk(0),out_spk(idx_sub(idx_add(curr_idx,1),1)))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),idx_eq(curr_idx,idx_mul(10,idx_sub(10,10)))))");
 
-    test_desc_satisfy(
-        cl,
-        testdata,
-        "tr(X!,and_v(v:pk(X1),num64_gt(9223372036854775807,9223372036854775806)))",
-    );
+    // same tests for values
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(exp_value)))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(curr_inp_value)))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(inp_value(0))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(out_value(1))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(curr_inp_value,inp_value(0))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(out_value(0),out_value(0))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(out_value(1),out_value(1))))");
 
-    test_desc_satisfy(
-        cl,
-        testdata,
-        "tr(X!,and_v(v:pk(X1),num64_eq(inp_v(idx_sub(2,2)),100000000)))",
-    );
-    test_desc_satisfy(
-        cl,
-        testdata,
-        "tr(X!,and_v(v:pk(X1),num64_eq(inp_v(idx_sub(idx_div(4,idx_mul(2,2)),1)),100000000)))",
-    );
-    test_desc_satisfy(
-        cl,
-        testdata,
-        "tr(X!,and_v(v:pk(X1),num64_eq(inp_v(0),100000000)))",
-    );
-    test_desc_satisfy(
-        cl,
-        testdata,
-        "tr(X!,and_v(v:pk(X1),num64_eq(out_v(0),99997000)))",
-    );
-    test_desc_satisfy(
-        cl,
-        testdata,
-        "tr(X!,and_v(v:pk(X1),num64_eq(out_v(1),3000)))",
-    );
-    test_desc_satisfy(
-        cl,
-        testdata,
-        "tr(X!,and_v(v:pk(X1),num64_eq(inp_v(0),add(out_v(0),out_v(1)))))",
-    );
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_leq(-10,-10)))");
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_lt(-11,-10)))");
+    // same tests for spks
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(out_spk(1),out_spk(1))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(spk_v1,spk_v1)))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(curr_inp_spk,inp_spk(0))))");
 
-    test_desc_satisfy(
-        cl,
-        testdata,
-        "tr(X!,and_v(v:pk(X1),num64_eq(add(6,2),mul(2,4))))",
+    // Testing the current input index
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),curr_idx_eq(0)))");
+
+    // test some misc combinations with other miniscript fragments
+    test_desc_satisfy(cl, testdata,
+        "tr(X!,and_v(v:pk(X1),and_v(v:is_exp_value(out_value(0)),is_exp_asset(out_asset(0)))))",
     );
-    test_desc_satisfy(
-        cl,
-        testdata,
-        "tr(X!,and_v(v:pk(X1),num64_eq(sub(3,3),div(0,9))))",
-    );
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_eq(mod(9,3),0)))");
-    test_desc_satisfy(
-        cl,
-        testdata,
-        "tr(X!,and_v(v:pk(X1),num64_eq(bitand(0,134),0)))",
-    );
-    test_desc_satisfy(
-        cl,
-        testdata,
-        "tr(X!,and_v(v:pk(X1),num64_eq(bitor(1,3),3)))",
-    );
-    test_desc_satisfy(
-        cl,
-        testdata,
-        "tr(X!,and_v(v:pk(X1),num64_eq(bitxor(1,3),2)))",
-    );
-    test_desc_satisfy(
-        cl,
-        testdata,
-        "tr(X!,and_v(v:pk(X1),num64_eq(bitinv(0),-1)))",
-    );
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_eq(neg(1),-1)))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X1),and_v(v:value_eq(conf_value,conf_value),spk_eq(spk,spk))))");
+    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X1),and_v(v:value_eq(conf_value,conf_value),and_v(v:spk_eq(spk,spk),curr_idx_eq(0)))))");
 }
 
 #[test]
-fn test_arith() {
+fn test_introspect() {
     let (cl, _, genesis_hash) = &setup::setup(false);
-    let testdata = TestData::new_fixed_data(50, *genesis_hash);
-    test_descs(cl, &testdata);
+    let mut testdata = TestData::new_fixed_data(50, *genesis_hash);
+    test_descs(cl, &mut testdata);
 }

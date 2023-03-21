@@ -1,16 +1,5 @@
-// Miniscript
-// Written in 2019 by
-//     Andrew Poelstra <apoelstra@wpsoftware.net>
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2019 by Andrew Poelstra <apoelstra@wpsoftware.net>
+// SPDX-License-Identifier: CC0-1.0
 
 //! # Partially-Signed Bitcoin Transactions
 //!
@@ -299,7 +288,7 @@ pub struct PsbtInputSatisfier<'psbt> {
 
 /// Psbt Input Satisfier with Covenant support. Users should be
 /// using the high level [`finalizer::finalize`] API.
-/// The [`CovSatisfier`] should be consistent with the extracted transaction.
+/// The [`LegacyCovSatisfier`] should be consistent with the extracted transaction.
 pub type PsbtCovInputSatisfier<'psbt> =
     (PsbtInputSatisfier<'psbt>, LegacyCovSatisfier<'psbt, 'psbt>);
 
@@ -325,6 +314,14 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
             .tap_script_sigs
             .get(&(pk.to_x_only_pubkey(), *lh))
             .copied()
+    }
+
+    fn lookup_raw_pkh_pk(&self, pkh: &hash160::Hash) -> Option<bitcoin::PublicKey> {
+        self.psbt.inputs()[self.index]
+            .bip32_derivation
+            .iter()
+            .find(|&(pubkey, _)| pubkey.to_pubkeyhash(SigType::Ecdsa) == *pkh)
+            .map(|(pubkey, _)| *pubkey)
     }
 
     fn lookup_tap_control_block_map(
@@ -480,7 +477,7 @@ pub trait PsbtExt {
     /// finalized psbt which involves checking the signatures/ preimages/timelocks.
     ///
     /// Input finalization also fails if it is not possible to satisfy any of the inputs non-malleably
-    /// See [finalizer::finalize_mall] if you want to allow malleable satisfactions
+    /// See `finalize_mall_*` if you want to allow malleable satisfactions
     ///
     /// For finalizing individual inputs, see also [`PsbtExt::finalize_inp`]
     ///
@@ -615,7 +612,7 @@ pub trait PsbtExt {
 
     /// Get the sighash message(data to sign) at input index `idx` based on the sighash
     /// flag specified in the [`Psbt`] sighash field. If the input sighash flag psbt field is `None`
-    /// the [`SchnorrSigHashType::Default`](elements::util::sighash::SchnorrSigHashType::Default) is chosen
+    /// the [`SchnorrSigHashType::Default`](elements::sighash::SchnorrSigHashType::Default) is chosen
     /// for for taproot spends, otherwise [`EcdsaSignatureHashType::All`](elements::EcdsaSigHashType::All) is chosen.
     /// If the utxo at `idx` is a taproot output, returns a [`PsbtSigHashMsg::TapSigHash`] variant.
     /// If the utxo at `idx` is a pre-taproot output, returns a [`PsbtSigHashMsg::EcdsaSigHash`] variant.
@@ -1065,7 +1062,11 @@ impl Translator<DefiniteDescriptorKey, bitcoin::PublicKey, descriptor::Conversio
         let derived = xpk.derive_public_key(&self.1)?;
         self.0.insert(
             derived.to_public_key(),
-            (xpk.master_fingerprint(), xpk.full_derivation_path()),
+            (
+                xpk.master_fingerprint(),
+                xpk.full_derivation_path()
+                    .ok_or(descriptor::ConversionError::MultiKey)?,
+            ),
         );
         Ok(derived)
     }
@@ -1196,7 +1197,7 @@ fn update_item_with_descriptor_helper<F: PsbtFields>(
 
         // NOTE: they will both always be Tr
         if let (Descriptor::Tr(tr_derived), Descriptor::Tr(tr_xpk)) = (&derived, descriptor) {
-            update_tr_psbt_helper(item, tr_derived, tr_xpk);
+            update_tr_psbt_helper(item, tr_derived, tr_xpk)?;
         }
 
         derived
@@ -1212,7 +1213,7 @@ fn update_item_with_descriptor_helper<F: PsbtFields>(
 
         // NOTE: they will both always be Tr
         if let (Descriptor::TrExt(tr_derived), Descriptor::TrExt(tr_xpk)) = (&derived, descriptor) {
-            update_tr_psbt_helper(item, tr_derived, tr_xpk);
+            update_tr_psbt_helper(item, tr_derived, tr_xpk)?;
         }
 
         derived
@@ -1258,7 +1259,8 @@ fn update_tr_psbt_helper<Ext, Ext2, F: PsbtFields>(
     item: &mut F,
     tr_derived: &Tr<bitcoin::PublicKey, Ext>,
     tr_xpk: &Tr<DefiniteDescriptorKey, Ext2>,
-) where
+) -> Result<(), descriptor::ConversionError>
+where
     Ext: ParseableExt,
     Ext2: Extension,
 {
@@ -1273,7 +1275,12 @@ fn update_tr_psbt_helper<Ext, Ext2, F: PsbtFields>(
         ik_derived,
         (
             vec![],
-            (ik_xpk.master_fingerprint(), ik_xpk.full_derivation_path()),
+            (
+                ik_xpk.master_fingerprint(),
+                ik_xpk
+                    .full_derivation_path()
+                    .ok_or(descriptor::ConversionError::MultiKey)?,
+            ),
         ),
     );
 
@@ -1305,10 +1312,14 @@ fn update_tr_psbt_helper<Ext, Ext2, F: PsbtFields>(
                         tapleaf_hashes.push(tapleaf_hash);
                     }
                 })
-                .or_insert_with(|| {
+                .or_insert({
                     (
                         vec![tapleaf_hash],
-                        (xpk.master_fingerprint(), xpk.full_derivation_path()),
+                        (
+                            xpk.master_fingerprint(),
+                            xpk.full_derivation_path()
+                                .ok_or(descriptor::ConversionError::MultiKey)?,
+                        ),
                     )
                 });
         }
@@ -1330,6 +1341,7 @@ fn update_tr_psbt_helper<Ext, Ext2, F: PsbtFields>(
         }
         _ => {}
     }
+    Ok(())
 }
 
 // Get a script from witness script pubkey hash
@@ -1641,8 +1653,7 @@ mod tests {
             assert!(psbt_input
                 .tap_scripts
                 .values()
-                .find(|value| *value == &(first_script.clone(), LeafVersion::default()))
-                .is_some());
+                .any(|value| *value == (first_script.clone(), LeafVersion::default())));
             TapLeafHash::from_script(&first_script, LeafVersion::default())
         };
 
@@ -1748,7 +1759,7 @@ mod tests {
 
     #[test]
     fn test_update_input_checks() {
-        let desc = format!("eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/0)");
+        let desc = "eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/0)";
         let desc = Descriptor::<DefiniteDescriptorKey>::from_str(&desc).unwrap();
 
         let asset = elements::AssetId::from_hex(
@@ -1828,7 +1839,7 @@ mod tests {
 
     #[test]
     fn test_update_output_checks() {
-        let desc = format!("eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/0)");
+        let desc = "eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/0)";
         let desc = Descriptor::<DefiniteDescriptorKey>::from_str(&desc).unwrap();
 
         let tx = elements::Transaction {

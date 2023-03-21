@@ -178,7 +178,7 @@ impl<Pk: MiniscriptKey> Blinded<Pk> {
     /// Computes an upper bound on the weight of a satisfying witness to the
     /// transaction.
     pub fn max_satisfaction_weight(&self) -> Result<usize, Error> {
-        self.desc.max_satisfaction_weight()
+        self.desc.max_weight_to_satisfy()
     }
 
     /// Computes the `scriptCode` of a transaction output.

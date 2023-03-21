@@ -17,26 +17,26 @@ use crate::{expression, script_num_size, Error};
 pub enum IdxExpr {
     /* leaf fragments/terminals */
     /// A constant
-    /// <i> as CScriptNum
+    /// `<i>` as CScriptNum
     Const(usize),
     /// Current Input index
     CurrIdx,
     /// Add two IdxExpr
-    /// [X] [Y] ADD`
+    /// `[X] [Y] ADD`
     Add(Box<IdxExpr>, Box<IdxExpr>),
     /// Subtract two IdxExpr
-    /// [X] [Y] SUB`
+    /// `[X] [Y] SUB`
     Sub(Box<IdxExpr>, Box<IdxExpr>),
     /// Multiply two IdxExpr
-    /// [X] SCIPTNUMTOLE64 [Y] SCIPTNUMTOLE64 MUL64 <1> EQUALVERIFY LE64TOSCIPTNUM`
+    /// `[X] SCIPTNUMTOLE64 [Y] SCIPTNUMTOLE64 MUL64 <1> EQUALVERIFY LE64TOSCIPTNUM`
     Mul(Box<IdxExpr>, Box<IdxExpr>),
     /// Divide two IdxExpr (integer division)
-    /// [X] SCIPTNUMTOLE64 [Y] SCIPTNUMTOLE64 DIV64 <1> EQUALVERIFY NIP LE64TOSCIPTNUM`
+    /// `[X] SCIPTNUMTOLE64 [Y] SCIPTNUMTOLE64 DIV64 <1> EQUALVERIFY NIP LE64TOSCIPTNUM`
     Div(Box<IdxExpr>, Box<IdxExpr>),
 }
 
 impl IdxExpr {
-    /// Returns the script size of this [`AssetExpr<T>`].
+    /// Returns the script size of this [`IdxExpr`].
     pub fn script_size(&self) -> usize {
         match self {
             IdxExpr::Const(i) => script_num_size(*i),
@@ -157,7 +157,7 @@ impl IdxExpr {
     }
 
     /// Returns (self, start_pos) parsed reversed form tokens starting with index end_pos
-    /// Expression is parsed from tokens[start:end_pos]
+    /// Expression is parsed from tokens `[start:end_pos]`
     #[rustfmt::skip]
     pub fn from_tokens(tokens: &[Tk], end_pos: usize) -> Option<(Self, usize)> {
         let tks = tokens;

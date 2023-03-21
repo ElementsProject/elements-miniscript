@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: CC0-1.0
+
 //! Miscellaneous constraints imposed by Bitcoin.
 //! These constraints can be either Consensus or Policy (standardness) rules, for either Segwitv0
 //! or Legacy scripts.
@@ -22,7 +24,7 @@ pub const MAX_SCRIPT_ELEMENT_SIZE: usize = 520;
 // https://github.com/bitcoin/bitcoin/blob/42b66a6b814bca130a9ccf0a3f747cf33d628232/src/policy/policy.cpp#L102
 pub const MAX_SCRIPTSIG_SIZE: usize = 1650;
 /// Maximum Initial witness size allowed
-/// https://github.com/bitcoin/bitcoin/blob/283a73d7eaea2907a6f7f800f529a0d6db53d7a6/src/policy/policy.h#L42
+/// `<https://github.com/bitcoin/bitcoin/blob/283a73d7eaea2907a6f7f800f529a0d6db53d7a6/src/policy/policy.h#L42>`
 pub const MAX_STANDARD_P2WSH_STACK_ITEM_SIZE: usize = 80;
 /// Maximum items during stack execution
 // This limits also applies for initial stack satisfaction

@@ -1,16 +1,5 @@
-// Miniscript
-// Written in 2018 by
-//     Andrew Poelstra <apoelstra@wpsoftware.net>
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2018 by Andrew Poelstra <apoelstra@wpsoftware.net>
+// SPDX-License-Identifier: CC0-1.0
 
 //! # Satisfaction and Dissatisfaction
 //!
@@ -83,8 +72,13 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
         None
     }
 
-    /// Given a raw `Pkh`, lookup corresponding `Pk`
-    fn lookup_raw_pkh_pk(&self, _: &hash160::Hash) -> Option<Pk> {
+    /// Given a raw `Pkh`, lookup corresponding [`bitcoin::PublicKey`]
+    fn lookup_raw_pkh_pk(&self, _: &hash160::Hash) -> Option<bitcoin::PublicKey> {
+        None
+    }
+
+    /// Given a raw `Pkh`, lookup corresponding [`bitcoin::XOnlyPublicKey`]
+    fn lookup_raw_pkh_x_only_pk(&self, _: &hash160::Hash) -> Option<XOnlyPublicKey> {
         None
     }
 
@@ -287,8 +281,8 @@ where
         self.get(&key.to_pubkeyhash(SigType::Ecdsa)).map(|x| x.1)
     }
 
-    fn lookup_raw_pkh_pk(&self, pk_hash: &hash160::Hash) -> Option<Pk> {
-        self.get(pk_hash).map(|x| x.0.clone())
+    fn lookup_raw_pkh_pk(&self, pk_hash: &hash160::Hash) -> Option<bitcoin::PublicKey> {
+        self.get(pk_hash).map(|x| x.0.to_public_key())
     }
 
     fn lookup_raw_pkh_ecdsa_sig(
@@ -332,8 +326,12 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_tap_leaf_script_sig(p, h)
     }
 
-    fn lookup_raw_pkh_pk(&self, pkh: &hash160::Hash) -> Option<Pk> {
+    fn lookup_raw_pkh_pk(&self, pkh: &hash160::Hash) -> Option<bitcoin::PublicKey> {
         (**self).lookup_raw_pkh_pk(pkh)
+    }
+
+    fn lookup_raw_pkh_x_only_pk(&self, pkh: &hash160::Hash) -> Option<XOnlyPublicKey> {
+        (**self).lookup_raw_pkh_x_only_pk(pkh)
     }
 
     fn lookup_raw_pkh_ecdsa_sig(
@@ -458,8 +456,12 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_tap_key_spend_sig()
     }
 
-    fn lookup_raw_pkh_pk(&self, pkh: &hash160::Hash) -> Option<Pk> {
+    fn lookup_raw_pkh_pk(&self, pkh: &hash160::Hash) -> Option<bitcoin::PublicKey> {
         (**self).lookup_raw_pkh_pk(pkh)
+    }
+
+    fn lookup_raw_pkh_x_only_pk(&self, pkh: &hash160::Hash) -> Option<XOnlyPublicKey> {
+        (**self).lookup_raw_pkh_x_only_pk(pkh)
     }
 
     fn lookup_raw_pkh_ecdsa_sig(
@@ -634,10 +636,23 @@ macro_rules! impl_tuple_satisfier {
             fn lookup_raw_pkh_pk(
                 &self,
                 key_hash: &hash160::Hash,
-            ) -> Option<Pk> {
+            ) -> Option<bitcoin::PublicKey> {
                 let &($(ref $ty,)*) = self;
                 $(
                     if let Some(result) = $ty.lookup_raw_pkh_pk(key_hash) {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_raw_pkh_x_only_pk(
+                &self,
+                key_hash: &hash160::Hash,
+            ) -> Option<XOnlyPublicKey> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_raw_pkh_x_only_pk(key_hash) {
                         return Some(result);
                     }
                 )*
@@ -938,24 +953,45 @@ impl Witness {
     }
 
     /// Turn a public key related to a pkh into (part of) a satisfaction
-    fn pkh_public_key<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &hash160::Hash) -> Self {
-        match sat.lookup_raw_pkh_pk(pkh) {
-            Some(pk) => Witness::Stack(vec![pk.to_public_key().to_bytes()]),
-            // public key hashes are assumed to be unavailable
-            // instead of impossible since it is the same as pub-key hashes
-            None => Witness::Unavailable,
+    fn pkh_public_key<Pk: ToPublicKey, S: Satisfier<Pk>, Ctx: ScriptContext>(
+        sat: S,
+        pkh: &hash160::Hash,
+    ) -> Self {
+        // public key hashes are assumed to be unavailable
+        // instead of impossible since it is the same as pub-key hashes
+        match Ctx::sig_type() {
+            SigType::Ecdsa => match sat.lookup_raw_pkh_pk(pkh) {
+                Some(pk) => Witness::Stack(vec![pk.to_bytes()]),
+                None => Witness::Unavailable,
+            },
+            SigType::Schnorr => match sat.lookup_raw_pkh_x_only_pk(pkh) {
+                Some(pk) => Witness::Stack(vec![pk.serialize().to_vec()]),
+                None => Witness::Unavailable,
+            },
         }
     }
 
     /// Turn a key/signature pair related to a pkh into (part of) a satisfaction
-    pub fn pkh_signature<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, pkh: &hash160::Hash) -> Self {
-        match sat.lookup_raw_pkh_ecdsa_sig(pkh) {
-            Some((pk, (sig, hashtype))) => {
-                let mut ret = sig.serialize_der().to_vec();
-                ret.push(hashtype.as_u32() as u8);
-                Witness::Stack(vec![ret.to_vec(), pk.to_public_key().to_bytes()])
-            }
-            None => Witness::Impossible,
+    fn pkh_signature<Pk: ToPublicKey, S: Satisfier<Pk>, Ctx: ScriptContext>(
+        sat: S,
+        pkh: &hash160::Hash,
+        leaf_hash: &TapLeafHash,
+    ) -> Self {
+        match Ctx::sig_type() {
+            SigType::Ecdsa => match sat.lookup_raw_pkh_ecdsa_sig(pkh) {
+                Some((pk, sig)) => {
+                    let ser_sig = elementssig_to_rawsig(&sig);
+                    Witness::Stack(vec![ser_sig, pk.to_public_key().to_bytes()])
+                }
+                None => Witness::Impossible,
+            },
+            SigType::Schnorr => match sat.lookup_raw_pkh_tap_leaf_script_sig(&(*pkh, *leaf_hash)) {
+                Some((pk, sig)) => Witness::Stack(vec![
+                    sig.to_vec(),
+                    pk.to_x_only_pubkey().serialize().to_vec(),
+                ]),
+                None => Witness::Impossible,
+            },
         }
     }
 
@@ -1329,12 +1365,19 @@ impl Satisfaction {
                 stack: Witness::signature::<_, _, Ctx>(stfr, pk, leaf_hash),
                 has_sig: true,
             },
-            Terminal::PkH(ref pk) => Satisfaction {
-                stack: Witness::pkh_signature(stfr, &pk.to_pubkeyhash(Ctx::sig_type())),
-                has_sig: true,
-            },
+            Terminal::PkH(ref pk) => {
+                let wit = Witness::signature::<_, _, Ctx>(stfr, pk, leaf_hash);
+                let pk_bytes = match Ctx::sig_type() {
+                    SigType::Ecdsa => pk.to_public_key().to_bytes(),
+                    SigType::Schnorr => pk.to_x_only_pubkey().serialize().to_vec(),
+                };
+                Satisfaction {
+                    stack: Witness::combine(wit, Witness::Stack(vec![pk_bytes])),
+                    has_sig: true,
+                }
+            }
             Terminal::RawPkH(ref pkh) => Satisfaction {
-                stack: Witness::pkh_signature(stfr, pkh),
+                stack: Witness::pkh_signature::<_, _, Ctx>(stfr, pkh, leaf_hash),
                 has_sig: true,
             },
             Terminal::After(t) => Satisfaction {
@@ -1643,15 +1686,21 @@ impl Satisfaction {
                 stack: Witness::push_0(),
                 has_sig: false,
             },
-            Terminal::PkH(ref pk) => Satisfaction {
+            Terminal::PkH(ref pk) => {
+                let pk_bytes = match Ctx::sig_type() {
+                    SigType::Ecdsa => pk.to_public_key().to_bytes(),
+                    SigType::Schnorr => pk.to_x_only_pubkey().serialize().to_vec(),
+                };
+                Satisfaction {
+                    stack: Witness::combine(Witness::push_0(), Witness::Stack(vec![pk_bytes])),
+                    has_sig: false,
+                }
+            }
+            Terminal::RawPkH(ref pkh) => Satisfaction {
                 stack: Witness::combine(
                     Witness::push_0(),
-                    Witness::pkh_public_key(stfr, &pk.to_pubkeyhash(Ctx::sig_type())),
+                    Witness::pkh_public_key::<_, _, Ctx>(stfr, pkh),
                 ),
-                has_sig: false,
-            },
-            Terminal::RawPkH(ref pkh) => Satisfaction {
-                stack: Witness::combine(Witness::push_0(), Witness::pkh_public_key(stfr, pkh)),
                 has_sig: false,
             },
             Terminal::False => Satisfaction {

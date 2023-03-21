@@ -1,20 +1,8 @@
-// Miniscript
-// Written in 2019 by
-//     Andrew Poelstra <apoelstra@wpsoftware.net>
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2019 by Andrew Poelstra <apoelstra@wpsoftware.net>
+// SPDX-License-Identifier: CC0-1.0
 
 //! Miniscript and Output Descriptors
 //!
-//! # Introduction
 //! ## Bitcoin Script
 //!
 //! In Bitcoin, spending policies are defined and enforced by means of a
@@ -50,9 +38,9 @@
 //! While spending policies in Bitcoin are entirely defined by Script; there
 //! are multiple ways of embedding these Scripts in transaction outputs; for
 //! example, P2SH or Segwit v0. These different embeddings are expressed by
-//! *Output Descriptors*, [which are described here](https://github.com/bitcoin/bitcoin/blob/master/doc/descriptors.md)
+//! *Output Descriptors*, [which are described here](https://github.com/bitcoin/bitcoin/blob/master/doc/descriptors.md).
 //! Elements descriptors are extension of bitcoin Output descriptors with support
-//! for blinded descriptors(WIP)
+//! for blinded descriptors(WIP).
 //! # Examples
 //!
 //! ## Deriving an address from a descriptor
@@ -75,7 +63,7 @@
 //!         )))\
 //!     ").unwrap();
 //!
-//!     // Derive the P2SH address
+//!     // Derive the P2SH address.
 //!     assert_eq!(
 //!         desc.address(&elements::AddressParams::ELEMENTS).unwrap().to_string(),
 //!         "XMyBX13qCo5Lp65mymgYVdmsYR5bcznWUa"
@@ -87,17 +75,23 @@
 //!     // Or they contain a combination of timelock and heightlock.
 //!     assert!(desc.sanity_check().is_ok());
 //!
-//!     // Estimate the satisfaction cost
-//!     assert_eq!(desc.max_satisfaction_weight().unwrap(), 293);
+//!     // Estimate the satisfaction cost.
+//!     // scriptSig: OP_PUSH34 <OP_0 OP_32 <32-byte-hash>>
+//!     // = (1 + 1 + 1 + 32) * 4 = 140 WU
+//!     // redeemScript: varint <OP_33 <pk1> OP_CHECKSIG OP_IFDUP OP_NOTIF OP_33 <pk2> OP_CHECKSIG OP_ENDIF>
+//!     // = 1 + (1 + 33 + 1 + 1 + 1 + 1 + 33 + 1 + 1) = 74 WU
+//!     // stackItem[Sig]: varint <sig+sighash>
+//!     // = 1 + 73 = 74 WU
+//!     // Expected satisfaction weight: 140 + 74 + 74 = 288
+//!     assert_eq!(desc.max_weight_to_satisfy().unwrap(), 288);
 //! }
 //! ```
 //!
 //!
-#![allow(bare_trait_objects)]
+
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
 // Coding conventions
-#![deny(unsafe_code)]
-#![deny(non_upper_case_globals)]
+#![allow(bare_trait_objects)]
 #![deny(non_camel_case_types)]
 #![deny(non_snake_case)]
 #![deny(unused_mut)]
@@ -124,9 +118,7 @@ pub(crate) use bitcoin_miniscript::expression::{FromTree as BtcFromTree, Tree as
 pub(crate) use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
 pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
 // re-export imports
-pub use bitcoin_miniscript::{
-    hash256, ForEachKey, MiniscriptKey, SigType, ToPublicKey,
-};
+pub use bitcoin_miniscript::{hash256, ForEachKey, MiniscriptKey, SigType, ToPublicKey};
 pub(crate) use bitcoin_miniscript::{
     Descriptor as BtcDescriptor, Error as BtcError, Miniscript as BtcMiniscript,
     Satisfier as BtcSatisfier, Segwitv0 as BtcSegwitv0, Terminal as BtcTerminal,
@@ -381,6 +373,9 @@ pub enum Error {
     TrNoScriptCode,
     /// No explicit script for Tr descriptors
     TrNoExplicitScript,
+    /// At least two BIP389 key expressions in the descriptor contain tuples of
+    /// derivation indexes of different lengths.
+    MultipathDescLenMismatch,
 }
 
 #[doc(hidden)]
@@ -464,7 +459,10 @@ impl fmt::Display for Error {
         match *self {
             Error::InvalidOpcode(op) => write!(f, "invalid opcode {}", op),
             Error::NonMinimalVerify(ref tok) => write!(f, "{} VERIFY", tok),
-            Error::InvalidPush(ref push) => write!(f, "invalid push {:?}", push), // TODO hexify this
+            Error::InvalidPush(ref push) => {
+                write!(f, "invalid push ")?;
+                bitcoin::hashes::hex::format_hex(push, f)
+            },
             Error::Script(ref e) => fmt::Display::fmt(e, f),
             Error::AddrError(ref e) => fmt::Display::fmt(e, f),
             Error::CmsTooManyKeys(n) => write!(f, "checkmultisig with {} keys", n),
@@ -527,6 +525,7 @@ impl fmt::Display for Error {
             Error::TaprootSpendInfoUnavialable => write!(f, "Taproot Spend Info not computed."),
             Error::TrNoScriptCode => write!(f, "No script code for Tr descriptors"),
             Error::TrNoExplicitScript => write!(f, "No script code for Tr descriptors"),
+            Error::MultipathDescLenMismatch => write!(f, "At least two BIP389 key expressions in the descriptor contain tuples of derivation indexes of different lengths"),
         }
     }
 }
@@ -567,6 +566,7 @@ impl error::Error for Error {
             | TaprootSpendInfoUnavialable
             | TrNoScriptCode
             | TrNoExplicitScript => None,
+            MultipathDescLenMismatch => None,
             BtcError(e) => Some(e),
             CovError(e) => Some(e),
             Script(_e) => None, // should be Some(e), but requires changes upstream

@@ -1,16 +1,5 @@
-// Miniscript
-// Written in 2019 by
-//     Andrew Poelstra <apoelstra@wpsoftware.net>
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2019 by Andrew Poelstra <apoelstra@wpsoftware.net>
+// SPDX-License-Identifier: CC0-1.0
 
 //! # Abstract Syntax Tree
 //!
@@ -529,6 +518,14 @@ impl_from_str!(
 
 serde_string_impl_pk!(Miniscript, "a miniscript", Ctx; ScriptContext => Ext2 ; Extension);
 
+/// Provides a Double SHA256 `Hash` type that displays forwards.
+pub mod hash256 {
+    use bitcoin::hashes::{hash_newtype, sha256d};
+
+    #[rustfmt::skip]
+    hash_newtype!(Hash, sha256d::Hash, 32, doc = "A bitcoin block hash.", false);
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -548,9 +545,7 @@ mod tests {
     use crate::miniscript::Terminal;
     use crate::policy::Liftable;
     use crate::test_utils::{StrKeyTranslator, StrXOnlyKeyTranslator};
-    use crate::{
-        hex_script, CovenantExt, ExtParams, NoExt, Satisfier, ToPublicKey, TranslatePk,
-    };
+    use crate::{hex_script, CovenantExt, ExtParams, NoExt, Satisfier, ToPublicKey, TranslatePk};
 
     type Tapscript = Miniscript<XOnlyPublicKey, Tap, NoExt>;
     type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0, CovenantExt<CovExtArgs>>;
@@ -663,7 +658,7 @@ mod tests {
                 assert_eq!(ms.ty.mall.safe, need_sig);
                 assert_eq!(ms.ext.ops.op_count().unwrap(), ops);
             }
-            (Err(_), false) => return,
+            (Err(_), false) => {}
             _ => unreachable!(),
         }
     }
@@ -745,7 +740,7 @@ mod tests {
 
         let pkk_ms: Miniscript<String, Segwitv0> = Miniscript {
             node: Terminal::Check(Arc::new(Miniscript {
-                node: Terminal::PkK("dummy".into()),
+                node: Terminal::PkK(String::from("")),
                 ty: Type::from_pk_k::<Segwitv0>(),
                 ext: types::extra_props::ExtData::from_pk_k::<Segwitv0>(),
                 phantom: PhantomData,
@@ -754,11 +749,11 @@ mod tests {
             ext: ExtData::cast_check(ExtData::from_pk_k::<Segwitv0>()).unwrap(),
             phantom: PhantomData,
         };
-        dummy_string_rtt(pkk_ms, "[B/onduesm]c:[K/onduesm]pk_k(\"dummy\")", "pk(dummy)");
+        dummy_string_rtt(pkk_ms, "[B/onduesm]c:[K/onduesm]pk_k(\"\")", "pk()");
 
         let pkh_ms: Miniscript<String, Segwitv0> = Miniscript {
             node: Terminal::Check(Arc::new(Miniscript {
-                node: Terminal::PkH("dummy".into()),
+                node: Terminal::PkH(String::from("")),
                 ty: Type::from_pk_h::<Segwitv0>(),
                 ext: types::extra_props::ExtData::from_pk_h::<Segwitv0>(),
                 phantom: PhantomData,
@@ -768,8 +763,8 @@ mod tests {
             phantom: PhantomData,
         };
 
-        let expected_debug = "[B/nduesm]c:[K/nduesm]pk_h(\"dummy\")";
-        let expected_display = "pkh(dummy)";
+        let expected_debug = "[B/nduesm]c:[K/nduesm]pk_h(\"\")";
+        let expected_display = "pkh()";
 
         assert_eq!(pkh_ms.ty.corr.base, types::Base::B);
         let debug = format!("{:?}", pkh_ms);
@@ -1088,28 +1083,28 @@ mod tests {
     #[test]
     fn test_tapscript_rtt() {
         // Test x-only invalid under segwitc0 context
-        let ms = Segwitv0Script::from_str_insane(&format!(
-            "pk(2788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)"
-        ));
+        let ms = Segwitv0Script::from_str_insane(
+            "pk(2788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)",
+        );
         assert_eq!(
             ms.unwrap_err().to_string(),
             "unexpected «key hex decoding error»",
         );
-        Tapscript::from_str_insane(&format!(
-            "pk(2788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)"
-        ))
+        Tapscript::from_str_insane(
+            "pk(2788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)",
+        )
         .unwrap();
 
         // Now test that bitcoin::PublicKey works with Taproot context
-        Miniscript::<bitcoin::PublicKey, Tap>::from_str_insane(&format!(
-            "pk(022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)"
-        ))
+        Miniscript::<bitcoin::PublicKey, Tap>::from_str_insane(
+            "pk(022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)",
+        )
         .unwrap();
 
         // uncompressed keys should not be allowed
-        Miniscript::<bitcoin::PublicKey, Tap>::from_str_insane(&format!(
+        Miniscript::<bitcoin::PublicKey, Tap>::from_str_insane(
             "pk(04eed24a081bf1b1e49e3300df4bebe04208ac7e516b6f3ea8eb6e094584267c13483f89dcf194132e12238cc5a34b6b286fc7990d68ed1db86b69ebd826c63b29)"
-        ))
+        )
         .unwrap_err();
 
         //---------------- test script <-> miniscript ---------------
@@ -1135,14 +1130,14 @@ mod tests {
         .unwrap();
 
         // multi not allowed in tapscript
-        Tapscript::from_str_insane(&format!(
-            "multi(1,2788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)"
-        ))
+        Tapscript::from_str_insane(
+            "multi(1,2788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)",
+        )
         .unwrap_err();
         // but allowed in segwit
-        Segwitv0Script::from_str_insane(&format!(
-            "multi(1,022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)"
-        ))
+        Segwitv0Script::from_str_insane(
+            "multi(1,022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)",
+        )
         .unwrap();
     }
 
@@ -1224,5 +1219,15 @@ mod tests {
         SegwitMs::parse(&script).unwrap_err();
         SegwitMs::parse_insane(&script).unwrap_err();
         SegwitMs::parse_with_ext(&script, &ExtParams::allow_all()).unwrap();
+    }
+
+    #[test]
+    fn tr_multi_a_j_wrapper() {
+        // Reported by darosior
+        // `multi_a` fragment may require the top stack element to be the empty vector.
+        // Previous version had incorrectly copied this code from multi.
+        type TapMs = Miniscript<String, Tap>;
+        let ms_str = TapMs::from_str_insane("j:multi_a(1,A,B,C)");
+        assert!(ms_str.is_err());
     }
 }

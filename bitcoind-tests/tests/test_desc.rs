@@ -6,12 +6,13 @@
 
 use std::{error, fmt};
 
+use miniscript::{elements, bitcoin};
 use elements::hashes::{sha256d, Hash};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SigHashCache;
 use elements::taproot::{LeafVersion, TapLeafHash};
 use elements::{
-    self, confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, SchnorrSig,
+    confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, SchnorrSig,
     Script, Sequence, TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
@@ -77,7 +78,8 @@ pub fn test_desc_satisfy(
 
     let definite_desc = test_util::parse_test_desc(&descriptor, &testdata.pubdata)
         .map_err(|_| DescError::DescParseError)?
-        .at_derivation_index(0);
+        .at_derivation_index(0)
+        .unwrap();
 
     let derived_desc = definite_desc.derived_descriptor(&secp).unwrap();
     let desc_address = derived_desc.address(&PARAMS); // No blinding
@@ -383,6 +385,10 @@ fn test_descs(cl: &ElementsD, testdata: &TestData) {
     // Test 10: Test taproot desc with ZERO known keys
     let result = test_desc_satisfy(cl, testdata, "tr(X!,{pk(X1!),pk(X2!)})");
     assert_eq!(result, Err(DescError::PsbtFinalizeError));
+
+    // Test 10: Test taproot desc with ZERO known keys
+    let result = test_desc_satisfy(cl, testdata, "tr(X!,j:multi_a(3,X1!,X2,X3,X4))");
+    assert_eq!(result, Err(DescError::DescParseError));
 
     // Test 11: Test taproot with insufficient known keys
     let result = test_desc_satisfy(cl, testdata, "tr(X!,{pk(X1!),multi_a(3,X2!,X3,X4)})");

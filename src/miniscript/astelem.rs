@@ -1,16 +1,5 @@
-// Miniscript
-// Written in 2019 by
-//     Andrew Poelstra <apoelstra@wpsoftware.net>
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2019 by Andrew Poelstra <apoelstra@wpsoftware.net>
+// SPDX-License-Identifier: CC0-1.0
 
 //! AST Elements
 //!
@@ -132,9 +121,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
                     && c.real_for_each_key(pred)
             }
             Terminal::Thresh(_, ref subs) => subs.iter().all(|sub| sub.real_for_each_key(pred)),
-            Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => {
-                keys.iter().all(|key| pred(key))
-            }
+            Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => keys.iter().all(pred),
             Terminal::Ext(ref _e) => true,
         }
     }
@@ -154,10 +141,10 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
             Terminal::RawPkH(ref p) => Terminal::RawPkH(*p),
             Terminal::After(n) => Terminal::After(n),
             Terminal::Older(n) => Terminal::Older(n),
-            Terminal::Sha256(ref x) => Terminal::Sha256(t.sha256(&x)?),
-            Terminal::Hash256(ref x) => Terminal::Hash256(t.hash256(&x)?),
-            Terminal::Ripemd160(ref x) => Terminal::Ripemd160(t.ripemd160(&x)?),
-            Terminal::Hash160(ref x) => Terminal::Hash160(t.hash160(&x)?),
+            Terminal::Sha256(ref x) => Terminal::Sha256(t.sha256(x)?),
+            Terminal::Hash256(ref x) => Terminal::Hash256(t.hash256(x)?),
+            Terminal::Ripemd160(ref x) => Terminal::Ripemd160(t.ripemd160(x)?),
+            Terminal::Hash160(ref x) => Terminal::Hash160(t.hash160(x)?),
             Terminal::True => Terminal::True,
             Terminal::False => Terminal::False,
             Terminal::Alt(ref sub) => Terminal::Alt(Arc::new(sub.real_translate_pk(t)?)),
@@ -362,7 +349,7 @@ where
             match *self {
                 Terminal::PkK(ref pk) => write!(f, "pk_k({:?})", pk),
                 Terminal::PkH(ref pk) => write!(f, "pk_h({:?})", pk),
-                Terminal::RawPkH(ref pkh) => write!(f, "pk_h({:?})", pkh),
+                Terminal::RawPkH(ref pkh) => write!(f, "expr_raw_pk_h({:?})", pkh),
                 Terminal::After(t) => write!(f, "after({})", t),
                 Terminal::Older(t) => write!(f, "older({})", t),
                 Terminal::Sha256(ref h) => write!(f, "sha256({})", h),
@@ -422,7 +409,7 @@ where
         match *self {
             Terminal::PkK(ref pk) => write!(f, "pk_k({})", pk),
             Terminal::PkH(ref pk) => write!(f, "pk_h({})", pk),
-            Terminal::RawPkH(ref pkh) => write!(f, "pk_h({})", pkh),
+            Terminal::RawPkH(ref pkh) => write!(f, "expr_raw_pk_h({})", pkh),
             Terminal::After(t) => write!(f, "after({})", t),
             Terminal::Older(t) => write!(f, "older({})", t),
             Terminal::Sha256(ref h) => write!(f, "sha256({})", h),
@@ -803,7 +790,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
             Terminal::RawPkH(ref hash) => builder
                 .push_opcode(opcodes::all::OP_DUP)
                 .push_opcode(opcodes::all::OP_HASH160)
-                .push_slice(&hash)
+                .push_slice(hash)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY),
             Terminal::After(t) => builder
                 .push_int(t.to_u32().into())
@@ -816,28 +803,28 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
                 .push_int(32)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY)
                 .push_opcode(opcodes::all::OP_SHA256)
-                .push_slice(&Pk::to_sha256(&h))
+                .push_slice(&Pk::to_sha256(h))
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::Hash256(ref h) => builder
                 .push_opcode(opcodes::all::OP_SIZE)
                 .push_int(32)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY)
                 .push_opcode(opcodes::all::OP_HASH256)
-                .push_slice(&Pk::to_hash256(&h))
+                .push_slice(&Pk::to_hash256(h))
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::Ripemd160(ref h) => builder
                 .push_opcode(opcodes::all::OP_SIZE)
                 .push_int(32)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY)
                 .push_opcode(opcodes::all::OP_RIPEMD160)
-                .push_slice(&Pk::to_ripemd160(&h))
+                .push_slice(&Pk::to_ripemd160(h))
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::Hash160(ref h) => builder
                 .push_opcode(opcodes::all::OP_SIZE)
                 .push_int(32)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY)
                 .push_opcode(opcodes::all::OP_HASH160)
-                .push_slice(&Pk::to_hash160(&h))
+                .push_slice(&Pk::to_hash160(h))
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::True => builder.push_opcode(opcodes::OP_TRUE),
             Terminal::False => builder.push_opcode(opcodes::OP_FALSE),
@@ -957,7 +944,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
             Terminal::Check(ref sub) => sub.node.script_size() + 1,
             Terminal::DupIf(ref sub) => sub.node.script_size() + 3,
             Terminal::Verify(ref sub) => {
-                sub.node.script_size() + if sub.ext.has_free_verify { 0 } else { 1 }
+                sub.node.script_size() + usize::from(!sub.ext.has_free_verify)
             }
             Terminal::NonZero(ref sub) => sub.node.script_size() + 4,
             Terminal::ZeroNotEqual(ref sub) => sub.node.script_size() + 1,

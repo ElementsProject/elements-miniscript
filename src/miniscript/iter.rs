@@ -1,16 +1,5 @@
-// Miniscript
-// Written in 2020 by
-//     Dr Maxim Orlovsky <orlovsky@pandoracore.com>
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2022 by Dr Maxim Orlovsky <orlovsky@pandoracore.com>
+// SPDX-License-Identifier: CC0-1.0
 
 //! Miniscript Iterators
 //!
@@ -276,10 +265,10 @@ pub mod test {
             .map(|pk| hash160::Hash::hash(&pk.to_bytes()))
             .collect();
 
-        let preimage = vec![0xab as u8; 32];
+        let preimage = vec![0xab; 32];
         let sha256_hash = sha256::Hash::hash(&preimage);
         let sha256d_hash_rev = sha256d::Hash::hash(&preimage);
-        let mut sha256d_hash_bytes = sha256d_hash_rev.clone().into_inner();
+        let mut sha256d_hash_bytes = sha256d_hash_rev.into_inner();
         sha256d_hash_bytes.reverse();
         let sha256d_hash = sha256d::Hash::from_inner(sha256d_hash_bytes);
         let hash160_hash = hash160::Hash::hash(&preimage);

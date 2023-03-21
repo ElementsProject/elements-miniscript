@@ -29,6 +29,11 @@ coins in a given Bitcoin transaction
 More information can be found in [the documentation](https://docs.rs/elements-miniscript)
 or in [the `examples/` directory](https://github.com/ElementsProject/elements-miniscript/tree/master/examples)
 
+## Building
+
+The cargo feature `std` is enabled by default. At least one of the features `std` or `no-std` or both must be enabled.
+
+Enabling the `no-std` feature does not disable `std`. To disable the `std` feature you must disable default features. The `no-std` feature only enables additional features required for this crate to be usable without `std`. Both can be enabled without conflict.
 
 ## Minimum Supported Rust Version (MSRV)
 This library should always compile with any combination of features on **Rust 1.41.1**.
@@ -52,6 +57,14 @@ architectural mismatches. If you have any questions or ideas you want to discuss
 please join us in
 [##miniscript](https://web.libera.chat/?channels=##miniscript) on Libera.
 
-# Release Notes
+
+## Release Notes
 
 See [CHANGELOG.md](CHANGELOG.md).
+
+
+## Licensing
+
+The code in this project is licensed under the [Creative Commons CC0 1.0
+Universal license](LICENSE). We use the [SPDX license list](https://spdx.org/licenses/) and [SPDX
+IDs](https://spdx.dev/ids/).

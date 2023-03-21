@@ -1,16 +1,5 @@
-// Miniscript
-// Written in 2019 by
-//     Sanket Kanjular and Andrew Poelstra
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2019 by Sanket Kanjular and Andrew Poelstra
+// SPDX-License-Identifier: CC0-1.0
 
 use bitcoin;
 use bitcoin::util::taproot::TAPROOT_ANNEX_PREFIX;
@@ -143,12 +132,13 @@ pub enum Inner<Ext: Extension> {
 /// Parses an `Inner` and appropriate `Stack` from completed transaction data,
 /// as well as the script that should be used as a scriptCode in a sighash
 /// Tr outputs don't have script code and return None.
+#[allow(clippy::collapsible_else_if)]
 pub fn from_txdata<'txin, Ext: ParseableExt>(
     spk: &elements::Script,
     script_sig: &'txin elements::Script,
     witness: &'txin [Vec<u8>],
 ) -> Result<(Inner<Ext>, Stack<'txin>, Option<elements::Script>), Error> {
-    let mut ssig_stack: Stack<'_> = script_sig
+    let mut ssig_stack: Stack = script_sig
         .instructions_minimal()
         .map(stack::Element::from_instruction)
         .collect::<Result<Vec<stack::Element<'_>>, Error>>()?
@@ -879,7 +869,7 @@ mod tests {
             from_txdata::<NoExt>(&spk, &script_sig, &[]).expect("parse txdata");
         assert_eq!(inner, Inner::Script(miniscript, ScriptType::Sh));
         assert_eq!(stack, Stack::from(vec![]));
-        assert_eq!(script_code, Some(redeem_script.clone()));
+        assert_eq!(script_code, Some(redeem_script));
 
         // nonempty witness
         let err = from_txdata::<NoExt>(&spk, &script_sig, &[vec![]]).unwrap_err();

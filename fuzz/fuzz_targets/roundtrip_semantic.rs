@@ -3,11 +3,11 @@ extern crate elements_miniscript as miniscript;
 use miniscript::policy;
 use std::str::FromStr;
 
-type DummyPolicy = policy::Semantic<String>;
+type Policy = policy::Semantic<String>;
 
 fn do_test(data: &[u8]) {
     let data_str = String::from_utf8_lossy(data);
-    if let Ok(pol) = DummyPolicy::from_str(&data_str) {
+    if let Ok(pol) = Policy::from_str(&data_str) {
         let output = pol.to_string();
         assert_eq!(data_str.to_lowercase(), output.to_lowercase());
     }

@@ -103,6 +103,10 @@ impl MiniscriptKey for LegacyPeginKey {
     fn is_uncompressed(&self) -> bool {
         false
     }
+
+    fn num_der_paths(&self) -> usize {
+        0
+    }
 }
 
 /// Legacy Pegin Descriptor

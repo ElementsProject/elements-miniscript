@@ -7,12 +7,13 @@
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
+use miniscript::{elements, bitcoin};
 
 use bitcoin::hashes::{sha256d, Hash};
 use bitcoin::secp256k1::{self, Secp256k1};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::{
-    self, confidential, pset as psbt, secp256k1_zkp, AssetIssuance, LockTime, OutPoint, Script,
+    confidential, pset as psbt, secp256k1_zkp, AssetIssuance, LockTime, OutPoint, Script,
     Sequence, TxIn, TxInWitness, TxOut, TxOutWitness, Txid,
 };
 use elements_miniscript as miniscript;

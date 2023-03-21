@@ -1,16 +1,5 @@
-// Miniscript
-// Written in 2019 by
-//     Andrew Poelstra <apoelstra@wpsoftware.net>
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2019 by Andrew Poelstra <apoelstra@wpsoftware.net>
+// SPDX-License-Identifier: CC0-1.0
 
 //! Miniscript Types
 //! Contains structures representing Miniscript types and utility functions
@@ -269,10 +258,7 @@ pub trait Property: Sized {
     fn from_multi(k: usize, n: usize) -> Self;
 
     /// Type property of a `MultiA` fragment
-    fn from_multi_a(k: usize, n: usize) -> Self {
-        // default impl same as multi
-        Self::from_multi(k, n)
-    }
+    fn from_multi_a(k: usize, n: usize) -> Self;
 
     /// Type property of a hash fragment
     fn from_hash() -> Self;
@@ -589,6 +575,13 @@ impl Property for Type {
         Type {
             corr: Property::from_multi(k, n),
             mall: Property::from_multi(k, n),
+        }
+    }
+
+    fn from_multi_a(k: usize, n: usize) -> Self {
+        Type {
+            corr: Property::from_multi_a(k, n),
+            mall: Property::from_multi_a(k, n),
         }
     }
 

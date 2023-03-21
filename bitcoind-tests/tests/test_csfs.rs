@@ -1,18 +1,19 @@
 //! # rust-miniscript integration test
 //!
-//! Arith expression fragment integration tests
+//! CheckSigFromStack integration tests
 //!
 
+use miniscript::{elements, bitcoin};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SigHashCache;
 use elements::taproot::{LeafVersion, TapLeafHash};
 use elements::{
-    self, confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script,
+    confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script,
     Sequence, TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
-use miniscript::psbt::{PsbtExt, PsbtInputExt};
-use miniscript::{Descriptor, ToPublicKey};
+use miniscript::psbt::{PsbtInputExt, PsbtInputSatisfier};
+use miniscript::{Descriptor, Satisfier, ToPublicKey};
 use rand::RngCore;
 mod setup;
 use setup::test_util::{self, TestData, PARAMS};
@@ -44,7 +45,8 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
 
     let definite_desc = test_util::parse_test_desc(&desc, &testdata.pubdata)
         .unwrap()
-        .at_derivation_index(0);
+        .at_derivation_index(0)
+        .unwrap();
 
     let derived_desc = definite_desc.derived_descriptor(&secp).unwrap();
     let desc_address = derived_desc.address(&PARAMS).unwrap(); // No blinding
@@ -62,7 +64,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
         previous_output: outpoint,
         is_pegin: false,
         script_sig: Script::new(),
-        sequence: Sequence::from_consensus(1),
+        sequence: Sequence::from_height(1),
         asset_issuance: Default::default(),
         witness: Default::default(),
     };
@@ -101,7 +103,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
         Descriptor::TrExt(ref tr) => {
             let hash_ty = sighash::SchnorrSigHashType::Default;
 
-            let prevouts = [witness_utxo.clone()];
+            let prevouts = [witness_utxo];
             let prevouts = sighash::Prevouts::All(&prevouts);
             // ------------------ script spend -------------
             let x_only_keypairs_reqd: Vec<(secp256k1::KeyPair, TapLeafHash)> = tr
@@ -154,16 +156,37 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     println!("Testing descriptor: {}", desc);
     // Finalize the transaction using psbt
     // Let miniscript do it's magic!
-    if let Err(e) = psbt.finalize_mall_mut(&secp, testdata.pubdata.genesis_hash) {
-        // All miniscripts should satisfy
-        panic!(
-            "Could not satisfy non-malleably: error{} desc:{} ",
-            e[0], desc
-        );
+    struct CsfsSatisfier<'a>(&'a TestData);
+
+    impl<'a> Satisfier<bitcoin::PublicKey> for CsfsSatisfier<'a> {
+        fn lookup_csfs_sig(
+            &self,
+            pk: &bitcoin::XOnlyPublicKey,
+            msg: &miniscript::extensions::CsfsMsg,
+        ) -> Option<secp256k1::schnorr::Signature> {
+            let xpk = pk.to_x_only_pubkey();
+            let known_xpks = &self.0.pubdata.x_only_pks;
+            let i = known_xpks.iter().position(|&x| x == xpk).unwrap();
+
+            // Create a signature
+            let keypair = &self.0.secretdata.x_only_keypairs[i];
+            let msg = secp256k1::Message::from_slice(&msg.as_inner()[..]).unwrap();
+            let mut aux_rand = [0u8; 32];
+            rand::thread_rng().fill_bytes(&mut aux_rand);
+
+            let secp = secp256k1::Secp256k1::new();
+            let sig = secp.sign_schnorr_with_aux_rand(&msg, keypair, &aux_rand);
+            Some(sig)
+        }
     }
-    let tx = psbt
-        .extract(&secp, testdata.pubdata.genesis_hash)
-        .expect("Extraction error");
+
+    let psbt_sat = PsbtInputSatisfier::new(&psbt, 0);
+    let csfs_sat = CsfsSatisfier(&testdata);
+
+    let mut tx = psbt.extract_tx().unwrap();
+    derived_desc
+        .satisfy(&mut tx.input[0], (psbt_sat, csfs_sat))
+        .expect("Satisfaction error");
 
     // Send the transactions to bitcoin node for mining.
     // Regtest mode has standardness checks
@@ -182,62 +205,28 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     tx.input[0].witness.script_witness.clone()
 }
 
-#[rustfmt::skip]
-fn test_descs(cl: &ElementsD, testdata: &mut TestData) {
+fn test_descs(cl: &ElementsD, testdata: &TestData) {
     // K : Compressed key available
     // K!: Compressed key with corresponding secret key unknown
     // X: X-only key available
     // X!: X-only key with corresponding secret key unknown
 
     // Test 1: Simple spend with internal key
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(exp_asset)))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(curr_inp_asset)))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(inp_asset(0))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(out_asset(1))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(curr_inp_asset,inp_asset(0))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(curr_inp_asset,out_asset(0))))");
+    let wit = test_desc_satisfy(cl, testdata, "tr(X!,csfs(X1,msg1))");
+    assert!(wit.len() == 3);
 
-    // Test indexOps
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(inp_asset(curr_idx))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(inp_asset(idx_sub(idx_add(curr_idx,1),1)))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_asset(inp_asset(idx_div(idx_mul(curr_idx,2),2)))))");
+    // test in a complicated miniscript
+    let wit = test_desc_satisfy(cl, testdata, "tr(X!,and_b(csfs(X2,msg2),a:csfs(X1,msg3)))");
+    assert!(wit.len() == 4);
 
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(inp_asset(0),inp_asset(idx_sub(idx_add(curr_idx,1),1)))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),asset_eq(out_asset(0),out_asset(idx_sub(idx_add(curr_idx,1),1)))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(inp_value(0),inp_value(idx_sub(idx_add(curr_idx,1),1)))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(out_value(0),out_value(idx_sub(idx_add(curr_idx,1),1)))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(inp_spk(0),inp_spk(idx_sub(idx_add(curr_idx,1),1)))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(out_spk(0),out_spk(idx_sub(idx_add(curr_idx,1),1)))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),idx_eq(curr_idx,idx_mul(10,idx_sub(10,10)))))");
-
-    // same tests for values
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(exp_value)))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(curr_inp_value)))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(inp_value(0))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),is_exp_value(out_value(1))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(curr_inp_value,inp_value(0))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(out_value(0),out_value(0))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),value_eq(out_value(1),out_value(1))))");
-
-    // same tests for spks
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(out_spk(1),out_spk(1))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(spk_v1,spk_v1)))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),spk_eq(curr_inp_spk,inp_spk(0))))");
-
-    // Testing the current input index
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X2),curr_idx_eq(0)))");
-
-    // test some misc combinations with other miniscript fragments
-    test_desc_satisfy(cl, testdata,
-        "tr(X!,and_v(v:pk(X1),and_v(v:is_exp_value(out_value(0)),is_exp_asset(out_asset(0)))))",
-    );
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X1),and_v(v:value_eq(conf_value,conf_value),spk_eq(spk,spk))))");
-    test_desc_satisfy(cl, testdata,"tr(X!,and_v(v:pk(X1),and_v(v:value_eq(conf_value,conf_value),and_v(v:spk_eq(spk,spk),curr_idx_eq(0)))))");
+    // test combining with other miniscript fragments
+    let wit = test_desc_satisfy(cl, testdata, "tr(X!,and_b(pk(X2),a:csfs(X1,msg4)))");
+    assert!(wit.len() == 4);
 }
 
 #[test]
-fn test_introspect() {
+fn test_csfs() {
     let (cl, _, genesis_hash) = &setup::setup(false);
-    let mut testdata = TestData::new_fixed_data(50, *genesis_hash);
-    test_descs(cl, &mut testdata);
+    let testdata = TestData::new_fixed_data(50, *genesis_hash);
+    test_descs(cl, &testdata);
 }

@@ -1,16 +1,5 @@
-// Miniscript
-// Written in 2019 by
-//     Andrew Poelstra <apoelstra@wpsoftware.net>
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2019 by Andrew Poelstra <apoelstra@wpsoftware.net>
+// SPDX-License-Identifier: CC0-1.0
 
 //! Correctness/Soundness type properties
 
@@ -165,6 +154,15 @@ impl Property for Correctness {
         Correctness {
             base: Base::B,
             input: Input::AnyNonZero,
+            dissatisfiable: true,
+            unit: true,
+        }
+    }
+
+    fn from_multi_a(_: usize, _: usize) -> Self {
+        Correctness {
+            base: Base::B,
+            input: Input::Any,
             dissatisfiable: true,
             unit: true,
         }
@@ -487,11 +485,10 @@ impl Property for Correctness {
                 Input::One | Input::OneNonZero => 1,
                 Input::Any | Input::AnyNonZero => 2, // we only check if num args is max 1
             };
-            if i == 0 {
-                if subtype.base != Base::B {
-                    return Err(ErrorKind::ThresholdBase(i, subtype.base));
-                }
-            } else if subtype.base != Base::W {
+            if i == 0 && subtype.base != Base::B {
+                return Err(ErrorKind::ThresholdBase(i, subtype.base));
+            }
+            if i != 0 && subtype.base != Base::W {
                 return Err(ErrorKind::ThresholdBase(i, subtype.base));
             }
             if !subtype.unit {

@@ -1,15 +1,5 @@
-// Miniscript
-// Written in 2020 by rust-miniscript developers
-//
-// To the extent possible under law, the author(s) have dedicated all
-// copyright and related and neighboring rights to this software to
-// the public domain worldwide. This software is distributed without
-// any warranty.
-//
-// You should have received a copy of the CC0 Public Domain Dedication
-// along with this software.
-// If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
-//
+// Written in 2020 by the rust-miniscript developers
+// SPDX-License-Identifier: CC0-1.0
 
 //! # Sorted Multi
 //!
@@ -113,11 +103,11 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
 }
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> ForEachKey<Pk> for SortedMultiVec<Pk, Ctx> {
-    fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool
+    fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: F) -> bool
     where
         Pk: 'a,
     {
-        self.pks.iter().all(|key| pred(key))
+        self.pks.iter().all(pred)
     }
 }
 
@@ -259,11 +249,11 @@ mod tests {
 
         let mut pks = Vec::new();
         for _ in 0..over {
-            pks.push(pk.clone());
+            pks.push(pk);
         }
 
         let res: Result<SortedMultiVec<PublicKey, Legacy>, Error> = SortedMultiVec::new(0, pks);
-        let error = res.err().expect("constructor should err");
+        let error = res.expect_err("constructor should err");
 
         match error {
             Error::BadDescriptor(_) => {} // ok
