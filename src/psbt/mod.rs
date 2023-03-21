@@ -1664,8 +1664,7 @@ mod tests {
             assert!(psbt_input
                 .tap_scripts
                 .values()
-                .find(|value| *value == &(first_script.clone(), LeafVersion::default()))
-                .is_some());
+                .any(|value| *value == (first_script.clone(), LeafVersion::default())));
             TapLeafHash::from_script(&first_script, LeafVersion::default())
         };
 
@@ -1771,7 +1770,7 @@ mod tests {
 
     #[test]
     fn test_update_input_checks() {
-        let desc = format!("eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/0)");
+        let desc = "eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/0)";
         let desc = Descriptor::<DefiniteDescriptorKey>::from_str(&desc).unwrap();
 
         let asset = elements::AssetId::from_hex(
@@ -1851,7 +1850,7 @@ mod tests {
 
     #[test]
     fn test_update_output_checks() {
-        let desc = format!("eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/0)");
+        let desc = "eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/0)";
         let desc = Descriptor::<DefiniteDescriptorKey>::from_str(&desc).unwrap();
 
         let tx = elements::Transaction {

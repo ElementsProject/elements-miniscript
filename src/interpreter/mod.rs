@@ -1299,13 +1299,13 @@ mod tests {
         ) -> Iter<'elem, 'txin, NoExt> {
             Iter {
                 verify_sig: verify_fn,
+                stack,
                 public_key: None,
                 state: vec![NodeEvaluationState {
-                    node: &ms,
+                    node: ms,
                     n_evaluated: 0,
                     n_satisfied: 0,
                 }],
-                stack: stack,
                 age: Sequence::from_height(1002),
                 lock_time: LockTime::from_height(1002).unwrap(),
                 cov: None,
@@ -1321,7 +1321,7 @@ mod tests {
         let after = no_checks_ms(&format!("after({})", 1000));
         let older = no_checks_ms(&format!("older({})", 1000));
         //Hashes
-        let preimage = [0xab as u8; 32];
+        let preimage = [0xab; 32];
         let sha256_hash = sha256::Hash::hash(&preimage);
         let sha256 = no_checks_ms(&format!("sha256({})", sha256_hash));
         let hash256_hash = hash256::Hash::hash(&preimage);
@@ -1396,7 +1396,7 @@ mod tests {
             sah256_satisfied.unwrap(),
             vec![SatisfiedConstraint::HashLock {
                 hash: HashLockType::Sha256(sha256_hash),
-                preimage: preimage,
+                preimage,
             }]
         );
 
@@ -1409,7 +1409,7 @@ mod tests {
             sha256d_satisfied.unwrap(),
             vec![SatisfiedConstraint::HashLock {
                 hash: HashLockType::Hash256(hash256_hash),
-                preimage: preimage,
+                preimage,
             }]
         );
 
@@ -1422,7 +1422,7 @@ mod tests {
             hash160_satisfied.unwrap(),
             vec![SatisfiedConstraint::HashLock {
                 hash: HashLockType::Hash160(hash160_hash),
-                preimage: preimage,
+                preimage,
             }]
         );
 
@@ -1436,7 +1436,7 @@ mod tests {
             ripemd160_satisfied.unwrap(),
             vec![SatisfiedConstraint::HashLock {
                 hash: HashLockType::Ripemd160(ripemd160_hash),
-                preimage: preimage
+                preimage,
             }]
         );
 
@@ -1484,7 +1484,7 @@ mod tests {
                 },
                 SatisfiedConstraint::HashLock {
                     hash: HashLockType::Sha256(sha256_hash),
-                    preimage: preimage,
+                    preimage,
                 }
             ]
         );
@@ -1510,7 +1510,7 @@ mod tests {
                 },
                 SatisfiedConstraint::HashLock {
                     hash: HashLockType::Sha256(sha256_hash),
-                    preimage: preimage,
+                    preimage,
                 }
             ]
         );
@@ -1550,7 +1550,7 @@ mod tests {
             or_b_satisfied.unwrap(),
             vec![SatisfiedConstraint::HashLock {
                 hash: HashLockType::Sha256(sha256_hash),
-                preimage: preimage,
+                preimage,
             }]
         );
 

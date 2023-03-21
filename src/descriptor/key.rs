@@ -136,7 +136,7 @@ impl fmt::Display for DescriptorSecretKey {
             DescriptorSecretKey::MultiXPrv(ref xprv) => {
                 maybe_fmt_master_id(f, &xprv.origin)?;
                 xprv.xkey.fmt(f)?;
-                fmt_derivation_paths(f, &xprv.derivation_paths.paths())?;
+                fmt_derivation_paths(f, xprv.derivation_paths.paths())?;
                 match xprv.wildcard {
                     Wildcard::None => {}
                     Wildcard::Unhardened => write!(f, "/*")?,
@@ -299,7 +299,7 @@ impl fmt::Display for DescriptorPublicKey {
             DescriptorPublicKey::MultiXPub(ref xpub) => {
                 maybe_fmt_master_id(f, &xpub.origin)?;
                 xpub.xkey.fmt(f)?;
-                fmt_derivation_paths(f, &xpub.derivation_paths.paths())?;
+                fmt_derivation_paths(f, xpub.derivation_paths.paths())?;
                 match xpub.wildcard {
                     Wildcard::None => {}
                     Wildcard::Unhardened => write!(f, "/*")?,
@@ -450,10 +450,7 @@ impl FromStr for DescriptorPublicKey {
                 Ok(DescriptorPublicKey::XPub(DescriptorXKey {
                     origin,
                     xkey: xpub,
-                    derivation_path: derivation_paths
-                        .into_iter()
-                        .next()
-                        .unwrap_or_else(|| bip32::DerivationPath::default()),
+                    derivation_path: derivation_paths.into_iter().next().unwrap_or_default(),
                     wildcard,
                 }))
             }
@@ -712,10 +709,7 @@ impl FromStr for DescriptorSecretKey {
                 Ok(DescriptorSecretKey::XPrv(DescriptorXKey {
                     origin,
                     xkey: xpriv,
-                    derivation_path: derivation_paths
-                        .into_iter()
-                        .next()
-                        .unwrap_or_else(|| bip32::DerivationPath::default()),
+                    derivation_path: derivation_paths.into_iter().next().unwrap_or_default(),
                     wildcard,
                 }))
             }
@@ -1058,11 +1052,9 @@ impl FromStr for DefiniteDescriptorKey {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let inner = DescriptorPublicKey::from_str(s)?;
-        Ok(
-            DefiniteDescriptorKey::new(inner).ok_or(DescriptorKeyParseError(
-                "cannot parse key with a wilcard as a DerivedDescriptorKey",
-            ))?,
-        )
+        DefiniteDescriptorKey::new(inner).ok_or(DescriptorKeyParseError(
+            "cannot parse key with a wilcard as a DerivedDescriptorKey",
+        ))
     }
 }
 
@@ -1233,7 +1225,7 @@ mod test {
             public_key.full_derivation_path().unwrap().to_string(),
             "m/0'/1'/2"
         );
-        assert_eq!(public_key.has_wildcard(), false);
+        assert!(!public_key.has_wildcard());
 
         let public_key = DescriptorPublicKey::from_str("[abcdef00/0'/1']tpubDBrgjcxBxnXyL575sHdkpKohWu5qHKoQ7TJXKNrYznh5fVEGBv89hA8ENW7A8MFVpFUSvgLqc4Nj1WZcpePX6rrxviVtPowvMuGF5rdT2Vi/*").unwrap();
         assert_eq!(public_key.master_fingerprint().to_string(), "abcdef00");
@@ -1241,7 +1233,7 @@ mod test {
             public_key.full_derivation_path().unwrap().to_string(),
             "m/0'/1'"
         );
-        assert_eq!(public_key.has_wildcard(), true);
+        assert!(public_key.has_wildcard());
 
         let public_key = DescriptorPublicKey::from_str("[abcdef00/0'/1']tpubDBrgjcxBxnXyL575sHdkpKohWu5qHKoQ7TJXKNrYznh5fVEGBv89hA8ENW7A8MFVpFUSvgLqc4Nj1WZcpePX6rrxviVtPowvMuGF5rdT2Vi/*h").unwrap();
         assert_eq!(public_key.master_fingerprint().to_string(), "abcdef00");
@@ -1249,7 +1241,7 @@ mod test {
             public_key.full_derivation_path().unwrap().to_string(),
             "m/0'/1'"
         );
-        assert_eq!(public_key.has_wildcard(), true);
+        assert!(public_key.has_wildcard());
     }
 
     #[test]
@@ -1264,7 +1256,7 @@ mod test {
             public_key.full_derivation_path().unwrap().to_string(),
             "m/0'/1'/2"
         );
-        assert_eq!(public_key.has_wildcard(), false);
+        assert!(!public_key.has_wildcard());
 
         let secret_key = DescriptorSecretKey::from_str("tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/0'/1'/2'").unwrap();
         let public_key = secret_key.to_public(&secp).unwrap();
