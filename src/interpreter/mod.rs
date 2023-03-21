@@ -1283,7 +1283,7 @@ mod tests {
         let (pks, der_sigs, ecdsa_sigs, sighash, secp, xpks, schnorr_sigs, ser_schnorr_sigs) =
             setup_keys_sigs(10);
         let secp_ref = &secp;
-        let vfyfn_ = |pksig: &KeySigPair| match pksig {
+        let vfyfn = |pksig: &KeySigPair| match pksig {
             KeySigPair::Ecdsa(pk, ecdsa_sig) => secp_ref
                 .verify_ecdsa(&sighash, &ecdsa_sig.0, &pk.inner)
                 .is_ok(),
@@ -1332,7 +1332,6 @@ mod tests {
         let ripemd160 = no_checks_ms(&format!("ripemd160({})", ripemd160_hash));
 
         let stack = Stack::from(vec![stack::Element::Push(&der_sigs[0])]);
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &pk);
         let pk_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
 
@@ -1345,7 +1344,6 @@ mod tests {
 
         //Check Pk failure with wrong signature
         let stack = Stack::from(vec![stack::Element::Dissatisfied]);
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &pk);
 
         let pk_err: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
@@ -1357,7 +1355,6 @@ mod tests {
             stack::Element::Push(&der_sigs[1]),
             stack::Element::Push(&pk_bytes),
         ]);
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &pkh);
         let pkh_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
@@ -1370,7 +1367,6 @@ mod tests {
 
         //Check After
         let stack = Stack::from(vec![]);
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &after);
         let after_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
@@ -1382,7 +1378,6 @@ mod tests {
 
         //Check Older
         let stack = Stack::from(vec![]);
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &older);
         let older_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
         assert_eq!(
@@ -1394,7 +1389,6 @@ mod tests {
 
         //Check Sha256
         let stack = Stack::from(vec![stack::Element::Push(&preimage)]);
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &sha256);
         let sah256_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
             constraints.collect();
@@ -1408,7 +1402,6 @@ mod tests {
 
         //Check Shad256
         let stack = Stack::from(vec![stack::Element::Push(&preimage)]);
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &hash256);
         let sha256d_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
             constraints.collect();
@@ -1422,7 +1415,6 @@ mod tests {
 
         //Check hash160
         let stack = Stack::from(vec![stack::Element::Push(&preimage)]);
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &hash160);
         let hash160_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
             constraints.collect();
@@ -1436,7 +1428,6 @@ mod tests {
 
         //Check ripemd160
         let stack = Stack::from(vec![stack::Element::Push(&preimage)]);
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &ripemd160);
         let ripemd160_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
             constraints.collect();
@@ -1457,7 +1448,6 @@ mod tests {
             stack::Element::Push(&der_sigs[0]),
         ]);
         let elem = no_checks_ms(&format!("and_v(vc:pk_k({}),c:pk_h({}))", pks[0], pks[1]));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
         let and_v_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
@@ -1483,7 +1473,6 @@ mod tests {
             "and_b(c:pk_k({}),sjtv:sha256({}))",
             pks[0], sha256_hash
         ));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
         let and_b_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
@@ -1509,7 +1498,6 @@ mod tests {
             "andor(c:pk_k({}),jtv:sha256({}),c:pk_h({}))",
             pks[0], sha256_hash, pks[1],
         ));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
         let and_or_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
@@ -1534,7 +1522,6 @@ mod tests {
             stack::Element::Push(&pk_bytes),
             stack::Element::Dissatisfied,
         ]);
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
         let and_or_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
@@ -1556,7 +1543,6 @@ mod tests {
             "or_b(c:pk_k({}),sjtv:sha256({}))",
             pks[0], sha256_hash
         ));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
         let or_b_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
@@ -1574,7 +1560,6 @@ mod tests {
             "or_d(c:pk_k({}),jtv:sha256({}))",
             pks[0], sha256_hash
         ));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
         let or_d_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
@@ -1594,7 +1579,6 @@ mod tests {
             "t:or_c(jtv:sha256({}),vc:pk_k({}))",
             sha256_hash, pks[0]
         ));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
         let or_c_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
@@ -1614,7 +1598,6 @@ mod tests {
             "or_i(jtv:sha256({}),c:pk_k({}))",
             sha256_hash, pks[0]
         ));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
         let or_i_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
@@ -1637,7 +1620,6 @@ mod tests {
             "thresh(3,c:pk_k({}),sc:pk_k({}),sc:pk_k({}),sc:pk_k({}),sc:pk_k({}))",
             pks[4], pks[3], pks[2], pks[1], pks[0],
         ));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
         let thresh_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
@@ -1668,7 +1650,6 @@ mod tests {
             "multi(3,{},{},{},{},{})",
             pks[4], pks[3], pks[2], pks[1], pks[0],
         ));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
         let multi_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
@@ -1698,7 +1679,6 @@ mod tests {
             "multi(3,{},{},{},{},{})",
             pks[4], pks[3], pks[2], pks[1], pks[0],
         ));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
         let multi_error: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
@@ -1717,7 +1697,6 @@ mod tests {
             "multi_a(3,{},{},{},{},{})",
             xpks[0], xpks[1], xpks[2], xpks[3], xpks[4],
         ));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
         let multi_a_satisfied: Result<Vec<SatisfiedConstraint<NoExt>>, Error> =
@@ -1750,7 +1729,6 @@ mod tests {
             "multi_a(3,{},{},{},{},{})",
             xpks[0], xpks[1], xpks[2], xpks[3], xpks[4],
         ));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack.clone(), &elem);
 
         let multi_a_error: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
@@ -1761,7 +1739,6 @@ mod tests {
             "multi_a(2,{},{},{},{},{})",
             xpks[0], xpks[1], xpks[2], xpks[3], xpks[4],
         ));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack.clone(), &elem);
 
         let multi_a_error: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
@@ -1772,7 +1749,6 @@ mod tests {
             "multi_a(3,{},{},{},{},{},{})",
             xpks[0], xpks[1], xpks[2], xpks[3], xpks[4], xpks[5]
         ));
-        let vfyfn = vfyfn_.clone(); // sigh rust 1.29...
         let constraints = from_stack(Box::new(vfyfn), stack, &elem);
 
         let multi_a_error: Result<Vec<SatisfiedConstraint<NoExt>>, Error> = constraints.collect();
