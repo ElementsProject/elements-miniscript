@@ -19,6 +19,8 @@ use crate::miniscript::limits::{MAX_BLOCK_WEIGHT, MAX_PUBKEYS_PER_MULTISIG};
 use crate::miniscript::types::extra_props::ExtData;
 use crate::miniscript::types::{Property, Type};
 use crate::miniscript::ScriptContext;
+#[cfg(doc)]
+use crate::Descriptor;
 use crate::{bitcoin, hash256, Error, Extension, Miniscript, MiniscriptKey, NoExt, ToPublicKey};
 
 fn return_none<T>(_: usize) -> Option<T> {
@@ -107,14 +109,14 @@ enum NonTerm {
     // could be or_i or tern
     EndIfElse,
 }
-/// All AST elements
-/// This variant is the inner Miniscript variant that allows the user to bypass
-/// some of the miniscript rules. You should *never* construct Terminal directly.
-/// This is only exposed to external user to allow matching on the [`crate::Miniscript`]
+/// All AST elements.
 ///
-/// The average user should always use the [`crate::Descriptor`] APIs. Advanced users
-/// who want deal with Miniscript ASTs should use the [`crate::Miniscript`] APIs.
-#[allow(broken_intra_doc_links)]
+/// This variant is the inner Miniscript variant that allows the user to bypass some of the
+/// miniscript rules. You should *never* construct `Terminal` directly. This is only exposed to
+/// external users to allow matching on the [`Miniscript`].
+///
+/// The average user should always use the [`Descriptor`] APIs. Advanced users who want deal
+/// with Miniscript ASTs should use the [`Miniscript`] APIs.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension = NoExt> {
     /// `1`
@@ -155,38 +157,38 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension = NoExt>
     Check(Arc<Miniscript<Pk, Ctx, Ext>>),
     /// `DUP IF [V] ENDIF`
     DupIf(Arc<Miniscript<Pk, Ctx, Ext>>),
-    /// [T] VERIFY
+    /// `[T] VERIFY`
     Verify(Arc<Miniscript<Pk, Ctx, Ext>>),
-    /// SIZE 0NOTEQUAL IF [Fn] ENDIF
+    /// `SIZE 0NOTEQUAL IF [Fn] ENDIF`
     NonZero(Arc<Miniscript<Pk, Ctx, Ext>>),
-    /// [X] 0NOTEQUAL
+    /// `[X] 0NOTEQUAL`
     ZeroNotEqual(Arc<Miniscript<Pk, Ctx, Ext>>),
     // Conjunctions
-    /// [V] [T]/[V]/[F]/[Kt]
+    /// `[V] [T]/[V]/[F]/[Kt]`
     AndV(Arc<Miniscript<Pk, Ctx, Ext>>, Arc<Miniscript<Pk, Ctx, Ext>>),
-    /// [E] [W] BOOLAND
+    /// `[E] [W] BOOLAND`
     AndB(Arc<Miniscript<Pk, Ctx, Ext>>, Arc<Miniscript<Pk, Ctx, Ext>>),
-    /// [various] NOTIF [various] ELSE [various] ENDIF
+    /// `[various] NOTIF [various] ELSE [various] ENDIF`
     AndOr(
         Arc<Miniscript<Pk, Ctx, Ext>>,
         Arc<Miniscript<Pk, Ctx, Ext>>,
         Arc<Miniscript<Pk, Ctx, Ext>>,
     ),
     // Disjunctions
-    /// [E] [W] BOOLOR
+    /// `[E] [W] BOOLOR`
     OrB(Arc<Miniscript<Pk, Ctx, Ext>>, Arc<Miniscript<Pk, Ctx, Ext>>),
-    /// [E] IFDUP NOTIF [T]/[E] ENDIF
+    /// `[E] IFDUP NOTIF [T]/[E] ENDIF`
     OrD(Arc<Miniscript<Pk, Ctx, Ext>>, Arc<Miniscript<Pk, Ctx, Ext>>),
-    /// [E] NOTIF [V] ENDIF
+    /// `[E] NOTIF [V] ENDIF`
     OrC(Arc<Miniscript<Pk, Ctx, Ext>>, Arc<Miniscript<Pk, Ctx, Ext>>),
-    /// IF [various] ELSE [various] ENDIF
+    /// `IF [various] ELSE [various] ENDIF`
     OrI(Arc<Miniscript<Pk, Ctx, Ext>>, Arc<Miniscript<Pk, Ctx, Ext>>),
     // Thresholds
-    /// [E] ([W] ADD)* k EQUAL
+    /// `[E] ([W] ADD)* k EQUAL`
     Thresh(usize, Vec<Arc<Miniscript<Pk, Ctx, Ext>>>),
-    /// k (<key>)* n CHECKMULTISIG
+    /// `k (<key>)* n CHECKMULTISIG`
     Multi(usize, Vec<Pk>),
-    /// <key> CHECKSIG (<key> CHECKSIGADD)*(n-1) k NUMEQUAL
+    /// `<key> CHECKSIG (<key> CHECKSIGADD)*(n-1) k NUMEQUAL`
     MultiA(usize, Vec<Pk>),
     /// Extensions
     Ext(Ext),

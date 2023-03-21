@@ -3,7 +3,6 @@
 
 //! Miniscript and Output Descriptors
 //!
-//! # Introduction
 //! ## Bitcoin Script
 //!
 //! In Bitcoin, spending policies are defined and enforced by means of a
@@ -39,9 +38,9 @@
 //! While spending policies in Bitcoin are entirely defined by Script; there
 //! are multiple ways of embedding these Scripts in transaction outputs; for
 //! example, P2SH or Segwit v0. These different embeddings are expressed by
-//! *Output Descriptors*, [which are described here](https://github.com/bitcoin/bitcoin/blob/master/doc/descriptors.md)
+//! *Output Descriptors*, [which are described here](https://github.com/bitcoin/bitcoin/blob/master/doc/descriptors.md).
 //! Elements descriptors are extension of bitcoin Output descriptors with support
-//! for blinded descriptors(WIP)
+//! for blinded descriptors(WIP).
 //! # Examples
 //!
 //! ## Deriving an address from a descriptor
@@ -64,7 +63,7 @@
 //!         )))\
 //!     ").unwrap();
 //!
-//!     // Derive the P2SH address
+//!     // Derive the P2SH address.
 //!     assert_eq!(
 //!         desc.address(&elements::AddressParams::ELEMENTS).unwrap().to_string(),
 //!         "XMyBX13qCo5Lp65mymgYVdmsYR5bcznWUa"
@@ -76,17 +75,12 @@
 //!     // Or they contain a combination of timelock and heightlock.
 //!     assert!(desc.sanity_check().is_ok());
 //!
-//!     // Estimate the satisfaction cost
+//!     // Estimate the satisfaction cost.
 //!     assert_eq!(desc.max_satisfaction_weight().unwrap(), 293);
 //! }
-//! ```
 //!
 //!
 #![allow(bare_trait_objects)]
-#![cfg_attr(all(test, feature = "unstable"), feature(test))]
-// Coding conventions
-#![deny(unsafe_code)]
-#![deny(non_upper_case_globals)]
 #![deny(non_camel_case_types)]
 #![deny(non_snake_case)]
 #![deny(unused_mut)]
