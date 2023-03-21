@@ -48,7 +48,8 @@ pub use self::blinded::Blinded;
 pub use self::segwitv0::{Wpkh, Wsh, WshInner};
 pub use self::sh::{Sh, ShInner};
 pub use self::sortedmulti::SortedMultiVec;
-mod checksum;
+
+pub mod checksum;
 mod key;
 pub use self::csfs_cov::{CovError, CovOperations, LegacyCSFSCov, LegacyCovSatisfier};
 pub use self::key::{
