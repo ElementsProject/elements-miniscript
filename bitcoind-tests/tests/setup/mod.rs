@@ -1,7 +1,7 @@
 pub extern crate elements_miniscript;
 
 use std::str::FromStr;
-
+use miniscript::elements;
 use elements::encode::{deserialize, serialize_hex};
 use elements::hashes::hex::FromHex;
 use elements::BlockHash;

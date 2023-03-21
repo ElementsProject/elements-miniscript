@@ -5,8 +5,6 @@ use elements::encode::{serialize, serialize_hex};
 use elements::hashes::Hash;
 use elements::sighash::SigHashCache;
 use elements::{confidential, AssetId, PackedLockTime, TxOutWitness};
-use elements_miniscript as miniscript;
-use elementsd::bitcoincore_rpc::jsonrpc::base64;
 use miniscript::elements::hashes::hex::FromHex;
 use miniscript::elements::pset::PartiallySignedTransaction as Psbt;
 use miniscript::elements::{
@@ -15,6 +13,7 @@ use miniscript::elements::{
 };
 use miniscript::psbt::{PsbtExt, PsbtInputExt};
 use miniscript::{elementssig_to_rawsig, Descriptor};
+use {actual_base64 as base64, elements_miniscript as miniscript};
 
 const ELEMENTS_PARAMS: AddressParams = AddressParams::ELEMENTS;
 

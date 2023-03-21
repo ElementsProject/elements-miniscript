@@ -20,9 +20,10 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use bitcoin::hashes::hex::ToHex;
-use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
-use bitcoin::secp256k1;
+use miniscript::{elements, bitcoin};
+use elements::hashes::hex::ToHex;
+use elements::hashes::{hash160, ripemd160, sha256, Hash};
+use elements::secp256k1_zkp as secp256k1;
 use elements::hashes::hex::FromHex;
 use elements::{confidential, encode, AddressParams, BlockHash};
 use miniscript::descriptor::{SinglePub, SinglePubKey};

@@ -6,12 +6,13 @@
 
 use std::{error, fmt};
 
+use miniscript::{elements, bitcoin};
 use elements::hashes::{sha256d, Hash};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SigHashCache;
 use elements::taproot::{LeafVersion, TapLeafHash};
 use elements::{
-    self, confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, SchnorrSig,
+    confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, SchnorrSig,
     Script, Sequence, TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;

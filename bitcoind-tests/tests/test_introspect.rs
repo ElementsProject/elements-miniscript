@@ -3,11 +3,12 @@
 //! Arith expression fragment integration tests
 //!
 
+use miniscript::elements;
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SigHashCache;
 use elements::taproot::{LeafVersion, TapLeafHash};
 use elements::{
-    self, confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script,
+    confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script,
     Sequence, TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
