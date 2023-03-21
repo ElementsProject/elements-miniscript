@@ -17,6 +17,7 @@ trace = []
 unstable = []
 serde = ["actual-serde", "bitcoin/serde"]
 rand = ["bitcoin/rand"]
+base64 = ["bitcoin/base64"]
 
 [dependencies]
 bitcoin = "0.29.1"
