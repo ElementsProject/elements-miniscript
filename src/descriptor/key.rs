@@ -1046,6 +1046,16 @@ impl DefiniteDescriptorKey {
     pub fn full_derivation_path(&self) -> Option<bip32::DerivationPath> {
         self.0.full_derivation_path()
     }
+
+    /// Reference to the underlying `DescriptorPublicKey`
+    pub fn as_descriptor_public_key(&self) -> &DescriptorPublicKey {
+        &self.0
+    }
+
+    /// Converts the definite key into a generic one
+    pub fn into_descriptor_public_key(self) -> DescriptorPublicKey {
+        self.0
+    }
 }
 
 impl FromStr for DefiniteDescriptorKey {
@@ -1110,6 +1120,12 @@ impl ToPublicKey for DefiniteDescriptorKey {
 impl From<DefiniteDescriptorKey> for DescriptorPublicKey {
     fn from(d: DefiniteDescriptorKey) -> Self {
         d.0
+    }
+}
+
+impl Borrow<DescriptorPublicKey> for DefiniteDescriptorKey {
+    fn borrow(&self) -> &DescriptorPublicKey {
+        &self.0
     }
 }
 
