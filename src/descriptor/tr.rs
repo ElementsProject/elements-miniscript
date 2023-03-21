@@ -121,7 +121,8 @@ impl<Pk: MiniscriptKey, Ext: Extension> TapTree<Pk, Ext> {
         }
     }
 
-    /// Iterate over all miniscripts
+    /// Iterates over all miniscripts in DFS walk order compatible with the
+    /// PSBT requirements (BIP 371).
     pub fn iter(&self) -> TapTreeIter<'_, Pk, Ext> {
         TapTreeIter {
             stack: vec![(0, self)],
