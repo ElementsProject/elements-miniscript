@@ -1035,6 +1035,7 @@ impl fmt::Display for EvalError {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::hashes::Hash;
     use bitcoin::XOnlyPublicKey;
 
     use super::*;
@@ -1110,5 +1111,27 @@ mod tests {
         let ms = ms.translate_pk(&mut t).unwrap();
         // script rtt
         assert_eq!(ms, MsExt::parse_insane(&ms.encode()).unwrap());
+    }
+
+    #[test]
+    fn test_fuji_fixed_signs() {
+        // Test Vector obtained from curl queries
+        let sig = elements::secp256k1_zkp::schnorr::Signature::from_str("8fc6e217b0e1d3481855cdb97cfe333999d4cf48b9f58b4f299ad86fd768a345e97a953d6efa1ca5971f18810deedcfddc4c2bd4e8f9d1431c1ad6ebafa013a9").unwrap();
+        let pk = elements::secp256k1_zkp::XOnlyPublicKey::from_str(
+            "c304c3b5805eecff054c319c545dc6ac2ad44eb70f79dd9570e284c5a62c0f9e",
+        )
+        .unwrap();
+
+        let timestamp: u64 = 1679531858733;
+        let price: u64 = 27365;
+
+        let mut buf = Vec::with_capacity(16);
+        buf.extend(&timestamp.to_le_bytes());
+        buf.extend(&price.to_le_bytes());
+        let sha_msg = elements::hashes::sha256::Hash::hash(&buf);
+
+        let msg = elements::secp256k1_zkp::Message::from_slice(&sha_msg[..]).unwrap();
+        let secp = elements::secp256k1_zkp::Secp256k1::new();
+        secp.verify_schnorr(&sig, &msg, &pk).unwrap();
     }
 }
