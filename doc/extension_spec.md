@@ -47,10 +47,19 @@ mod(x,y)                | `[X] [Y] DIV64 <1> EQUALVERIFY DROP`
 bitand(x,y)             | `[X] [Y] AND`
 bitor(x,y)              | `[X] [Y] OR (cannot fail)`
 bitxor(x,y)             | `[X] [Y] XOR (cannot fail)`
-
+price_oracle_1(K,T)     | `2DUP TOALTSTACK <T> OP_GREATERTHANEQ VERIFY CAT SHA256 <K> CHECKSIGFROMSTACKVERIFY OP_FROMATLSTACK`
 
 - The division operation pushes the quotient(a//b) such that the remainder a%b (must be non-negative and less than |b|).
 - neg(a) returns -a, whereas bitinv(a) returns ~a.
+- `price_oracle_1(K,T)` pushes a 64 bit LE integer(price) of signed with key K. It checks whether the price is signed
+with at a timestamp greater than T. Roughly spea
+    - K can be any `KEY` expression in descriptor format, but it not allowed to be uncompressed key.
+    - T is a 64 byte LE UXIX timestamp.
+    - `_1` is the version of the oracle. There can be multiple versions of the
+oracle with different fragments. `price_oracle_1` creates a schnorr signature with given key `K` on a message that is
+computed as: `sha256(T1||K)`
+    - The fragment consumes three inputs from stack top: [`signature`, `timestamp`, `price`] where `price` is the
+    stack top.
 
 ## Comparison extensions
 
