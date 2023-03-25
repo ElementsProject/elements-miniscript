@@ -1088,6 +1088,22 @@ impl Satisfaction {
         }
     }
 
+    /// Construct a satisfaction that is impossible to satisfy with no sig
+    pub fn empty() -> Self {
+        Satisfaction {
+            stack: Witness::empty(),
+            has_sig: false,
+        }
+    }
+
+    /// Combines two satisfactions
+    pub fn combine(one: Self, two: Self) -> Self {
+        Satisfaction {
+            stack: Witness::combine(one.stack, two.stack),
+            has_sig: one.has_sig || two.has_sig,
+        }
+    }
+
     // produce a non-malleable satisafaction for thesh frag
     fn thresh<Pk, Ctx, Sat, Ext, F>(
         k: usize,

@@ -219,7 +219,7 @@ pub enum CovenantExt<T: ExtParam> {
     /// CSFS
     Csfs(CheckSigFromStack<T>),
     /// Arith opcodes
-    Arith(Arith),
+    Arith(Arith<T>),
     /// Cov opcodes
     Introspect(CovOps<T>),
 }
@@ -247,7 +247,7 @@ macro_rules! try_from_arms {
             Ok(CovenantExt::LegacyOutputsPref(v))
         } else if let Ok(v) = <CheckSigFromStack<$ext_arg> as $trt>::$f($($args, )*) {
             Ok(CovenantExt::Csfs(v))
-        } else if let Ok(v) = <Arith as $trt>::$f($($args, )*) {
+        } else if let Ok(v) = <Arith<$ext_arg> as $trt>::$f($($args, )*) {
             Ok(CovenantExt::Arith(v))
         } else if let Ok(v) = <CovOps<$ext_arg> as $trt>::$f($($args, )*) {
             Ok(CovenantExt::Introspect(v))

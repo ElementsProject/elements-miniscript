@@ -201,7 +201,9 @@ where
             CovenantExt::Csfs(ref c) => Ok(CovenantExt::Csfs(TranslateExtParam::translate_ext(
                 c, self,
             )?)),
-            CovenantExt::Arith(ref e) => Ok(CovenantExt::Arith(e.clone())),
+            CovenantExt::Arith(ref e) => Ok(CovenantExt::Arith(TranslateExtParam::translate_ext(
+                e, self,
+            )?)),
             CovenantExt::Introspect(ref c) => Ok(CovenantExt::Introspect(
                 TranslateExtParam::translate_ext(c, self)?,
             )),

@@ -3,11 +3,13 @@
 use std::str::FromStr;
 use std::{cmp, error, fmt};
 
+use bitcoin_miniscript::MiniscriptKey;
 use elements::opcodes::all::*;
 use elements::sighash::Prevouts;
 use elements::{opcodes, script, Transaction};
 
-use super::{ExtParam, IdxExpr, ParseableExt, TxEnv};
+use super::param::{ExtParamTranslator, TranslateExtParam};
+use super::{CovExtArgs, ExtParam, IdxExpr, ParseableExt, TxEnv};
 use crate::expression::{FromTree, Tree};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -31,7 +33,7 @@ use crate::{
 ///     - Any of the operations overflow. Refer to tapscript opcodes spec for overflow specification
 ///     - In extreme cases, when recursive operations exceed 400 depth
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
-pub enum ExprInner {
+pub enum ExprInner<T: ExtParam> {
     /* leaf fragments/terminals */
     /// A constant i64 value
     /// Minimal push of this `<i64>`
@@ -60,59 +62,66 @@ pub enum ExprInner {
     /* Two children */
     /// Add two Arith expressions.
     /// `[X] [Y] ADD64 <1> EQUALVERIFY`
-    Add(Box<Expr>, Box<Expr>),
+    Add(Box<Expr<T>>, Box<Expr<T>>),
     /// Subtract (X-Y)
     /// `[X] [Y] SUB64 <1> EQUALVERIFY`
-    Sub(Box<Expr>, Box<Expr>),
+    Sub(Box<Expr<T>>, Box<Expr<T>>),
     /// Multiply two Expr expressions. (a*b)
     /// `[X] [Y] MUL64 <1> EQUALVERIFY`
-    Mul(Box<Expr>, Box<Expr>),
+    Mul(Box<Expr<T>>, Box<Expr<T>>),
     /// Divide two Expr expressions. (a//b)
     /// The division operation pushes the quotient(a//b) such that the remainder a%b
     /// (must be non-negative and less than |b|).
     /// `[X] [Y] DIV64 <1> EQUALVERIFY NIP`
-    Div(Box<Expr>, Box<Expr>),
+    Div(Box<Expr<T>>, Box<Expr<T>>),
     /// Modulo operation (a % b)
     /// The division operation the remainder a%b (must be non-negative and less than |b|).
     /// `[X] [Y] DIV64 <1> EQUALVERIFY DROP`
-    Mod(Box<Expr>, Box<Expr>),
+    Mod(Box<Expr<T>>, Box<Expr<T>>),
     /// BitWise And (a & b)
     /// `[X] [Y] AND` (cannot fail)
-    BitAnd(Box<Expr>, Box<Expr>),
+    BitAnd(Box<Expr<T>>, Box<Expr<T>>),
     /// BitWise or (a | b)
     /// `[X] [Y] OR` (cannot fail)
-    BitOr(Box<Expr>, Box<Expr>),
+    BitOr(Box<Expr<T>>, Box<Expr<T>>),
     /// BitWise or (a ^ b)
     /// `[X] [Y] XOR` (cannot fail)
-    Xor(Box<Expr>, Box<Expr>),
+    Xor(Box<Expr<T>>, Box<Expr<T>>),
     /* One child*/
     /// BitWise invert (!a)
     /// `[X] INVERT` (cannot fail)
-    Invert(Box<Expr>),
+    Invert(Box<Expr<T>>),
     /// Negate -a
     /// `[X] NEG64 <1> EQUALVERIFY`
-    Negate(Box<Expr>),
+    Negate(Box<Expr<T>>),
+
+    /// Push the price as LE64 signed from oracle.
+    /// `2DUP TOALTSTACK <T> OP_GREATERTHANEQ VERIFY CAT SHA256 <K> CHECKSIGFROMSTACKVERIFY OP_FROMATLSTACK`
+    /// The fragment checks that the input timestamp is less than time at which the price was signed with
+    /// the given oracle key. The asset of which price is being checked is implicitly decided by the
+    /// public key
+    PriceOracle1(T, u64),
 }
 
 /// [`ExprInner`] with some values cached
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
-pub struct Expr {
+pub struct Expr<T: ExtParam> {
     /// The actual inner expression
-    inner: ExprInner,
+    inner: ExprInner<T>,
     /// The cached script size
     script_size: usize,
     /// depth of expression thunk/tree
     depth: usize,
 }
 
-impl Expr {
+impl<T: ExtParam> Expr<T> {
     /// Obtains the inner
-    pub fn into_inner(self) -> ExprInner {
+    pub fn into_inner(self) -> ExprInner<T> {
         self.inner
     }
 
     /// Obtains the reference to inner
-    pub fn as_inner(&self) -> &ExprInner {
+    pub fn as_inner(&self) -> &ExprInner<T> {
         &self.inner
     }
 
@@ -127,7 +136,7 @@ impl Expr {
     }
 
     /// Creates [`Expr`] from [`ExprInner`]
-    pub fn from_inner(inner: ExprInner) -> Self {
+    pub fn from_inner(inner: ExprInner<T>) -> Self {
         let (script_size, depth) = match &inner {
             ExprInner::Const(_c) => (8 + 1, 0),
             ExprInner::CurrInputIdx => (4, 0), // INSPECTCURRENTINPUTINDEX INPSECTINPUTVALUE <1> EQUALVERIFY
@@ -187,6 +196,12 @@ impl Expr {
                 x.script_size + 3, // [X] NEG64 <1> EQUALVERIFY
                 x.depth + 1,
             ),
+            ExprInner::PriceOracle1(pk, time) => (
+                (32 + 1) // 32 byte key + push
+                + (8 + 1) // 8 byte time push
+                + 8, // opcodes,
+                0,
+            ),
         };
         Self {
             inner,
@@ -194,9 +209,11 @@ impl Expr {
             depth,
         }
     }
+}
 
+impl Expr<CovExtArgs> {
     /// Evaluate this expression
-    fn eval(&self, env: &TxEnv) -> Result<i64, EvalError> {
+    fn eval(&self, env: &TxEnv, s: &mut interpreter::Stack) -> Result<i64, EvalError> {
         match &self.inner {
             ExprInner::Const(c) => Ok(*c),
             ExprInner::CurrInputIdx => {
@@ -259,52 +276,199 @@ impl Expr {
                     .ok_or(EvalError::NonExplicitInputReIssuance(i))
             }
             ExprInner::Add(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 x.checked_add(y).ok_or(EvalError::AddOverflow(x, y))
             }
             ExprInner::Sub(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 x.checked_sub(y).ok_or(EvalError::SubOverflow(x, y))
             }
             ExprInner::Mul(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 x.checked_mul(y).ok_or(EvalError::MulOverflow(x, y))
             }
             ExprInner::Div(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 x.checked_div_euclid(y).ok_or(EvalError::DivOverflow(x, y))
             }
             ExprInner::Mod(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 x.checked_rem_euclid(y).ok_or(EvalError::ModOverflow(x, y))
             }
             ExprInner::BitAnd(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 Ok(x & y)
             }
             ExprInner::BitOr(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 Ok(x | y)
             }
             ExprInner::Xor(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 Ok(x ^ y)
             }
             ExprInner::Invert(x) => {
-                let x = x.eval(env)?;
+                let x = x.eval(env, s)?;
                 Ok(!x)
             }
             ExprInner::Negate(x) => {
-                let x = x.eval(env)?;
+                let x = x.eval(env, s)?;
                 x.checked_neg().ok_or(EvalError::NegOverflow(x))
+            }
+            ExprInner::PriceOracle1(pk, time) => {
+                todo!();
+            }
+        }
+    }
+
+    /// Evaluate this expression
+    fn satisfy<Pk: MiniscriptKey>(
+        &self,
+        env: &TxEnv,
+        s: &Satisfier<Pk>,
+    ) -> Result<(i64, Satisfaction), EvalError> {
+        match &self.inner {
+            ExprInner::Const(c) => Ok((*c, Satisfaction::empty())),
+            ExprInner::CurrInputIdx => {
+                if env.idx >= env.spent_utxos.len() {
+                    return Err(EvalError::UtxoIndexOutOfBounds(
+                        env.idx,
+                        env.spent_utxos.len(),
+                    ));
+                }
+                let res = env.spent_utxos[env.idx]
+                    .value
+                    .explicit()
+                    .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
+                    .ok_or(EvalError::NonExplicitInput(env.idx))?;
+                Ok((res, Satisfaction::empty()))
+            }
+            ExprInner::Input(i) => {
+                let i = i.eval(env)?;
+                if i >= env.spent_utxos.len() {
+                    return Err(EvalError::UtxoIndexOutOfBounds(i, env.spent_utxos.len()));
+                }
+                let res = env.spent_utxos[i]
+                    .value
+                    .explicit()
+                    .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
+                    .ok_or(EvalError::NonExplicitInput(i))?;
+                Ok((res, Satisfaction::empty()))
+            }
+            ExprInner::Output(i) => {
+                let i = i.eval(env)?;
+                if i >= env.tx.output.len() {
+                    return Err(EvalError::OutputIndexOutOfBounds(i, env.tx.output.len()));
+                }
+                let res = env.tx.output[i]
+                    .value
+                    .explicit()
+                    .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
+                    .ok_or(EvalError::NonExplicitOutput(i))?;
+                Ok((res, Satisfaction::empty()))
+            }
+            ExprInner::InputIssue(i) => {
+                let i = i.eval(env)?;
+                if i >= env.tx.input.len() {
+                    return Err(EvalError::InputIndexOutOfBounds(i, env.tx.input.len()));
+                }
+                let res = env.tx.input[i]
+                    .asset_issuance
+                    .amount
+                    .explicit()
+                    .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
+                    .ok_or(EvalError::NonExplicitInputIssuance(i))?;
+                Ok((res, Satisfaction::empty()))
+            }
+            ExprInner::InputReIssue(i) => {
+                let i = i.eval(env)?;
+                if i >= env.tx.input.len() {
+                    return Err(EvalError::InputIndexOutOfBounds(i, env.tx.input.len()));
+                }
+                let res = env.tx.input[i]
+                    .asset_issuance
+                    .inflation_keys
+                    .explicit()
+                    .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
+                    .ok_or(EvalError::NonExplicitInputReIssuance(i))?;
+                Ok((res, Satisfaction::empty()))
+            }
+            ExprInner::Add(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let res = x.checked_add(y).ok_or(EvalError::AddOverflow(x, y))?;
+                let sat = Satisfaction::combine(sat_x, sat_y);
+                Ok((res, sat))
+            }
+            ExprInner::Sub(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let res = x.checked_sub(y).ok_or(EvalError::SubOverflow(x, y))?;
+                let sat = Satisfaction::combine(sat_x, sat_y);
+                Ok((res, sat))
+            }
+            ExprInner::Mul(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let res = x.checked_mul(y).ok_or(EvalError::MulOverflow(x, y))?;
+                let sat = Satisfaction::combine(sat_x, sat_y);
+                Ok((res, sat))
+            }
+            ExprInner::Div(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let res = x
+                    .checked_div_euclid(y)
+                    .ok_or(EvalError::DivOverflow(x, y))?;
+                let sat = Satisfaction::combine(sat_x, sat_y);
+                Ok((res, sat))
+            }
+            ExprInner::Mod(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let res = x
+                    .checked_rem_euclid(y)
+                    .ok_or(EvalError::ModOverflow(x, y))?;
+                let sat = Satisfaction::combine(sat_x, sat_y);
+                Ok((res, sat))
+            }
+            ExprInner::BitAnd(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let sat = Satisfaction::combine(sat_x, sat_y);
+                Ok((x & y, sat))
+            }
+            ExprInner::BitOr(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let sat = Satisfaction::combine(sat_x, sat_y);
+                Ok((x | y, sat))
+            }
+            ExprInner::Xor(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let sat = Satisfaction::combine(sat_x, sat_y);
+                Ok((x ^ y, sat))
+            }
+            ExprInner::Invert(x) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                Ok((!x, sat_x))
+            }
+            ExprInner::Negate(x) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let res = x.checked_neg().ok_or(EvalError::NegOverflow(x))?;
+                Ok((res, sat_x))
+            }
+            ExprInner::PriceOracle1(pk, time) => {
+                todo!();
             }
         }
     }
@@ -409,6 +573,7 @@ impl Expr {
                 .push_opcode(OP_NEG64)
                 .push_int(1)
                 .push_opcode(OP_EQUALVERIFY),
+            ExprInner::PriceOracle1(pk, t) => todo!(),
         }
     }
 
@@ -526,25 +691,25 @@ impl Expr {
 /// value on stack. Two expressions can be combined with Arith to something is
 /// of Base type B to be used in miniscript expressions
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
-pub enum Arith {
+pub enum Arith<T: ExtParam> {
     /// Eq
     /// `[X] [Y] EQUAL`
-    Eq(Expr, Expr),
+    Eq(Expr<T>, Expr<T>),
     /// Lt
     /// `[X] [Y] LESSTHAN`
-    Lt(Expr, Expr),
+    Lt(Expr<T>, Expr<T>),
     /// Leq
     /// `[X] [Y] LESSTHANOREQUAL`
-    Leq(Expr, Expr),
+    Leq(Expr<T>, Expr<T>),
     /// Gt
     /// `[X] [Y] GREATERTHAN`
-    Gt(Expr, Expr),
+    Gt(Expr<T>, Expr<T>),
     /// Geq
     /// `[X] [Y] GREATERTHANOREQUAL`
-    Geq(Expr, Expr),
+    Geq(Expr<T>, Expr<T>),
 }
 
-impl Arith {
+impl<T: ExtParam> Arith<T> {
     /// Obtains the depth of this expression
     pub fn depth(&self) -> usize {
         match self {
@@ -566,17 +731,63 @@ impl Arith {
             | Arith::Geq(x, y) => x.script_size + y.script_size + 1,
         }
     }
+}
 
+impl Arith<CovExtArgs> {
     /// Evaluate this expression with context given transaction and spent utxos
-    pub fn eval(&self, env: &TxEnv) -> Result<bool, EvalError> {
+    pub fn eval(&self, env: &TxEnv, s: &mut interpreter::Stack) -> Result<bool, EvalError> {
         let res = match self {
-            Arith::Eq(x, y) => x.eval(env)? == y.eval(env)?,
-            Arith::Lt(x, y) => x.eval(env)? < y.eval(env)?,
-            Arith::Leq(x, y) => x.eval(env)? <= y.eval(env)?,
-            Arith::Gt(x, y) => x.eval(env)? > y.eval(env)?,
-            Arith::Geq(x, y) => x.eval(env)? >= y.eval(env)?,
+            Arith::Eq(x, y) => x.eval(env, s)? == y.eval(env, s)?,
+            Arith::Lt(x, y) => x.eval(env, s)? < y.eval(env, s)?,
+            Arith::Leq(x, y) => x.eval(env, s)? <= y.eval(env, s)?,
+            Arith::Gt(x, y) => x.eval(env, s)? > y.eval(env, s)?,
+            Arith::Geq(x, y) => x.eval(env, s)? >= y.eval(env, s)?,
         };
         Ok(res)
+    }
+
+    /// Internal satisfaction helper for Arith.
+    /// This allows us to cleanly write code that we can use "?" for early
+    /// returns.
+    /// The trait implementation of satisfy just calls this function with unwrap_or
+    /// impossible.
+    pub fn satisfy_helper<Pk: MiniscriptKey>(
+        &self,
+        env: &TxEnv,
+        sat: &Satisfier<Pk>,
+    ) -> Result<Satisfaction, EvalError> {
+        let (res, sat_a, sat_b) = match self {
+            Arith::Eq(a, b) => {
+                let (a, sat_a) = a.satisfy(env, sat)?;
+                let (b, sat_b) = b.satisfy(env, sat)?;
+                (a == b, sat_a, sat_b)
+            }
+            Arith::Lt(a, b) => {
+                let (a, sat_a) = a.satisfy(env, sat)?;
+                let (b, sat_b) = b.satisfy(env, sat)?;
+                (a < b, sat_a, sat_b)
+            }
+            Arith::Leq(a, b) => {
+                let (a, sat_a) = a.satisfy(env, sat)?;
+                let (b, sat_b) = b.satisfy(env, sat)?;
+                (a <= b, sat_a, sat_b)
+            }
+            Arith::Gt(a, b) => {
+                let (a, sat_a) = a.satisfy(env, sat)?;
+                let (b, sat_b) = b.satisfy(env, sat)?;
+                (a > b, sat_a, sat_b)
+            }
+            Arith::Geq(a, b) => {
+                let (a, sat_a) = a.satisfy(env, sat)?;
+                let (b, sat_b) = b.satisfy(env, sat)?;
+                (a >= b, sat_a, sat_b)
+            }
+        };
+        if res {
+            Ok(Satisfaction::combine(sat_a, sat_b))
+        } else {
+            Ok(Satisfaction::impossible())
+        }
     }
 
     /// Push this script to builder
@@ -631,7 +842,7 @@ impl Arith {
     }
 }
 
-impl fmt::Display for Expr {
+impl<T: ExtParam> fmt::Display for Expr<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.inner {
             ExprInner::Const(c) => write!(f, "{}", c),
@@ -650,11 +861,12 @@ impl fmt::Display for Expr {
             ExprInner::Xor(x, y) => write!(f, "bitxor({},{})", x, y),
             ExprInner::Invert(x) => write!(f, "bitinv({})", x),
             ExprInner::Negate(x) => write!(f, "neg({})", x),
+            ExprInner::PriceOracle1(pk, t) => write!(f, "price_oracle1({},{})", pk, t),
         }
     }
 }
 
-impl fmt::Debug for Expr {
+impl<T: ExtParam> fmt::Debug for Expr<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.inner {
             ExprInner::Const(c) => write!(f, "{:?}", c),
@@ -673,11 +885,12 @@ impl fmt::Debug for Expr {
             ExprInner::Xor(x, y) => write!(f, "bitxor({:?},{:?})", x, y),
             ExprInner::Invert(x) => write!(f, "bitinv({:?})", x),
             ExprInner::Negate(x) => write!(f, "neg({:?})", x),
+            ExprInner::PriceOracle1(pk, t) => write!(f, "price_oracle1({:?},{:?})", pk, t),
         }
     }
 }
 
-impl FromStr for Expr {
+impl<T: ExtParam> FromStr for Expr<T> {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -686,28 +899,28 @@ impl FromStr for Expr {
     }
 }
 
-impl FromTree for Box<Expr> {
+impl<T: ExtParam> FromTree for Box<Expr<T>> {
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         expression::FromTree::from_tree(top).map(Box::new)
     }
 }
 
-impl FromTree for Expr {
+impl<T: ExtParam> FromTree for Expr<T> {
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
-        fn unary<F>(top: &expression::Tree<'_>, frag: F) -> Result<Expr, Error>
+        fn unary<F, T: ExtParam>(top: &expression::Tree<'_>, frag: F) -> Result<Expr<T>, Error>
         where
-            F: FnOnce(Box<Expr>) -> ExprInner,
+            F: FnOnce(Box<Expr<T>>) -> ExprInner<T>,
         {
-            let l: Expr = FromTree::from_tree(&top.args[0])?;
+            let l: Expr<T> = FromTree::from_tree(&top.args[0])?;
             Ok(Expr::from_inner(frag(Box::new(l))))
         }
 
-        fn binary<F>(top: &expression::Tree<'_>, frag: F) -> Result<Expr, Error>
+        fn binary<F, T: ExtParam>(top: &expression::Tree<'_>, frag: F) -> Result<Expr<T>, Error>
         where
-            F: FnOnce(Box<Expr>, Box<Expr>) -> ExprInner,
+            F: FnOnce(Box<Expr<T>>, Box<Expr<T>>) -> ExprInner<T>,
         {
-            let l: Expr = FromTree::from_tree(&top.args[0])?;
-            let r: Expr = FromTree::from_tree(&top.args[1])?;
+            let l: Expr<T> = FromTree::from_tree(&top.args[0])?;
+            let r: Expr<T> = FromTree::from_tree(&top.args[1])?;
             Ok(Expr::from_inner(frag(Box::new(l), Box::new(r))))
         }
         match (top.name, top.args.len()) {
@@ -749,7 +962,7 @@ impl FromTree for Expr {
     }
 }
 
-impl FromStr for Arith {
+impl<T: ExtParam> FromStr for Arith<T> {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -758,13 +971,13 @@ impl FromStr for Arith {
     }
 }
 
-impl FromTree for Box<Arith> {
+impl<T: ExtParam> FromTree for Box<Arith<T>> {
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         Arith::from_tree(top).map(Box::new)
     }
 }
 
-impl FromTree for Arith {
+impl<T: ExtParam> FromTree for Arith<T> {
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             // Disambiguiate with num64_eq to avoid confusion with asset_eq
@@ -782,7 +995,7 @@ impl FromTree for Arith {
     }
 }
 
-impl fmt::Display for Arith {
+impl<T: ExtParam> fmt::Display for Arith<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
             Arith::Eq(x, y) => write!(f, "num64_eq({},{})", x, y),
@@ -794,7 +1007,7 @@ impl fmt::Display for Arith {
     }
 }
 
-impl fmt::Debug for Arith {
+impl<T: ExtParam> fmt::Debug for Arith<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
             Arith::Eq(x, y) => write!(f, "num64_eq({:?},{:?})", x, y),
@@ -806,7 +1019,7 @@ impl fmt::Debug for Arith {
     }
 }
 
-impl Extension for Arith {
+impl<T: ExtParam> Extension for Arith<T> {
     fn corr_prop(&self) -> Correctness {
         Correctness {
             base: Base::B,
@@ -867,7 +1080,7 @@ impl Extension for Arith {
     }
 }
 
-impl ParseableExt for Arith {
+impl ParseableExt for Arith<CovExtArgs> {
     fn satisfy<Pk, S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
@@ -885,43 +1098,17 @@ impl ParseableExt for Arith {
             Some(env) => env,
             None => return Satisfaction::impossible(),
         };
-        let wit = match self.eval(&env) {
-            Ok(false) => Witness::Unavailable,
-            Ok(true) => Witness::empty(),
-            Err(_e) => Witness::Impossible,
-        };
-        Satisfaction {
-            stack: wit,
-            has_sig: false,
-        }
+        self.satisfy_helper(&env, sat)
+            .unwrap_or(Satisfaction::empty())
     }
 
-    fn dissatisfy<Pk, S>(&self, sat: &S) -> Satisfaction
+    fn dissatisfy<Pk, S>(&self, _sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        let (tx, utxos, curr_idx) = match (
-            sat.lookup_tx(),
-            sat.lookup_spent_utxos(),
-            sat.lookup_curr_inp(),
-        ) {
-            (Some(tx), Some(utxos), Some(curr_idx)) => (tx, utxos, curr_idx),
-            _ => return Satisfaction::impossible(),
-        };
-        let env = match TxEnv::new(tx, utxos, curr_idx) {
-            Some(env) => env,
-            None => return Satisfaction::impossible(),
-        };
-        let wit = match self.eval(&env) {
-            Ok(false) => Witness::empty(),
-            Ok(true) => Witness::Unavailable,
-            Err(_e) => Witness::Impossible,
-        };
-        Satisfaction {
-            stack: wit,
-            has_sig: false,
-        }
+        // Impossible
+        Satisfaction::impossible()
     }
 
     fn push_to_builder(&self, builder: elements::script::Builder) -> elements::script::Builder {
@@ -948,7 +1135,7 @@ impl ParseableExt for Arith {
             .as_ref()
             .ok_or(interpreter::Error::ArithError(EvalError::TxEnvNotPresent))?;
 
-        match self.eval(txenv) {
+        match self.eval(txenv, stack) {
             Ok(true) => {
                 stack.push(interpreter::Element::Satisfied);
                 Ok(true)
@@ -1033,6 +1220,91 @@ impl fmt::Display for EvalError {
     }
 }
 
+impl<PArg, QArg> TranslateExtParam<PArg, QArg> for Arith<PArg>
+where
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    type Output = Arith<QArg>;
+
+    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtParamTranslator<PArg, QArg, E>,
+    {
+        match self {
+            Arith::Eq(a, b) => Ok(Arith::Eq(a.translate_ext(t)?, b.translate_ext(t)?)),
+            Arith::Lt(a, b) => Ok(Arith::Lt(a.translate_ext(t)?, b.translate_ext(t)?)),
+            Arith::Leq(a, b) => Ok(Arith::Leq(a.translate_ext(t)?, b.translate_ext(t)?)),
+            Arith::Gt(a, b) => Ok(Arith::Gt(a.translate_ext(t)?, b.translate_ext(t)?)),
+            Arith::Geq(a, b) => Ok(Arith::Geq(a.translate_ext(t)?, b.translate_ext(t)?)),
+        }
+    }
+}
+
+impl<PArg, QArg> TranslateExtParam<PArg, QArg> for Expr<PArg>
+where
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    type Output = Expr<QArg>;
+
+    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtParamTranslator<PArg, QArg, E>,
+    {
+        match &self.inner {
+            ExprInner::Const(c) => Ok(Expr::from_inner(ExprInner::Const(*c))),
+            ExprInner::CurrInputIdx => Ok(Expr::from_inner(ExprInner::CurrInputIdx)),
+            ExprInner::Input(i) => Ok(Expr::from_inner(ExprInner::Input(i.clone()))),
+            ExprInner::Output(i) => Ok(Expr::from_inner(ExprInner::Output(i.clone()))),
+            ExprInner::InputIssue(i) => Ok(Expr::from_inner(ExprInner::InputIssue(i.clone()))),
+            ExprInner::InputReIssue(i) => Ok(Expr::from_inner(ExprInner::InputReIssue(i.clone()))),
+            ExprInner::Add(a, b) => Ok(Expr::from_inner(ExprInner::Add(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::Sub(a, b) => Ok(Expr::from_inner(ExprInner::Sub(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::Mul(a, b) => Ok(Expr::from_inner(ExprInner::Mul(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::Div(a, b) => Ok(Expr::from_inner(ExprInner::Div(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::Mod(a, b) => Ok(Expr::from_inner(ExprInner::Mod(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::BitAnd(a, b) => Ok(Expr::from_inner(ExprInner::BitAnd(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::BitOr(a, b) => Ok(Expr::from_inner(ExprInner::BitOr(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::Xor(a, b) => Ok(Expr::from_inner(ExprInner::Xor(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::Invert(a) => Ok(Expr::from_inner(ExprInner::Invert(Box::new(
+                a.translate_ext(t)?,
+            )))),
+            ExprInner::Negate(a) => Ok(Expr::from_inner(ExprInner::Negate(Box::new(
+                a.translate_ext(t)?,
+            )))),
+            ExprInner::PriceOracle1(pk, time) => Ok(Expr::from_inner(ExprInner::PriceOracle1(
+                t.ext(pk)?,
+                time.clone(),
+            ))),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bitcoin::hashes::Hash;
@@ -1097,9 +1369,9 @@ mod tests {
     }
 
     fn _arith_parse(s: &str) {
-        type MsExtStr = Miniscript<String, Tap, Arith>;
-        type MsExt = Miniscript<XOnlyPublicKey, Tap, Arith>;
-        type MsExtSegwitv0 = Miniscript<String, Segwitv0, Arith>;
+        type MsExtStr = Miniscript<String, Tap, Arith<CovExtArgs>>;
+        type MsExt = Miniscript<XOnlyPublicKey, Tap, Arith<CovExtArgs>>;
+        type MsExtSegwitv0 = Miniscript<String, Segwitv0, Arith<CovExtArgs>>;
 
         // Make sure that parsing this errors in segwit context
         assert!(MsExtSegwitv0::from_str_insane(s).is_err());
