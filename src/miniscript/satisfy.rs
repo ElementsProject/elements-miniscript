@@ -210,6 +210,15 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
     fn lookup_csfs_sig(&self, _pk: &XOnlyPublicKey, _msg: &CsfsMsg) -> Option<schnorr::Signature> {
         None
     }
+
+    /// Lookup price oracle signature
+    fn lookup_price_oracle_sig(
+        &self,
+        _pk: &XOnlyPublicKey,
+        _time: u64,
+    ) -> Option<(schnorr::Signature, i64, u64)> {
+        None
+    }
 }
 
 // Allow use of `()` as a "no conditions available" satisfier
@@ -441,6 +450,14 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
     fn lookup_csfs_sig(&self, pk: &XOnlyPublicKey, msg: &CsfsMsg) -> Option<schnorr::Signature> {
         (**self).lookup_csfs_sig(pk, msg)
     }
+
+    fn lookup_price_oracle_sig(
+        &self,
+        pk: &XOnlyPublicKey,
+        time: u64,
+    ) -> Option<(schnorr::Signature, i64, u64)> {
+        (**self).lookup_price_oracle_sig(pk, time)
+    }
 }
 
 impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'a mut S {
@@ -566,6 +583,14 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
 
     fn lookup_csfs_sig(&self, pk: &XOnlyPublicKey, msg: &CsfsMsg) -> Option<schnorr::Signature> {
         (**self).lookup_csfs_sig(pk, msg)
+    }
+
+    fn lookup_price_oracle_sig(
+        &self,
+        pk: &XOnlyPublicKey,
+        time: u64,
+    ) -> Option<(schnorr::Signature, i64, u64)> {
+        (**self).lookup_price_oracle_sig(pk, time)
     }
 }
 
@@ -875,6 +900,16 @@ macro_rules! impl_tuple_satisfier {
                 let &($(ref $ty,)*) = self;
                 $(
                     if let Some(result) = $ty.lookup_csfs_sig(pk, msg) {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
+
+            fn lookup_price_oracle_sig(&self, pk: &XOnlyPublicKey, time: u64) -> Option<(schnorr::Signature, i64, u64)> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_price_oracle_sig(pk, time) {
                         return Some(result);
                     }
                 )*

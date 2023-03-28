@@ -4,8 +4,9 @@
 
 use std::{fmt, hash};
 
+use bitcoin::hashes::Hash;
 use elements::script::Builder;
-use elements::{Transaction, TxOut};
+use elements::{secp256k1_zkp, Transaction, TxOut};
 
 use crate::expression::Tree;
 use crate::interpreter::{self, Stack};
@@ -53,9 +54,7 @@ pub trait Extension: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash {
     fn script_size(&self) -> usize;
 
     /// Validity rules for fragment in segwit context
-    fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError> {
-        Ok(())
-    }
+    fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError>;
 
     /// Validity rules for fragment in tap context
     fn tap_ctx_checks(&self) -> Result<(), ScriptContextError> {
@@ -144,6 +143,10 @@ impl Extension for NoExt {
     fn from_name_tree(_name: &str, _children: &[Tree<'_>]) -> Result<Self, ()> {
         // No extensions should not parse any extensions from String
         Err(())
+    }
+
+    fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError> {
+        Ok(())
     }
 }
 
@@ -277,6 +280,10 @@ impl<T: ExtParam> Extension for CovenantExt<T> {
     fn from_name_tree(name: &str, children: &[Tree<'_>]) -> Result<Self, ()> {
         try_from_arms!(Extension, T, from_name_tree, name, children,)
     }
+
+    fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError> {
+        all_arms_fn!(self, Extension, segwit_ctx_checks,)
+    }
 }
 
 impl ParseableExt for CovenantExt<CovExtArgs> {
@@ -399,4 +406,32 @@ impl<'tx, 'ptx, Pk: ToPublicKey> Satisfier<Pk> for TxEnv<'tx, 'ptx> {
     fn lookup_curr_inp(&self) -> Option<usize> {
         Some(self.idx)
     }
+}
+
+/// API to check sig from fragment `price_oracle_1`
+pub fn check_sig_price_oracle_1<C: secp256k1_zkp::Verification>(
+    secp: &secp256k1_zkp::Secp256k1<C>,
+    sig: &elements::secp256k1_zkp::schnorr::Signature,
+    pk: &elements::secp256k1_zkp::XOnlyPublicKey,
+    timestamp: u64,
+    price: u64,
+) -> bool {
+    let mut buf = Vec::with_capacity(16);
+    buf.extend(&timestamp.to_le_bytes());
+    buf.extend(&price.to_le_bytes());
+    let sha_msg = elements::hashes::sha256::Hash::hash(&buf);
+
+    let msg = elements::secp256k1_zkp::Message::from_slice(&sha_msg[..]).unwrap();
+    secp.verify_schnorr(&sig, &msg, &pk).is_ok()
+}
+
+/// [`secp256k1_zkp::Message`] for fragment `price_oracle_1`.
+/// To be used in for signing with schnorr signatures.
+pub fn sighash_msg_price_oracle_1(timestamp: u64, price: u64) -> secp256k1_zkp::Message {
+    let mut buf = Vec::with_capacity(16);
+    buf.extend(&timestamp.to_le_bytes());
+    buf.extend(&price.to_le_bytes());
+    let sha_msg = elements::hashes::sha256::Hash::hash(&buf);
+
+    elements::secp256k1_zkp::Message::from_slice(&sha_msg[..]).unwrap()
 }
