@@ -210,6 +210,15 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
     fn lookup_csfs_sig(&self, _pk: &XOnlyPublicKey, _msg: &CsfsMsg) -> Option<schnorr::Signature> {
         None
     }
+
+    /// Lookup price oracle signature
+    fn lookup_price_oracle_sig(
+        &self,
+        _pk: &XOnlyPublicKey,
+        _time: u64,
+    ) -> Option<(schnorr::Signature, i64, u64)> {
+        None
+    }
 }
 
 // Allow use of `()` as a "no conditions available" satisfier
@@ -441,6 +450,14 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
     fn lookup_csfs_sig(&self, pk: &XOnlyPublicKey, msg: &CsfsMsg) -> Option<schnorr::Signature> {
         (**self).lookup_csfs_sig(pk, msg)
     }
+
+    fn lookup_price_oracle_sig(
+        &self,
+        pk: &XOnlyPublicKey,
+        time: u64,
+    ) -> Option<(schnorr::Signature, i64, u64)> {
+        (**self).lookup_price_oracle_sig(pk, time)
+    }
 }
 
 impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'a mut S {
@@ -566,6 +583,14 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
 
     fn lookup_csfs_sig(&self, pk: &XOnlyPublicKey, msg: &CsfsMsg) -> Option<schnorr::Signature> {
         (**self).lookup_csfs_sig(pk, msg)
+    }
+
+    fn lookup_price_oracle_sig(
+        &self,
+        pk: &XOnlyPublicKey,
+        time: u64,
+    ) -> Option<(schnorr::Signature, i64, u64)> {
+        (**self).lookup_price_oracle_sig(pk, time)
     }
 }
 
@@ -880,6 +905,16 @@ macro_rules! impl_tuple_satisfier {
                 )*
                 None
             }
+
+            fn lookup_price_oracle_sig(&self, pk: &XOnlyPublicKey, time: u64) -> Option<(schnorr::Signature, i64, u64)> {
+                let &($(ref $ty,)*) = self;
+                $(
+                    if let Some(result) = $ty.lookup_price_oracle_sig(pk, time) {
+                        return Some(result);
+                    }
+                )*
+                None
+            }
         }
     }
 }
@@ -1085,6 +1120,22 @@ impl Satisfaction {
         Satisfaction {
             stack: Witness::Impossible,
             has_sig: false,
+        }
+    }
+
+    /// Construct a satisfaction that is impossible to satisfy with no sig
+    pub fn empty() -> Self {
+        Satisfaction {
+            stack: Witness::empty(),
+            has_sig: false,
+        }
+    }
+
+    /// Combines two satisfactions
+    pub fn combine(one: Self, two: Self) -> Self {
+        Satisfaction {
+            stack: Witness::combine(one.stack, two.stack),
+            has_sig: one.has_sig || two.has_sig,
         }
     }
 

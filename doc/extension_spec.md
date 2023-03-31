@@ -47,11 +47,26 @@ mod(x,y)                | `[X] [Y] DIV64 <1> EQUALVERIFY DROP`
 bitand(x,y)             | `[X] [Y] AND`
 bitor(x,y)              | `[X] [Y] OR (cannot fail)`
 bitxor(x,y)             | `[X] [Y] XOR (cannot fail)`
-
+price_oracle1(K,T)      | `2DUP TOALTSTACK <T> OP_GREATERTHANEQ VERIFY CAT SHA256 <K> CHECKSIGFROMSTACKVERIFY OP_FROMATLSTACK`
+price_oracle1_w(K,T)    | `TOALTSTACK 2DUP TOALTSTACK <T> OP_GREATERTHANEQ VERIFY CAT SHA256 <K> CHECKSIGFROMSTACKVERIFY OP_FROMATLSTACK FROMALTSTACK SWAP`
 
 - The division operation pushes the quotient(a//b) such that the remainder a%b (must be non-negative and less than |b|).
 - neg(a) returns -a, whereas bitinv(a) returns ~a.
-
+- `price_oracle1(K,T)` pushes a 64 bit LE integer(price) of signed with key K. It checks whether the price is signed
+with at a timestamp greater than T. Roughly spea
+    - K can be any `KEY` expression in descriptor format, but it not allowed to be uncompressed key.
+    - T is a 64 byte LE UXIX timestamp.
+    - `1` is the version of the oracle. There can be multiple versions of the
+oracle with different fragments. `price_oracle1` creates a schnorr signature with given key `K` on a message that is
+computed as: `sha256(T1||K)`
+    - The fragment consumes three inputs from stack top: [`signature`, `timestamp`, `price`] where `price` is the
+    stack top.
+    - `price_oracle1_w` must be used when the price_oracle is not the first leaf fragment. When price_oracle is the first
+    argument in fragment, use `price_oracle1`. For example,
+        - `num64_eq(price_oracle1_(K,T),10))` is valid, but `num64_eq(10,price_oracle1_(K,T))` is not.
+        - `num64_eq(price_oracle1_w(K,T),10))` is not valid, but `num64_eq(10,price_oracle1_w(K,T))` is also valid.
+        - `num64_eq(add(10,price_oracle1(K,T)),price_oracle1_w(K,T))` is not valid because `10` is the first leaf terminal.
+        - `num64_eq(add(price_oracle1(K,T),10),price_oracle1_w(K,T))` is valid because `price_oracle1` is the first leaf terminal.
 ## Comparison extensions
 
 As mentioned earlier, `NumExpr` directly does not fit in the miniscript model as it pushes a 8 byte computation result.

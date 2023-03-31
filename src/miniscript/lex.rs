@@ -87,6 +87,7 @@ pub enum Token<'s> {
     NumNeg1,
     ScriptNumToLe64,
     Le64ToScriptNum,
+    Dup2,
 }
 
 impl<'s> fmt::Display for Token<'s> {
@@ -323,6 +324,9 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token<'_>>, Error> {
             }
             script::Instruction::Op(opcodes::all::OP_LEFT) => {
                 ret.push(Token::Left);
+            }
+            script::Instruction::Op(opcodes::all::OP_2DUP) => {
+                ret.push(Token::Dup2);
             }
             script::Instruction::Op(opcodes::all::OP_CAT) => {
                 process_candidate_push(&mut ret)?;

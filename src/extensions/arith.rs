@@ -1,14 +1,19 @@
 //! Miniscript Arithmetic expressions:
 //! Note that this fragment is only supported for Tapscript context
+use std::convert::TryInto;
 use std::str::FromStr;
 use std::{cmp, error, fmt};
 
+use bitcoin::XOnlyPublicKey;
+use bitcoin_miniscript::MiniscriptKey;
 use elements::opcodes::all::*;
 use elements::sighash::Prevouts;
-use elements::{opcodes, script, Transaction};
+use elements::{opcodes, script, secp256k1_zkp as secp256k1, SchnorrSig, Transaction};
 
-use super::{ExtParam, IdxExpr, ParseableExt, TxEnv};
+use super::param::{ExtParamTranslator, TranslateExtParam};
+use super::{CovExtArgs, CsfsKey, ExtParam, IdxExpr, ParseableExt, TxEnv};
 use crate::expression::{FromTree, Tree};
+use crate::extensions::check_sig_price_oracle_1;
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::limits::MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
@@ -31,7 +36,7 @@ use crate::{
 ///     - Any of the operations overflow. Refer to tapscript opcodes spec for overflow specification
 ///     - In extreme cases, when recursive operations exceed 400 depth
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
-pub enum ExprInner {
+pub enum ExprInner<T: ExtParam> {
     /* leaf fragments/terminals */
     /// A constant i64 value
     /// Minimal push of this `<i64>`
@@ -60,59 +65,113 @@ pub enum ExprInner {
     /* Two children */
     /// Add two Arith expressions.
     /// `[X] [Y] ADD64 <1> EQUALVERIFY`
-    Add(Box<Expr>, Box<Expr>),
+    Add(Box<Expr<T>>, Box<Expr<T>>),
     /// Subtract (X-Y)
     /// `[X] [Y] SUB64 <1> EQUALVERIFY`
-    Sub(Box<Expr>, Box<Expr>),
+    Sub(Box<Expr<T>>, Box<Expr<T>>),
     /// Multiply two Expr expressions. (a*b)
     /// `[X] [Y] MUL64 <1> EQUALVERIFY`
-    Mul(Box<Expr>, Box<Expr>),
+    Mul(Box<Expr<T>>, Box<Expr<T>>),
     /// Divide two Expr expressions. (a//b)
     /// The division operation pushes the quotient(a//b) such that the remainder a%b
     /// (must be non-negative and less than |b|).
     /// `[X] [Y] DIV64 <1> EQUALVERIFY NIP`
-    Div(Box<Expr>, Box<Expr>),
+    Div(Box<Expr<T>>, Box<Expr<T>>),
     /// Modulo operation (a % b)
     /// The division operation the remainder a%b (must be non-negative and less than |b|).
     /// `[X] [Y] DIV64 <1> EQUALVERIFY DROP`
-    Mod(Box<Expr>, Box<Expr>),
+    Mod(Box<Expr<T>>, Box<Expr<T>>),
     /// BitWise And (a & b)
     /// `[X] [Y] AND` (cannot fail)
-    BitAnd(Box<Expr>, Box<Expr>),
+    BitAnd(Box<Expr<T>>, Box<Expr<T>>),
     /// BitWise or (a | b)
     /// `[X] [Y] OR` (cannot fail)
-    BitOr(Box<Expr>, Box<Expr>),
+    BitOr(Box<Expr<T>>, Box<Expr<T>>),
     /// BitWise or (a ^ b)
     /// `[X] [Y] XOR` (cannot fail)
-    Xor(Box<Expr>, Box<Expr>),
+    Xor(Box<Expr<T>>, Box<Expr<T>>),
     /* One child*/
     /// BitWise invert (!a)
     /// `[X] INVERT` (cannot fail)
-    Invert(Box<Expr>),
+    Invert(Box<Expr<T>>),
     /// Negate -a
     /// `[X] NEG64 <1> EQUALVERIFY`
-    Negate(Box<Expr>),
+    Negate(Box<Expr<T>>),
+
+    /// Push the price as LE64 signed from oracle.
+    /// `2DUP TOALTSTACK <T> OP_GREATERTHANEQ VERIFY CAT SHA256 <K> CHECKSIGFROMSTACKVERIFY OP_FROMATLSTACK`
+    /// The fragment checks that the input timestamp is less than time at which the price was signed with
+    /// the given oracle key. The asset of which price is being checked is implicitly decided by the
+    /// public key
+    PriceOracle1(T, u64),
+    /// Same as [`Self::PriceOracle1`] but wrapped in an `TOALTSTACK` and `FROMALTSTACK` and SWAP
+    /// `TOALTSTACK 2DUP TOALTSTACK <T> OP_GREATERTHANEQ VERIFY CAT SHA256 <K> CHECKSIGFROMSTACKVERIFY OP_FROMATLSTACK FROMALTSTACK SWAP`
+    /// We need to swap at the end to make sure that the price pushed by this fragment is on top of the stack
+    /// In regular miniscript, all operations are commutative, but here some operations like sub and div are not and hence
+    /// we need to maintain the exact order of operations.
+    PriceOracle1W(T, u64),
+}
+
+/// An iterator over [`ExprInner`] that yields the terminal nodes
+/// in the expression tree.
+#[derive(Debug, Clone)]
+pub struct ExprIter<'a, T: ExtParam> {
+    stack: Vec<&'a ExprInner<T>>,
+}
+
+impl<'a, T: ExtParam> Iterator for ExprIter<'a, T> {
+    type Item = &'a ExprInner<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(expr) = self.stack.pop() {
+            match expr {
+                ExprInner::Const(_)
+                | ExprInner::CurrInputIdx
+                | ExprInner::Input(_)
+                | ExprInner::Output(_)
+                | ExprInner::InputIssue(_)
+                | ExprInner::InputReIssue(_)
+                | ExprInner::PriceOracle1(_, _)
+                | ExprInner::PriceOracle1W(_, _) => return Some(expr),
+                ExprInner::Add(a, b)
+                | ExprInner::Sub(a, b)
+                | ExprInner::Mul(a, b)
+                | ExprInner::Div(a, b)
+                | ExprInner::Mod(a, b)
+                | ExprInner::BitAnd(a, b)
+                | ExprInner::BitOr(a, b)
+                | ExprInner::Xor(a, b) => {
+                    self.stack.push(b.as_inner());
+                    self.stack.push(a.as_inner());
+                }
+                ExprInner::Invert(a) | ExprInner::Negate(a) => {
+                    self.stack.push(a.as_inner());
+                }
+            }
+        }
+        None
+    }
 }
 
 /// [`ExprInner`] with some values cached
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
-pub struct Expr {
+pub struct Expr<T: ExtParam> {
     /// The actual inner expression
-    inner: ExprInner,
+    inner: ExprInner<T>,
     /// The cached script size
     script_size: usize,
     /// depth of expression thunk/tree
     depth: usize,
 }
 
-impl Expr {
+impl<T: ExtParam> Expr<T> {
     /// Obtains the inner
-    pub fn into_inner(self) -> ExprInner {
+    pub fn into_inner(self) -> ExprInner<T> {
         self.inner
     }
 
     /// Obtains the reference to inner
-    pub fn as_inner(&self) -> &ExprInner {
+    pub fn as_inner(&self) -> &ExprInner<T> {
         &self.inner
     }
 
@@ -127,7 +186,7 @@ impl Expr {
     }
 
     /// Creates [`Expr`] from [`ExprInner`]
-    pub fn from_inner(inner: ExprInner) -> Self {
+    pub fn from_inner(inner: ExprInner<T>) -> Self {
         let (script_size, depth) = match &inner {
             ExprInner::Const(_c) => (8 + 1, 0),
             ExprInner::CurrInputIdx => (4, 0), // INSPECTCURRENTINPUTINDEX INPSECTINPUTVALUE <1> EQUALVERIFY
@@ -187,6 +246,18 @@ impl Expr {
                 x.script_size + 3, // [X] NEG64 <1> EQUALVERIFY
                 x.depth + 1,
             ),
+            ExprInner::PriceOracle1(_pk, _time) => (
+                (32 + 1) // 32 byte key + push
+                + (8 + 1) // 8 byte time push
+                + 8, // opcodes,
+                0,
+            ),
+            ExprInner::PriceOracle1W(_pk, _time) => (
+                (32 + 1) // 32 byte key + push
+                + (8 + 1) // 8 byte time push
+                + 11, // opcodes,
+                0,
+            ),
         };
         Self {
             inner,
@@ -195,8 +266,42 @@ impl Expr {
         }
     }
 
+    /// Obtains an iterator over terminals nodes
+    pub fn iter_terminals(&self) -> impl Iterator<Item = &ExprInner<T>> {
+        ExprIter {
+            stack: vec![&self.inner],
+        }
+    }
+}
+
+/// Type Check errors in [`Expr`]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeError {
+    /// PriceOracle1W is the first element in the expression
+    PriceOracle1WFirst,
+    /// PriceOracle1 is *not* the first element in the expression
+    PriceOracle1Missing,
+}
+
+impl std::fmt::Display for TypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TypeError::PriceOracle1WFirst => {
+                write!(f, "PriceOracle1W is the first element in the expression")
+            }
+            TypeError::PriceOracle1Missing => write!(
+                f,
+                "PriceOracle1 is *not* the first element in the expression"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for TypeError {}
+
+impl Expr<CovExtArgs> {
     /// Evaluate this expression
-    fn eval(&self, env: &TxEnv) -> Result<i64, EvalError> {
+    fn eval(&self, env: &TxEnv, s: &mut interpreter::Stack) -> Result<i64, EvalError> {
         match &self.inner {
             ExprInner::Const(c) => Ok(*c),
             ExprInner::CurrInputIdx => {
@@ -259,52 +364,254 @@ impl Expr {
                     .ok_or(EvalError::NonExplicitInputReIssuance(i))
             }
             ExprInner::Add(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 x.checked_add(y).ok_or(EvalError::AddOverflow(x, y))
             }
             ExprInner::Sub(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 x.checked_sub(y).ok_or(EvalError::SubOverflow(x, y))
             }
             ExprInner::Mul(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 x.checked_mul(y).ok_or(EvalError::MulOverflow(x, y))
             }
             ExprInner::Div(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 x.checked_div_euclid(y).ok_or(EvalError::DivOverflow(x, y))
             }
             ExprInner::Mod(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 x.checked_rem_euclid(y).ok_or(EvalError::ModOverflow(x, y))
             }
             ExprInner::BitAnd(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 Ok(x & y)
             }
             ExprInner::BitOr(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 Ok(x | y)
             }
             ExprInner::Xor(x, y) => {
-                let x = x.eval(env)?;
-                let y = y.eval(env)?;
+                let x = x.eval(env, s)?;
+                let y = y.eval(env, s)?;
                 Ok(x ^ y)
             }
             ExprInner::Invert(x) => {
-                let x = x.eval(env)?;
+                let x = x.eval(env, s)?;
                 Ok(!x)
             }
             ExprInner::Negate(x) => {
-                let x = x.eval(env)?;
+                let x = x.eval(env, s)?;
                 x.checked_neg().ok_or(EvalError::NegOverflow(x))
+            }
+            ExprInner::PriceOracle1(pk, timestamp) | ExprInner::PriceOracle1W(pk, timestamp) => {
+                let x_only_pk = if let CovExtArgs::XOnlyKey(pk) = pk {
+                    pk.0
+                } else {
+                    unreachable!("Construction ensures that Param is only of type XOnlyKey")
+                };
+                let price = s.pop().ok_or(EvalError::MissingPrice)?;
+                let price = price.try_push().map_err(|_| EvalError::Price8BytePush)?;
+                let price_u64 =
+                    u64::from_le_bytes(price.try_into().map_err(|_| EvalError::Price8BytePush)?);
+
+                let time_signed = s.pop().ok_or(EvalError::MissingTimestamp)?;
+                let time_signed = time_signed
+                    .try_push()
+                    .map_err(|_| EvalError::Timstamp8BytePush)?;
+                let time_signed_u64 = u64::from_le_bytes(
+                    time_signed
+                        .try_into()
+                        .map_err(|_| EvalError::Timstamp8BytePush)?,
+                );
+                let sig = s.pop().ok_or(EvalError::MissingOracleSignature)?;
+                let schnorr_sig_sl = sig.try_push().map_err(|_| EvalError::MalformedSig)?;
+                let schnorr_sig = secp256k1::schnorr::Signature::from_slice(&schnorr_sig_sl)
+                    .map_err(|_| EvalError::MalformedSig)?;
+                let secp = secp256k1::Secp256k1::verification_only();
+
+                if *timestamp < time_signed_u64 {
+                    return Err(EvalError::TimestampInFuture);
+                }
+
+                if check_sig_price_oracle_1(&secp, &schnorr_sig, &x_only_pk, *timestamp, price_u64)
+                {
+                    let price_i64 =
+                        u64::try_into(price_u64).map_err(|_| EvalError::PriceOverflow)?;
+                    Ok(price_i64)
+                } else {
+                    Err(EvalError::InvalidSignature)
+                }
+            }
+        }
+    }
+
+    /// Evaluate this expression
+    fn satisfy<Pk: MiniscriptKey + ToPublicKey>(
+        &self,
+        env: &TxEnv,
+        s: &Satisfier<Pk>,
+    ) -> Result<(i64, Satisfaction), EvalError> {
+        match &self.inner {
+            ExprInner::Const(c) => Ok((*c, Satisfaction::empty())),
+            ExprInner::CurrInputIdx => {
+                if env.idx >= env.spent_utxos.len() {
+                    return Err(EvalError::UtxoIndexOutOfBounds(
+                        env.idx,
+                        env.spent_utxos.len(),
+                    ));
+                }
+                let res = env.spent_utxos[env.idx]
+                    .value
+                    .explicit()
+                    .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
+                    .ok_or(EvalError::NonExplicitInput(env.idx))?;
+                Ok((res, Satisfaction::empty()))
+            }
+            ExprInner::Input(i) => {
+                let i = i.eval(env)?;
+                if i >= env.spent_utxos.len() {
+                    return Err(EvalError::UtxoIndexOutOfBounds(i, env.spent_utxos.len()));
+                }
+                let res = env.spent_utxos[i]
+                    .value
+                    .explicit()
+                    .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
+                    .ok_or(EvalError::NonExplicitInput(i))?;
+                Ok((res, Satisfaction::empty()))
+            }
+            ExprInner::Output(i) => {
+                let i = i.eval(env)?;
+                if i >= env.tx.output.len() {
+                    return Err(EvalError::OutputIndexOutOfBounds(i, env.tx.output.len()));
+                }
+                let res = env.tx.output[i]
+                    .value
+                    .explicit()
+                    .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
+                    .ok_or(EvalError::NonExplicitOutput(i))?;
+                Ok((res, Satisfaction::empty()))
+            }
+            ExprInner::InputIssue(i) => {
+                let i = i.eval(env)?;
+                if i >= env.tx.input.len() {
+                    return Err(EvalError::InputIndexOutOfBounds(i, env.tx.input.len()));
+                }
+                let res = env.tx.input[i]
+                    .asset_issuance
+                    .amount
+                    .explicit()
+                    .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
+                    .ok_or(EvalError::NonExplicitInputIssuance(i))?;
+                Ok((res, Satisfaction::empty()))
+            }
+            ExprInner::InputReIssue(i) => {
+                let i = i.eval(env)?;
+                if i >= env.tx.input.len() {
+                    return Err(EvalError::InputIndexOutOfBounds(i, env.tx.input.len()));
+                }
+                let res = env.tx.input[i]
+                    .asset_issuance
+                    .inflation_keys
+                    .explicit()
+                    .map(|x| x as i64) // safe conversion bitcoin values from u64 to i64 because 21 mil
+                    .ok_or(EvalError::NonExplicitInputReIssuance(i))?;
+                Ok((res, Satisfaction::empty()))
+            }
+            ExprInner::Add(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let res = x.checked_add(y).ok_or(EvalError::AddOverflow(x, y))?;
+                let sat = Satisfaction::combine(sat_y, sat_x);
+                Ok((res, sat))
+            }
+            ExprInner::Sub(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let res = x.checked_sub(y).ok_or(EvalError::SubOverflow(x, y))?;
+                let sat = Satisfaction::combine(sat_y, sat_x);
+                Ok((res, sat))
+            }
+            ExprInner::Mul(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let res = x.checked_mul(y).ok_or(EvalError::MulOverflow(x, y))?;
+                let sat = Satisfaction::combine(sat_y, sat_x);
+                Ok((res, sat))
+            }
+            ExprInner::Div(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let res = x
+                    .checked_div_euclid(y)
+                    .ok_or(EvalError::DivOverflow(x, y))?;
+                let sat = Satisfaction::combine(sat_y, sat_x);
+                Ok((res, sat))
+            }
+            ExprInner::Mod(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let res = x
+                    .checked_rem_euclid(y)
+                    .ok_or(EvalError::ModOverflow(x, y))?;
+                let sat = Satisfaction::combine(sat_y, sat_x);
+                Ok((res, sat))
+            }
+            ExprInner::BitAnd(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let sat = Satisfaction::combine(sat_y, sat_x);
+                Ok((x & y, sat))
+            }
+            ExprInner::BitOr(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let sat = Satisfaction::combine(sat_y, sat_x);
+                Ok((x | y, sat))
+            }
+            ExprInner::Xor(x, y) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let (y, sat_y) = y.satisfy(env, s)?;
+                let sat = Satisfaction::combine(sat_y, sat_x);
+                Ok((x ^ y, sat))
+            }
+            ExprInner::Invert(x) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                Ok((!x, sat_x))
+            }
+            ExprInner::Negate(x) => {
+                let (x, sat_x) = x.satisfy(env, s)?;
+                let res = x.checked_neg().ok_or(EvalError::NegOverflow(x))?;
+                Ok((res, sat_x))
+            }
+            ExprInner::PriceOracle1(pk, time) | ExprInner::PriceOracle1W(pk, time) => {
+                let pk = if let CovExtArgs::XOnlyKey(xpk) = pk {
+                    xpk.0
+                } else {
+                    unreachable!("PriceOracle1 constructed with only xonly key")
+                };
+                match s.lookup_price_oracle_sig(&pk, *time) {
+                    Some((sig, price, time)) => {
+                        let wit = Witness::Stack(vec![
+                            sig.as_ref().to_vec(),
+                            time.to_le_bytes().to_vec(),
+                            price.to_le_bytes().to_vec(),
+                        ]);
+                        let sat = Satisfaction {
+                            stack: wit,
+                            has_sig: false, // Even though this has sig, it is not a signature over the tx and the tx is still malleable
+                        };
+                        Ok((price, sat))
+                    }
+                    None => Err(EvalError::MissingOracleSignature),
+                }
             }
         }
     }
@@ -409,6 +716,47 @@ impl Expr {
                 .push_opcode(OP_NEG64)
                 .push_int(1)
                 .push_opcode(OP_EQUALVERIFY),
+            ExprInner::PriceOracle1(pk, t) => {
+                let xpk = if let CovExtArgs::XOnlyKey(xpk) = pk {
+                    xpk.0
+                } else {
+                    unreachable!("PriceOracle1 constructor ensures that CovExtArgs is XOnlyKey");
+                };
+                // `2DUP TOALTSTACK <T> OP_GREATERTHANEQ VERIFY CAT SHA256 <K> CHECKSIGFROMSTACKVERIFY OP_FROMATLSTACK`
+                builder
+                    .push_opcode(OP_2DUP)
+                    .push_opcode(OP_TOALTSTACK)
+                    .push_slice(&t.to_le_bytes())
+                    .push_opcode(OP_GREATERTHANOREQUAL64)
+                    .push_opcode(OP_VERIFY)
+                    .push_opcode(OP_CAT)
+                    .push_opcode(OP_SHA256)
+                    .push_slice(&xpk.serialize())
+                    .push_opcode(OP_CHECKSIGFROMSTACKVERIFY)
+                    .push_opcode(OP_FROMALTSTACK)
+            }
+            ExprInner::PriceOracle1W(pk, t) => {
+                let xpk = if let CovExtArgs::XOnlyKey(xpk) = pk {
+                    xpk.0
+                } else {
+                    unreachable!("PriceOracle1 constructor ensures that CovExtArgs is XOnlyKey");
+                };
+                // `2DUP TOALTSTACK <T> OP_GREATERTHANEQ VERIFY CAT SHA256 <K> CHECKSIGFROMSTACKVERIFY OP_FROMATLSTACK OP_SWAP`
+                builder
+                    .push_opcode(OP_TOALTSTACK)
+                    .push_opcode(OP_2DUP)
+                    .push_opcode(OP_TOALTSTACK)
+                    .push_slice(&t.to_le_bytes())
+                    .push_opcode(OP_GREATERTHANOREQUAL64)
+                    .push_opcode(OP_VERIFY)
+                    .push_opcode(OP_CAT)
+                    .push_opcode(OP_SHA256)
+                    .push_slice(&xpk.serialize())
+                    .push_opcode(OP_CHECKSIGFROMSTACKVERIFY)
+                    .push_opcode(OP_FROMALTSTACK)
+                    .push_opcode(OP_FROMALTSTACK)
+                    .push_opcode(OP_SWAP)
+            }
         }
     }
 
@@ -515,6 +863,24 @@ impl Expr {
         {
             let (i, e) = IdxExpr::from_tokens(tks, e - 8)?;
             Some((Expr::from_inner(ExprInner::InputReIssue(i)), e))
+        } else if let Some(
+            &[Tk::Dup2, Tk::ToAltStack, Tk::Bytes8(time), Tk::Geq64, Tk::Verify, Tk::Cat, Tk::Sha256, Tk::Bytes32(xpk), Tk::CheckSigFromStackVerify, Tk::FromAltStack],
+        ) = tks.get(e.checked_sub(10)?..e)
+        {
+            let time = u64::from_le_bytes(time.try_into().expect("8 bytes"));
+            let xpk = XOnlyPublicKey::from_slice(xpk).ok()?;
+            let key = CovExtArgs::csfs_key(xpk);
+            let expr = Expr::from_inner(ExprInner::PriceOracle1(key, time));
+            Some((expr, e - 10))
+        } else if let Some(
+            &[Tk::ToAltStack, Tk::Dup2, Tk::ToAltStack, Tk::Bytes8(time), Tk::Geq64, Tk::Verify, Tk::Cat, Tk::Sha256, Tk::Bytes32(xpk), Tk::CheckSigFromStackVerify, Tk::FromAltStack, Tk::FromAltStack, Tk::Swap],
+        ) = tks.get(e.checked_sub(13)?..e)
+        {
+            let time = u64::from_le_bytes(time.try_into().expect("8 bytes"));
+            let xpk = XOnlyPublicKey::from_slice(xpk).ok()?;
+            let key = CovExtArgs::csfs_key(xpk);
+            let expr = Expr::from_inner(ExprInner::PriceOracle1W(key, time));
+            Some((expr, e - 13))
         } else {
             None
         }
@@ -525,84 +891,192 @@ impl Expr {
 /// Expr cannot be directly used a miniscript fragment because it pushes a 64 bit
 /// value on stack. Two expressions can be combined with Arith to something is
 /// of Base type B to be used in miniscript expressions
-#[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
-pub enum Arith {
+///
+/// This struct represents unchecked arith expressions that could be invalid.
+/// As of now, [`Expr`] can be invalid only if
+///     - PriceOracle1 is not the first leaf in the tree
+///     - PriceOracle1W is the first leaf in the tree
+#[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Clone, Debug)]
+pub enum ArithInner<T: ExtParam> {
     /// Eq
     /// `[X] [Y] EQUAL`
-    Eq(Expr, Expr),
+    Eq(Expr<T>, Expr<T>),
     /// Lt
     /// `[X] [Y] LESSTHAN`
-    Lt(Expr, Expr),
+    Lt(Expr<T>, Expr<T>),
     /// Leq
     /// `[X] [Y] LESSTHANOREQUAL`
-    Leq(Expr, Expr),
+    Leq(Expr<T>, Expr<T>),
     /// Gt
     /// `[X] [Y] GREATERTHAN`
-    Gt(Expr, Expr),
+    Gt(Expr<T>, Expr<T>),
     /// Geq
     /// `[X] [Y] GREATERTHANOREQUAL`
-    Geq(Expr, Expr),
+    Geq(Expr<T>, Expr<T>),
 }
 
-impl Arith {
+/// Wrapper around [`ArithInner`] that ensures that the expression is valid.
+/// See [`ArithInner`] for more details.
+///
+/// Note that the library allows construction of unchecked [`Expr], but
+/// [`Arith`] is always checked.
+#[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
+pub struct Arith<T: ExtParam> {
+    /// The underlying expression
+    expr: ArithInner<T>,
+}
+
+impl<T: ExtParam> Arith<T> {
+    /// Create a new Arith expression. This is the only constructor
+    pub fn new(expr: ArithInner<T>) -> Result<Self, TypeError> {
+        {
+            // Borrow checker scope
+            let (a, b) = match &expr {
+                ArithInner::Eq(ref a, ref b)
+                | ArithInner::Lt(ref a, ref b)
+                | ArithInner::Leq(ref a, ref b)
+                | ArithInner::Gt(ref a, ref b)
+                | ArithInner::Geq(ref a, ref b) => (a, b),
+            };
+            let mut iter = a.iter_terminals();
+            if let Some(ExprInner::PriceOracle1W(_, _)) = iter.next() {
+                return Err(TypeError::PriceOracle1WFirst);
+            }
+            // Note iter here has consumed the first element
+            if iter.any(|x| {
+                if let ExprInner::PriceOracle1(_, _) = x {
+                    true
+                } else {
+                    false
+                }
+            }) {
+                return Err(TypeError::PriceOracle1Missing);
+            }
+            // All the elements in b should be PriceOracle1W
+            if b.iter_terminals().any(|x| {
+                if let ExprInner::PriceOracle1(_, _) = x {
+                    true
+                } else {
+                    false
+                }
+            }) {
+                return Err(TypeError::PriceOracle1Missing);
+            }
+        }
+        Ok(Arith { expr })
+    }
+
+    /// Obtains the inner expression
+    pub fn inner(&self) -> &ArithInner<T> {
+        &self.expr
+    }
+}
+
+impl<T: ExtParam> Arith<T> {
     /// Obtains the depth of this expression
     pub fn depth(&self) -> usize {
-        match self {
-            Arith::Eq(x, y)
-            | Arith::Lt(x, y)
-            | Arith::Leq(x, y)
-            | Arith::Gt(x, y)
-            | Arith::Geq(x, y) => cmp::max(x.depth, y.depth),
+        match &self.expr {
+            ArithInner::Eq(x, y)
+            | ArithInner::Lt(x, y)
+            | ArithInner::Leq(x, y)
+            | ArithInner::Gt(x, y)
+            | ArithInner::Geq(x, y) => cmp::max(x.depth, y.depth),
         }
     }
 
     /// Obtains the script size
     pub fn script_size(&self) -> usize {
-        match self {
-            Arith::Eq(x, y)
-            | Arith::Lt(x, y)
-            | Arith::Leq(x, y)
-            | Arith::Gt(x, y)
-            | Arith::Geq(x, y) => x.script_size + y.script_size + 1,
+        match &self.expr {
+            ArithInner::Eq(x, y)
+            | ArithInner::Lt(x, y)
+            | ArithInner::Leq(x, y)
+            | ArithInner::Gt(x, y)
+            | ArithInner::Geq(x, y) => x.script_size + y.script_size + 1,
         }
     }
+}
 
+impl Arith<CovExtArgs> {
     /// Evaluate this expression with context given transaction and spent utxos
-    pub fn eval(&self, env: &TxEnv) -> Result<bool, EvalError> {
-        let res = match self {
-            Arith::Eq(x, y) => x.eval(env)? == y.eval(env)?,
-            Arith::Lt(x, y) => x.eval(env)? < y.eval(env)?,
-            Arith::Leq(x, y) => x.eval(env)? <= y.eval(env)?,
-            Arith::Gt(x, y) => x.eval(env)? > y.eval(env)?,
-            Arith::Geq(x, y) => x.eval(env)? >= y.eval(env)?,
+    pub fn eval(&self, env: &TxEnv, s: &mut interpreter::Stack) -> Result<bool, EvalError> {
+        let res = match &self.expr {
+            ArithInner::Eq(x, y) => x.eval(env, s)? == y.eval(env, s)?,
+            ArithInner::Lt(x, y) => x.eval(env, s)? < y.eval(env, s)?,
+            ArithInner::Leq(x, y) => x.eval(env, s)? <= y.eval(env, s)?,
+            ArithInner::Gt(x, y) => x.eval(env, s)? > y.eval(env, s)?,
+            ArithInner::Geq(x, y) => x.eval(env, s)? >= y.eval(env, s)?,
         };
         Ok(res)
     }
 
+    /// Internal satisfaction helper for Arith.
+    /// This allows us to cleanly write code that we can use "?" for early
+    /// returns.
+    /// The trait implementation of satisfy just calls this function with unwrap_or
+    /// impossible.
+    pub fn satisfy_helper<Pk: ToPublicKey>(
+        &self,
+        env: &TxEnv,
+        sat: &Satisfier<Pk>,
+    ) -> Result<Satisfaction, EvalError> {
+        let (res, sat_a, sat_b) = match &self.expr {
+            ArithInner::Eq(a, b) => {
+                let (a, sat_a) = a.satisfy(env, sat)?;
+                let (b, sat_b) = b.satisfy(env, sat)?;
+                (a == b, sat_a, sat_b)
+            }
+            ArithInner::Lt(a, b) => {
+                let (a, sat_a) = a.satisfy(env, sat)?;
+                let (b, sat_b) = b.satisfy(env, sat)?;
+                (a < b, sat_a, sat_b)
+            }
+            ArithInner::Leq(a, b) => {
+                let (a, sat_a) = a.satisfy(env, sat)?;
+                let (b, sat_b) = b.satisfy(env, sat)?;
+                (a <= b, sat_a, sat_b)
+            }
+            ArithInner::Gt(a, b) => {
+                let (a, sat_a) = a.satisfy(env, sat)?;
+                let (b, sat_b) = b.satisfy(env, sat)?;
+                (a > b, sat_a, sat_b)
+            }
+            ArithInner::Geq(a, b) => {
+                let (a, sat_a) = a.satisfy(env, sat)?;
+                let (b, sat_b) = b.satisfy(env, sat)?;
+                (a >= b, sat_a, sat_b)
+            }
+        };
+        if res {
+            Ok(Satisfaction::combine(sat_b, sat_a))
+        } else {
+            Ok(Satisfaction::impossible())
+        }
+    }
+
     /// Push this script to builder
     pub fn push_to_builder(&self, builder: script::Builder) -> script::Builder {
-        match self {
-            Arith::Eq(x, y) => {
+        match &self.expr {
+            ArithInner::Eq(x, y) => {
                 let builder = x.push_to_builder(builder);
                 let builder = y.push_to_builder(builder);
                 builder.push_opcode(OP_EQUAL)
             }
-            Arith::Lt(x, y) => {
+            ArithInner::Lt(x, y) => {
                 let builder = x.push_to_builder(builder);
                 let builder = y.push_to_builder(builder);
                 builder.push_opcode(OP_LESSTHAN64)
             }
-            Arith::Leq(x, y) => {
+            ArithInner::Leq(x, y) => {
                 let builder = x.push_to_builder(builder);
                 let builder = y.push_to_builder(builder);
                 builder.push_opcode(OP_LESSTHANOREQUAL64)
             }
-            Arith::Gt(x, y) => {
+            ArithInner::Gt(x, y) => {
                 let builder = x.push_to_builder(builder);
                 let builder = y.push_to_builder(builder);
                 builder.push_opcode(OP_GREATERTHAN64)
             }
-            Arith::Geq(x, y) => {
+            ArithInner::Geq(x, y) => {
                 let builder = x.push_to_builder(builder);
                 let builder = y.push_to_builder(builder);
                 builder.push_opcode(OP_GREATERTHANOREQUAL64)
@@ -620,18 +1094,19 @@ impl Arith {
         let last_opcode = tokens.last()?;
         let (y, pos) = Expr::from_tokens(tokens, tokens.len() - 1)?;
         let (x, pos) = Expr::from_tokens(tokens, pos)?;
-        match last_opcode {
-            Tk::Equal => Some((Self::Eq(x, y), pos)),
-            Tk::Le64 => Some((Self::Lt(x, y), pos)),
-            Tk::Leq64 => Some((Self::Leq(x, y), pos)),
-            Tk::Ge64 => Some((Self::Gt(x, y), pos)),
-            Tk::Geq64 => Some((Self::Geq(x, y), pos)),
-            _ => None,
-        }
+        let (inner, pos) = match last_opcode {
+            Tk::Equal => (ArithInner::Eq(x, y), pos),
+            Tk::Le64 => (ArithInner::Lt(x, y), pos),
+            Tk::Leq64 => (ArithInner::Leq(x, y), pos),
+            Tk::Ge64 => (ArithInner::Gt(x, y), pos),
+            Tk::Geq64 => (ArithInner::Geq(x, y), pos),
+            _ => return None,
+        };
+        Some((Arith::new(inner).ok()?, pos))
     }
 }
 
-impl fmt::Display for Expr {
+impl<T: ExtParam> fmt::Display for Expr<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.inner {
             ExprInner::Const(c) => write!(f, "{}", c),
@@ -650,11 +1125,13 @@ impl fmt::Display for Expr {
             ExprInner::Xor(x, y) => write!(f, "bitxor({},{})", x, y),
             ExprInner::Invert(x) => write!(f, "bitinv({})", x),
             ExprInner::Negate(x) => write!(f, "neg({})", x),
+            ExprInner::PriceOracle1(pk, t) => write!(f, "price_oracle1({},{})", pk, t),
+            ExprInner::PriceOracle1W(pk, t) => write!(f, "price_oracle1_w({},{})", pk, t), // same syntax
         }
     }
 }
 
-impl fmt::Debug for Expr {
+impl<T: ExtParam> fmt::Debug for Expr<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.inner {
             ExprInner::Const(c) => write!(f, "{:?}", c),
@@ -673,11 +1150,13 @@ impl fmt::Debug for Expr {
             ExprInner::Xor(x, y) => write!(f, "bitxor({:?},{:?})", x, y),
             ExprInner::Invert(x) => write!(f, "bitinv({:?})", x),
             ExprInner::Negate(x) => write!(f, "neg({:?})", x),
+            ExprInner::PriceOracle1(pk, t) => write!(f, "price_oracle1({:?},{:?})", pk, t),
+            ExprInner::PriceOracle1W(pk, t) => write!(f, "price_oracle1_w({:?},{:?})", pk, t), // same syntax as price_oracle1
         }
     }
 }
 
-impl FromStr for Expr {
+impl<T: ExtParam> FromStr for Expr<T> {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -686,31 +1165,31 @@ impl FromStr for Expr {
     }
 }
 
-impl FromTree for Box<Expr> {
+impl<T: ExtParam> FromTree for Box<Expr<T>> {
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         expression::FromTree::from_tree(top).map(Box::new)
     }
 }
 
-impl FromTree for Expr {
+impl<T: ExtParam> FromTree for Expr<T> {
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
-        fn unary<F>(top: &expression::Tree<'_>, frag: F) -> Result<Expr, Error>
+        fn unary<F, T: ExtParam>(top: &expression::Tree<'_>, frag: F) -> Result<Expr<T>, Error>
         where
-            F: FnOnce(Box<Expr>) -> ExprInner,
+            F: FnOnce(Box<Expr<T>>) -> ExprInner<T>,
         {
-            let l: Expr = FromTree::from_tree(&top.args[0])?;
+            let l: Expr<T> = FromTree::from_tree(&top.args[0])?;
             Ok(Expr::from_inner(frag(Box::new(l))))
         }
 
-        fn binary<F>(top: &expression::Tree<'_>, frag: F) -> Result<Expr, Error>
+        fn binary<F, T: ExtParam>(top: &expression::Tree<'_>, frag: F) -> Result<Expr<T>, Error>
         where
-            F: FnOnce(Box<Expr>, Box<Expr>) -> ExprInner,
+            F: FnOnce(Box<Expr<T>>, Box<Expr<T>>) -> ExprInner<T>,
         {
-            let l: Expr = FromTree::from_tree(&top.args[0])?;
-            let r: Expr = FromTree::from_tree(&top.args[1])?;
+            let l: Expr<T> = FromTree::from_tree(&top.args[0])?;
+            let r: Expr<T> = FromTree::from_tree(&top.args[1])?;
             Ok(Expr::from_inner(frag(Box::new(l), Box::new(r))))
         }
-        match (top.name, top.args.len()) {
+        let res = match (top.name, top.args.len()) {
             ("inp_v", 1) => Ok(Expr::from_inner(expression::unary(top, ExprInner::Input)?)),
             ("curr_inp_v", 0) => Ok(Expr::from_inner(ExprInner::CurrInputIdx)),
             ("out_v", 1) => Ok(Expr::from_inner(expression::unary(top, ExprInner::Output)?)),
@@ -722,6 +1201,20 @@ impl FromTree for Expr {
                 top,
                 ExprInner::InputReIssue,
             )?)),
+            ("price_oracle1", 2) | ("price_oracle1_w", 2) => {
+                if !top.args[0].args.is_empty() || !top.args[1].args.is_empty() {
+                    return Err(Error::Unexpected(String::from(
+                        "price_oracle1 expects 2 terminal arguments",
+                    )));
+                }
+                let pk = T::arg_from_str(&top.args[0].name, top.name, 0)?;
+                let t: u64 = expression::parse_num::<u64>(&top.args[1].name)?;
+                if top.name == "price_oracle1" {
+                    return Ok(Expr::from_inner(ExprInner::PriceOracle1(pk, t)));
+                } else {
+                    return Ok(Expr::from_inner(ExprInner::PriceOracle1W(pk, t)));
+                }
+            }
             ("add", 2) => binary(top, ExprInner::Add),
             ("sub", 2) => binary(top, ExprInner::Sub),
             ("mul", 2) => binary(top, ExprInner::Mul),
@@ -745,11 +1238,12 @@ impl FromTree for Expr {
                 top.name,
                 top.args.len(),
             ))),
-        }
+        };
+        res
     }
 }
 
-impl FromStr for Arith {
+impl<T: ExtParam> FromStr for ArithInner<T> {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -758,21 +1252,30 @@ impl FromStr for Arith {
     }
 }
 
-impl FromTree for Box<Arith> {
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
-        Arith::from_tree(top).map(Box::new)
+impl<T: ExtParam> FromStr for Arith<T> {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let inner = ArithInner::from_str(s)?;
+        Ok(Arith::new(inner).map_err(|_| Error::Unexpected(String::from("Arith::new")))?)
     }
 }
 
-impl FromTree for Arith {
+impl<T: ExtParam> FromTree for Box<ArithInner<T>> {
+    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
+        ArithInner::from_tree(top).map(Box::new)
+    }
+}
+
+impl<T: ExtParam> FromTree for ArithInner<T> {
     fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             // Disambiguiate with num64_eq to avoid confusion with asset_eq
-            ("num64_eq", 2) => expression::binary(top, Arith::Eq),
-            ("num64_geq", 2) => expression::binary(top, Arith::Geq),
-            ("num64_gt", 2) => expression::binary(top, Arith::Gt),
-            ("num64_lt", 2) => expression::binary(top, Arith::Lt),
-            ("num64_leq", 2) => expression::binary(top, Arith::Leq),
+            ("num64_eq", 2) => expression::binary(top, ArithInner::Eq),
+            ("num64_geq", 2) => expression::binary(top, ArithInner::Geq),
+            ("num64_gt", 2) => expression::binary(top, ArithInner::Gt),
+            ("num64_lt", 2) => expression::binary(top, ArithInner::Lt),
+            ("num64_leq", 2) => expression::binary(top, ArithInner::Leq),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
                 top.name,
@@ -782,31 +1285,31 @@ impl FromTree for Arith {
     }
 }
 
-impl fmt::Display for Arith {
+impl<T: ExtParam> fmt::Display for Arith<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self {
-            Arith::Eq(x, y) => write!(f, "num64_eq({},{})", x, y),
-            Arith::Leq(x, y) => write!(f, "num64_leq({},{})", x, y),
-            Arith::Lt(x, y) => write!(f, "num64_lt({},{})", x, y),
-            Arith::Geq(x, y) => write!(f, "num64_geq({},{})", x, y),
-            Arith::Gt(x, y) => write!(f, "num64_gt({},{})", x, y),
+        match &self.expr {
+            ArithInner::Eq(x, y) => write!(f, "num64_eq({},{})", x, y),
+            ArithInner::Leq(x, y) => write!(f, "num64_leq({},{})", x, y),
+            ArithInner::Lt(x, y) => write!(f, "num64_lt({},{})", x, y),
+            ArithInner::Geq(x, y) => write!(f, "num64_geq({},{})", x, y),
+            ArithInner::Gt(x, y) => write!(f, "num64_gt({},{})", x, y),
         }
     }
 }
 
-impl fmt::Debug for Arith {
+impl<T: ExtParam> fmt::Debug for Arith<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self {
-            Arith::Eq(x, y) => write!(f, "num64_eq({:?},{:?})", x, y),
-            Arith::Leq(x, y) => write!(f, "num64_leq({:?},{:?})", x, y),
-            Arith::Lt(x, y) => write!(f, "num64_lt({:?},{:?})", x, y),
-            Arith::Geq(x, y) => write!(f, "num64_geq({:?},{:?})", x, y),
-            Arith::Gt(x, y) => write!(f, "num64_gt({:?},{:?})", x, y),
+        match &self.expr {
+            ArithInner::Eq(x, y) => write!(f, "num64_eq({:?},{:?})", x, y),
+            ArithInner::Leq(x, y) => write!(f, "num64_leq({:?},{:?})", x, y),
+            ArithInner::Lt(x, y) => write!(f, "num64_lt({:?},{:?})", x, y),
+            ArithInner::Geq(x, y) => write!(f, "num64_geq({:?},{:?})", x, y),
+            ArithInner::Gt(x, y) => write!(f, "num64_gt({:?},{:?})", x, y),
         }
     }
 }
 
-impl Extension for Arith {
+impl<T: ExtParam> Extension for Arith<T> {
     fn corr_prop(&self) -> Correctness {
         Correctness {
             base: Base::B,
@@ -863,11 +1366,12 @@ impl Extension for Arith {
             args: children.to_vec(), // Cloning two references here, it is possible to avoid the to_vec() here,
                                      // but it requires lot of refactor.
         };
-        Self::from_tree(&tree).map_err(|_| ())
+        let inner = ArithInner::from_tree(&tree).map_err(|_| ())?;
+        Arith::new(inner).map_err(|_e| {})
     }
 }
 
-impl ParseableExt for Arith {
+impl ParseableExt for Arith<CovExtArgs> {
     fn satisfy<Pk, S>(&self, sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
@@ -885,43 +1389,17 @@ impl ParseableExt for Arith {
             Some(env) => env,
             None => return Satisfaction::impossible(),
         };
-        let wit = match self.eval(&env) {
-            Ok(false) => Witness::Unavailable,
-            Ok(true) => Witness::empty(),
-            Err(_e) => Witness::Impossible,
-        };
-        Satisfaction {
-            stack: wit,
-            has_sig: false,
-        }
+        self.satisfy_helper(&env, sat)
+            .unwrap_or(Satisfaction::empty())
     }
 
-    fn dissatisfy<Pk, S>(&self, sat: &S) -> Satisfaction
+    fn dissatisfy<Pk, S>(&self, _sat: &S) -> Satisfaction
     where
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        let (tx, utxos, curr_idx) = match (
-            sat.lookup_tx(),
-            sat.lookup_spent_utxos(),
-            sat.lookup_curr_inp(),
-        ) {
-            (Some(tx), Some(utxos), Some(curr_idx)) => (tx, utxos, curr_idx),
-            _ => return Satisfaction::impossible(),
-        };
-        let env = match TxEnv::new(tx, utxos, curr_idx) {
-            Some(env) => env,
-            None => return Satisfaction::impossible(),
-        };
-        let wit = match self.eval(&env) {
-            Ok(false) => Witness::empty(),
-            Ok(true) => Witness::Unavailable,
-            Err(_e) => Witness::Impossible,
-        };
-        Satisfaction {
-            stack: wit,
-            has_sig: false,
-        }
+        // Impossible
+        Satisfaction::impossible()
     }
 
     fn push_to_builder(&self, builder: elements::script::Builder) -> elements::script::Builder {
@@ -948,7 +1426,7 @@ impl ParseableExt for Arith {
             .as_ref()
             .ok_or(interpreter::Error::ArithError(EvalError::TxEnvNotPresent))?;
 
-        match self.eval(txenv) {
+        match self.eval(txenv, stack) {
             Ok(true) => {
                 stack.push(interpreter::Element::Satisfied);
                 Ok(true)
@@ -993,6 +1471,24 @@ pub enum EvalError {
     ModOverflow(i64, i64),
     /// Neg overflow
     NegOverflow(i64),
+    /// Missing price
+    MissingPrice,
+    /// Price 8 byte push
+    Price8BytePush,
+    /// Missing timestamp
+    MissingTimestamp,
+    /// Timestamp 8 byte push
+    Timstamp8BytePush,
+    /// Missing Oracle signature
+    MissingOracleSignature,
+    /// Missing Oracle pubkey
+    MalformedSig,
+    /// Timestamp in future
+    TimestampInFuture,
+    /// Invalid oracle signature
+    InvalidSignature,
+    /// Price overflow
+    PriceOverflow,
 }
 
 impl error::Error for EvalError {}
@@ -1029,17 +1525,118 @@ impl fmt::Display for EvalError {
                 f,
                 "Transaction must be supplied to extension to arithmetic evaluation"
             ),
+            EvalError::MissingPrice => write!(f, "Missing price"),
+            EvalError::Price8BytePush => write!(f, "Price 8 byte push"),
+            EvalError::MissingTimestamp => write!(f, "Missing timestamp"),
+            EvalError::Timstamp8BytePush => write!(f, "Timestamp 8 byte push"),
+            EvalError::MissingOracleSignature => write!(f, "Missing price oracle signature"),
+            EvalError::MalformedSig => write!(f, "Malformed price oracle signature"),
+            EvalError::TimestampInFuture => write!(f, "Oracle Timestamp in future"),
+            EvalError::InvalidSignature => write!(f, "Invalid price oracle signature"),
+            EvalError::PriceOverflow => write!(f, "Price overflow (must be 64 bit integer)"),
+        }
+    }
+}
+
+impl<PArg, QArg> TranslateExtParam<PArg, QArg> for Arith<PArg>
+where
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    type Output = Arith<QArg>;
+
+    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtParamTranslator<PArg, QArg, E>,
+    {
+        let res = match &self.expr {
+            ArithInner::Eq(a, b) => ArithInner::Eq(a.translate_ext(t)?, b.translate_ext(t)?),
+            ArithInner::Lt(a, b) => ArithInner::Lt(a.translate_ext(t)?, b.translate_ext(t)?),
+            ArithInner::Leq(a, b) => ArithInner::Leq(a.translate_ext(t)?, b.translate_ext(t)?),
+            ArithInner::Gt(a, b) => ArithInner::Gt(a.translate_ext(t)?, b.translate_ext(t)?),
+            ArithInner::Geq(a, b) => ArithInner::Geq(a.translate_ext(t)?, b.translate_ext(t)?),
+        };
+        Ok(Arith::new(res).expect("Type check must succeed"))
+    }
+}
+
+impl<PArg, QArg> TranslateExtParam<PArg, QArg> for Expr<PArg>
+where
+    PArg: ExtParam,
+    QArg: ExtParam,
+{
+    type Output = Expr<QArg>;
+
+    fn translate_ext<T, E>(&self, t: &mut T) -> Result<Self::Output, E>
+    where
+        T: ExtParamTranslator<PArg, QArg, E>,
+    {
+        match &self.inner {
+            ExprInner::Const(c) => Ok(Expr::from_inner(ExprInner::Const(*c))),
+            ExprInner::CurrInputIdx => Ok(Expr::from_inner(ExprInner::CurrInputIdx)),
+            ExprInner::Input(i) => Ok(Expr::from_inner(ExprInner::Input(i.clone()))),
+            ExprInner::Output(i) => Ok(Expr::from_inner(ExprInner::Output(i.clone()))),
+            ExprInner::InputIssue(i) => Ok(Expr::from_inner(ExprInner::InputIssue(i.clone()))),
+            ExprInner::InputReIssue(i) => Ok(Expr::from_inner(ExprInner::InputReIssue(i.clone()))),
+            ExprInner::Add(a, b) => Ok(Expr::from_inner(ExprInner::Add(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::Sub(a, b) => Ok(Expr::from_inner(ExprInner::Sub(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::Mul(a, b) => Ok(Expr::from_inner(ExprInner::Mul(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::Div(a, b) => Ok(Expr::from_inner(ExprInner::Div(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::Mod(a, b) => Ok(Expr::from_inner(ExprInner::Mod(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::BitAnd(a, b) => Ok(Expr::from_inner(ExprInner::BitAnd(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::BitOr(a, b) => Ok(Expr::from_inner(ExprInner::BitOr(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::Xor(a, b) => Ok(Expr::from_inner(ExprInner::Xor(
+                Box::new(a.translate_ext(t)?),
+                Box::new(b.translate_ext(t)?),
+            ))),
+            ExprInner::Invert(a) => Ok(Expr::from_inner(ExprInner::Invert(Box::new(
+                a.translate_ext(t)?,
+            )))),
+            ExprInner::Negate(a) => Ok(Expr::from_inner(ExprInner::Negate(Box::new(
+                a.translate_ext(t)?,
+            )))),
+            ExprInner::PriceOracle1(pk, time) => Ok(Expr::from_inner(ExprInner::PriceOracle1(
+                t.ext(pk)?,
+                time.clone(),
+            ))),
+            ExprInner::PriceOracle1W(pk, time) => Ok(Expr::from_inner(ExprInner::PriceOracle1W(
+                t.ext(pk)?,
+                time.clone(),
+            ))),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::hashes::Hash;
     use bitcoin::XOnlyPublicKey;
 
     use super::*;
+    use crate::extensions::check_sig_price_oracle_1;
     use crate::test_utils::{StrExtTranslator, StrXOnlyKeyTranslator};
-    use crate::{Miniscript, Segwitv0, Tap, TranslatePk};
+    use crate::{CovenantExt, Miniscript, Segwitv0, Tap, TranslatePk};
 
     #[test]
     fn test_index_ops_with_arith() {
@@ -1093,12 +1690,20 @@ mod tests {
         _arith_parse(
             "and_v(v:pk(K),num64_eq(mul(inp_v(0),out_v(1)),sub(add(3,inp_issue_v(1)),-9)))",
         );
+
+        // test price oracles
+        _arith_parse("num64_eq(price_oracle1(K,123213),28004)");
+        _arith_parse("num64_eq(price_oracle1(K,123213),price_oracle1_w(K,4318743))");
+        _arith_parse(
+            "and_v(v:pk(K),num64_eq(mul(inp_v(0),out_v(1)),sub(add(3,inp_issue_v(1)),price_oracle1_w(K,123213))))",
+        );
+        _arith_parse("and_v(v:pk(X2),num64_eq(add(price_oracle1(K,1),0),50000))");
     }
 
     fn _arith_parse(s: &str) {
-        type MsExtStr = Miniscript<String, Tap, Arith>;
-        type MsExt = Miniscript<XOnlyPublicKey, Tap, Arith>;
-        type MsExtSegwitv0 = Miniscript<String, Segwitv0, Arith>;
+        type MsExtStr = Miniscript<String, Tap, CovenantExt<String>>;
+        type MsExt = Miniscript<XOnlyPublicKey, Tap, CovenantExt<CovExtArgs>>;
+        type MsExtSegwitv0 = Miniscript<String, Segwitv0, CovenantExt<String>>;
 
         // Make sure that parsing this errors in segwit context
         assert!(MsExtSegwitv0::from_str_insane(s).is_err());
@@ -1107,8 +1712,35 @@ mod tests {
         // test string rtt
         assert_eq!(ms.to_string(), s);
         let mut t = StrXOnlyKeyTranslator::default();
+        let mut ext_t = StrExtTranslator::default();
+        ext_t.ext_map.insert(
+            String::from("K"),
+            CovExtArgs::csfs_key(
+                XOnlyPublicKey::from_str(
+                    "c304c3b5805eecff054c319c545dc6ac2ad44eb70f79dd9570e284c5a62c0f9e",
+                )
+                .unwrap(),
+            ),
+        );
+        // use crate::extensions::param::TranslateExtParam;
         let ms = ms.translate_pk(&mut t).unwrap();
+        let ms = TranslateExt::translate_ext(&ms, &mut ext_t).unwrap();
         // script rtt
         assert_eq!(ms, MsExt::parse_insane(&ms.encode()).unwrap());
+    }
+
+    #[test]
+    fn test_fuji_fixed_signs() {
+        // Test Vector obtained from curl queries
+        let sig = elements::secp256k1_zkp::schnorr::Signature::from_str("8fc6e217b0e1d3481855cdb97cfe333999d4cf48b9f58b4f299ad86fd768a345e97a953d6efa1ca5971f18810deedcfddc4c2bd4e8f9d1431c1ad6ebafa013a9").unwrap();
+        let pk = elements::secp256k1_zkp::XOnlyPublicKey::from_str(
+            "c304c3b5805eecff054c319c545dc6ac2ad44eb70f79dd9570e284c5a62c0f9e",
+        )
+        .unwrap();
+
+        let timestamp: u64 = 1679531858733;
+        let price: u64 = 27365;
+        let secp = elements::secp256k1_zkp::Secp256k1::new();
+        assert!(check_sig_price_oracle_1(&secp, &sig, &pk, timestamp, price))
     }
 }

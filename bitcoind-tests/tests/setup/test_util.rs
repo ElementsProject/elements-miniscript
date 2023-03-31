@@ -51,6 +51,10 @@ pub struct PubData {
     pub values: HashMap<String, confidential::Value>,
     pub assets: HashMap<String, confidential::Asset>,
     pub spks: HashMap<String, elements::Script>,
+
+    // price oracle test data
+    pub timestamp: u64,
+    pub price: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -134,6 +138,8 @@ impl TestData {
             values: HashMap::new(),
             assets: HashMap::new(),
             spks: HashMap::new(),
+            timestamp: 414315315u64, // Some dummy time
+            price: 50_000i64, // Some dummy price
         };
         let secretdata = SecretData {
             sks,
