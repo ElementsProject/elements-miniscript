@@ -15,7 +15,7 @@ compiler = []
 trace = []
 
 unstable = []
-serde = ["actual-serde", "bitcoin/serde"]
+serde = ["actual-serde", "bitcoin/serde", "elements/serde"]
 rand = ["bitcoin/rand"]
 base64 = ["bitcoin/base64"]
 
