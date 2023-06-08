@@ -21,10 +21,9 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use miniscript::{elements, bitcoin};
-use elements::hashes::hex::ToHex;
+use elements::hex::{FromHex, ToHex};
 use elements::hashes::{hash160, ripemd160, sha256, Hash};
 use elements::secp256k1_zkp as secp256k1;
-use elements::hashes::hex::FromHex;
 use elements::{confidential, encode, AddressParams, BlockHash};
 use miniscript::descriptor::{SinglePub, SinglePubKey};
 use miniscript::extensions::param::ExtParamTranslator;
@@ -41,7 +40,7 @@ pub static PARAMS: AddressParams = AddressParams::ELEMENTS;
 #[derive(Clone, Debug)]
 pub struct PubData {
     pub pks: Vec<bitcoin::PublicKey>,
-    pub x_only_pks: Vec<bitcoin::XOnlyPublicKey>,
+    pub x_only_pks: Vec<bitcoin::key::XOnlyPublicKey>,
     pub sha256: sha256::Hash,
     pub hash256: hash256::Hash,
     pub ripemd160: ripemd160::Hash,
@@ -79,7 +78,7 @@ fn setup_keys(
     Vec<bitcoin::secp256k1::SecretKey>,
     Vec<miniscript::bitcoin::PublicKey>,
     Vec<bitcoin::KeyPair>,
-    Vec<bitcoin::XOnlyPublicKey>,
+    Vec<bitcoin::key::XOnlyPublicKey>,
 ) {
     let secp_sign = secp256k1::Secp256k1::signing_only();
     let mut sk = [0; 32];
@@ -104,7 +103,7 @@ fn setup_keys(
 
     for i in 0..n {
         let keypair = bitcoin::KeyPair::from_secret_key(&secp_sign, &sks[i]);
-        let (xpk, _parity) = bitcoin::XOnlyPublicKey::from_keypair(&keypair);
+        let (xpk, _parity) = bitcoin::key::XOnlyPublicKey::from_keypair(&keypair);
         x_only_keypairs.push(keypair);
         x_only_pks.push(xpk);
     }

@@ -13,14 +13,14 @@ use std::ops::Deref;
 use std::{error, fmt};
 
 use bitcoin;
-use bitcoin::util::bip32;
+use bitcoin::bip32;
 use elements::hashes::{hash160, sha256d, Hash};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::secp256k1_zkp::{self as secp256k1, Secp256k1, VerifyOnly};
 use elements::sighash::SigHashCache;
 use elements::taproot::{self, ControlBlock, LeafVersion, TapLeafHash};
 use elements::{
-    self, pset as psbt, EcdsaSigHashType, LockTime, PackedLockTime, SchnorrSigHashType, Script,
+    self, pset as psbt, EcdsaSigHashType, LockTime, SchnorrSigHashType, Script,
     Sequence,
 };
 
@@ -107,7 +107,7 @@ pub enum InputError {
     /// Get the secp Errors directly
     SecpErr(elements::secp256k1_zkp::Error),
     /// Key errors
-    KeyErr(bitcoin::util::key::Error),
+    KeyErr(bitcoin::key::Error),
     /// Error doing an interpreter-check on a finalized psbt
     Interpreter(interpreter::Error),
     /// Redeem script does not match the p2sh hash
@@ -258,8 +258,8 @@ impl From<elements::secp256k1_zkp::Error> for InputError {
 }
 
 #[doc(hidden)]
-impl From<bitcoin::util::key::Error> for InputError {
-    fn from(e: bitcoin::util::key::Error) -> InputError {
+impl From<bitcoin::key::Error> for InputError {
+    fn from(e: bitcoin::key::Error) -> InputError {
         InputError::KeyErr(e)
     }
 }
@@ -390,7 +390,7 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
                 .global
                 .tx_data
                 .fallback_locktime
-                .unwrap_or(PackedLockTime::ZERO),
+                .unwrap_or(LockTime::ZERO),
         );
 
         <dyn Satisfier<Pk>>::check_after(&lock_time, n)
@@ -431,7 +431,7 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
     fn lookup_hash256(&self, h: &Pk::Hash256) -> Option<Preimage32> {
         self.psbt.inputs()[self.index]
             .hash256_preimages
-            .get(&sha256d::Hash::from_inner(Pk::to_hash256(h).into_inner())) // upstream psbt operates on hash256
+            .get(&sha256d::Hash::from_byte_array(Pk::to_hash256(h).to_byte_array())) // upstream psbt operates on hash256
             .and_then(try_vec_as_preimage32)
     }
 
@@ -627,7 +627,7 @@ pub trait PsbtExt {
     /// * `cache`: The [`SighashCache`] for used to cache/read previously cached computations
     /// * `tapleaf_hash`: If the output is taproot, compute the sighash for this particular leaf.
     ///
-    /// [`SighashCache`]: bitcoin::util::sighash::SighashCache
+    /// [`SighashCache`]: bitcoin::sighash::SighashCache
     fn sighash_msg<T: Deref<Target = elements::Transaction>>(
         &self,
         idx: usize,
@@ -1084,10 +1084,10 @@ trait PsbtFields {
     fn redeem_script(&mut self) -> &mut Option<Script>;
     fn witness_script(&mut self) -> &mut Option<Script>;
     fn bip32_derivation(&mut self) -> &mut BTreeMap<bitcoin::PublicKey, bip32::KeySource>;
-    fn tap_internal_key(&mut self) -> &mut Option<bitcoin::XOnlyPublicKey>;
+    fn tap_internal_key(&mut self) -> &mut Option<bitcoin::key::XOnlyPublicKey>;
     fn tap_key_origins(
         &mut self,
-    ) -> &mut BTreeMap<bitcoin::XOnlyPublicKey, (Vec<TapLeafHash>, bip32::KeySource)>;
+    ) -> &mut BTreeMap<bitcoin::key::XOnlyPublicKey, (Vec<TapLeafHash>, bip32::KeySource)>;
     fn proprietary(&mut self) -> &mut BTreeMap<psbt::raw::ProprietaryKey, Vec<u8>>;
     fn unknown(&mut self) -> &mut BTreeMap<psbt::raw::Key, Vec<u8>>;
 
@@ -1115,12 +1115,12 @@ impl PsbtFields for psbt::Input {
     fn bip32_derivation(&mut self) -> &mut BTreeMap<bitcoin::PublicKey, bip32::KeySource> {
         &mut self.bip32_derivation
     }
-    fn tap_internal_key(&mut self) -> &mut Option<bitcoin::XOnlyPublicKey> {
+    fn tap_internal_key(&mut self) -> &mut Option<bitcoin::key::XOnlyPublicKey> {
         &mut self.tap_internal_key
     }
     fn tap_key_origins(
         &mut self,
-    ) -> &mut BTreeMap<bitcoin::XOnlyPublicKey, (Vec<TapLeafHash>, bip32::KeySource)> {
+    ) -> &mut BTreeMap<bitcoin::key::XOnlyPublicKey, (Vec<TapLeafHash>, bip32::KeySource)> {
         &mut self.tap_key_origins
     }
     fn proprietary(&mut self) -> &mut BTreeMap<psbt::raw::ProprietaryKey, Vec<u8>> {
@@ -1148,12 +1148,12 @@ impl PsbtFields for psbt::Output {
     fn bip32_derivation(&mut self) -> &mut BTreeMap<bitcoin::PublicKey, bip32::KeySource> {
         &mut self.bip32_derivation
     }
-    fn tap_internal_key(&mut self) -> &mut Option<bitcoin::XOnlyPublicKey> {
+    fn tap_internal_key(&mut self) -> &mut Option<bitcoin::key::XOnlyPublicKey> {
         &mut self.tap_internal_key
     }
     fn tap_key_origins(
         &mut self,
-    ) -> &mut BTreeMap<bitcoin::XOnlyPublicKey, (Vec<TapLeafHash>, bip32::KeySource)> {
+    ) -> &mut BTreeMap<bitcoin::key::XOnlyPublicKey, (Vec<TapLeafHash>, bip32::KeySource)> {
         &mut self.tap_key_origins
     }
     fn proprietary(&mut self) -> &mut BTreeMap<psbt::raw::ProprietaryKey, Vec<u8>> {
@@ -1534,12 +1534,12 @@ impl PsbtSigHashMsg {
 mod tests {
     use std::str::FromStr;
 
-    use bitcoin::util::bip32::{DerivationPath, ExtendedPubKey};
+    use bitcoin::bip32::{DerivationPath, ExtendedPubKey};
     use elements::encode::deserialize;
-    use elements::hashes::hex::FromHex;
+    use elements::hex::FromHex;
     use elements::secp256k1_zkp::XOnlyPublicKey;
     use elements::{
-        confidential, AssetId, AssetIssuance, OutPoint, PackedLockTime, TxIn, TxInWitness, TxOut,
+        confidential, AssetId, AssetIssuance, OutPoint, LockTime, TxIn, TxInWitness, TxOut,
     };
 
     use super::*;
@@ -1762,13 +1762,13 @@ mod tests {
         let desc = "eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/0)";
         let desc = Descriptor::<DefiniteDescriptorKey>::from_str(&desc).unwrap();
 
-        let asset = elements::AssetId::from_hex(
+        let asset = elements::AssetId::from_str(
             "b2e15d0d7a0c94e4e2ce0fe6e8691b9e451377f6e46e8045a86f7c4b5d4f0f23",
         )
         .unwrap();
         let mut non_witness_utxo = elements::Transaction {
             version: 1,
-            lock_time: PackedLockTime::ZERO,
+            lock_time: LockTime::ZERO,
             input: vec![],
             output: vec![TxOut {
                 value: elements::confidential::Value::Explicit(1_000),
@@ -1784,7 +1784,7 @@ mod tests {
 
         let tx = elements::Transaction {
             version: 1,
-            lock_time: PackedLockTime::ZERO,
+            lock_time: LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint {
                     txid: non_witness_utxo.txid(),
@@ -1844,7 +1844,7 @@ mod tests {
 
         let tx = elements::Transaction {
             version: 1,
-            lock_time: PackedLockTime::ZERO,
+            lock_time: LockTime::ZERO,
             input: vec![],
             output: vec![TxOut {
                 value: confidential::Value::Explicit(1_000),

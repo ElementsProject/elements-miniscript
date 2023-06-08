@@ -133,7 +133,7 @@ impl<'tx, 'ptx, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for LegacyCovSati
     }
 
     fn lookup_nlocktime(&self) -> Option<u32> {
-        Some(self.tx.lock_time.to_u32())
+        Some(self.tx.lock_time.to_consensus_u32())
     }
 
     fn lookup_sighashu32(&self) -> Option<u32> {

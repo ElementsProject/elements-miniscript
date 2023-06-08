@@ -4,8 +4,7 @@ use elements::bitcoin::PrivateKey;
 use elements::encode::{serialize, serialize_hex};
 use elements::hashes::Hash;
 use elements::sighash::SigHashCache;
-use elements::{confidential, AssetId, PackedLockTime, TxOutWitness};
-use miniscript::elements::hashes::hex::FromHex;
+use elements::{confidential, AssetId, LockTime, TxOutWitness};
 use miniscript::elements::pset::PartiallySignedTransaction as Psbt;
 use miniscript::elements::{
     self, pset, secp256k1_zkp as secp256k1, Address, AddressParams, OutPoint, Script, Sequence,
@@ -74,7 +73,7 @@ fn main() {
 
     let spend_tx = Transaction {
         version: 2,
-        lock_time: PackedLockTime(5000),
+        lock_time: LockTime::from_height(5000).unwrap(),
         input: vec![],
         output: vec![],
     };
@@ -89,7 +88,7 @@ fn main() {
     let amount = 100000000;
 
     let outpoint = elements::OutPoint {
-        txid: elements::Txid::from_hex(
+        txid: elements::Txid::from_str(
             "7a3565454fe1b749bccaef22aff72843a9c3efefd7b16ac54537a0c23f0ec0de",
         )
         .unwrap(),
@@ -100,7 +99,7 @@ fn main() {
 
     // In practice, you would have to get the outpoint and witness utxo from the blockchain.
     // something like this:
-    // let depo_tx = elements::Transction::from_hex("...").unwrap();
+    // let depo_tx = elements::Transction::from_str("...").unwrap();
     // let (outpoint, witness_utxo) = get_vout(&depo_tx, bridge_descriptor.script_pubkey());
 
     let mut txin = TxIn::default();
@@ -193,7 +192,7 @@ fn bitcoin_asset_txout(spk: Script, amt: u64) -> TxOut {
         script_pubkey: spk,
         value: confidential::Value::Explicit(amt),
         asset: confidential::Asset::Explicit(
-            AssetId::from_hex("088f6b381694259fd20599e71f7eb46e392f36b43cc20d131d95c8a4b8cc1aa8")
+            AssetId::from_str("088f6b381694259fd20599e71f7eb46e392f36b43cc20d131d95c8a4b8cc1aa8")
                 .unwrap(),
         ),
         nonce: confidential::Nonce::Null,

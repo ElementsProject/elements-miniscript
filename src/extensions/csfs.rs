@@ -4,9 +4,8 @@
 use std::fmt;
 use std::str::FromStr;
 
-use bitcoin::hashes::hex::{FromHex, ToHex};
-use bitcoin::XOnlyPublicKey;
-use elements::hashes::hex;
+use bitcoin::key::XOnlyPublicKey;
+use elements::hex::{self, FromHex, ToHex};
 use elements::{self, opcodes, secp256k1_zkp};
 
 use super::param::{ExtParamTranslator, TranslateExtParam};
@@ -201,7 +200,7 @@ impl ArgFromStr for CsfsMsg {
 
 /// Wrapper around XOnlyKeys used in CheckSigfromstack
 #[derive(Debug, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]
-pub struct CsfsKey(pub bitcoin::XOnlyPublicKey);
+pub struct CsfsKey(pub bitcoin::key::XOnlyPublicKey);
 
 impl fmt::Display for CsfsKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -216,7 +215,7 @@ impl ArgFromStr for CsfsKey {
                 "Key must be at first position in csfs".to_string(),
             ));
         }
-        let k = bitcoin::XOnlyPublicKey::from_str(s)?;
+        let k = bitcoin::key::XOnlyPublicKey::from_str(s)?;
         Ok(Self(k))
     }
 }
@@ -349,7 +348,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::XOnlyPublicKey;
+    use bitcoin::key::XOnlyPublicKey;
 
     use super::*;
     use crate::test_utils::{StrExtTranslator, StrXOnlyKeyTranslator};
@@ -388,7 +387,7 @@ mod tests {
         let mut t = StrXOnlyKeyTranslator::default();
         t.pk_map.insert(
             "B".to_string(),
-            bitcoin::XOnlyPublicKey::from_str(
+            bitcoin::key::XOnlyPublicKey::from_str(
                 "9064b3ac01fb4cb648e8899723ee4d50433920ae558c572e96d945805e0bc3ec",
             )
             .unwrap(),
@@ -401,7 +400,7 @@ mod tests {
         ext_t.ext_map.insert(
             "A".to_string(),
             CovExtArgs::XOnlyKey(CsfsKey(
-                bitcoin::XOnlyPublicKey::from_str(
+                bitcoin::key::XOnlyPublicKey::from_str(
                     "26d137d15e2ae24f2d5158663d190d1269ad6b1a6ce330aa825ba502e7519d44",
                 )
                 .unwrap(),

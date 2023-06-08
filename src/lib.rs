@@ -114,15 +114,15 @@ extern crate test;
 // It can be confusing to code when we have two miniscript libraries
 // As a rule, only import the library here and pub use all the required
 // items. Should help in faster code development in the long run
-pub(crate) use bitcoin_miniscript::expression::{FromTree as BtcFromTree, Tree as BtcTree};
-pub(crate) use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
-pub(crate) use bitcoin_miniscript::policy::Liftable as BtcLiftable;
-// re-export imports
-pub use bitcoin_miniscript::{hash256, ForEachKey, MiniscriptKey, SigType, ToPublicKey};
-pub(crate) use bitcoin_miniscript::{
+use bitcoin_miniscript::expression::{FromTree as BtcFromTree, Tree as BtcTree};
+use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
+use bitcoin_miniscript::policy::Liftable as BtcLiftable;
+use bitcoin_miniscript::{
     Descriptor as BtcDescriptor, Error as BtcError, Miniscript as BtcMiniscript,
     Satisfier as BtcSatisfier, Segwitv0 as BtcSegwitv0, Terminal as BtcTerminal,
 };
+// re-export imports
+pub use bitcoin_miniscript::{hash256, ForEachKey, MiniscriptKey, SigType, ToPublicKey};
 // End imports
 
 #[macro_use]
@@ -145,8 +145,9 @@ pub mod psbt;
 mod test_utils;
 mod util;
 
-use std::{error, fmt, str};
+use std::{cmp, error, fmt, str};
 
+use elements::locktime;
 use elements::hashes::sha256;
 use elements::secp256k1_zkp::Secp256k1;
 use elements::{opcodes, script, secp256k1_zkp};
@@ -179,7 +180,7 @@ mod contracthash {
             .inner
             .add_exp_tweak(
                 secp,
-                &Scalar::from_be_bytes(hmac_result.into_inner())
+                &Scalar::from_be_bytes(hmac_result.to_byte_array())
                     .expect("Result of hash must be a valid point"),
             )
             .expect("HMAC cannot produce invalid tweak");
@@ -294,7 +295,7 @@ pub enum Error {
     /// rust-bitcoin script error
     Script(script::Error),
     /// rust-bitcoin address error
-    AddrError(bitcoin::util::address::Error),
+    AddrError(bitcoin::address::Error),
     /// A `CHECKMULTISIG` opcode was preceded by a number > 20
     CmsTooManyKeys(u32),
     /// A tapscript multi_a cannot support more than MAX_BLOCK_WEIGHT/32 keys
@@ -322,7 +323,7 @@ pub enum Error {
     /// Parsed a miniscript but there were more script opcodes after it
     Trailing(String),
     /// Failed to parse a push as a public key
-    BadPubkey(bitcoin::util::key::Error),
+    BadPubkey(bitcoin::key::Error),
     /// Could not satisfy a script (fragment) because of a missing hash preimage
     MissingHash(sha256::Hash),
     /// Could not satisfy a script (fragment) because of a missing signature
@@ -433,14 +434,14 @@ impl From<elements::secp256k1_zkp::UpstreamError> for Error {
 }
 
 #[doc(hidden)]
-impl From<bitcoin::util::key::Error> for Error {
-    fn from(e: bitcoin::util::key::Error) -> Error {
+impl From<bitcoin::key::Error> for Error {
+    fn from(e: bitcoin::key::Error) -> Error {
         Error::BadPubkey(e)
     }
 }
 
-impl From<bitcoin::util::address::Error> for Error {
-    fn from(e: bitcoin::util::address::Error) -> Error {
+impl From<bitcoin::address::Error> for Error {
+    fn from(e: bitcoin::address::Error) -> Error {
         Error::AddrError(e)
     }
 }
@@ -461,7 +462,7 @@ impl fmt::Display for Error {
             Error::NonMinimalVerify(ref tok) => write!(f, "{} VERIFY", tok),
             Error::InvalidPush(ref push) => {
                 write!(f, "invalid push ")?;
-                bitcoin::hashes::hex::format_hex(push, f)
+                elements::hex::format_hex(push, f)
             },
             Error::Script(ref e) => fmt::Display::fmt(e, f),
             Error::AddrError(ref e) => fmt::Display::fmt(e, f),
@@ -628,10 +629,69 @@ fn push_opcode_size(script_size: usize) -> usize {
     }
 }
 
+/// An absolute locktime that implements `Ord`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AbsLockTime(locktime::LockTime);
+
+impl AbsLockTime {
+    /// Constructs an `AbsLockTime` from an nLockTime value or the argument to OP_CHEKCLOCKTIMEVERIFY.
+    pub fn from_consensus(n: u32) -> Self {
+        Self(locktime::LockTime::from_consensus(n))
+    }
+
+    /// Returns the inner `u32` value. This is the value used when creating this `LockTime`
+    /// i.e., `n OP_CHECKLOCKTIMEVERIFY` or nLockTime.
+    ///
+    /// This calls through to `locktime::LockTime::to_consensus_u32()` and the same usage warnings
+    /// apply.
+    pub fn to_consensus_u32(self) -> u32 {
+        self.0.to_consensus_u32()
+    }
+
+    /// Returns the inner `u32` value.
+    ///
+    /// Equivalent to `AbsLockTime::to_consensus_u32()`.
+    pub fn to_u32(self) -> u32 {
+        self.to_consensus_u32()
+    }
+}
+
+impl From<locktime::LockTime> for AbsLockTime {
+    fn from(lock_time: locktime::LockTime) -> Self {
+        Self(lock_time)
+    }
+}
+
+impl From<AbsLockTime> for locktime::LockTime {
+    fn from(lock_time: AbsLockTime) -> locktime::LockTime {
+        lock_time.0
+    }
+}
+
+impl cmp::PartialOrd for AbsLockTime {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl cmp::Ord for AbsLockTime {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        let this = self.0.to_consensus_u32();
+        let that = other.0.to_consensus_u32();
+        this.cmp(&that)
+    }
+}
+
+impl fmt::Display for AbsLockTime {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
 /// Helper function used by tests
 #[cfg(test)]
 fn hex_script(s: &str) -> elements::Script {
-    let v: Vec<u8> = elements::hashes::hex::FromHex::from_hex(s).unwrap();
+    let v: Vec<u8> = elements::hex::FromHex::from_hex(s).unwrap();
     elements::Script::from(v)
 }
 

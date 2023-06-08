@@ -8,7 +8,7 @@
 //! `https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki`
 //!
 
-use bitcoin::{self, PublicKey, XOnlyPublicKey};
+use bitcoin::{self, PublicKey, key::XOnlyPublicKey};
 use elements::secp256k1_zkp::{self, Secp256k1};
 use elements::taproot::LeafVersion;
 use elements::{self, confidential, Script, Sequence, Transaction, TxOut};
@@ -534,7 +534,7 @@ pub fn finalize<C: secp256k1_zkp::Verification>(
 // mod tests {
 //     use super::*;
 //     use elements::encode::{deserialize, serialize};
-//     use elements::hashes::hex::FromHex;
+//     use elements::hex::FromHex;
 
 //     #[test]
 //     fn test_inp_finalize_520bytes() {

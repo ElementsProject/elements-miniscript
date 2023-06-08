@@ -4,7 +4,7 @@
 use std::{error, fmt};
 
 use elements::hashes::hash160;
-use elements::hashes::hex::ToHex;
+use elements::hex::ToHex;
 use elements::{secp256k1_zkp, taproot};
 use {bitcoin, elements};
 
@@ -30,7 +30,7 @@ pub enum Error {
     /// General Interpreter error.
     CouldNotEvaluate,
     /// EcdsaSig related error
-    EcdsaSig(bitcoin::EcdsaSigError),
+    EcdsaSig(bitcoin::ecdsa::Error),
     /// We expected a push (including a `OP_1` but no other numeric pushes)
     ExpectedPush,
     /// The preimage to the hash function must be exactly 32 bytes.
@@ -50,7 +50,7 @@ pub enum Error {
     /// ecdsa Signature failed to verify
     InvalidEcdsaSignature(bitcoin::PublicKey),
     /// Signature failed to verify
-    InvalidSchnorrSignature(bitcoin::XOnlyPublicKey),
+    InvalidSchnorrSignature(bitcoin::key::XOnlyPublicKey),
     /// Last byte of this signature isn't a standard sighash type
     NonStandardSigHash(Vec<u8>),
     /// Miniscript error
@@ -285,7 +285,7 @@ pub enum PkEvalErrInner {
     /// Full Key
     FullKey(bitcoin::PublicKey),
     /// XOnly Key
-    XOnlyKey(bitcoin::XOnlyPublicKey),
+    XOnlyKey(bitcoin::key::XOnlyPublicKey),
 }
 
 impl From<BitcoinKey> for PkEvalErrInner {

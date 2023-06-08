@@ -1,11 +1,11 @@
-use std::borrow::Borrow;
 // SPDX-License-Identifier: CC0-1.0
+use std::borrow::Borrow;
+use std::convert::TryInto;
 use std::str::FromStr;
 use std::{error, fmt};
 
-use bitcoin::util::bip32;
-use bitcoin::{self, XpubIdentifier};
-use elements::hashes::hex::FromHex;
+use bitcoin::bip32;
+use bitcoin::{self, hash_types::XpubIdentifier};
 use elements::hashes::{hash160, ripemd160, sha256, Hash, HashEngine};
 use elements::secp256k1_zkp::{Secp256k1, Signing, Verification};
 
@@ -19,7 +19,7 @@ pub enum SinglePubKey {
     /// FullKey (compressed or uncompressed)
     FullKey(bitcoin::PublicKey),
     /// XOnlyPublicKey
-    XOnly(bitcoin::XOnlyPublicKey),
+    XOnly(bitcoin::key::XOnlyPublicKey),
 }
 
 /// The MiniscriptKey corresponding to Descriptors. This can
@@ -388,7 +388,7 @@ fn maybe_fmt_master_id(
 ) -> fmt::Result {
     if let Some((ref master_id, ref master_deriv)) = *origin {
         fmt::Formatter::write_str(f, "[")?;
-        for byte in master_id.into_bytes().iter() {
+        for byte in master_id.as_bytes() {
             write!(f, "{:02x}", byte)?;
         }
         fmt_derivation_path(f, master_deriv)?;
@@ -461,7 +461,7 @@ impl FromStr for DescriptorPublicKey {
         } else {
             let key = match key_part.len() {
                 64 => {
-                    let x_only_key = bitcoin::XOnlyPublicKey::from_str(key_part).map_err(|_| {
+                    let x_only_key = bitcoin::key::XOnlyPublicKey::from_str(key_part).map_err(|_| {
                         DescriptorKeyParseError("Error while parsing simple xonly key")
                     })?;
                     SinglePubKey::XOnly(x_only_key)
@@ -548,7 +548,11 @@ impl DescriptorPublicKey {
                         }
                         SinglePubKey::XOnly(x_only_pk) => engine.input(&x_only_pk.serialize()),
                     };
-                    bip32::Fingerprint::from(&XpubIdentifier::from_engine(engine)[..4])
+                    bip32::Fingerprint::from(
+                        &XpubIdentifier::from_engine(engine)[..4]
+                            .try_into()
+                            .expect("4 byte slice"),
+                    )
                 }
             }
         }
@@ -751,7 +755,7 @@ fn parse_key_origin(s: &str) -> Result<(&str, Option<bip32::KeySource>), Descrip
                 "Master fingerprint should be 8 characters long",
             ));
         }
-        let parent_fingerprint = bip32::Fingerprint::from_hex(origin_id_hex).map_err(|_| {
+        let parent_fingerprint = bip32::Fingerprint::from_str(origin_id_hex).map_err(|_| {
             DescriptorKeyParseError("Malformed master fingerprint, expected 8 hex chars")
         })?;
         let origin_path = raw_origin
@@ -897,7 +901,7 @@ impl<K: InnerXKey> DescriptorXKey<K> {
     /// # extern crate elements_miniscript as miniscript;
     /// # use std::str::FromStr;
     /// # fn body() -> Result<(), Box<dyn std::error::Error>> {
-    /// use miniscript::bitcoin::util::bip32;
+    /// use miniscript::bitcoin::bip32;
     /// use miniscript::descriptor::DescriptorPublicKey;
     ///
     /// let ctx = miniscript::elements::secp256k1_zkp::Secp256k1::signing_only();
@@ -1158,7 +1162,7 @@ mod test {
     use std::str::FromStr;
 
     use bitcoin::secp256k1;
-    use bitcoin::util::bip32;
+    use bitcoin::bip32;
     use elements::secp256k1_zkp;
     #[cfg(feature = "serde")]
     use serde_test::{assert_tokens, Token};

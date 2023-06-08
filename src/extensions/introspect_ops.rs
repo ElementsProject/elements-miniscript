@@ -4,10 +4,10 @@ use std::convert::TryFrom;
 use std::fmt;
 use std::str::FromStr;
 
-use bitcoin::hashes::hex::{FromHex, ToHex};
 use bitcoin::hashes::{sha256, Hash};
 use elements::address::Payload;
 use elements::confidential::Asset;
+use elements::hex::{FromHex, ToHex};
 use elements::opcodes::all::*;
 use elements::{confidential, encode, script, Address, AddressParams};
 
@@ -642,7 +642,7 @@ fn spk(pref: i8, prog: &[u8]) -> Option<elements::Script> {
 // This converts legacy programs to (-1, sha256::Hash(spk))
 fn spk_to_components(s: &elements::Script) -> (i8, Vec<u8>) {
     if !s.is_witness_program() {
-        (-1, sha256::Hash::hash(s.as_bytes()).to_vec())
+        (-1, sha256::Hash::hash(s.as_bytes()).to_byte_array().to_vec())
     } else {
         // indirect way to get payload.
         // The address parameters don't really matter here
@@ -664,7 +664,7 @@ impl AssetExpr<CovExtArgs> {
             AssetExpr::Const(CovExtArgs::Asset(a)) => {
                 match a {
                     Asset::Null => unreachable!("Attempt to push Null asset"),
-                    Asset::Explicit(a) => builder.push_slice(&a.into_inner()).push_int(1), // explicit prefix
+                    Asset::Explicit(a) => builder.push_slice(a.into_inner().as_ref()).push_int(1), // explicit prefix
                     Asset::Confidential(c) => {
                         let ser = c.serialize();
                         builder.push_slice(&ser[1..]).push_int(ser[0] as i64)
@@ -839,7 +839,7 @@ impl SpkExpr<CovExtArgs> {
             SpkExpr::Const(CovExtArgs::Script(s)) => {
                 let (ver, prog) = match &s.0 {
                     SpkInner::Script(s) => spk_to_components(s),
-                    SpkInner::Hashed(h) => (-1, h.to_vec()),
+                    SpkInner::Hashed(h) => (-1, h.to_byte_array().to_vec()),
                 };
                 builder.push_slice(&prog).push_int(ver as i64)
             }
@@ -864,7 +864,7 @@ impl SpkExpr<CovExtArgs> {
         let res = match self {
             SpkExpr::Const(CovExtArgs::Script(s)) => match &s.0 {
                 SpkInner::Script(s) => spk_to_components(s),
-                SpkInner::Hashed(h) => (-1, h.to_vec()),
+                SpkInner::Hashed(h) => (-1, h.to_byte_array().to_vec()),
             },
             SpkExpr::Const(_) => unreachable!(
                 "Both constructors from_str and from_token_iter
@@ -908,7 +908,7 @@ impl SpkExpr<CovExtArgs> {
         } else if let Some(&[Tk::Bytes32(spk_vec), Tk::NumNeg1]) = tks.get(e.checked_sub(2)?..e) {
             let mut inner = [0u8; 32];
             inner.copy_from_slice(spk_vec);
-            let hashed_spk = Spk(SpkInner::Hashed(sha256::Hash::from_inner(inner)));
+            let hashed_spk = Spk(SpkInner::Hashed(sha256::Hash::from_byte_array(inner)));
             Some((SpkExpr::Const(CovExtArgs::Script(hashed_spk)), e - 2))
         } else if let Some(&[Tk::Push(ref spk_vec), Tk::Num(i)]) = tks.get(e.checked_sub(2)?..e) {
             let script = spk(i8::try_from(i).ok()?, spk_vec)?;
@@ -1218,7 +1218,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::XOnlyPublicKey;
+    use bitcoin::key::XOnlyPublicKey;
 
     use super::*;
     use crate::test_utils::{StrExtTranslator, StrXOnlyKeyTranslator};

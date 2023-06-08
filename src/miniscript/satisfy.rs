@@ -77,7 +77,7 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
         None
     }
 
-    /// Given a raw `Pkh`, lookup corresponding [`bitcoin::XOnlyPublicKey`]
+    /// Given a raw `Pkh`, lookup corresponding [`bitcoin::key::XOnlyPublicKey`]
     fn lookup_raw_pkh_x_only_pk(&self, _: &hash160::Hash) -> Option<XOnlyPublicKey> {
         None
     }

@@ -162,7 +162,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     impl<'a> Satisfier<bitcoin::PublicKey> for CsfsSatisfier<'a> {
         fn lookup_csfs_sig(
             &self,
-            pk: &bitcoin::XOnlyPublicKey,
+            pk: &bitcoin::key::XOnlyPublicKey,
             msg: &miniscript::extensions::CsfsMsg,
         ) -> Option<secp256k1::schnorr::Signature> {
             let xpk = pk.to_x_only_pubkey();
@@ -182,7 +182,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
 
         fn lookup_price_oracle_sig(
                 &self,
-                pk: &bitcoin::XOnlyPublicKey,
+                pk: &bitcoin::key::XOnlyPublicKey,
                 time: u64,
             ) -> Option<(secp256k1::schnorr::Signature, i64, u64)> {
             let xpk = pk.to_x_only_pubkey();

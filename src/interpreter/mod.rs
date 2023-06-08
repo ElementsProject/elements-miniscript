@@ -8,6 +8,7 @@
 //! assuming that the spent coin was descriptor controlled.
 //!
 
+use std::borrow::Borrow;
 use std::fmt;
 use std::str::FromStr;
 
@@ -49,7 +50,7 @@ pub enum KeySigPair {
     /// A Full public key and corresponding Ecdsa signature
     Ecdsa(bitcoin::PublicKey, ElementsSig),
     /// A x-only key and corresponding Schnorr signature
-    Schnorr(bitcoin::XOnlyPublicKey, elements::SchnorrSig),
+    Schnorr(bitcoin::key::XOnlyPublicKey, elements::SchnorrSig),
 }
 
 impl KeySigPair {
@@ -61,8 +62,8 @@ impl KeySigPair {
         }
     }
 
-    /// Obtain a pair of ([`bitcoin::XOnlyPublicKey`], [`elements::SchnorrSig`]) from [`KeySigPair`]
-    pub fn as_schnorr(&self) -> Option<(bitcoin::XOnlyPublicKey, elements::SchnorrSig)> {
+    /// Obtain a pair of ([`bitcoin::key::XOnlyPublicKey`], [`elements::SchnorrSig`]) from [`KeySigPair`]
+    pub fn as_schnorr(&self) -> Option<(bitcoin::key::XOnlyPublicKey, elements::SchnorrSig)> {
         match self {
             KeySigPair::Ecdsa(_, _) => None,
             KeySigPair::Schnorr(pk, sig) => Some((*pk, *sig)),
@@ -90,7 +91,7 @@ pub enum BitcoinKey {
     /// Full key
     Fullkey(bitcoin::PublicKey),
     /// Xonly key
-    XOnlyPublicKey(bitcoin::XOnlyPublicKey),
+    XOnlyPublicKey(bitcoin::key::XOnlyPublicKey),
 }
 
 impl BitcoinKey {
@@ -118,8 +119,8 @@ impl From<bitcoin::PublicKey> for BitcoinKey {
     }
 }
 
-impl From<bitcoin::XOnlyPublicKey> for BitcoinKey {
-    fn from(xpk: bitcoin::XOnlyPublicKey) -> Self {
+impl From<bitcoin::key::XOnlyPublicKey> for BitcoinKey {
+    fn from(xpk: bitcoin::key::XOnlyPublicKey) -> Self {
         BitcoinKey::XOnlyPublicKey(xpk)
     }
 }
@@ -234,19 +235,19 @@ where
     /// - Insufficient sighash information is present
     /// - sighash single without corresponding output
     // TODO: Create a good first isse to change this to error
-    pub fn verify_sig<C: secp256k1_zkp::Verification>(
+    pub fn verify_sig<C: secp256k1_zkp::Verification, T: Borrow<elements::TxOut>>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
         tx: &elements::Transaction,
         input_idx: usize,
-        prevouts: &sighash::Prevouts<'_>,
+        prevouts: &sighash::Prevouts<'_, T>,
         genesis_hash: elements::BlockHash,
         sig: &KeySigPair,
     ) -> bool {
-        fn get_prevout<'u>(
-            prevouts: &sighash::Prevouts<'u>,
+        fn get_prevout<'u, T: Borrow<elements::TxOut>>(
+            prevouts: &'u sighash::Prevouts<'u, T>,
             input_index: usize,
-        ) -> Option<&'u elements::TxOut> {
+        ) -> Option<&'u T> {
             match prevouts {
                 sighash::Prevouts::One(index, prevout) => {
                     if input_index == *index {
@@ -266,7 +267,7 @@ where
                     cache.legacy_sighash(input_idx, script_pubkey, ecdsa_sig.1)
                 } else if self.is_segwit_v0() {
                     let amt = match get_prevout(prevouts, input_idx) {
-                        Some(txout) => txout.value,
+                        Some(txout) => txout.borrow().value,
                         None => return false,
                     };
                     cache.segwitv0_sighash(input_idx, script_pubkey, amt, ecdsa_sig.1)
@@ -304,7 +305,7 @@ where
                     return false;
                 };
                 let msg = sighash_msg
-                    .map(|hash| secp256k1_zkp::Message::from_slice(&hash).expect("32 byte"));
+                    .map(|hash| secp256k1_zkp::Message::from_slice(hash.as_ref()).expect("32 byte"));
                 let success =
                     msg.map(|msg| secp.verify_schnorr(&schnorr_sig.sig, &msg, xpk).is_ok());
                 success.unwrap_or(false) // unwrap_or_default checks for errors, while success would have checksig results
@@ -698,7 +699,7 @@ where
                 Terminal::After(ref n) => {
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_after(&n.into(), self.lock_time);
+                    let res = self.stack.evaluate_after(&LockTime::from(*n), self.lock_time);
                     if res.is_some() {
                         return res;
                     }
@@ -1212,7 +1213,7 @@ mod tests {
         Vec<ElementsSig>,
         secp256k1_zkp::Message,
         Secp256k1<secp256k1_zkp::All>,
-        Vec<bitcoin::XOnlyPublicKey>,
+        Vec<bitcoin::key::XOnlyPublicKey>,
         Vec<elements::SchnorrSig>,
         Vec<Vec<u8>>,
     ) {
@@ -1244,8 +1245,8 @@ mod tests {
             pks.push(pk);
             der_sigs.push(sigser);
 
-            let keypair = bitcoin::KeyPair::from_secret_key(&secp, &sk);
-            let (x_only_pk, _parity) = bitcoin::XOnlyPublicKey::from_keypair(&keypair);
+            let keypair = bitcoin::key::KeyPair::from_secret_key(&secp, &sk);
+            let (x_only_pk, _parity) = bitcoin::key::XOnlyPublicKey::from_keypair(&keypair);
             x_only_pks.push(x_only_pk);
             let schnorr_sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &[0u8; 32]);
             let schnorr_sig = elements::SchnorrSig {
@@ -1754,7 +1755,7 @@ mod tests {
     }
 
     fn x_only_no_checks_ms(ms: &str) -> Miniscript<BitcoinKey, NoChecks> {
-        let elem: Miniscript<bitcoin::XOnlyPublicKey, NoChecks> =
+        let elem: Miniscript<bitcoin::key::XOnlyPublicKey, NoChecks> =
             Miniscript::from_str_ext(ms, &ExtParams::allow_all()).unwrap();
         elem.to_no_checks_ms()
     }

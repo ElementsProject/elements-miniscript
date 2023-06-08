@@ -4,7 +4,7 @@ use std::convert::TryInto;
 use std::str::FromStr;
 use std::{cmp, error, fmt};
 
-use bitcoin::XOnlyPublicKey;
+use bitcoin::key::XOnlyPublicKey;
 use bitcoin_miniscript::MiniscriptKey;
 use elements::opcodes::all::*;
 use elements::sighash::Prevouts;
@@ -1631,7 +1631,7 @@ where
 #[cfg(test)]
 mod tests {
     use bitcoin::hashes::Hash;
-    use bitcoin::XOnlyPublicKey;
+    use bitcoin::key::XOnlyPublicKey;
 
     use super::*;
     use crate::extensions::check_sig_price_oracle_1;

@@ -7,7 +7,7 @@
 use std::collections::HashSet;
 use std::{error, fmt, str};
 
-use elements::{LockTime, PackedLockTime, Sequence};
+use elements::{LockTime, Sequence};
 #[cfg(feature = "compiler")]
 use {
     crate::descriptor::TapTree,
@@ -29,7 +29,7 @@ use crate::expression::{self, FromTree};
 use crate::miniscript::types::extra_props::TimelockInfo;
 #[cfg(all(doc, not(feature = "compiler")))]
 use crate::Descriptor;
-use crate::{errstr, Error, ForEachKey, MiniscriptKey, Translator};
+use crate::{errstr, AbsLockTime, Error, ForEachKey, MiniscriptKey, Translator};
 
 /// Maximum TapLeafs allowed in a compiled TapTree
 #[cfg(feature = "compiler")]
@@ -47,7 +47,7 @@ pub enum Policy<Pk: MiniscriptKey> {
     /// A public key which must sign to satisfy the descriptor
     Key(Pk),
     /// An absolute locktime restriction
-    After(PackedLockTime),
+    After(AbsLockTime),
     /// A relative locktime restriction
     Older(Sequence),
     /// A SHA256 whose preimage must be provided to satisfy the descriptor
@@ -72,9 +72,9 @@ where
     Pk: MiniscriptKey,
 {
     /// Construct a `Policy::After` from `n`. Helper function equivalent to
-    /// `Policy::After(PackedLockTime::from(LockTime::from_consensus(n)))`.
+    /// `Policy::After(LockTime::from(LockTime::from_consensus(n)))`.
     pub fn after(n: u32) -> Policy<Pk> {
-        Policy::After(PackedLockTime::from(LockTime::from_consensus(n)))
+        Policy::After(AbsLockTime::from(LockTime::from_consensus(n)))
     }
 
     /// Construct a `Policy::Older` from `n`. Helper function equivalent to
@@ -124,7 +124,7 @@ impl<Pk: MiniscriptKey> From<PolicyArc<Pk>> for Policy<Pk> {
             PolicyArc::Unsatisfiable => Policy::Unsatisfiable,
             PolicyArc::Trivial => Policy::Trivial,
             PolicyArc::Key(pk) => Policy::Key(pk),
-            PolicyArc::After(t) => Policy::After(PackedLockTime::from(LockTime::from_consensus(t))),
+            PolicyArc::After(t) => Policy::After(AbsLockTime::from(LockTime::from_consensus(t))),
             PolicyArc::Older(t) => Policy::Older(Sequence::from_consensus(t)),
             PolicyArc::Sha256(hash) => Policy::Sha256(hash),
             PolicyArc::Hash256(hash) => Policy::Hash256(hash),
@@ -157,7 +157,7 @@ impl<Pk: MiniscriptKey> From<Policy<Pk>> for PolicyArc<Pk> {
             Policy::Unsatisfiable => PolicyArc::Unsatisfiable,
             Policy::Trivial => PolicyArc::Trivial,
             Policy::Key(pk) => PolicyArc::Key(pk),
-            Policy::After(PackedLockTime(t)) => PolicyArc::After(t),
+            Policy::After(t) => PolicyArc::After(t.to_consensus_u32()),
             Policy::Older(Sequence(t)) => PolicyArc::Older(t),
             Policy::Sha256(hash) => PolicyArc::Sha256(hash),
             Policy::Hash256(hash) => PolicyArc::Hash256(hash),
@@ -940,7 +940,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                 }
             }
             Policy::After(n) => {
-                if n == PackedLockTime::ZERO {
+                if n == LockTime::ZERO.into() {
                     Err(PolicyError::ZeroTime)
                 } else if n.to_u32() > 2u32.pow(31) {
                     Err(PolicyError::TimeTooFar)

@@ -13,7 +13,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use bitcoin::hashes::hash160;
-use elements::{opcodes, script, LockTime, Sequence};
+use elements::{opcodes, script, Sequence};
 
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 use crate::extensions::ParseableExt;
@@ -22,7 +22,7 @@ use crate::miniscript::types::{self, Property};
 use crate::miniscript::ScriptContext;
 use crate::util::MsKeyBuilder;
 use crate::{
-    errstr, expression, script_num_size, Error, ExtTranslator, Extension, ForEachKey, Miniscript,
+    errstr, expression, script_num_size, AbsLockTime, Error, ExtTranslator, Extension, ForEachKey, Miniscript,
     MiniscriptKey, Terminal, ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
@@ -571,7 +571,7 @@ impl_from_tree!(
             }
             ("pk_h", 1) => expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkH)),
             ("after", 1) => expression::terminal(&top.args[0], |x| {
-                expression::parse_num::<u32>(x).map(|x| Terminal::After(LockTime::from_consensus(x).into()))
+                expression::parse_num::<u32>(x).map(|x| Terminal::After(AbsLockTime::from_consensus(x).into()))
             }),
             ("older", 1) => expression::terminal(&top.args[0], |x| {
                 expression::parse_num::<u32>(x).map(|x| Terminal::Older(Sequence::from_consensus(x)))
@@ -790,7 +790,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
             Terminal::RawPkH(ref hash) => builder
                 .push_opcode(opcodes::all::OP_DUP)
                 .push_opcode(opcodes::all::OP_HASH160)
-                .push_slice(hash)
+                .push_slice(hash.as_ref())
                 .push_opcode(opcodes::all::OP_EQUALVERIFY),
             Terminal::After(t) => builder
                 .push_int(t.to_u32().into())
@@ -803,28 +803,28 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
                 .push_int(32)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY)
                 .push_opcode(opcodes::all::OP_SHA256)
-                .push_slice(&Pk::to_sha256(h))
+                .push_slice(Pk::to_sha256(h).as_ref())
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::Hash256(ref h) => builder
                 .push_opcode(opcodes::all::OP_SIZE)
                 .push_int(32)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY)
                 .push_opcode(opcodes::all::OP_HASH256)
-                .push_slice(&Pk::to_hash256(h))
+                .push_slice(Pk::to_hash256(h).as_ref())
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::Ripemd160(ref h) => builder
                 .push_opcode(opcodes::all::OP_SIZE)
                 .push_int(32)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY)
                 .push_opcode(opcodes::all::OP_RIPEMD160)
-                .push_slice(&Pk::to_ripemd160(h))
+                .push_slice(Pk::to_ripemd160(h).as_ref())
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::Hash160(ref h) => builder
                 .push_opcode(opcodes::all::OP_SIZE)
                 .push_int(32)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY)
                 .push_opcode(opcodes::all::OP_HASH160)
-                .push_slice(&Pk::to_hash160(h))
+                .push_slice(Pk::to_hash160(h).as_ref())
                 .push_opcode(opcodes::all::OP_EQUAL),
             Terminal::True => builder.push_opcode(opcodes::OP_TRUE),
             Terminal::False => builder.push_opcode(opcodes::OP_FALSE),

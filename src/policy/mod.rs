@@ -25,7 +25,7 @@ pub use self::concrete::Policy as Concrete;
 pub use self::semantic::Policy as Semantic;
 use crate::descriptor::{CovError, Descriptor};
 use crate::miniscript::{Miniscript, ScriptContext};
-use crate::{BtcPolicy, Error, Extension, MiniscriptKey, Terminal};
+use crate::{AbsLockTime, BtcPolicy, Error, Extension, MiniscriptKey, Terminal};
 
 /// Policy entailment algorithm maximum number of terminals allowed
 const ENTAILMENT_MAX_TERMINALS: usize = 20;
@@ -126,7 +126,7 @@ where
             Terminal::RawPkH(ref _pkh) => {
                 return Err(Error::LiftError(LiftError::RawDescriptorLift))
             }
-            Terminal::After(t) => Semantic::After(t),
+            Terminal::After(t) => Semantic::After(t.into()),
             Terminal::Older(t) => Semantic::Older(t),
             Terminal::Sha256(ref h) => Semantic::Sha256(h.clone()),
             Terminal::Hash256(ref h) => Semantic::Hash256(h.clone()),
@@ -237,7 +237,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for BtcPolicy<Pk> {
             BtcPolicy::Hash256(ref h) => Ok(Semantic::Hash256(h.clone())),
             BtcPolicy::Ripemd160(ref h) => Ok(Semantic::Ripemd160(h.clone())),
             BtcPolicy::Hash160(ref h) => Ok(Semantic::Hash160(h.clone())),
-            BtcPolicy::After(n) => Ok(Semantic::After(elements::PackedLockTime(n.to_u32()))),
+            BtcPolicy::After(n) => Ok(Semantic::After(AbsLockTime::from_consensus(n.to_consensus_u32()))),
             BtcPolicy::Older(n) => Ok(Semantic::Older(Sequence(n.to_consensus_u32()))),
             BtcPolicy::Threshold(k, ref subs) => {
                 let new_subs: Result<Vec<Semantic<Pk>>, _> =

@@ -3,7 +3,7 @@ pub extern crate elements_miniscript;
 use std::str::FromStr;
 use miniscript::elements;
 use elements::encode::{deserialize, serialize_hex};
-use elements::hashes::hex::FromHex;
+use elements::hex::FromHex;
 use elements::BlockHash;
 pub use elements_miniscript as miniscript;
 use elementsd::bitcoincore_rpc::jsonrpc::serde_json::{json, Value};

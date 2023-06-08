@@ -5,7 +5,7 @@
 use std::fmt;
 
 use elements::encode::serialize;
-use elements::hashes::hex::{FromHex, ToHex};
+use elements::hex::{FromHex, ToHex};
 use elements::hashes::{sha256d, Hash};
 
 use super::{ParseableExt, TxEnv};
@@ -264,7 +264,7 @@ impl ParseableExt for LegacyOutputsPref {
             for _ in 0..max_elems {
                 stack.pop().unwrap();
             }
-            if sha256d::Hash::hash(&outputs_builder).as_inner() == hash_outputs {
+            if sha256d::Hash::hash(&outputs_builder).as_byte_array() == hash_outputs {
                 stack.push(interpreter::Element::Satisfied);
                 Ok(true)
             } else {

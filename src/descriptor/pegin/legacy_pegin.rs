@@ -22,13 +22,15 @@
 //! Thus, as a simple solution we implement these as a separate
 //! struct with it's own API.
 
+use std::convert::TryFrom;
 use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use bitcoin::blockdata::{opcodes, script};
+use bitcoin::blockdata::script::PushBytes;
 use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
-use bitcoin::{self, hashes, Script as BtcScript};
+use bitcoin::{self, hashes, ScriptBuf as BtcScript};
 use bitcoin_miniscript::TranslatePk as BtcTranslatePk;
 use elements::secp256k1_zkp;
 
@@ -227,7 +229,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
             .push_int(self.fed_k as i64);
 
         for key in &self.fed_pks {
-            let tweaked_pk = tweak_key(key.as_untweaked(), secp, tweak.as_inner());
+            let tweaked_pk = tweak_key(key.as_untweaked(), secp, tweak.as_byte_array());
             builder = builder.push_key(&tweaked_pk);
         }
         let mut nearly_done = builder
@@ -267,7 +269,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
 
         let insert_point = nearly_done.len() - 1;
         nearly_done.insert(insert_point, 0x68);
-        bitcoin::Script::from(nearly_done)
+        BtcScript::from(nearly_done)
     }
 
     /// Create a new descriptor with hard coded values for the
@@ -436,8 +438,10 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         Pk: ToPublicKey,
     {
         let witness_script = self.explicit_script(secp);
+        let push_bytes = <&PushBytes>::try_from(witness_script.as_bytes())
+            .expect("Witness script is not too larg");
         script::Builder::new()
-            .push_slice(&witness_script.to_v0_p2wsh()[..])
+            .push_slice(push_bytes)
             .into_script()
     }
     /// Computes the bitcoin "witness script" of the descriptor, i.e. the underlying
@@ -471,7 +475,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         let unsigned_script_sig = self.bitcoin_unsigned_script_sig(secp);
         let mut sigs = vec![];
         for key in &self.fed_pks {
-            let tweaked_pk = tweak_key(key.as_untweaked(), secp, tweak.as_inner());
+            let tweaked_pk = tweak_key(key.as_untweaked(), secp, tweak.as_byte_array());
             match satisfier.lookup_ecdsa_sig(&tweaked_pk) {
                 Some(sig) => sigs.push(sig.to_vec()),
                 None => {}

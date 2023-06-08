@@ -20,11 +20,12 @@
 //! Unlike Pegin descriptors these are Miniscript, so dealing
 //! with these is easier.
 
+use std::convert::TryFrom;
 use std::fmt;
 
-use bitcoin::blockdata::script;
+use bitcoin::blockdata::script::{self, PushBytes};
 use bitcoin::hashes::Hash;
-use bitcoin::{self, hashes, Script as BtcScript};
+use bitcoin::{self, hashes, ScriptBuf as BtcScript};
 use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{desc_checksum, verify_checksum};
@@ -186,8 +187,10 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
         let witness_script = self
             .bitcoin_witness_script(secp)
             .expect("TODO after taproot");
+        let push_bytes = <&PushBytes>::try_from(witness_script.as_bytes())
+            .expect("Witness script is not too larg");
         script::Builder::new()
-            .push_slice(&witness_script.to_v0_p2wsh()[..])
+            .push_slice(push_bytes)
             .into_script()
     }
 
