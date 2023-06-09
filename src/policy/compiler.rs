@@ -1610,7 +1610,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "unstable"))]
+#[cfg(miniscript_bench)]
 mod benches {
     use std::str::FromStr;
 

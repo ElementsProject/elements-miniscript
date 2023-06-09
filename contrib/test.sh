@@ -67,7 +67,7 @@ fi
 # Bench if told to (this only works with the nightly toolchain)
 if [ "$DO_BENCH" = true ]
 then
-    RUSTFLAGS=--cfg=bench cargo bench --features="unstable compiler"
+    RUSTFLAGS=--cfg=miniscript_bench cargo bench --features="compiler"
 fi
 
 # Build the docs if told to (this only works with the nightly toolchain)

@@ -37,7 +37,7 @@ Enabling the `no-std` feature does not disable `std`. To disable the `std` featu
 
 ## Benchmarking
 
-To run the benchmarks run `RUSTFLAGS=--cfg=bench cargo +nightly bench`.
+To run the benchmarks run `RUSTFLAGS=--cfg=miniscript_bench cargo +nightly bench --all-features`.
 
 ## Minimum Supported Rust Version (MSRV)
 This library should always compile with any combination of features on **Rust 1.48.0**.

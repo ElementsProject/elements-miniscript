@@ -89,7 +89,7 @@
 //!
 //!
 
-#![cfg_attr(all(test, feature = "unstable"), feature(test))]
+#![cfg_attr(miniscript_bench, feature(test))]
 // Coding conventions
 #![allow(bare_trait_objects)]
 #![deny(non_camel_case_types)]
@@ -109,7 +109,7 @@ compile_error!(
 #[cfg(feature = "serde")]
 pub use actual_serde as serde;
 pub use {bitcoin, elements};
-#[cfg(all(test, feature = "unstable"))]
+#[cfg(miniscript_bench)]
 extern crate test;
 
 // Miniscript imports
