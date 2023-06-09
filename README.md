@@ -1,6 +1,6 @@
 ![Build](https://github.com/ElementsProject/elements-miniscript/workflows/Continuous%20integration/badge.svg)
 
-**Minimum Supported Rust Version:** 1.41.1
+**Minimum Supported Rust Version:** 1.48.0
 
 *This crate uses "2018" edition
 
@@ -35,19 +35,19 @@ The cargo feature `std` is enabled by default. At least one of the features `std
 
 Enabling the `no-std` feature does not disable `std`. To disable the `std` feature you must disable default features. The `no-std` feature only enables additional features required for this crate to be usable without `std`. Both can be enabled without conflict.
 
+## Benchmarking
+
+To run the benchmarks run `RUSTFLAGS=--cfg=bench cargo +nightly bench`.
+
 ## Minimum Supported Rust Version (MSRV)
-This library should always compile with any combination of features on **Rust 1.41.1**.
+This library should always compile with any combination of features on **Rust 1.48.0**.
 
 
 Some dependencies do not play nicely with our MSRV, if you are running the tests
 you may need to pin as follows:
 
 ```
-cargo update --package url --precise 2.2.2
-cargo update --package form_urlencoded --precise 1.0.1
-cargo update -p once_cell --precise 1.13.1
-cargo update -p bzip2 --precise 0.4.2
-cargo update -p which --precise 4.3.0
+cargo update -p serde --precise 1.0.156
 ```
 
 ## Contributing
