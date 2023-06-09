@@ -237,7 +237,9 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for BtcPolicy<Pk> {
             BtcPolicy::Hash256(ref h) => Ok(Semantic::Hash256(h.clone())),
             BtcPolicy::Ripemd160(ref h) => Ok(Semantic::Ripemd160(h.clone())),
             BtcPolicy::Hash160(ref h) => Ok(Semantic::Hash160(h.clone())),
-            BtcPolicy::After(n) => Ok(Semantic::After(AbsLockTime::from_consensus(n.to_consensus_u32()))),
+            BtcPolicy::After(n) => Ok(Semantic::After(AbsLockTime::from_consensus(
+                n.to_consensus_u32(),
+            ))),
             BtcPolicy::Older(n) => Ok(Semantic::Older(Sequence(n.to_consensus_u32()))),
             BtcPolicy::Threshold(k, ref subs) => {
                 let new_subs: Result<Vec<Semantic<Pk>>, _> =

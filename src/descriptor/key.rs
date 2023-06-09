@@ -4,8 +4,8 @@ use std::convert::TryInto;
 use std::str::FromStr;
 use std::{error, fmt};
 
-use bitcoin::bip32;
-use bitcoin::{self, hash_types::XpubIdentifier};
+use bitcoin::hash_types::XpubIdentifier;
+use bitcoin::{self, bip32};
 use elements::hashes::{hash160, ripemd160, sha256, Hash, HashEngine};
 use elements::secp256k1_zkp::{Secp256k1, Signing, Verification};
 
@@ -461,9 +461,10 @@ impl FromStr for DescriptorPublicKey {
         } else {
             let key = match key_part.len() {
                 64 => {
-                    let x_only_key = bitcoin::key::XOnlyPublicKey::from_str(key_part).map_err(|_| {
-                        DescriptorKeyParseError("Error while parsing simple xonly key")
-                    })?;
+                    let x_only_key =
+                        bitcoin::key::XOnlyPublicKey::from_str(key_part).map_err(|_| {
+                            DescriptorKeyParseError("Error while parsing simple xonly key")
+                        })?;
                     SinglePubKey::XOnly(x_only_key)
                 }
                 66 | 130 => {
@@ -978,7 +979,7 @@ impl MiniscriptKey for DescriptorPublicKey {
 
     fn is_x_only_key(&self) -> bool {
         matches!(
-            self, 
+            self,
             DescriptorPublicKey::Single(SinglePub {
                 key: SinglePubKey::XOnly(ref _key),
                 ..
@@ -1160,8 +1161,7 @@ impl Serialize for DescriptorPublicKey {
 mod test {
     use std::str::FromStr;
 
-    use bitcoin::secp256k1;
-    use bitcoin::bip32;
+    use bitcoin::{bip32, secp256k1};
     use elements::secp256k1_zkp;
     #[cfg(feature = "serde")]
     use serde_test::{assert_tokens, Token};

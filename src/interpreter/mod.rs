@@ -304,8 +304,9 @@ where
                     // schnorr sigs in ecdsa descriptors
                     return false;
                 };
-                let msg = sighash_msg
-                    .map(|hash| secp256k1_zkp::Message::from_slice(hash.as_ref()).expect("32 byte"));
+                let msg = sighash_msg.map(|hash| {
+                    secp256k1_zkp::Message::from_slice(hash.as_ref()).expect("32 byte")
+                });
                 let success =
                     msg.map(|msg| secp.verify_schnorr(&schnorr_sig.sig, &msg, xpk).is_ok());
                 success.unwrap_or(false) // unwrap_or_default checks for errors, while success would have checksig results
@@ -699,7 +700,9 @@ where
                 Terminal::After(ref n) => {
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_after(&LockTime::from(*n), self.lock_time);
+                    let res = self
+                        .stack
+                        .evaluate_after(&LockTime::from(*n), self.lock_time);
                     if res.is_some() {
                         return res;
                     }

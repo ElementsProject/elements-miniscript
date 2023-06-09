@@ -8,7 +8,8 @@
 //! `https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki`
 //!
 
-use bitcoin::{self, PublicKey, key::XOnlyPublicKey};
+use bitcoin::key::XOnlyPublicKey;
+use bitcoin::{self, PublicKey};
 use elements::secp256k1_zkp::{self, Secp256k1};
 use elements::taproot::LeafVersion;
 use elements::{self, confidential, Script, Sequence, Transaction, TxOut};

@@ -27,8 +27,8 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use bitcoin::blockdata::{opcodes, script};
 use bitcoin::blockdata::script::PushBytes;
+use bitcoin::blockdata::{opcodes, script};
 use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
 use bitcoin::{self, hashes, ScriptBuf as BtcScript};
 use bitcoin_miniscript::TranslatePk as BtcTranslatePk;
@@ -440,9 +440,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         let witness_script = self.explicit_script(secp);
         let push_bytes = <&PushBytes>::try_from(witness_script.as_bytes())
             .expect("Witness script is not too larg");
-        script::Builder::new()
-            .push_slice(push_bytes)
-            .into_script()
+        script::Builder::new().push_slice(push_bytes).into_script()
     }
     /// Computes the bitcoin "witness script" of the descriptor, i.e. the underlying
     /// script before any hashing is done. For `Bare`, `Pkh` and `Wpkh` this

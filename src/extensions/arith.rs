@@ -947,7 +947,9 @@ impl<T: ExtParam> Arith<T> {
                 return Err(TypeError::PriceOracle1Missing);
             }
             // All the elements in b should be PriceOracle1W
-            if b.iter_terminals().any(|x| matches!(x, ExprInner::PriceOracle1(..))) {
+            if b.iter_terminals()
+                .any(|x| matches!(x, ExprInner::PriceOracle1(..)))
+            {
                 return Err(TypeError::PriceOracle1Missing);
             }
         }
@@ -1347,7 +1349,10 @@ impl<T: ExtParam> Extension for Arith<T> {
         ))
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, FromTokenIterError> {
+    fn from_name_tree(
+        name: &str,
+        children: &[expression::Tree<'_>],
+    ) -> Result<Self, FromTokenIterError> {
         let tree = Tree {
             name,
             args: children.to_vec(), // Cloning two references here, it is possible to avoid the to_vec() here,
@@ -1603,10 +1608,9 @@ where
             ExprInner::Negate(a) => Ok(Expr::from_inner(ExprInner::Negate(Box::new(
                 a.translate_ext(t)?,
             )))),
-            ExprInner::PriceOracle1(pk, time) => Ok(Expr::from_inner(ExprInner::PriceOracle1(
-                t.ext(pk)?,
-                *time,
-            ))),
+            ExprInner::PriceOracle1(pk, time) => {
+                Ok(Expr::from_inner(ExprInner::PriceOracle1(t.ext(pk)?, *time)))
+            }
             ExprInner::PriceOracle1W(pk, time) => Ok(Expr::from_inner(ExprInner::PriceOracle1W(
                 t.ext(pk)?,
                 *time,

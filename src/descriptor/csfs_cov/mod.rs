@@ -64,8 +64,8 @@ mod tests {
     use elements::secp256k1_zkp::ZERO_TWEAK;
     use elements::{
         self, confidential, opcodes, script, secp256k1_zkp, AssetId, AssetIssuance,
-        EcdsaSigHashType, LockTime, OutPoint, Script, Sequence, Transaction, TxIn,
-        TxInWitness, TxOut, Txid,
+        EcdsaSigHashType, LockTime, OutPoint, Script, Sequence, Transaction, TxIn, TxInWitness,
+        TxOut, Txid,
     };
 
     use super::cov::*;

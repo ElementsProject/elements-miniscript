@@ -5,8 +5,8 @@
 use std::fmt;
 
 use elements::encode::serialize;
-use elements::hex::{FromHex, ToHex};
 use elements::hashes::{sha256d, Hash};
+use elements::hex::{FromHex, ToHex};
 
 use super::{FromTokenIterError, ParseableExt, TxEnv};
 use crate::descriptor::CovError;
@@ -105,9 +105,13 @@ impl Extension for LegacyOutputsPref {
                 + 6 /* line 2 */
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, FromTokenIterError> {
+    fn from_name_tree(
+        name: &str,
+        children: &[expression::Tree<'_>],
+    ) -> Result<Self, FromTokenIterError> {
         if children.len() == 1 && name == "outputs_pref" {
-            let pref = expression::terminal(&children[0], Vec::<u8>::from_hex).map_err(|_| FromTokenIterError)?;
+            let pref = expression::terminal(&children[0], Vec::<u8>::from_hex)
+                .map_err(|_| FromTokenIterError)?;
             Ok(Self { pref })
         } else {
             // Correct error handling while parsing fromtree

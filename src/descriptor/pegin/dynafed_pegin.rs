@@ -189,9 +189,7 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
             .expect("TODO after taproot");
         let push_bytes = <&PushBytes>::try_from(witness_script.as_bytes())
             .expect("Witness script is not too larg");
-        script::Builder::new()
-            .push_slice(push_bytes)
-            .into_script()
+        script::Builder::new().push_slice(push_bytes).into_script()
     }
 
     /// Computes the bitcoin "witness script" of the descriptor, i.e. the underlying

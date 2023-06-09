@@ -567,8 +567,7 @@ impl ArgFromStr for confidential::Asset {
             ));
         }
         let asset_hex = Vec::<u8>::from_hex(s).map_err(|e| Error::Unexpected(e.to_string()))?;
-        elements::encode::deserialize(&asset_hex)
-            .map_err(|e| Error::Unexpected(e.to_string()))
+        elements::encode::deserialize(&asset_hex).map_err(|e| Error::Unexpected(e.to_string()))
     }
 }
 
@@ -580,8 +579,7 @@ impl ArgFromStr for confidential::Value {
             ));
         }
         let asset_hex = Vec::<u8>::from_hex(s).map_err(|e| Error::Unexpected(e.to_string()))?;
-        elements::encode::deserialize(&asset_hex)
-            .map_err(|e| Error::Unexpected(e.to_string()))
+        elements::encode::deserialize(&asset_hex).map_err(|e| Error::Unexpected(e.to_string()))
     }
 }
 
@@ -638,7 +636,10 @@ fn spk(pref: i8, prog: &[u8]) -> Option<elements::Script> {
 // This converts legacy programs to (-1, sha256::Hash(spk))
 fn spk_to_components(s: &elements::Script) -> (i8, Vec<u8>) {
     if !s.is_witness_program() {
-        (-1, sha256::Hash::hash(s.as_bytes()).to_byte_array().to_vec())
+        (
+            -1,
+            sha256::Hash::hash(s.as_bytes()).to_byte_array().to_vec(),
+        )
     } else {
         // indirect way to get payload.
         // The address parameters don't really matter here

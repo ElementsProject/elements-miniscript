@@ -21,7 +21,9 @@ use crate::miniscript::types::{Property, Type};
 use crate::miniscript::ScriptContext;
 #[cfg(doc)]
 use crate::Descriptor;
-use crate::{bitcoin, hash256, AbsLockTime, Error, Extension, Miniscript, MiniscriptKey, NoExt, ToPublicKey};
+use crate::{
+    bitcoin, hash256, AbsLockTime, Error, Extension, Miniscript, MiniscriptKey, NoExt, ToPublicKey,
+};
 
 fn return_none<T>(_: usize) -> Option<T> {
     None
@@ -655,11 +657,10 @@ pub fn parse<Ctx: ScriptContext, Ext: ParseableExt>(
 fn is_and_v(tokens: &mut TokenIter<'_>) -> bool {
     !matches!(
         tokens.peek(),
-        None
-        | Some(&Tk::If)
-        | Some(&Tk::NotIf)
-        | Some(&Tk::Else)
-        | Some(&Tk::ToAltStack)
-        | Some(&Tk::Swap)
+        None | Some(&Tk::If)
+            | Some(&Tk::NotIf)
+            | Some(&Tk::Else)
+            | Some(&Tk::ToAltStack)
+            | Some(&Tk::Swap)
     )
 }

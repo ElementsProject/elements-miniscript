@@ -22,8 +22,8 @@ use crate::miniscript::types::{self, Property};
 use crate::miniscript::ScriptContext;
 use crate::util::MsKeyBuilder;
 use crate::{
-    errstr, expression, script_num_size, AbsLockTime, Error, ExtTranslator, Extension, ForEachKey, Miniscript,
-    MiniscriptKey, Terminal, ToPublicKey, TranslateExt, TranslatePk, Translator,
+    errstr, expression, script_num_size, AbsLockTime, Error, ExtTranslator, Extension, ForEachKey,
+    Miniscript, MiniscriptKey, Terminal, ToPublicKey, TranslateExt, TranslatePk, Translator,
 };
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ext> {

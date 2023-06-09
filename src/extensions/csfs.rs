@@ -98,7 +98,10 @@ impl<T: ExtParam> Extension for CheckSigFromStack<T> {
         ))
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, FromTokenIterError> {
+    fn from_name_tree(
+        name: &str,
+        children: &[expression::Tree<'_>],
+    ) -> Result<Self, FromTokenIterError> {
         if children.len() == 2 && name == "csfs" {
             if !children[0].args.is_empty() || !children[1].args.is_empty() {
                 return Err(FromTokenIterError);

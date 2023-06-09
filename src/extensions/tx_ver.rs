@@ -84,9 +84,13 @@ impl Extension for LegacyVerEq {
         4 + 1 + 1 + 4 // opcodes + push opcodes + target size
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, FromTokenIterError> {
+    fn from_name_tree(
+        name: &str,
+        children: &[expression::Tree<'_>],
+    ) -> Result<Self, FromTokenIterError> {
         if children.len() == 1 && name == "ver_eq" {
-            let n = expression::terminal(&children[0], expression::parse_num).map_err(|_| FromTokenIterError)?;
+            let n = expression::terminal(&children[0], expression::parse_num)
+                .map_err(|_| FromTokenIterError)?;
             Ok(Self { n })
         } else {
             // Correct error handling while parsing fromtree

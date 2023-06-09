@@ -98,8 +98,8 @@
 #![deny(dead_code)]
 #![deny(unused_imports)]
 #![deny(missing_docs)]
-#![allow(clippy::manual_range_contains)]  // this lint is just stupid
-#![allow(clippy::type_complexity)]  // clippy doesn't like how many generics we use
+#![allow(clippy::manual_range_contains)] // this lint is just stupid
+#![allow(clippy::type_complexity)] // clippy doesn't like how many generics we use
 
 #[cfg(target_pointer_width = "16")]
 compile_error!(
@@ -119,12 +119,12 @@ extern crate test;
 use bitcoin_miniscript::expression::{FromTree as BtcFromTree, Tree as BtcTree};
 use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
 use bitcoin_miniscript::policy::Liftable as BtcLiftable;
+// re-export imports
+pub use bitcoin_miniscript::{hash256, ForEachKey, MiniscriptKey, SigType, ToPublicKey};
 use bitcoin_miniscript::{
     Descriptor as BtcDescriptor, Error as BtcError, Miniscript as BtcMiniscript,
     Satisfier as BtcSatisfier, Segwitv0 as BtcSegwitv0, Terminal as BtcTerminal,
 };
-// re-export imports
-pub use bitcoin_miniscript::{hash256, ForEachKey, MiniscriptKey, SigType, ToPublicKey};
 // End imports
 
 #[macro_use]
@@ -149,10 +149,9 @@ mod util;
 
 use std::{cmp, error, fmt, str};
 
-use elements::locktime;
 use elements::hashes::sha256;
 use elements::secp256k1_zkp::Secp256k1;
-use elements::{opcodes, script, secp256k1_zkp};
+use elements::{locktime, opcodes, script, secp256k1_zkp};
 
 pub use crate::descriptor::{DefiniteDescriptorKey, Descriptor, DescriptorPublicKey};
 pub use crate::extensions::{CovenantExt, Extension, NoExt, TxEnv};

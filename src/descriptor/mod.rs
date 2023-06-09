@@ -1276,10 +1276,9 @@ mod tests {
     use std::str::FromStr;
 
     use bitcoin;
-    use bitcoin::bip32;
-    use bitcoin::PublicKey;
-    use elements::hex::{FromHex, ToHex};
+    use bitcoin::{bip32, PublicKey};
     use elements::hashes::{hash160, sha256};
+    use elements::hex::{FromHex, ToHex};
     use elements::opcodes::all::{OP_CLTV, OP_CSV};
     use elements::script::Instruction;
     use elements::{opcodes, script, Sequence};

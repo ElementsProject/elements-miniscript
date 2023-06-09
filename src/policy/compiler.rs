@@ -1164,8 +1164,7 @@ where
     best_compilations(policy_cache, policy, sat_prob, dissat_prob)?
         .into_iter()
         .filter(|&(key, _)| {
-            key.ty.corr.base == types::Base::B
-                && key.dissat_prob == dissat_prob.map(OrdF64)
+            key.ty.corr.base == types::Base::B && key.dissat_prob == dissat_prob.map(OrdF64)
         })
         .map(|(_, val)| val)
         .min_by_key(|ext| OrdF64(ext.cost_1d(sat_prob, dissat_prob)))
@@ -1417,10 +1416,7 @@ mod tests {
             left_sat.insert(*key, elements_sig);
         }
         for key in keys.iter().skip(5) {
-            right_sat.insert(
-                key.to_pubkeyhash(SigType::Ecdsa),
-                (*key, elements_sig),
-            );
+            right_sat.insert(key.to_pubkeyhash(SigType::Ecdsa), (*key, elements_sig));
         }
 
         assert!(ms.satisfy(no_sat).is_err());

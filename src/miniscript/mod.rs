@@ -535,7 +535,8 @@ mod tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use bitcoin::{self, key::XOnlyPublicKey};
+    use bitcoin::key::XOnlyPublicKey;
+    use bitcoin::{self};
     use elements::hashes::{hash160, sha256, Hash};
     use elements::taproot::TapLeafHash;
     use elements::{self, secp256k1_zkp, Sequence};
@@ -1161,7 +1162,8 @@ mod tests {
             .unwrap();
         // script rtt test
         assert_eq!(
-            Miniscript::<bitcoin::key::XOnlyPublicKey, Tap>::parse_insane(&tap_ms.encode()).unwrap(),
+            Miniscript::<bitcoin::key::XOnlyPublicKey, Tap>::parse_insane(&tap_ms.encode())
+                .unwrap(),
             tap_ms
         );
         assert_eq!(tap_ms.script_size(), 104);

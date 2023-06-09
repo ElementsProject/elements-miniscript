@@ -20,8 +20,7 @@ use elements::secp256k1_zkp::{self as secp256k1, Secp256k1, VerifyOnly};
 use elements::sighash::SigHashCache;
 use elements::taproot::{self, ControlBlock, LeafVersion, TapLeafHash};
 use elements::{
-    self, pset as psbt, EcdsaSigHashType, LockTime, SchnorrSigHashType, Script,
-    Sequence,
+    self, pset as psbt, EcdsaSigHashType, LockTime, SchnorrSigHashType, Script, Sequence,
 };
 
 use crate::extensions::{CovExtArgs, CovenantExt, ParseableExt};
@@ -385,7 +384,8 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
             return false;
         }
 
-        let lock_time = self.psbt
+        let lock_time = self
+            .psbt
             .global
             .tx_data
             .fallback_locktime
@@ -429,7 +429,9 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
     fn lookup_hash256(&self, h: &Pk::Hash256) -> Option<Preimage32> {
         self.psbt.inputs()[self.index]
             .hash256_preimages
-            .get(&sha256d::Hash::from_byte_array(Pk::to_hash256(h).to_byte_array())) // upstream psbt operates on hash256
+            .get(&sha256d::Hash::from_byte_array(
+                Pk::to_hash256(h).to_byte_array(),
+            )) // upstream psbt operates on hash256
             .and_then(try_vec_as_preimage32)
     }
 
@@ -1537,7 +1539,7 @@ mod tests {
     use elements::hex::FromHex;
     use elements::secp256k1_zkp::XOnlyPublicKey;
     use elements::{
-        confidential, AssetId, AssetIssuance, OutPoint, LockTime, TxIn, TxInWitness, TxOut,
+        confidential, AssetId, AssetIssuance, LockTime, OutPoint, TxIn, TxInWitness, TxOut,
     };
 
     use super::*;
