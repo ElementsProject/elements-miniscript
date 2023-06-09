@@ -476,9 +476,8 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         let mut sigs = vec![];
         for key in &self.fed_pks {
             let tweaked_pk = tweak_key(key.as_untweaked(), secp, tweak.as_byte_array());
-            match satisfier.lookup_ecdsa_sig(&tweaked_pk) {
-                Some(sig) => sigs.push(sig.to_vec()),
-                None => {}
+            if let Some(sig) = satisfier.lookup_ecdsa_sig(&tweaked_pk) {
+                sigs.push(sig.to_vec());
             }
         }
         sigs.sort_by_key(|a| a.len());
@@ -490,9 +489,8 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         } else {
             let mut emer_sigs = vec![];
             for emer_key in &self.emer_pks {
-                match satisfier.lookup_ecdsa_sig(emer_key.as_untweaked()) {
-                    Some(sig) => emer_sigs.push(sig.to_vec()),
-                    None => {}
+                if let Some(sig) = satisfier.lookup_ecdsa_sig(emer_key.as_untweaked()) {
+                    emer_sigs.push(sig.to_vec());
                 }
             }
             emer_sigs.sort_by_key(|a| a.len());

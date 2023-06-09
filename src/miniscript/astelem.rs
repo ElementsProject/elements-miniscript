@@ -219,7 +219,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Terminal<Pk, Ctx, Ex
         let frag: Terminal<Pk, Ctx, ExtQ> = match *self {
             Terminal::PkK(ref p) => Terminal::PkK(p.clone()),
             Terminal::PkH(ref p) => Terminal::PkH(p.clone()),
-            Terminal::RawPkH(ref h) => Terminal::RawPkH(h.clone()),
+            Terminal::RawPkH(ref h) => Terminal::RawPkH(*h),
             Terminal::After(n) => Terminal::After(n),
             Terminal::Older(n) => Terminal::Older(n),
             Terminal::Sha256(ref x) => Terminal::Sha256(x.clone()),
@@ -571,7 +571,7 @@ impl_from_tree!(
             }
             ("pk_h", 1) => expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkH)),
             ("after", 1) => expression::terminal(&top.args[0], |x| {
-                expression::parse_num::<u32>(x).map(|x| Terminal::After(AbsLockTime::from_consensus(x).into()))
+                expression::parse_num::<u32>(x).map(|x| Terminal::After(AbsLockTime::from_consensus(x)))
             }),
             ("older", 1) => expression::terminal(&top.args[0], |x| {
                 expression::parse_num::<u32>(x).map(|x| Terminal::Older(Sequence::from_consensus(x)))

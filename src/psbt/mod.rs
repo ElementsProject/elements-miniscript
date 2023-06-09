@@ -385,13 +385,11 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
             return false;
         }
 
-        let lock_time = LockTime::from(
-            self.psbt
-                .global
-                .tx_data
-                .fallback_locktime
-                .unwrap_or(LockTime::ZERO),
-        );
+        let lock_time = self.psbt
+            .global
+            .tx_data
+            .fallback_locktime
+            .unwrap_or(LockTime::ZERO);
 
         <dyn Satisfier<Pk>>::check_after(&lock_time, n)
     }

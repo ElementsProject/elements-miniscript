@@ -200,10 +200,7 @@ impl DescriptorInfo {
         let descriptor = Descriptor::<String, T>::from_str(s)?;
         let has_secret = descriptor.for_any_key(|pk| DescriptorSecretKey::from_str(pk).is_ok());
         let ty = DescriptorType::from_str(s)?;
-        let is_pegin = match ty {
-            DescriptorType::Pegin | DescriptorType::LegacyPegin => true,
-            _ => false,
-        };
+        let is_pegin = matches!(ty, DescriptorType::Pegin | DescriptorType::LegacyPegin);
         // Todo: add elements later
         if is_pegin {
             Ok(DescriptorInfo::Pegin { has_secret, ty })

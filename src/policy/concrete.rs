@@ -763,7 +763,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             )),
             Policy::Or(ref subs) => Ok(Policy::Or(
                 subs.iter()
-                    .map(|&(ref prob, ref sub)| Ok((*prob, sub._translate_pk(t)?)))
+                    .map(|(prob, sub)| Ok((*prob, sub._translate_pk(t)?)))
                     .collect::<Result<Vec<(usize, Policy<Q>)>, E>>()?,
             )),
         }
@@ -795,7 +795,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 
     /// Get all keys in the policy
     pub fn keys(&self) -> Vec<&Pk> {
-        match &*self {
+        match self {
             Policy::Key(ref pk) => vec![pk],
             Policy::Threshold(_k, ref subs) => {
                 subs.iter().flat_map(|sub| sub.keys()).collect::<Vec<_>>()
@@ -895,7 +895,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             Policy::Or(ref subs) => {
                 let iter = subs
                     .iter()
-                    .map(|&(ref _p, ref sub)| sub.check_timelocks_helper());
+                    .map(|(_p, sub)| sub.check_timelocks_helper());
                 TimelockInfo::combine_threshold(1, iter)
             }
         }
@@ -924,7 +924,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                     Err(PolicyError::NonBinaryArgOr)
                 } else {
                     subs.iter()
-                        .map(|&(ref _prob, ref sub)| sub.is_valid())
+                        .map(|(_prob, sub)| sub.is_valid())
                         .collect::<Result<Vec<()>, PolicyError>>()?;
                     Ok(())
                 }
@@ -1001,7 +1001,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             Policy::Or(ref subs) => {
                 let (all_safe, atleast_one_safe, all_non_mall) = subs
                     .iter()
-                    .map(|&(_, ref sub)| sub.is_safe_nonmalleable())
+                    .map(|(_, sub)| sub.is_safe_nonmalleable())
                     .fold((true, false, true), |acc, x| {
                         (acc.0 && x.0, acc.1 || x.0, acc.2 && x.1)
                     });

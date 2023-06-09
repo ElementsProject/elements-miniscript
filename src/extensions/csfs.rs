@@ -236,7 +236,7 @@ impl CheckSigFromStack<CovExtArgs> {
     /// Obtains the message as Vec
     pub fn as_msg(&self) -> &CsfsMsg {
         if let CovExtArgs::CsfsMsg(msg) = &self.msg {
-            &msg
+            msg
         } else {
             unreachable!(
                 "Both constructors from_str and from_token_iter
@@ -285,7 +285,7 @@ impl ParseableExt for CheckSigFromStack<CovExtArgs> {
             let sl = tokens.peek_slice(3).ok_or(())?;
             if let (Tk::Bytes32(pk), Tk::Bytes32(msg)) = (&sl[1], &sl[0]) {
                 if sl[2] == Tk::CheckSigFromStack {
-                    let xpk = XOnlyPublicKey::from_slice(&pk).map_err(|_| ())?;
+                    let xpk = XOnlyPublicKey::from_slice(pk).map_err(|_| ())?;
                     let msg = CsfsMsg::from_slice(msg).ok_or(())?;
                     Self {
                         pk: CovExtArgs::XOnlyKey(CsfsKey(xpk)),
@@ -302,9 +302,9 @@ impl ParseableExt for CheckSigFromStack<CovExtArgs> {
         Ok(frag)
     }
 
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        stack: &mut interpreter::Stack<'txin>,
+    fn evaluate(
+        &self,
+        stack: &mut interpreter::Stack,
         _txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         let sig = stack[0].try_push()?;
@@ -313,7 +313,7 @@ impl ParseableExt for CheckSigFromStack<CovExtArgs> {
             return Ok(false);
         }
 
-        let sig = secp256k1_zkp::schnorr::Signature::from_slice(&sig)?;
+        let sig = secp256k1_zkp::schnorr::Signature::from_slice(sig)?;
         // rust-secp-zkp API only signing/verification for 32 bytes messages. It is supported in upstream secp-zkp
         // but bindings are not exposed.
         // The interpreter will error on non 32 byte messages till it is fixed.
@@ -321,7 +321,7 @@ impl ParseableExt for CheckSigFromStack<CovExtArgs> {
 
         let secp = secp256k1_zkp::Secp256k1::verification_only();
 
-        secp.verify_schnorr(&sig, &msg, &self.as_pk())?;
+        secp.verify_schnorr(&sig, &msg, self.as_pk())?;
         Ok(true)
     }
 }

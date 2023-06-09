@@ -78,6 +78,12 @@ pub struct Engine {
     clscount: u64,
 }
 
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Engine {
     /// Construct an engine with no input
     pub fn new() -> Self {

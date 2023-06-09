@@ -164,9 +164,9 @@ impl ParseableExt for LegacyVerEq {
         Ok(ver)
     }
 
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        stack: &mut interpreter::Stack<'txin>,
+    fn evaluate(
+        &self,
+        stack: &mut interpreter::Stack,
         _txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         // Version is at index 11

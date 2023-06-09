@@ -204,24 +204,22 @@ where
     /// type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0>;
     /// type TapScript = Miniscript<XOnlyPublicKey, Tap>;
     /// use elements::hex::FromHex;
-    /// fn main() {
-    ///     // parse x-only miniscript in Taproot context
-    ///     let tapscript_ms = TapScript::parse(&elements::Script::from(Vec::<u8>::from_hex(
-    ///         "202788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
-    ///     ).expect("Even length hex")))
-    ///     .expect("Xonly keys are valid only in taproot context");
-    ///     // tapscript fails decoding when we use them with compressed keys
-    ///     let err = TapScript::parse(&elements::Script::from(Vec::<u8>::from_hex(
-    ///         "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
-    ///     ).expect("Even length hex")))
-    ///     .expect_err("Compressed keys cannot be used in Taproot context");
-    ///     // Segwitv0 succeeds decoding with full keys.
-    ///     Segwitv0Script::parse(&elements::Script::from(Vec::<u8>::from_hex(
-    ///         "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
-    ///     ).expect("Even length hex")))
-    ///     .expect("Compressed keys are allowed in Segwit context");
     ///
-    /// }
+    /// // parse x-only miniscript in Taproot context
+    /// let tapscript_ms = TapScript::parse(&elements::Script::from(Vec::<u8>::from_hex(
+    ///     "202788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
+    /// ).expect("Even length hex")))
+    /// .expect("Xonly keys are valid only in taproot context");
+    /// // tapscript fails decoding when we use them with compressed keys
+    /// let err = TapScript::parse(&elements::Script::from(Vec::<u8>::from_hex(
+    ///     "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
+    /// ).expect("Even length hex")))
+    /// .expect_err("Compressed keys cannot be used in Taproot context");
+    /// // Segwitv0 succeeds decoding with full keys.
+    /// Segwitv0Script::parse(&elements::Script::from(Vec::<u8>::from_hex(
+    ///     "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
+    /// ).expect("Even length hex")))
+    /// .expect("Compressed keys are allowed in Segwit context");
     /// ```
     pub fn parse(script: &script::Script) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
         let ms = Self::parse_with_ext(script, &ExtParams::sane())?;

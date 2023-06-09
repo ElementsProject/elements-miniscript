@@ -184,8 +184,8 @@ impl<T: ExtParam> AssetExpr<T> {
     fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("curr_inp_asset", 0) => Ok(AssetExpr::CurrInputAsset),
-            ("inp_asset", 1) => expression::unary(&top, AssetExpr::Input),
-            ("out_asset", 1) => expression::unary(&top, AssetExpr::Output),
+            ("inp_asset", 1) => expression::unary(top, AssetExpr::Input),
+            ("out_asset", 1) => expression::unary(top, AssetExpr::Output),
             (asset, 0) => Ok(AssetExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -256,8 +256,8 @@ impl<T: ExtParam> ValueExpr<T> {
     fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("curr_inp_value", 0) => Ok(ValueExpr::CurrInputValue),
-            ("inp_value", 1) => expression::unary(&top, ValueExpr::Input),
-            ("out_value", 1) => expression::unary(&top, ValueExpr::Output),
+            ("inp_value", 1) => expression::unary(top, ValueExpr::Input),
+            ("out_value", 1) => expression::unary(top, ValueExpr::Output),
             (value, 0) => Ok(ValueExpr::Const(T::arg_from_str(value, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -328,8 +328,8 @@ impl<T: ExtParam> SpkExpr<T> {
     fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("curr_inp_spk", 0) => Ok(SpkExpr::CurrInputSpk),
-            ("inp_spk", 1) => expression::unary(&top, SpkExpr::Input),
-            ("out_spk", 1) => expression::unary(&top, SpkExpr::Output),
+            ("inp_spk", 1) => expression::unary(top, SpkExpr::Input),
+            ("out_spk", 1) => expression::unary(top, SpkExpr::Output),
             (asset, 0) => Ok(SpkExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -381,24 +381,24 @@ impl<T: ExtParam> FromTree for CovOps<T> {
     fn from_tree(top: &Tree<'_>) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("is_exp_asset", 1) => {
-                AssetExpr::from_tree_parent(&top.args[0], &top.name, 0).map(CovOps::IsExpAsset)
+                AssetExpr::from_tree_parent(&top.args[0], top.name, 0).map(CovOps::IsExpAsset)
             }
             ("is_exp_value", 1) => {
-                ValueExpr::from_tree_parent(&top.args[0], &top.name, 0).map(CovOps::IsExpValue)
+                ValueExpr::from_tree_parent(&top.args[0], top.name, 0).map(CovOps::IsExpValue)
             }
             ("asset_eq", 2) => {
-                let l = AssetExpr::from_tree_parent(&top.args[0], &top.name, 0)?;
-                let r = AssetExpr::from_tree_parent(&top.args[1], &top.name, 1)?;
+                let l = AssetExpr::from_tree_parent(&top.args[0], top.name, 0)?;
+                let r = AssetExpr::from_tree_parent(&top.args[1], top.name, 1)?;
                 Ok(CovOps::AssetEq(l, r))
             }
             ("value_eq", 2) => {
-                let l = ValueExpr::from_tree_parent(&top.args[0], &top.name, 0)?;
-                let r = ValueExpr::from_tree_parent(&top.args[1], &top.name, 1)?;
+                let l = ValueExpr::from_tree_parent(&top.args[0], top.name, 0)?;
+                let r = ValueExpr::from_tree_parent(&top.args[1], top.name, 1)?;
                 Ok(CovOps::ValueEq(l, r))
             }
             ("spk_eq", 2) => {
-                let l = SpkExpr::from_tree_parent(&top.args[0], &top.name, 0)?;
-                let r = SpkExpr::from_tree_parent(&top.args[1], &top.name, 1)?;
+                let l = SpkExpr::from_tree_parent(&top.args[0], top.name, 0)?;
+                let r = SpkExpr::from_tree_parent(&top.args[1], top.name, 1)?;
                 Ok(CovOps::SpkEq(l, r))
             }
             ("curr_idx_eq", 1) => {
@@ -440,11 +440,7 @@ impl<T: ExtParam> Extension for CovOps<T> {
     fn extra_prop(&self) -> ExtData {
         ExtData {
             pk_cost: self.script_size(), // 1 opcodes, 1 key push, msg, 1 msg push
-            has_free_verify: if let CovOps::CurrIndEq(..) = self {
-                true
-            } else {
-                false
-            },
+            has_free_verify: matches!(self, CovOps::CurrIndEq(..)),
             stack_elem_count_sat: Some(0),
             stack_elem_count_dissat: Some(0),
             max_sat_size: Some((0, 0)),
@@ -571,8 +567,8 @@ impl ArgFromStr for confidential::Asset {
             ));
         }
         let asset_hex = Vec::<u8>::from_hex(s).map_err(|e| Error::Unexpected(e.to_string()))?;
-        Ok(elements::encode::deserialize(&asset_hex)
-            .map_err(|e| Error::Unexpected(e.to_string()))?)
+        elements::encode::deserialize(&asset_hex)
+            .map_err(|e| Error::Unexpected(e.to_string()))
     }
 }
 
@@ -584,8 +580,8 @@ impl ArgFromStr for confidential::Value {
             ));
         }
         let asset_hex = Vec::<u8>::from_hex(s).map_err(|e| Error::Unexpected(e.to_string()))?;
-        Ok(elements::encode::deserialize(&asset_hex)
-            .map_err(|e| Error::Unexpected(e.to_string()))?)
+        elements::encode::deserialize(&asset_hex)
+            .map_err(|e| Error::Unexpected(e.to_string()))
     }
 }
 
@@ -596,7 +592,7 @@ fn asset(pref: u8, comm: &[u8]) -> Option<confidential::Asset> {
     if comm.len() != 32 {
         return None;
     }
-    bytes[1..].copy_from_slice(&comm);
+    bytes[1..].copy_from_slice(comm);
     encode::deserialize(&bytes).ok()
 }
 
@@ -605,7 +601,7 @@ fn value(pref: u8, comm: &[u8]) -> Option<confidential::Value> {
     if comm.len() == 32 {
         let mut bytes = [0u8; 33];
         bytes[0] = pref;
-        bytes[1..].copy_from_slice(&comm);
+        bytes[1..].copy_from_slice(comm);
         encode::deserialize(&bytes).ok()
     } else if comm.len() == 8 {
         let mut bytes = [0u8; 8];
@@ -1157,7 +1153,7 @@ impl ParseableExt for CovOps<CovExtArgs> {
 
     fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
         let len = tokens.len();
-        match Self::from_tokens(&tokens.as_inner_mut()) {
+        match Self::from_tokens(tokens.as_inner_mut()) {
             Some((res, last_pos)) => {
                 tokens.advance(len - last_pos).ok_or(())?;
                 Ok(res)
@@ -1166,9 +1162,9 @@ impl ParseableExt for CovOps<CovExtArgs> {
         }
     }
 
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        stack: &mut interpreter::Stack<'txin>,
+    fn evaluate(
+        &self,
+        stack: &mut interpreter::Stack,
         txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         let txenv = txenv

@@ -126,7 +126,7 @@ where
             Terminal::RawPkH(ref _pkh) => {
                 return Err(Error::LiftError(LiftError::RawDescriptorLift))
             }
-            Terminal::After(t) => Semantic::After(t.into()),
+            Terminal::After(t) => Semantic::After(t),
             Terminal::Older(t) => Semantic::Older(t),
             Terminal::Sha256(ref h) => Semantic::Sha256(h.clone()),
             Terminal::Hash256(ref h) => Semantic::Hash256(h.clone()),
@@ -213,7 +213,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Concrete<Pk> {
             }
             Concrete::Or(ref subs) => {
                 let semantic_subs: Result<_, Error> =
-                    subs.iter().map(|&(ref _p, ref sub)| sub.lift()).collect();
+                    subs.iter().map(|(_p, sub)| sub.lift()).collect();
                 Semantic::Threshold(1, semantic_subs?)
             }
             Concrete::Threshold(k, ref subs) => {

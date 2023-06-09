@@ -221,7 +221,7 @@ where
                 None
             },
             has_errored: false,
-            txenv: txenv,
+            txenv,
             sig_type: self.sig_type(),
         }
     }

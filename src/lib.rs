@@ -98,6 +98,8 @@
 #![deny(dead_code)]
 #![deny(unused_imports)]
 #![deny(missing_docs)]
+#![allow(clippy::manual_range_contains)]  // this lint is just stupid
+#![allow(clippy::type_complexity)]  // clippy doesn't like how many generics we use
 
 #[cfg(target_pointer_width = "16")]
 compile_error!(

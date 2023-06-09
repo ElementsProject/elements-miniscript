@@ -147,7 +147,7 @@ impl IdxExpr {
     /// Evaluate this expression
     pub fn eval(&self, env: &TxEnv) -> Result<usize, EvalError> {
         match self {
-            IdxExpr::Const(i) => Ok(*i as usize),
+            IdxExpr::Const(i) => Ok(*i),
             IdxExpr::CurrIdx => Ok(env.idx),
             IdxExpr::Add(x, y) => Ok(x.eval(env)? + y.eval(env)?),
             IdxExpr::Sub(x, y) => Ok(x.eval(env)? - y.eval(env)?),

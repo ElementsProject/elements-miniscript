@@ -200,6 +200,7 @@ impl<'a> Tree<'a> {
     }
 
     /// Parses a tree from a string
+    #[allow(clippy::should_implement_trait)] // seems to be a false positive
     pub fn from_str(s: &'a str) -> Result<Tree<'a>, Error> {
         // Filter out non-ASCII because we byte-index strings all over the
         // place and Rust gets very upsbt when you splinch a string.

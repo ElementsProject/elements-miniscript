@@ -402,7 +402,7 @@ fn _finalize_inp(
         let psbt_sat = PsbtInputSatisfier::new(psbt, index);
 
         if util::is_v1_p2tr(spk) {
-            let cov_sat = TxEnv::new(&extracted_tx, spent_utxos, index)
+            let cov_sat = TxEnv::new(extracted_tx, spent_utxos, index)
                 .ok_or(super::Error::InputError(InputError::MissingUtxo, index))?;
             // Deal with tr case separately, unfortunately we cannot infer the full descriptor for Tr
             let wit = construct_tap_witness(spk, &(psbt_sat, cov_sat), allow_mall)

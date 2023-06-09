@@ -90,9 +90,9 @@ pub trait ParseableExt:
     /// Output Ok(true) when the ext fragment is satisfied.
     /// Output Ok(false) when the ext fragment is dissatisfied,
     /// Output Some(Err) when there is an error in interpreter value.
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        stack: &mut Stack<'txin>,
+    fn evaluate(
+        &self,
+        stack: &mut Stack,
         txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error>;
 
@@ -167,9 +167,9 @@ impl ParseableExt for NoExt {
         match *self {}
     }
 
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        _stack: &mut Stack<'txin>,
+    fn evaluate(
+        &self,
+        _stack: &mut Stack,
         _txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         match *self {}
@@ -303,9 +303,9 @@ impl ParseableExt for CovenantExt<CovExtArgs> {
         all_arms_fn!(self, ParseableExt, dissatisfy, sat,)
     }
 
-    fn evaluate<'intp, 'txin>(
+    fn evaluate(
         &self,
-        stack: &mut Stack<'txin>,
+        stack: &mut Stack,
         txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         all_arms_fn!(self, ParseableExt, evaluate, stack, txenv,)
@@ -422,7 +422,7 @@ pub fn check_sig_price_oracle_1<C: secp256k1_zkp::Verification>(
     let sha_msg = elements::hashes::sha256::Hash::hash(&buf);
 
     let msg = elements::secp256k1_zkp::Message::from_slice(&sha_msg[..]).unwrap();
-    secp.verify_schnorr(&sig, &msg, &pk).is_ok()
+    secp.verify_schnorr(sig, &msg, pk).is_ok()
 }
 
 /// [`secp256k1_zkp::Message`] for fragment `price_oracle_1`.

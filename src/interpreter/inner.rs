@@ -238,7 +238,7 @@ pub fn from_txdata<'txin, Ext: ParseableExt>(
             }
         }
     // ** pay to taproot **//
-    } else if is_v1_p2tr(&spk) {
+    } else if is_v1_p2tr(spk) {
         if !ssig_stack.is_empty() {
             Err(Error::NonEmptyScriptSig)
         } else {

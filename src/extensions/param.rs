@@ -196,7 +196,7 @@ where
     /// Translates one extension to another
     fn ext(&mut self, cov: &CovenantExt<PArg>) -> Result<CovenantExt<QArg>, E> {
         match *cov {
-            CovenantExt::LegacyVerEq(ref v) => Ok(CovenantExt::LegacyVerEq(v.clone())),
+            CovenantExt::LegacyVerEq(ref v) => Ok(CovenantExt::LegacyVerEq(*v)),
             CovenantExt::LegacyOutputsPref(ref p) => Ok(CovenantExt::LegacyOutputsPref(p.clone())),
             CovenantExt::Csfs(ref c) => Ok(CovenantExt::Csfs(TranslateExtParam::translate_ext(
                 c, self,

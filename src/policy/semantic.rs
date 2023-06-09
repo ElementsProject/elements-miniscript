@@ -457,10 +457,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// For checking if the normalized form is trivial, the caller
     /// is expected to normalize the policy first.
     pub fn is_trivial(&self) -> bool {
-        match *self {
-            Policy::Trivial => true,
-            _ => false,
-        }
+        matches!(*self, Policy::Trivial)
     }
 
     /// Helper function to detect a false/unsatisfiable policy
@@ -468,10 +465,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     /// For checking if the normalized form is unsatisfiable, the caller
     /// is expected to normalize the policy first.
     pub fn is_unsatisfiable(&self) -> bool {
-        match *self {
-            Policy::Unsatisfiable => true,
-            _ => false,
-        }
+        matches!(*self, Policy::Unsatisfiable)
     }
 
     /// Helper function to do the recursion in `timelocks`.
