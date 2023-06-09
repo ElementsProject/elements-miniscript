@@ -24,10 +24,17 @@ type PolicyCache<Pk, Ctx> =
     BTreeMap<(Concrete<Pk>, OrdF64, Option<OrdF64>), BTreeMap<CompilationKey, AstElemExt<Pk, Ctx>>>;
 
 ///Ordered f64 for comparison
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub(crate) struct OrdF64(pub f64);
 
 impl Eq for OrdF64 {}
+// We could derive PartialOrd, but we can't derive Ord, and clippy wants us
+// to derive both or neither. Better to be explicit.
+impl PartialOrd for OrdF64 {
+    fn partial_cmp(&self, other: &OrdF64) -> Option<cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
 impl Ord for OrdF64 {
     fn cmp(&self, other: &OrdF64) -> cmp::Ordering {
         // will panic if given NaN
@@ -127,7 +134,7 @@ impl CompilationKey {
         CompilationKey {
             ty,
             expensive_verify,
-            dissat_prob: dissat_prob.and_then(|x| Some(OrdF64(x))),
+            dissat_prob: dissat_prob.map(OrdF64),
         }
     }
 }
@@ -374,6 +381,7 @@ impl Property for CompilerExtData {
         })
     }
 
+    #[allow(clippy::manual_map)] // clippy doesn't like our else { None } tail
     fn or_i(l: Self, r: Self) -> Result<Self, types::ErrorKind> {
         let lprob = l
             .branch_prob
@@ -415,11 +423,7 @@ impl Property for CompilerExtData {
         Ok(CompilerExtData {
             branch_prob: None,
             sat_cost: aprob * (a.sat_cost + b.sat_cost) + cprob * (adis + c.sat_cost),
-            dissat_cost: if let Some(cdis) = c.dissat_cost {
-                Some(adis + cdis)
-            } else {
-                None
-            },
+            dissat_cost: c.dissat_cost.map(|cdis| adis + cdis),
         })
     }
 
@@ -529,8 +533,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> AstElemExt<Pk, Ctx> {
         let comp_ext_data = CompilerExtData::type_check(&ast, lookup_ext)?;
         Ok(AstElemExt {
             ms: Arc::new(Miniscript {
-                ty: ty,
-                ext: ext,
+                ty,
+                ext,
                 node: ast,
                 phantom: PhantomData,
             }),
@@ -668,7 +672,7 @@ fn insert_elem<Pk: MiniscriptKey, Ctx: ScriptContext>(
         return false;
     }
 
-    if let Err(_) = Ctx::check_local_validity(&elem.ms) {
+    if Ctx::check_local_validity(&elem.ms).is_err() {
         return false;
     }
 
@@ -685,13 +689,13 @@ fn insert_elem<Pk: MiniscriptKey, Ctx: ScriptContext>(
             let existing_elem_cost = existing_elem.cost_1d(sat_prob, dissat_prob);
             existing_key.is_subtype(elem_key) && existing_elem_cost <= elem_cost
         })
-        .fold(false, |acc, x| acc || x);
+        .any(|x| x);
     if !is_worse {
         // If the element is not worse any element in the map, remove elements
         // whose subtype is the current element and have worse cost.
-        *map = mem::replace(map, BTreeMap::new())
+        *map = mem::take(map)
             .into_iter()
-            .filter(|&(ref existing_key, ref existing_elem)| {
+            .filter(|(existing_key, existing_elem)| {
                 let existing_elem_cost = existing_elem.cost_1d(sat_prob, dissat_prob);
                 !(elem_key.is_subtype(*existing_key) && existing_elem_cost >= elem_cost)
             })
@@ -724,8 +728,8 @@ fn insert_elem_closure<Pk: MiniscriptKey, Ctx: ScriptContext>(
     while !cast_stack.is_empty() {
         let current = cast_stack.pop_front().unwrap();
 
-        for i in 0..casts.len() {
-            if let Ok(new_ext) = casts[i].cast(&current) {
+        for cast in &casts {
+            if let Ok(new_ext) = cast.cast(&current) {
                 if insert_elem(map, new_ext.clone(), sat_prob, dissat_prob) {
                     cast_stack.push_back(new_ext);
                 }
@@ -756,9 +760,9 @@ fn insert_best_wrapped<Pk: MiniscriptKey, Ctx: ScriptContext>(
     if dissat_prob.is_some() {
         let casts: [Cast<Pk, Ctx>; 10] = all_casts::<Pk, Ctx>();
 
-        for i in 0..casts.len() {
+        for cast in &casts {
             for x in best_compilations(policy_cache, policy, sat_prob, None)?.values() {
-                if let Ok(new_ext) = casts[i].cast(x) {
+                if let Ok(new_ext) = cast.cast(x) {
                     insert_elem_closure(map, new_ext, sat_prob, dissat_prob);
                 }
             }
@@ -781,7 +785,7 @@ where
 {
     //Check the cache for hits
     let ord_sat_prob = OrdF64(sat_prob);
-    let ord_dissat_prob = dissat_prob.and_then(|x| Some(OrdF64(x)));
+    let ord_dissat_prob = dissat_prob.map(OrdF64);
     if let Some(ret) = policy_cache.get(&(policy.clone(), ord_sat_prob, ord_dissat_prob)) {
         return Ok(ret.clone());
     }
@@ -880,12 +884,12 @@ where
             let rw = subs[1].0 as f64 / total;
 
             //and-or
-            if let (&Concrete::And(ref x), _) = (&subs[0].1, &subs[1].1) {
+            if let (Concrete::And(x), _) = (&subs[0].1, &subs[1].1) {
                 let mut a1 = best_compilations(
                     policy_cache,
                     &x[0],
                     lw * sat_prob,
-                    Some(dissat_prob.unwrap_or(0 as f64) + rw * sat_prob),
+                    Some(dissat_prob.unwrap_or(0.0) + rw * sat_prob),
                 )?;
                 let mut a2 = best_compilations(policy_cache, &x[0], lw * sat_prob, None)?;
 
@@ -893,7 +897,7 @@ where
                     policy_cache,
                     &x[1],
                     lw * sat_prob,
-                    Some(dissat_prob.unwrap_or(0 as f64) + rw * sat_prob),
+                    Some(dissat_prob.unwrap_or(0.0) + rw * sat_prob),
                 )?;
                 let mut b2 = best_compilations(policy_cache, &x[1], lw * sat_prob, None)?;
 
@@ -903,12 +907,12 @@ where
                 compile_tern!(&mut a1, &mut b2, &mut c, [lw, rw]);
                 compile_tern!(&mut b1, &mut a2, &mut c, [lw, rw]);
             };
-            if let (_, &Concrete::And(ref x)) = (&subs[0].1, &subs[1].1) {
+            if let (_, Concrete::And(x)) = (&subs[0].1, &subs[1].1) {
                 let mut a1 = best_compilations(
                     policy_cache,
                     &x[0],
                     rw * sat_prob,
-                    Some(dissat_prob.unwrap_or(0 as f64) + lw * sat_prob),
+                    Some(dissat_prob.unwrap_or(0.0) + lw * sat_prob),
                 )?;
                 let mut a2 = best_compilations(policy_cache, &x[0], rw * sat_prob, None)?;
 
@@ -916,7 +920,7 @@ where
                     policy_cache,
                     &x[1],
                     rw * sat_prob,
-                    Some(dissat_prob.unwrap_or(0 as f64) + lw * sat_prob),
+                    Some(dissat_prob.unwrap_or(0.0) + lw * sat_prob),
                 )?;
                 let mut b2 = best_compilations(policy_cache, &x[1], rw * sat_prob, None)?;
 
@@ -928,12 +932,12 @@ where
             };
 
             let dissat_probs = |w: f64| -> Vec<Option<f64>> {
-                let mut dissat_set = Vec::new();
-                dissat_set.push(Some(dissat_prob.unwrap_or(0 as f64) + w * sat_prob));
-                dissat_set.push(Some(w * sat_prob));
-                dissat_set.push(dissat_prob);
-                dissat_set.push(None);
-                dissat_set
+                vec![
+                    Some(dissat_prob.unwrap_or(0.0) + w * sat_prob),
+                    Some(w * sat_prob),
+                    dissat_prob,
+                    None,
+                ]
             };
 
             let mut l_comp = vec![];
@@ -975,11 +979,11 @@ where
             let mut best_es = Vec::with_capacity(n);
             let mut best_ws = Vec::with_capacity(n);
 
-            let mut min_value = (0 as usize, f64::INFINITY as f64);
+            let mut min_value = (0, f64::INFINITY);
             for (i, ast) in subs.iter().enumerate() {
                 let sp = sat_prob * k_over_n;
                 //Expressions must be dissatisfiable
-                let dp = Some(dissat_prob.unwrap_or(0 as f64) + (1.0 - k_over_n) * sat_prob);
+                let dp = Some(dissat_prob.unwrap_or(0.0) + (1.0 - k_over_n) * sat_prob);
                 let be = best(types::Base::B, policy_cache, ast, sp, dp)?;
                 let bw = best(types::Base::W, policy_cache, ast, sp, dp)?;
 
@@ -1048,7 +1052,7 @@ where
     for k in ret.keys() {
         debug_assert_eq!(k.dissat_prob, ord_dissat_prob);
     }
-    if ret.len() == 0 {
+    if ret.is_empty() {
         // The only reason we are discarding elements out of compiler is because
         // compilations exceeded consensus and standardness limits or are non-malleable.
         // If there no possible compilations for any policies regardless of dissat
@@ -1065,6 +1069,7 @@ where
 /// Helper function to compile different types of binary fragments.
 /// `sat_prob` and `dissat_prob` represent the sat and dissat probabilities of
 /// root or. `weights` represent the odds for taking each sub branch
+#[allow(clippy::too_many_arguments)]
 fn compile_binary<Pk, Ctx, F>(
     policy_cache: &mut PolicyCache<Pk, Ctx>,
     policy: &Concrete<Pk>,
@@ -1099,6 +1104,7 @@ where
 /// Helper function to compile different order of and_or fragments.
 /// `sat_prob` and `dissat_prob` represent the sat and dissat probabilities of
 /// root and_or node. `weights` represent the odds for taking each sub branch
+#[allow(clippy::too_many_arguments)]
 fn compile_tern<Pk: MiniscriptKey, Ctx: ScriptContext>(
     policy_cache: &mut PolicyCache<Pk, Ctx>,
     policy: &Concrete<Pk>,
@@ -1159,7 +1165,7 @@ where
         .into_iter()
         .filter(|&(key, _)| {
             key.ty.corr.base == types::Base::B
-                && key.dissat_prob == dissat_prob.and_then(|x| Some(OrdF64(x)))
+                && key.dissat_prob == dissat_prob.map(OrdF64)
         })
         .map(|(_, val)| val)
         .min_by_key(|ext| OrdF64(ext.cost_1d(sat_prob, dissat_prob)))
@@ -1180,11 +1186,11 @@ where
 {
     best_compilations(policy_cache, policy, sat_prob, dissat_prob)?
         .into_iter()
-        .filter(|&(ref key, ref val)| {
+        .filter(|(key, val)| {
             key.ty.corr.base == basic_type
                 && key.ty.corr.unit
                 && val.ms.ty.mall.dissat == types::Dissat::Unique
-                && key.dissat_prob == dissat_prob.and_then(|x| Some(OrdF64(x)))
+                && key.dissat_prob == dissat_prob.map(OrdF64)
         })
         .map(|(_, val)| val)
         .min_by_key(|ext| OrdF64(ext.cost_1d(sat_prob, dissat_prob)))
@@ -1523,7 +1529,7 @@ mod tests {
             (1, Concrete::Threshold(keys_b.len(), keys_b)),
         ])
         .compile();
-        let script_size = thresh_res.clone().and_then(|m| Ok(m.script_size()));
+        let script_size = thresh_res.clone().map(|m| m.script_size());
         assert_eq!(
             thresh_res,
             Err(CompilerError::LimitsExceeded),
@@ -1539,7 +1545,7 @@ mod tests {
             Concrete::Threshold(keys.len(), keys).compile();
         let n_elements = thresh_res
             .clone()
-            .and_then(|m| Ok(m.max_satisfaction_witness_elements()));
+            .map(|m| m.max_satisfaction_witness_elements());
         assert_eq!(
             thresh_res,
             Err(CompilerError::LimitsExceeded),
@@ -1556,7 +1562,7 @@ mod tests {
             keys.iter().map(|pubkey| Concrete::Key(*pubkey)).collect();
         let thresh_res: Result<SegwitMiniScript, _> =
             Concrete::Threshold(keys.len() - 1, keys).compile();
-        let ops_count = thresh_res.clone().and_then(|m| Ok(m.ext.ops.op_count()));
+        let ops_count = thresh_res.clone().map(|m| m.ext.ops.op_count());
         assert_eq!(
             thresh_res,
             Err(CompilerError::LimitsExceeded),
