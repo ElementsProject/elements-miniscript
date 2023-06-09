@@ -13,7 +13,7 @@ use elements::{confidential, encode, script, Address, AddressParams};
 
 use super::index_ops::IdxExpr;
 use super::param::{ExtParamTranslator, TranslateExtParam};
-use super::{ArgFromStr, CovExtArgs, EvalError, ExtParam, ParseableExt, TxEnv};
+use super::{ArgFromStr, CovExtArgs, EvalError, ExtParam, FromTokenIterError, ParseableExt, TxEnv};
 use crate::expression::{FromTree, Tree};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -470,13 +470,13 @@ impl<T: ExtParam> Extension for CovOps<T> {
         }
     }
 
-    fn from_name_tree(name: &str, children: &[Tree<'_>]) -> Result<Self, ()> {
+    fn from_name_tree(name: &str, children: &[Tree<'_>]) -> Result<Self, FromTokenIterError> {
         let tree = Tree {
             name,
             args: children.to_vec(), // Cloning references here, it is possible to avoid the to_vec() here,
                                      // but it requires lot of refactor.
         };
-        Self::from_tree(&tree).map_err(|_| ())
+        Self::from_tree(&tree).map_err(|_| FromTokenIterError)
     }
 
     fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError> {
@@ -1151,14 +1151,14 @@ impl ParseableExt for CovOps<CovExtArgs> {
         self.push_to_builder(builder)
     }
 
-    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, FromTokenIterError> {
         let len = tokens.len();
         match Self::from_tokens(tokens.as_inner_mut()) {
             Some((res, last_pos)) => {
-                tokens.advance(len - last_pos).ok_or(())?;
+                tokens.advance(len - last_pos).ok_or(FromTokenIterError)?;
                 Ok(res)
             }
-            None => Err(()),
+            None => Err(FromTokenIterError),
         }
     }
 

@@ -9,7 +9,7 @@ use elements::hex::{self, FromHex, ToHex};
 use elements::{self, opcodes, secp256k1_zkp};
 
 use super::param::{ExtParamTranslator, TranslateExtParam};
-use super::{ArgFromStr, CovExtArgs, ExtParam, ParseableExt, TxEnv};
+use super::{ArgFromStr, CovExtArgs, ExtParam, FromTokenIterError, ParseableExt, TxEnv};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::limits::MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
@@ -98,17 +98,17 @@ impl<T: ExtParam> Extension for CheckSigFromStack<T> {
         ))
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
+    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, FromTokenIterError> {
         if children.len() == 2 && name == "csfs" {
             if !children[0].args.is_empty() || !children[1].args.is_empty() {
-                return Err(());
+                return Err(FromTokenIterError);
             }
-            let pk = T::arg_from_str(children[0].name, name, 0).map_err(|_| ())?;
-            let msg = T::arg_from_str(children[1].name, name, 1).map_err(|_| ())?;
+            let pk = T::arg_from_str(children[0].name, name, 0).map_err(|_| FromTokenIterError)?;
+            let msg = T::arg_from_str(children[1].name, name, 1).map_err(|_| FromTokenIterError)?;
             Ok(Self { pk, msg })
         } else {
             // Correct error handling while parsing fromtree
-            Err(())
+            Err(FromTokenIterError)
         }
     }
 }
@@ -280,22 +280,22 @@ impl ParseableExt for CheckSigFromStack<CovExtArgs> {
             .push_opcode(opcodes::all::OP_CHECKSIGFROMSTACK)
     }
 
-    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, FromTokenIterError> {
         let frag = {
-            let sl = tokens.peek_slice(3).ok_or(())?;
+            let sl = tokens.peek_slice(3).ok_or(FromTokenIterError)?;
             if let (Tk::Bytes32(pk), Tk::Bytes32(msg)) = (&sl[1], &sl[0]) {
                 if sl[2] == Tk::CheckSigFromStack {
-                    let xpk = XOnlyPublicKey::from_slice(pk).map_err(|_| ())?;
-                    let msg = CsfsMsg::from_slice(msg).ok_or(())?;
+                    let xpk = XOnlyPublicKey::from_slice(pk).map_err(|_| FromTokenIterError)?;
+                    let msg = CsfsMsg::from_slice(msg).ok_or(FromTokenIterError)?;
                     Self {
                         pk: CovExtArgs::XOnlyKey(CsfsKey(xpk)),
                         msg: CovExtArgs::CsfsMsg(msg),
                     }
                 } else {
-                    return Err(());
+                    return Err(FromTokenIterError);
                 }
             } else {
-                return Err(());
+                return Err(FromTokenIterError);
             }
         };
         tokens.advance(3).expect("Size checked previously");

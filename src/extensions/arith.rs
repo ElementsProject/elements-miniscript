@@ -11,7 +11,7 @@ use elements::sighash::Prevouts;
 use elements::{opcodes, script, secp256k1_zkp as secp256k1, SchnorrSig, Transaction};
 
 use super::param::{ExtParamTranslator, TranslateExtParam};
-use super::{CovExtArgs, CsfsKey, ExtParam, IdxExpr, ParseableExt, TxEnv};
+use super::{CovExtArgs, CsfsKey, ExtParam, FromTokenIterError, IdxExpr, ParseableExt, TxEnv};
 use crate::expression::{FromTree, Tree};
 use crate::extensions::check_sig_price_oracle_1;
 use crate::miniscript::context::ScriptContextError;
@@ -1347,14 +1347,14 @@ impl<T: ExtParam> Extension for Arith<T> {
         ))
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
+    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, FromTokenIterError> {
         let tree = Tree {
             name,
             args: children.to_vec(), // Cloning two references here, it is possible to avoid the to_vec() here,
                                      // but it requires lot of refactor.
         };
-        let inner = ArithInner::from_tree(&tree).map_err(|_| ())?;
-        Arith::new(inner).map_err(|_e| {})
+        let inner = ArithInner::from_tree(&tree).map_err(|_| FromTokenIterError)?;
+        Arith::new(inner).map_err(|_e| FromTokenIterError)
     }
 }
 
@@ -1393,14 +1393,14 @@ impl ParseableExt for Arith<CovExtArgs> {
         self.push_to_builder(builder)
     }
 
-    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, FromTokenIterError> {
         let len = tokens.len();
         match Self::from_tokens(tokens.as_inner_mut()) {
             Some((res, last_pos)) => {
-                tokens.advance(len - last_pos).ok_or(())?;
+                tokens.advance(len - last_pos).ok_or(FromTokenIterError)?;
                 Ok(res)
             }
-            None => Err(()),
+            None => Err(FromTokenIterError),
         }
     }
 

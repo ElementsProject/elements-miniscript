@@ -8,7 +8,7 @@ use elements::encode::serialize;
 use elements::hex::{FromHex, ToHex};
 use elements::hashes::{sha256d, Hash};
 
-use super::{ParseableExt, TxEnv};
+use super::{FromTokenIterError, ParseableExt, TxEnv};
 use crate::descriptor::CovError;
 use crate::miniscript::astelem::StackCtxOperations;
 use crate::miniscript::context::ScriptContextError;
@@ -105,13 +105,13 @@ impl Extension for LegacyOutputsPref {
                 + 6 /* line 2 */
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
+    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, FromTokenIterError> {
         if children.len() == 1 && name == "outputs_pref" {
-            let pref = expression::terminal(&children[0], Vec::<u8>::from_hex).map_err(|_| ())?;
+            let pref = expression::terminal(&children[0], Vec::<u8>::from_hex).map_err(|_| FromTokenIterError)?;
             Ok(Self { pref })
         } else {
             // Correct error handling while parsing fromtree
-            Err(())
+            Err(FromTokenIterError)
         }
     }
 }
@@ -208,9 +208,9 @@ impl ParseableExt for LegacyOutputsPref {
         builder.check_item_pref(4, &self.pref)
     }
 
-    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, FromTokenIterError> {
         let outputs_pref = {
-            let sl = tokens.peek_slice(15).ok_or(())?;
+            let sl = tokens.peek_slice(15).ok_or(FromTokenIterError)?;
             if let Tk::Push(pref) = &sl[6] {
                 if sl[0] == Tk::Cat
                     && sl[1] == Tk::Cat
@@ -228,10 +228,10 @@ impl ParseableExt for LegacyOutputsPref {
                 {
                     Self { pref: pref.clone() }
                 } else {
-                    return Err(());
+                    return Err(FromTokenIterError);
                 }
             } else {
-                return Err(());
+                return Err(FromTokenIterError);
             }
         };
         tokens.advance(15).expect("Size checked previously");
