@@ -75,7 +75,7 @@ pub(crate) fn build_scriptint(n: i64) -> Vec<u8> {
 #[cfg(test)]
 pub(crate) fn count_non_push_opcodes(script: &Script) -> Result<usize, elements::script::Error> {
     let mut count = 0;
-    for ins in script.instructions().into_iter() {
+    for ins in script.instructions() {
         if let script::Instruction::Op(..) = ins? {
             count += 1;
         }

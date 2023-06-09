@@ -467,13 +467,13 @@ mod tests {
                     node_policies[6]
                 )
             );
-            let descriptor = policy.compile_tr(Some(unspendable_key.clone())).unwrap();
+            let descriptor = policy.compile_tr(Some(unspendable_key)).unwrap();
 
             let mut sorted_policy_prob = node_policies
                 .iter()
                 .zip(node_probabilities.iter())
                 .collect::<Vec<_>>();
-            sorted_policy_prob.sort_by(|a, b| (a.1).partial_cmp(&b.1).unwrap());
+            sorted_policy_prob.sort_by(|a, b| (a.1).partial_cmp(b.1).unwrap());
             let sorted_policies = sorted_policy_prob
                 .into_iter()
                 .map(|(x, _prob)| x)
@@ -547,7 +547,7 @@ mod tests {
             let pol =
                 Concrete::<String>::from_str("thresh(3,pk(A),pk(B),pk(C),pk(D),pk(E))").unwrap();
             let desc = pol
-                .compile_tr_private_experimental(Some(unspendable_key.clone()))
+                .compile_tr_private_experimental(Some(unspendable_key))
                 .unwrap();
             let expected_desc = Descriptor::Tr(
                 Tr::<String>::from_str(

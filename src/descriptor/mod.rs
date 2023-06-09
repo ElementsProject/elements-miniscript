@@ -1295,7 +1295,7 @@ mod tests {
     use crate::{hex_script, Descriptor, Error, Miniscript, NoExt, Satisfier};
 
     type StdDescriptor = Descriptor<PublicKey, CovenantExt<CovExtArgs>>;
-    const TEST_PK: &'static str =
+    const TEST_PK: &str =
         "elpk(020000000000000000000000000000000000000000000000000000000000000002)";
 
     fn roundtrip_descriptor(s: &str) {
@@ -1314,11 +1314,13 @@ mod tests {
 
     // helper function to create elements txin from scriptsig and witness
     fn elements_txin(script_sig: Script, witness: Vec<Vec<u8>>) -> elements::TxIn {
-        let mut txin_witness = elements::TxInWitness::default();
-        txin_witness.script_witness = witness;
+        let txin_witness = elements::TxInWitness {
+            script_witness: witness,
+            ..Default::default()
+        };
         elements::TxIn {
             previous_output: elements::OutPoint::default(),
-            script_sig: script_sig,
+            script_sig,
             sequence: Sequence::from_height(100),
             is_pegin: false,
             asset_issuance: elements::AssetIssuance::default(),
@@ -1809,8 +1811,8 @@ mod tests {
         let satisfier = {
             let mut satisfier = HashMap::with_capacity(2);
 
-            satisfier.insert(a, (sig_a.clone(), ::elements::EcdsaSigHashType::All));
-            satisfier.insert(b, (sig_b.clone(), ::elements::EcdsaSigHashType::All));
+            satisfier.insert(a, (sig_a, ::elements::EcdsaSigHashType::All));
+            satisfier.insert(b, (sig_b, ::elements::EcdsaSigHashType::All));
 
             satisfier
         };

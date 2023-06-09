@@ -12,6 +12,8 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
+#![allow(clippy::single_match)] // this example looks nicer with match than `if let`
+
 //! Example: Verifying a signed transaction.
 
 extern crate elements_miniscript as miniscript;
@@ -94,8 +96,10 @@ fn main() {
     let amount = confidential::Value::from_commitment(&conf_val).unwrap();
     // We only need to set the amount in prevouts because segwit transactions only need the amount field
     // For taproot transactions, this must contain all the required prevouts
-    let mut spent_utxo = elements::TxOut::default();
-    spent_utxo.value = amount;
+    let spent_utxo = elements::TxOut {
+        value: amount,
+        ..elements::TxOut::default()
+    };
     // Create a spend utxos, since it is a segwit spend we don't really need all prevouts. Fill dummy data for this example instead
     let utxos = [spent_utxo, elements::TxOut::default()];
     let env = TxEnv::new(&transaction, &utxos, 0).expect("Input len == witness utxo len");

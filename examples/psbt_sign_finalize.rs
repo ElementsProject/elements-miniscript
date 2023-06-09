@@ -20,7 +20,7 @@ fn main() {
     let secp256k1 = secp256k1::Secp256k1::new();
 
     let s = "elwsh(t:or_c(pk(027a3565454fe1b749bccaef22aff72843a9c3efefd7b16ac54537a0c23f0ec0de),v:thresh(1,pkh(032d672a1a91cc39d154d366cd231983661b0785c7f27bc338447565844f4a6813),a:pkh(03417129311ed34c242c012cd0a3e0b9bca0065f742d0dfb63c78083ea6a02d4d9),a:pkh(025a687659658baeabdfc415164528065be7bcaade19342241941e556557f01e28))))#tdp6ld3e";
-    let bridge_descriptor = Descriptor::from_str(&s).unwrap();
+    let bridge_descriptor = Descriptor::from_str(s).unwrap();
     //let bridge_descriptor = Descriptor::<bitcoin::PublicKey>::from_str(&s).expect("parse descriptor string");
     assert!(bridge_descriptor.sanity_check().is_ok());
     println!(
@@ -102,10 +102,12 @@ fn main() {
     // let depo_tx = elements::Transction::from_str("...").unwrap();
     // let (outpoint, witness_utxo) = get_vout(&depo_tx, bridge_descriptor.script_pubkey());
 
-    let mut txin = TxIn::default();
-    txin.previous_output = outpoint;
+    let txin = TxIn {
+        previous_output: outpoint,
+        sequence: Sequence::from_height(26), //Sequence::MAX; //
+        ..TxIn::default()
+    };
 
-    txin.sequence = Sequence::from_height(26); //Sequence::MAX; //
     psbt.add_input(pset::Input::from_txin(txin));
 
     psbt.add_output(pset::Output::from_txout(bitcoin_asset_txout(
@@ -130,7 +132,7 @@ fn main() {
         .update_with_descriptor_unchecked(&bridge_descriptor)
         .unwrap();
 
-    psbt.inputs_mut()[0].witness_utxo = Some(witness_utxo.clone());
+    psbt.inputs_mut()[0].witness_utxo = Some(witness_utxo);
 
     let tx = &psbt.extract_tx().unwrap();
     let mut sighash_cache = SigHashCache::new(tx);
@@ -165,7 +167,7 @@ fn main() {
     println!("{:#?}", psbt);
 
     let serialized = serialize(&psbt);
-    println!("{}", base64::encode(&serialized));
+    println!("{}", base64::encode(serialized));
 
     psbt.finalize_mut(&secp256k1, genesis_hash).unwrap();
     println!("{:#?}", psbt);

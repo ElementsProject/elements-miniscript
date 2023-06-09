@@ -1758,7 +1758,7 @@ mod tests {
     #[test]
     fn test_update_input_checks() {
         let desc = "eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/0)";
-        let desc = Descriptor::<DefiniteDescriptorKey>::from_str(&desc).unwrap();
+        let desc = Descriptor::<DefiniteDescriptorKey>::from_str(desc).unwrap();
 
         let asset = elements::AssetId::from_str(
             "b2e15d0d7a0c94e4e2ce0fe6e8691b9e451377f6e46e8045a86f7c4b5d4f0f23",
@@ -1797,7 +1797,7 @@ mod tests {
             output: vec![],
         };
 
-        let mut psbt = Psbt::from_tx(tx.clone());
+        let mut psbt = Psbt::from_tx(tx);
         assert_eq!(
             psbt.update_input_with_descriptor(0, &desc),
             Err(UtxoUpdateError::UtxoCheck),
@@ -1816,7 +1816,7 @@ mod tests {
             "matching non_witness_utxo"
         );
         non_witness_utxo.version = 0;
-        psbt.inputs_mut()[0].non_witness_utxo = Some(non_witness_utxo.clone());
+        psbt.inputs_mut()[0].non_witness_utxo = Some(non_witness_utxo);
         assert_eq!(
             psbt.update_input_with_descriptor(0, &desc),
             Err(UtxoUpdateError::UtxoCheck),
@@ -1838,7 +1838,7 @@ mod tests {
     #[test]
     fn test_update_output_checks() {
         let desc = "eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/0)";
-        let desc = Descriptor::<DefiniteDescriptorKey>::from_str(&desc).unwrap();
+        let desc = Descriptor::<DefiniteDescriptorKey>::from_str(desc).unwrap();
 
         let tx = elements::Transaction {
             version: 1,
@@ -1856,7 +1856,7 @@ mod tests {
             }],
         };
 
-        let mut psbt = Psbt::from_tx(tx.clone());
+        let mut psbt = Psbt::from_tx(tx);
         assert_eq!(
             psbt.update_output_with_descriptor(1, &desc),
             Err(OutputUpdateError::IndexOutOfBounds(1, 1)),

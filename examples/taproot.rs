@@ -140,8 +140,8 @@ fn hardcoded_xonlypubkeys() -> Vec<bitcoin::key::XOnlyPublicKey> {
         ],
     ];
     let mut keys: Vec<bitcoin::key::XOnlyPublicKey> = vec![];
-    for idx in 0..4 {
-        keys.push(bitcoin::key::XOnlyPublicKey::from_slice(&serialized_keys[idx][..]).unwrap());
+    for key in &serialized_keys {
+        keys.push(bitcoin::key::XOnlyPublicKey::from_slice(&key[..]).unwrap());
     }
     keys
 }

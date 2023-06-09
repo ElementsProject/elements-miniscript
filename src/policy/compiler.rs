@@ -1257,7 +1257,7 @@ mod tests {
         // artificially create a policy that is problematic and try to compile
         let pol: SPolicy = Concrete::And(vec![
             Concrete::Key("A".to_string()),
-            Concrete::And(vec![Concrete::after(9), Concrete::after(1000_000_000)]),
+            Concrete::And(vec![Concrete::after(9), Concrete::after(1_000_000_000)]),
         ]);
         assert!(pol.compile::<Segwitv0>().is_err());
 
@@ -1329,7 +1329,7 @@ mod tests {
         let (keys, sig) = pubkeys_and_a_sig(10);
         let key_pol: Vec<BPolicy> = keys.iter().map(|k| Concrete::Key(*k)).collect();
 
-        let policy: BPolicy = Concrete::Key(keys[0].clone());
+        let policy: BPolicy = Concrete::Key(keys[0]);
         let ms: SegwitMiniScript = policy.compile().unwrap();
         assert_eq!(
             ms.encode(),
@@ -1413,13 +1413,13 @@ mod tests {
         let mut right_sat =
             HashMap::<hashes::hash160::Hash, (bitcoin::PublicKey, ElementsSig)>::new();
 
-        for i in 0..5 {
-            left_sat.insert(keys[i], elements_sig);
+        for key in keys.iter().take(5) {
+            left_sat.insert(*key, elements_sig);
         }
-        for i in 5..8 {
+        for key in keys.iter().skip(5) {
             right_sat.insert(
-                keys[i].to_pubkeyhash(SigType::Ecdsa),
-                (keys[i], elements_sig),
+                key.to_pubkeyhash(SigType::Ecdsa),
+                (*key, elements_sig),
             );
         }
 
@@ -1574,7 +1574,7 @@ mod tests {
         let keys: Vec<Concrete<bitcoin::PublicKey>> =
             keys.iter().map(|pubkey| Concrete::Key(*pubkey)).collect();
         let thresh_res = Concrete::Threshold(keys.len() - 1, keys).compile::<Legacy>();
-        let ops_count = thresh_res.clone().and_then(|m| Ok(m.ext.ops.op_count()));
+        let ops_count = thresh_res.clone().map(|m| m.ext.ops.op_count());
         assert_eq!(
             thresh_res,
             Err(CompilerError::LimitsExceeded),
