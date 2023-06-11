@@ -457,7 +457,7 @@ impl Expr<CovExtArgs> {
     fn satisfy<Pk: MiniscriptKey + ToPublicKey>(
         &self,
         env: &TxEnv,
-        s: &Satisfier<Pk>,
+        s: &dyn Satisfier<Pk>,
     ) -> Result<(i64, Satisfaction), EvalError> {
         match &self.inner {
             ExprInner::Const(c) => Ok((*c, Satisfaction::empty())),
@@ -1007,7 +1007,7 @@ impl Arith<CovExtArgs> {
     pub fn satisfy_helper<Pk: ToPublicKey>(
         &self,
         env: &TxEnv,
-        sat: &Satisfier<Pk>,
+        sat: &dyn Satisfier<Pk>,
     ) -> Result<Satisfaction, EvalError> {
         let (res, sat_a, sat_b) = match &self.expr {
             ArithInner::Eq(a, b) => {
