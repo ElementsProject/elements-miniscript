@@ -44,3 +44,7 @@ path = "fuzz_targets/roundtrip_concrete.rs"
 [[bin]]
 name = "compile_descriptor"
 path = "fuzz_targets/compile_descriptor.rs"
+
+[[bin]]
+name = "roundtrip_confidential"
+path = "fuzz_targets/roundtrip_confidential.rs"
