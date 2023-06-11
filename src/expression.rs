@@ -52,7 +52,7 @@ fn next_expr(sl: &str, delim: char) -> Found {
     // We keep count of lparan whenever we are inside a key context
     // We exit the context whenever we find the corresponding ')'
     // in which we entered the context. This allows to special case
-    // parse the '(' ')' inside key expressions.(slip77 and musig).
+    // parse the '(' ')' inside key expressions.(key or musig(keys)).
     let mut key_ctx = false;
     let mut key_lparan_count = 0;
     let mut found = Found::Nothing;
@@ -63,7 +63,7 @@ fn next_expr(sl: &str, delim: char) -> Found {
                     // already inside a key context
                     if key_ctx {
                         key_lparan_count += 1;
-                    } else if &sl[..n] == "slip77" || &sl[..n] == "musig" {
+                    } else if &sl[..n] == "musig" {
                         key_lparan_count = 1;
                         key_ctx = true;
                     } else {
