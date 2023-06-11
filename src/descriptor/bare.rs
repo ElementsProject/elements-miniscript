@@ -12,9 +12,8 @@ use core::fmt;
 
 use elements::{self, script, secp256k1_zkp, Script};
 
-use super::checksum::verify_checksum;
 use super::ELMTS_STR;
-use crate::descriptor::checksum;
+use crate::descriptor::checksum::{self, verify_checksum};
 use crate::expression::{self, FromTree};
 use crate::miniscript::context::ScriptContext;
 use crate::policy::{semantic, Liftable};
