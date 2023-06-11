@@ -17,6 +17,8 @@
 //! Implements ELIP ????, described at `URL`
 //!
 
+pub mod slip77;
+
 use std::fmt;
 
 use elements::secp256k1_zkp;
@@ -25,11 +27,6 @@ use crate::descriptor::checksum::{desc_checksum, verify_checksum};
 use crate::expression::FromTree;
 use crate::extensions::{CovExtArgs, CovenantExt, Extension, ParseableExt};
 use crate::{expression, Error, MiniscriptKey, ToPublicKey};
-
-mod slip77 {
-    #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-    pub enum MasterBlindingKey {}
-}
 
 /// A description of a blinding key
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -42,9 +39,9 @@ pub enum Key<Pk: MiniscriptKey> {
 
 impl<Pk: MiniscriptKey> fmt::Display for Key<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Key::Slip77(ref _data) => unimplemented!(),
-            Key::Bare(ref pk) => fmt::Display::fmt(pk, f),
+        match self {
+            Key::Slip77(data) => write!(f, "slip77({})", data),
+            Key::Bare(pk) => fmt::Display::fmt(pk, f),
         }
     }
 }
@@ -52,11 +49,11 @@ impl<Pk: MiniscriptKey> fmt::Display for Key<Pk> {
 impl<Pk: MiniscriptKey + ToPublicKey> Key<Pk> {
     fn to_public_key<C: secp256k1_zkp::Signing + secp256k1_zkp::Verification>(
         &self,
-        _secp: &secp256k1_zkp::Secp256k1<C>,
-        _spk: &elements::Script,
+        secp: &secp256k1_zkp::Secp256k1<C>,
+        spk: &elements::Script,
     ) -> secp256k1_zkp::PublicKey {
         match *self {
-            Key::Slip77(ref _mbk) => unimplemented!(),
+            Key::Slip77(ref mbk) => mbk.blinding_key(secp, spk),
             Key::Bare(ref _pk) => unimplemented!(),
         }
     }
@@ -130,7 +127,7 @@ impl_from_str!(
         let keyexpr = &top.args[0];
         Ok(Descriptor {
             key: match (keyexpr.name, keyexpr.args.len()) {
-                ("slip77", 1) => unimplemented!(),
+                ("slip77", 1) => Key::Slip77(expression::terminal(&keyexpr.args[0], slip77::MasterBlindingKey::from_str)?),
                 ("slip77", _) => return Err(Error::BadDescriptor(
                     "slip77() must have exactly one argument".to_owned()
                 )),
