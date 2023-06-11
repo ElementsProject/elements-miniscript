@@ -1,7 +1,8 @@
 extern crate elements_miniscript as miniscript;
 
-use miniscript::policy;
 use std::str::FromStr;
+
+use miniscript::policy;
 
 type Policy = policy::Semantic<String>;
 
@@ -13,23 +14,21 @@ fn do_test(data: &[u8]) {
     }
 }
 
-#[cfg(feature = "afl")]
-extern crate afl;
-#[cfg(feature = "afl")]
-fn main() {
-    afl::read_stdio_bytes(|data| {
-        do_test(&data);
-    });
-}
-
-#[cfg(feature = "honggfuzz")]
-#[macro_use]
-extern crate honggfuzz;
-#[cfg(feature = "honggfuzz")]
 fn main() {
     loop {
-        fuzz!(|data| {
+        honggfuzz::fuzz!(|data| {
             do_test(data);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use miniscript::elements::hex::FromHex;
+
+    #[test]
+    fn duplicate_crash() {
+        let hex = Vec::<u8>::from_hex("00").unwrap();
+        super::do_test(&hex);
     }
 }

@@ -7,13 +7,8 @@ publish = false
 [package.metadata]
 cargo-fuzz = true
 
-[features]
-afl_fuzz = ["afl"]
-honggfuzz_fuzz = ["honggfuzz"]
-
 [dependencies]
-honggfuzz = { version = "0.5", default-features = false, optional = true }
-afl = { version = "0.8", optional = true }
+honggfuzz = { version = "0.5.55", default-features = false }
 regex = { version = "1.4"}
 elements-miniscript = { path = "..", features = ["compiler"] }
 
