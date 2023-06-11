@@ -199,6 +199,24 @@ mod tests {
                     .to_string(),
             );
         }
+
+        #[allow(dead_code)]
+        fn output_elip_test_vector(&self, index: usize) {
+            println!(
+                "* Valid Descriptor {}: <code>{}</code>",
+                index, self.descriptor_str
+            );
+            match self.key {
+                Key::Bare(pk) => println!("** Blinding key: <code>{}</code>", pk),
+                Key::Slip77(mbk) => println!("** SLIP77 master blinding key: <code>{}</code>", mbk),
+            }
+            println!("** Confidential address: <code>{}</code>", self.conf_addr);
+            println!(
+                "** Unconfidential address: <code>{}</code>",
+                self.unconf_addr
+            );
+            println!();
+        }
     }
 
     #[test]
@@ -283,8 +301,58 @@ mod tests {
             },
         ];
 
-        for test in tests {
+        for test in &tests {
             test.check(&secp);
+        }
+        // Uncomment to regenerate test vectors; to see the output, run
+        // cargo test confidential::tests:;confidential_descriptor -- --nocapture
+        /*
+        for (n, test) in tests.iter().enumerate() {
+            test.output_elip_test_vector(n + 1);
+        }
+        */
+    }
+
+    #[test]
+    fn confidential_descriptor_invalid() {
+        let bad_strs = vec![
+            (
+                "ct(slip77(b2396b3ee20509cdb64fe24180a14a72dbd671728eaa49bac69d2bdecb5f5a04),elsh(wpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4)))#xxxxxxxx",
+                "Invalid descriptor: Invalid checksum 'xxxxxxxx', expected 'qgjmm4as'",
+            ),
+            (
+                "ct(slip77(b2396b3ee20509cdb64fe24180a14a72dbd671728eaa49bac69d2bdecb5f5a04,b2396b3ee20509cdb64fe24180a14a72dbd671728eaa49bac69d2bdecb5f5a04),elsh(wpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4)))#qs64ccxw",
+                "Invalid descriptor: slip77() must have exactly one argument",
+            ),
+            (
+                "ct(slip77,elsh(wpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4)))#8p3zmumf",
+                "Invalid descriptor: slip77() must have exactly one argument",
+            ),
+            (
+                "ct(elsh(wpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4)))#u9cwz9f3",
+                "Invalid descriptor: CT descriptor had 1 arguments rather than 2",
+            ),
+            (
+                "ct(02dce16018bbbb8e36de7b394df5b5166e9adb7498be7d881a85a09aeecf76b623,02dce16018bbbb8e36de7b394df5b5166e9adb7498be7d881a85a09aeecf76b623,elwpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4))#cnsp2qsc",
+                "Invalid descriptor: CT descriptor had 3 arguments rather than 2",
+            ),
+            (
+                "ct(pk(02dce16018bbbb8e36de7b394df5b5166e9adb7498be7d881a85a09aeecf76b623),elwpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4))#nvax6rau",
+                "unexpected «pk»",
+            ),
+        ];
+
+        /*
+        for (n, bad_str) in bad_strs.iter().enumerate() {
+            println!("* Invalid Descriptor {}", n + 1);
+            println!("** <code>{}</code>", bad_str.0);
+            println!("** Reason:");
+        }
+        */
+
+        for bad_str in bad_strs {
+            let err = Descriptor::<secp256k1_zkp::PublicKey>::from_str(bad_str.0).unwrap_err();
+            assert_eq!(bad_str.1, err.to_string());
         }
     }
 }
