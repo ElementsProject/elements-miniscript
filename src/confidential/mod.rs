@@ -17,6 +17,7 @@
 //! Implements ELIP ????, described at `URL`
 //!
 
+pub mod bare;
 pub mod slip77;
 
 use std::fmt;
@@ -54,7 +55,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Key<Pk> {
     ) -> secp256k1_zkp::PublicKey {
         match *self {
             Key::Slip77(ref mbk) => mbk.blinding_key(secp, spk),
-            Key::Bare(ref _pk) => unimplemented!(),
+            Key::Bare(ref pk) => bare::tweak_key(secp, spk, pk),
         }
     }
 }
