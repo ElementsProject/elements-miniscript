@@ -92,10 +92,9 @@ pub fn test_from_cpp_ms(cl: &ElementsD, testdata: &TestData) {
         let mut psbt = Psbt::new_v2();
         psbt.global.tx_data.fallback_locktime = Some(
             LockTime::from_time(1_603_866_330)
-                .expect("valid timestamp")
-                .into(),
+                .expect("valid timestamp"),
         ); // 10/28/2020 @ 6:25am (UTC)
-        let (outpoint, witness_utxo) = get_vout(&cl, txid, 100_000_000);
+        let (outpoint, witness_utxo) = get_vout(cl, txid, 100_000_000);
         let txin = TxIn {
             previous_output: outpoint,
             is_pegin: false,

@@ -60,7 +60,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     // Spend one input and spend one output for simplicity.
     let mut psbt = Psbt::new_v2();
     // figure out the outpoint from the txid
-    let (outpoint, witness_utxo) = get_vout(&cl, txid, 100_000_000, derived_desc.script_pubkey());
+    let (outpoint, witness_utxo) = get_vout(cl, txid, 100_000_000, derived_desc.script_pubkey());
     let txin = TxIn {
         previous_output: outpoint,
         is_pegin: false,
@@ -113,7 +113,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
                     let leaf_hash = TapLeafHash::from_script(&ms.encode(), LeafVersion::default());
                     ms.iter_pk().filter_map(move |pk| {
                         let i = x_only_pks.iter().position(|&x| x.to_public_key() == pk);
-                        i.map(|idx| (xonly_keypairs[idx].clone(), leaf_hash))
+                        i.map(|idx| (xonly_keypairs[idx], leaf_hash))
                     })
                 })
                 .collect();
@@ -139,7 +139,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
                     (x_only_pk, leaf_hash),
                     elements::SchnorrSig {
                         sig,
-                        hash_ty: hash_ty,
+                        hash_ty,
                     },
                 );
             }
@@ -171,7 +171,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
 
             // Create a signature
             let keypair = &self.0.secretdata.x_only_keypairs[i];
-            let msg = secp256k1::Message::from_slice(&msg.as_inner()[..]).unwrap();
+            let msg = secp256k1::Message::from_slice(msg.as_inner()).unwrap();
             let mut aux_rand = [0u8; 32];
             rand::thread_rng().fill_bytes(&mut aux_rand);
 
@@ -205,7 +205,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     }
 
     let psbt_sat = PsbtInputSatisfier::new(&psbt, 0);
-    let csfs_sat = CsfsSatisfier(&testdata);
+    let csfs_sat = CsfsSatisfier(testdata);
 
     let mut tx = psbt.extract_tx().unwrap();
     let txouts = vec![psbt.inputs()[0].witness_utxo.clone().unwrap()];
@@ -227,7 +227,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     let txid = cl.send_raw_transaction(&tx);
 
     // Finally mine the blocks and await confirmations
-    let _blocks = cl.generate(1);
+    cl.generate(1);
     // Get the required transactions from the node mined in the blocks.
     // Check whether the transaction is mined in blocks
     // Assert that the confirmations are > 0.
