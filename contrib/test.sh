@@ -19,17 +19,6 @@ then
     cargo fmt -- --check
 fi
 
-# Fuzz if told to
-if [ "$DO_FUZZ" = true ]
-then
-    cd fuzz
-    cargo test --verbose
-    ./travis-fuzz.sh
-
-    # Exit out of the fuzzer, do not run other tests.
-    exit 0
-fi
-
 # Test bitcoind integration tests if told to (this only works with the stable toolchain)
 if [ "$DO_BITCOIND_TESTS" = true ]; then
     cd bitcoind-tests

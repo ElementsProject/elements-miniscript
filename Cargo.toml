@@ -58,3 +58,6 @@ required-features = ["compiler"]
 [[example]]
 name = "psbt_sign_finalize"
 required-features = ["base64"]
+
+[workspace]
+members = ["fuzz"]

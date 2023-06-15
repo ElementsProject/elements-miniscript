@@ -8,7 +8,7 @@ name: Continuous integration
 
 jobs:
   lint_fuzz_stable:
-    name: Lint + Fuzz
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Crate
@@ -23,7 +23,6 @@ jobs:
           override: true
       - name: Running fuzzer
         env:
-          DO_FUZZ: true
           DO_LINT: true
         run: ./contrib/test.sh
 
