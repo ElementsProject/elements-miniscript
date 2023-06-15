@@ -150,7 +150,7 @@ pub fn test_desc_satisfy(
                 let internal_keypair = internal_keypair
                     .add_xonly_tweak(
                         &secp,
-                        &Scalar::from_be_bytes(tr.spend_info().tap_tweak().into_inner())
+                        &Scalar::from_be_bytes(tr.spend_info().tap_tweak().to_byte_array())
                             .expect("valid scalar"),
                     )
                     .expect("Tweaking failed");
@@ -272,7 +272,7 @@ pub fn test_desc_satisfy(
         testdata.secretdata.sha256_pre.to_vec(),
     );
     psbt.inputs_mut()[0].hash256_preimages.insert(
-        sha256d::Hash::from_inner(testdata.pubdata.hash256.into_inner()),
+        sha256d::Hash::from_byte_array(testdata.pubdata.hash256.to_byte_array()),
         testdata.secretdata.hash256_pre.to_vec(),
     );
     psbt.inputs_mut()[0].hash160_preimages.insert(

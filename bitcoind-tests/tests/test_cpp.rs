@@ -167,7 +167,7 @@ pub fn test_from_cpp_ms(cl: &ElementsD, testdata: &TestData) {
             testdata.secretdata.sha256_pre.to_vec(),
         );
         psbts[i].inputs_mut()[0].hash256_preimages.insert(
-            sha256d::Hash::from_inner(testdata.pubdata.hash256.into_inner()),
+            sha256d::Hash::from_byte_array(testdata.pubdata.hash256.to_byte_array()),
             testdata.secretdata.hash256_pre.to_vec(),
         );
         println!("{}", ms);
