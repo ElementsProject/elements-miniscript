@@ -4,14 +4,14 @@ use std::convert::TryInto;
 use std::str::FromStr;
 use std::{cmp, error, fmt};
 
-use bitcoin::XOnlyPublicKey;
+use bitcoin::key::XOnlyPublicKey;
 use bitcoin_miniscript::MiniscriptKey;
 use elements::opcodes::all::*;
 use elements::sighash::Prevouts;
 use elements::{opcodes, script, secp256k1_zkp as secp256k1, SchnorrSig, Transaction};
 
 use super::param::{ExtParamTranslator, TranslateExtParam};
-use super::{CovExtArgs, CsfsKey, ExtParam, IdxExpr, ParseableExt, TxEnv};
+use super::{CovExtArgs, CsfsKey, ExtParam, FromTokenIterError, IdxExpr, ParseableExt, TxEnv};
 use crate::expression::{FromTree, Tree};
 use crate::extensions::check_sig_price_oracle_1;
 use crate::miniscript::context::ScriptContextError;
@@ -433,7 +433,7 @@ impl Expr<CovExtArgs> {
                 );
                 let sig = s.pop().ok_or(EvalError::MissingOracleSignature)?;
                 let schnorr_sig_sl = sig.try_push().map_err(|_| EvalError::MalformedSig)?;
-                let schnorr_sig = secp256k1::schnorr::Signature::from_slice(&schnorr_sig_sl)
+                let schnorr_sig = secp256k1::schnorr::Signature::from_slice(schnorr_sig_sl)
                     .map_err(|_| EvalError::MalformedSig)?;
                 let secp = secp256k1::Secp256k1::verification_only();
 
@@ -457,7 +457,7 @@ impl Expr<CovExtArgs> {
     fn satisfy<Pk: MiniscriptKey + ToPublicKey>(
         &self,
         env: &TxEnv,
-        s: &Satisfier<Pk>,
+        s: &dyn Satisfier<Pk>,
     ) -> Result<(i64, Satisfaction), EvalError> {
         match &self.inner {
             ExprInner::Const(c) => Ok((*c, Satisfaction::empty())),
@@ -774,7 +774,7 @@ impl Expr<CovExtArgs> {
                          // But care must be taken when introducing new arms.
         if let Some(Tk::Bytes8(bytes)) = tks.get(e.checked_sub(1)?) {
             let mut le_bytes = [0u8; 8];
-            le_bytes.copy_from_slice(&bytes);
+            le_bytes.copy_from_slice(bytes);
             let expr = Expr::from_inner(ExprInner::Const(i64::from_le_bytes(le_bytes)));
             Some((expr, e - 1))
         } else if let Some(Tk::Invert) = tks.get(e.checked_sub(1)?) {
@@ -943,23 +943,13 @@ impl<T: ExtParam> Arith<T> {
                 return Err(TypeError::PriceOracle1WFirst);
             }
             // Note iter here has consumed the first element
-            if iter.any(|x| {
-                if let ExprInner::PriceOracle1(_, _) = x {
-                    true
-                } else {
-                    false
-                }
-            }) {
+            if iter.any(|x| matches!(x, ExprInner::PriceOracle1(..))) {
                 return Err(TypeError::PriceOracle1Missing);
             }
             // All the elements in b should be PriceOracle1W
-            if b.iter_terminals().any(|x| {
-                if let ExprInner::PriceOracle1(_, _) = x {
-                    true
-                } else {
-                    false
-                }
-            }) {
+            if b.iter_terminals()
+                .any(|x| matches!(x, ExprInner::PriceOracle1(..)))
+            {
                 return Err(TypeError::PriceOracle1Missing);
             }
         }
@@ -1017,7 +1007,7 @@ impl Arith<CovExtArgs> {
     pub fn satisfy_helper<Pk: ToPublicKey>(
         &self,
         env: &TxEnv,
-        sat: &Satisfier<Pk>,
+        sat: &dyn Satisfier<Pk>,
     ) -> Result<Satisfaction, EvalError> {
         let (res, sat_a, sat_b) = match &self.expr {
             ArithInner::Eq(a, b) => {
@@ -1189,7 +1179,7 @@ impl<T: ExtParam> FromTree for Expr<T> {
             let r: Expr<T> = FromTree::from_tree(&top.args[1])?;
             Ok(Expr::from_inner(frag(Box::new(l), Box::new(r))))
         }
-        let res = match (top.name, top.args.len()) {
+        match (top.name, top.args.len()) {
             ("inp_v", 1) => Ok(Expr::from_inner(expression::unary(top, ExprInner::Input)?)),
             ("curr_inp_v", 0) => Ok(Expr::from_inner(ExprInner::CurrInputIdx)),
             ("out_v", 1) => Ok(Expr::from_inner(expression::unary(top, ExprInner::Output)?)),
@@ -1207,12 +1197,12 @@ impl<T: ExtParam> FromTree for Expr<T> {
                         "price_oracle1 expects 2 terminal arguments",
                     )));
                 }
-                let pk = T::arg_from_str(&top.args[0].name, top.name, 0)?;
-                let t: u64 = expression::parse_num::<u64>(&top.args[1].name)?;
+                let pk = T::arg_from_str(top.args[0].name, top.name, 0)?;
+                let t: u64 = expression::parse_num::<u64>(top.args[1].name)?;
                 if top.name == "price_oracle1" {
-                    return Ok(Expr::from_inner(ExprInner::PriceOracle1(pk, t)));
+                    Ok(Expr::from_inner(ExprInner::PriceOracle1(pk, t)))
                 } else {
-                    return Ok(Expr::from_inner(ExprInner::PriceOracle1W(pk, t)));
+                    Ok(Expr::from_inner(ExprInner::PriceOracle1W(pk, t)))
                 }
             }
             ("add", 2) => binary(top, ExprInner::Add),
@@ -1238,8 +1228,7 @@ impl<T: ExtParam> FromTree for Expr<T> {
                 top.name,
                 top.args.len(),
             ))),
-        };
-        res
+        }
     }
 }
 
@@ -1257,7 +1246,7 @@ impl<T: ExtParam> FromStr for Arith<T> {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let inner = ArithInner::from_str(s)?;
-        Ok(Arith::new(inner).map_err(|_| Error::Unexpected(String::from("Arith::new")))?)
+        Arith::new(inner).map_err(|_| Error::Unexpected(String::from("Arith::new")))
     }
 }
 
@@ -1360,14 +1349,17 @@ impl<T: ExtParam> Extension for Arith<T> {
         ))
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
+    fn from_name_tree(
+        name: &str,
+        children: &[expression::Tree<'_>],
+    ) -> Result<Self, FromTokenIterError> {
         let tree = Tree {
             name,
             args: children.to_vec(), // Cloning two references here, it is possible to avoid the to_vec() here,
                                      // but it requires lot of refactor.
         };
-        let inner = ArithInner::from_tree(&tree).map_err(|_| ())?;
-        Arith::new(inner).map_err(|_e| {})
+        let inner = ArithInner::from_tree(&tree).map_err(|_| FromTokenIterError)?;
+        Arith::new(inner).map_err(|_e| FromTokenIterError)
     }
 }
 
@@ -1406,20 +1398,20 @@ impl ParseableExt for Arith<CovExtArgs> {
         self.push_to_builder(builder)
     }
 
-    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, FromTokenIterError> {
         let len = tokens.len();
-        match Self::from_tokens(&tokens.as_inner_mut()) {
+        match Self::from_tokens(tokens.as_inner_mut()) {
             Some((res, last_pos)) => {
-                tokens.advance(len - last_pos).ok_or(())?;
+                tokens.advance(len - last_pos).ok_or(FromTokenIterError)?;
                 Ok(res)
             }
-            None => Err(()),
+            None => Err(FromTokenIterError),
         }
     }
 
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        stack: &mut interpreter::Stack<'txin>,
+    fn evaluate(
+        &self,
+        stack: &mut interpreter::Stack,
         txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         let txenv = txenv
@@ -1616,13 +1608,12 @@ where
             ExprInner::Negate(a) => Ok(Expr::from_inner(ExprInner::Negate(Box::new(
                 a.translate_ext(t)?,
             )))),
-            ExprInner::PriceOracle1(pk, time) => Ok(Expr::from_inner(ExprInner::PriceOracle1(
-                t.ext(pk)?,
-                time.clone(),
-            ))),
+            ExprInner::PriceOracle1(pk, time) => {
+                Ok(Expr::from_inner(ExprInner::PriceOracle1(t.ext(pk)?, *time)))
+            }
             ExprInner::PriceOracle1W(pk, time) => Ok(Expr::from_inner(ExprInner::PriceOracle1W(
                 t.ext(pk)?,
-                time.clone(),
+                *time,
             ))),
         }
     }
@@ -1631,7 +1622,7 @@ where
 #[cfg(test)]
 mod tests {
     use bitcoin::hashes::Hash;
-    use bitcoin::XOnlyPublicKey;
+    use bitcoin::key::XOnlyPublicKey;
 
     use super::*;
     use crate::extensions::check_sig_price_oracle_1;

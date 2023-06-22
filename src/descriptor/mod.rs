@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 pub mod pegin;
 
-use bitcoin::util::address::WitnessVersion;
+use bitcoin::address::WitnessVersion;
 use elements::hashes::{hash160, ripemd160, sha256};
 use elements::{secp256k1_zkp as secp256k1, secp256k1_zkp, Script, TxIn};
 use {bitcoin, elements};
@@ -200,10 +200,7 @@ impl DescriptorInfo {
         let descriptor = Descriptor::<String, T>::from_str(s)?;
         let has_secret = descriptor.for_any_key(|pk| DescriptorSecretKey::from_str(pk).is_ok());
         let ty = DescriptorType::from_str(s)?;
-        let is_pegin = match ty {
-            DescriptorType::Pegin | DescriptorType::LegacyPegin => true,
-            _ => false,
-        };
+        let is_pegin = matches!(ty, DescriptorType::Pegin | DescriptorType::LegacyPegin);
         // Todo: add elements later
         if is_pegin {
             Ok(DescriptorInfo::Pegin { has_secret, ty })
@@ -861,7 +858,7 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     }
 
     /// Convert all the public keys in the descriptor to [`bitcoin::PublicKey`] by deriving them or
-    /// otherwise converting them. All [`bitcoin::XOnlyPublicKey`]s are converted to by adding a
+    /// otherwise converting them. All [`bitcoin::key::XOnlyPublicKey`]s are converted to by adding a
     /// default(0x02) y-coordinate.
     ///
     /// This is a shorthand for:
@@ -1140,7 +1137,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> Descriptor<Pk, Ext> {
 
 impl<Ext: Extension> Descriptor<DefiniteDescriptorKey, Ext> {
     /// Convert all the public keys in the descriptor to [`bitcoin::PublicKey`] by deriving them or
-    /// otherwise converting them. All [`bitcoin::XOnlyPublicKey`]s are converted to by adding a
+    /// otherwise converting them. All [`bitcoin::key::XOnlyPublicKey`]s are converted to by adding a
     /// default(0x02) y-coordinate.
     ///
     /// # Examples
@@ -1279,10 +1276,9 @@ mod tests {
     use std::str::FromStr;
 
     use bitcoin;
-    use bitcoin::util::bip32;
-    use bitcoin::PublicKey;
-    use elements::hashes::hex::{FromHex, ToHex};
+    use bitcoin::{bip32, PublicKey};
     use elements::hashes::{hash160, sha256};
+    use elements::hex::{FromHex, ToHex};
     use elements::opcodes::all::{OP_CLTV, OP_CSV};
     use elements::script::Instruction;
     use elements::{opcodes, script, Sequence};
@@ -1298,7 +1294,7 @@ mod tests {
     use crate::{hex_script, Descriptor, Error, Miniscript, NoExt, Satisfier};
 
     type StdDescriptor = Descriptor<PublicKey, CovenantExt<CovExtArgs>>;
-    const TEST_PK: &'static str =
+    const TEST_PK: &str =
         "elpk(020000000000000000000000000000000000000000000000000000000000000002)";
 
     fn roundtrip_descriptor(s: &str) {
@@ -1317,11 +1313,13 @@ mod tests {
 
     // helper function to create elements txin from scriptsig and witness
     fn elements_txin(script_sig: Script, witness: Vec<Vec<u8>>) -> elements::TxIn {
-        let mut txin_witness = elements::TxInWitness::default();
-        txin_witness.script_witness = witness;
+        let txin_witness = elements::TxInWitness {
+            script_witness: witness,
+            ..Default::default()
+        };
         elements::TxIn {
             previous_output: elements::OutPoint::default(),
-            script_sig: script_sig,
+            script_sig,
             sequence: Sequence::from_height(100),
             is_pegin: false,
             asset_issuance: elements::AssetIssuance::default(),
@@ -1420,7 +1418,7 @@ mod tests {
                 .push_opcode(opcodes::all::OP_DUP)
                 .push_opcode(opcodes::all::OP_HASH160)
                 .push_slice(
-                    &hash160::Hash::from_hex("84e9ed95a38613f0527ff685a9928abe2d4754d4",).unwrap()
+                    &hash160::Hash::from_str("84e9ed95a38613f0527ff685a9928abe2d4754d4",).unwrap()
                         [..]
                 )
                 .push_opcode(opcodes::all::OP_EQUALVERIFY)
@@ -1445,7 +1443,7 @@ mod tests {
             script::Builder::new()
                 .push_opcode(opcodes::all::OP_PUSHBYTES_0)
                 .push_slice(
-                    &hash160::Hash::from_hex("84e9ed95a38613f0527ff685a9928abe2d4754d4",).unwrap()
+                    &hash160::Hash::from_str("84e9ed95a38613f0527ff685a9928abe2d4754d4",).unwrap()
                         [..]
                 )
                 .into_script()
@@ -1468,7 +1466,7 @@ mod tests {
             script::Builder::new()
                 .push_opcode(opcodes::all::OP_HASH160)
                 .push_slice(
-                    &hash160::Hash::from_hex("f1c3b9a431134cb90a500ec06e0067cfa9b8bba7",).unwrap()
+                    &hash160::Hash::from_str("f1c3b9a431134cb90a500ec06e0067cfa9b8bba7",).unwrap()
                         [..]
                 )
                 .push_opcode(opcodes::all::OP_EQUAL)
@@ -1493,7 +1491,7 @@ mod tests {
             script::Builder::new()
                 .push_opcode(opcodes::all::OP_HASH160)
                 .push_slice(
-                    &hash160::Hash::from_hex("aa5282151694d3f2f32ace7d00ad38f927a33ac8",).unwrap()
+                    &hash160::Hash::from_str("aa5282151694d3f2f32ace7d00ad38f927a33ac8",).unwrap()
                         [..]
                 )
                 .push_opcode(opcodes::all::OP_EQUAL)
@@ -1517,7 +1515,7 @@ mod tests {
             script::Builder::new()
                 .push_opcode(opcodes::all::OP_PUSHBYTES_0)
                 .push_slice(
-                    &sha256::Hash::from_hex(
+                    &sha256::Hash::from_str(
                         "\
                          f9379edc8983152dc781747830075bd5\
                          3896e4b0ce5bff73777fd77d124ba085\
@@ -1545,7 +1543,7 @@ mod tests {
             script::Builder::new()
                 .push_opcode(opcodes::all::OP_HASH160)
                 .push_slice(
-                    &hash160::Hash::from_hex("4bec5d7feeed99e1d0a23fe32a4afe126a7ff07e",).unwrap()
+                    &hash160::Hash::from_str("4bec5d7feeed99e1d0a23fe32a4afe126a7ff07e",).unwrap()
                         [..]
                 )
                 .push_opcode(opcodes::all::OP_EQUAL)
@@ -1640,7 +1638,7 @@ mod tests {
         let redeem_script = script::Builder::new()
             .push_opcode(opcodes::all::OP_PUSHBYTES_0)
             .push_slice(
-                &hash160::Hash::from_hex("d1b2a1faf62e73460af885c687dee3b7189cd8ab").unwrap()[..],
+                &hash160::Hash::from_str("d1b2a1faf62e73460af885c687dee3b7189cd8ab").unwrap()[..],
             )
             .into_script();
         let expected_ssig = script::Builder::new()
@@ -1812,8 +1810,8 @@ mod tests {
         let satisfier = {
             let mut satisfier = HashMap::with_capacity(2);
 
-            satisfier.insert(a, (sig_a.clone(), ::elements::EcdsaSigHashType::All));
-            satisfier.insert(b, (sig_b.clone(), ::elements::EcdsaSigHashType::All));
+            satisfier.insert(a, (sig_a, ::elements::EcdsaSigHashType::All));
+            satisfier.insert(b, (sig_b, ::elements::EcdsaSigHashType::All));
 
             satisfier
         };
@@ -1889,7 +1887,7 @@ mod tests {
         let key = "[78412e3a/44'/0'/0']xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL/1/*";
         let expected = DescriptorPublicKey::XPub(DescriptorXKey {
             origin: Some((
-                bip32::Fingerprint::from(&[0x78, 0x41, 0x2e, 0x3a][..]),
+                bip32::Fingerprint::from([0x78, 0x41, 0x2e, 0x3a]),
                 (&[
                     bip32::ChildNumber::from_hardened_idx(44).unwrap(),
                     bip32::ChildNumber::from_hardened_idx(0).unwrap(),
@@ -1974,7 +1972,7 @@ mod tests {
                 .unwrap(),
             ),
             origin: Some((
-                bip32::Fingerprint::from(&[0x78, 0x41, 0x2e, 0x3a][..]),
+                bip32::Fingerprint::from([0x78, 0x41, 0x2e, 0x3a]),
                 (&[
                     bip32::ChildNumber::from_hardened_idx(0).unwrap(),
                     bip32::ChildNumber::from_normal_idx(42).unwrap(),

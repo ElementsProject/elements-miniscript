@@ -14,7 +14,6 @@
 
 //! Example: Create an HTLC with miniscript using the policy compiler
 
-use bitcoin;
 extern crate elements_miniscript as miniscript;
 
 use std::str::FromStr;

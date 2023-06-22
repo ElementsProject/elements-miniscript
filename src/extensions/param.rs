@@ -2,9 +2,9 @@
 
 use std::{fmt, hash};
 
-use bitcoin::hashes::hex::ToHex;
 use elements::confidential;
 use elements::encode::serialize;
+use elements::hex::ToHex;
 
 use super::csfs::{CsfsKey, CsfsMsg};
 use super::introspect_ops::Spk;
@@ -105,7 +105,7 @@ impl From<CsfsKey> for CovExtArgs {
 
 impl CovExtArgs {
     /// Creates a new csfs key variant of [`CovExtArgs`]
-    pub fn csfs_key(key: bitcoin::XOnlyPublicKey) -> Self {
+    pub fn csfs_key(key: bitcoin::key::XOnlyPublicKey) -> Self {
         CovExtArgs::XOnlyKey(CsfsKey(key))
     }
 
@@ -196,7 +196,7 @@ where
     /// Translates one extension to another
     fn ext(&mut self, cov: &CovenantExt<PArg>) -> Result<CovenantExt<QArg>, E> {
         match *cov {
-            CovenantExt::LegacyVerEq(ref v) => Ok(CovenantExt::LegacyVerEq(v.clone())),
+            CovenantExt::LegacyVerEq(ref v) => Ok(CovenantExt::LegacyVerEq(*v)),
             CovenantExt::LegacyOutputsPref(ref p) => Ok(CovenantExt::LegacyOutputsPref(p.clone())),
             CovenantExt::Csfs(ref c) => Ok(CovenantExt::Csfs(TranslateExtParam::translate_ext(
                 c, self,

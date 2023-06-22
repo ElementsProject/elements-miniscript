@@ -4,16 +4,16 @@ use std::convert::TryFrom;
 use std::fmt;
 use std::str::FromStr;
 
-use bitcoin::hashes::hex::{FromHex, ToHex};
 use bitcoin::hashes::{sha256, Hash};
 use elements::address::Payload;
 use elements::confidential::Asset;
+use elements::hex::{FromHex, ToHex};
 use elements::opcodes::all::*;
 use elements::{confidential, encode, script, Address, AddressParams};
 
 use super::index_ops::IdxExpr;
 use super::param::{ExtParamTranslator, TranslateExtParam};
-use super::{ArgFromStr, CovExtArgs, EvalError, ExtParam, ParseableExt, TxEnv};
+use super::{ArgFromStr, CovExtArgs, EvalError, ExtParam, FromTokenIterError, ParseableExt, TxEnv};
 use crate::expression::{FromTree, Tree};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -184,8 +184,8 @@ impl<T: ExtParam> AssetExpr<T> {
     fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("curr_inp_asset", 0) => Ok(AssetExpr::CurrInputAsset),
-            ("inp_asset", 1) => expression::unary(&top, AssetExpr::Input),
-            ("out_asset", 1) => expression::unary(&top, AssetExpr::Output),
+            ("inp_asset", 1) => expression::unary(top, AssetExpr::Input),
+            ("out_asset", 1) => expression::unary(top, AssetExpr::Output),
             (asset, 0) => Ok(AssetExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -256,8 +256,8 @@ impl<T: ExtParam> ValueExpr<T> {
     fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("curr_inp_value", 0) => Ok(ValueExpr::CurrInputValue),
-            ("inp_value", 1) => expression::unary(&top, ValueExpr::Input),
-            ("out_value", 1) => expression::unary(&top, ValueExpr::Output),
+            ("inp_value", 1) => expression::unary(top, ValueExpr::Input),
+            ("out_value", 1) => expression::unary(top, ValueExpr::Output),
             (value, 0) => Ok(ValueExpr::Const(T::arg_from_str(value, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -328,8 +328,8 @@ impl<T: ExtParam> SpkExpr<T> {
     fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("curr_inp_spk", 0) => Ok(SpkExpr::CurrInputSpk),
-            ("inp_spk", 1) => expression::unary(&top, SpkExpr::Input),
-            ("out_spk", 1) => expression::unary(&top, SpkExpr::Output),
+            ("inp_spk", 1) => expression::unary(top, SpkExpr::Input),
+            ("out_spk", 1) => expression::unary(top, SpkExpr::Output),
             (asset, 0) => Ok(SpkExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
@@ -381,24 +381,24 @@ impl<T: ExtParam> FromTree for CovOps<T> {
     fn from_tree(top: &Tree<'_>) -> Result<Self, Error> {
         match (top.name, top.args.len()) {
             ("is_exp_asset", 1) => {
-                AssetExpr::from_tree_parent(&top.args[0], &top.name, 0).map(CovOps::IsExpAsset)
+                AssetExpr::from_tree_parent(&top.args[0], top.name, 0).map(CovOps::IsExpAsset)
             }
             ("is_exp_value", 1) => {
-                ValueExpr::from_tree_parent(&top.args[0], &top.name, 0).map(CovOps::IsExpValue)
+                ValueExpr::from_tree_parent(&top.args[0], top.name, 0).map(CovOps::IsExpValue)
             }
             ("asset_eq", 2) => {
-                let l = AssetExpr::from_tree_parent(&top.args[0], &top.name, 0)?;
-                let r = AssetExpr::from_tree_parent(&top.args[1], &top.name, 1)?;
+                let l = AssetExpr::from_tree_parent(&top.args[0], top.name, 0)?;
+                let r = AssetExpr::from_tree_parent(&top.args[1], top.name, 1)?;
                 Ok(CovOps::AssetEq(l, r))
             }
             ("value_eq", 2) => {
-                let l = ValueExpr::from_tree_parent(&top.args[0], &top.name, 0)?;
-                let r = ValueExpr::from_tree_parent(&top.args[1], &top.name, 1)?;
+                let l = ValueExpr::from_tree_parent(&top.args[0], top.name, 0)?;
+                let r = ValueExpr::from_tree_parent(&top.args[1], top.name, 1)?;
                 Ok(CovOps::ValueEq(l, r))
             }
             ("spk_eq", 2) => {
-                let l = SpkExpr::from_tree_parent(&top.args[0], &top.name, 0)?;
-                let r = SpkExpr::from_tree_parent(&top.args[1], &top.name, 1)?;
+                let l = SpkExpr::from_tree_parent(&top.args[0], top.name, 0)?;
+                let r = SpkExpr::from_tree_parent(&top.args[1], top.name, 1)?;
                 Ok(CovOps::SpkEq(l, r))
             }
             ("curr_idx_eq", 1) => {
@@ -440,11 +440,7 @@ impl<T: ExtParam> Extension for CovOps<T> {
     fn extra_prop(&self) -> ExtData {
         ExtData {
             pk_cost: self.script_size(), // 1 opcodes, 1 key push, msg, 1 msg push
-            has_free_verify: if let CovOps::CurrIndEq(..) = self {
-                true
-            } else {
-                false
-            },
+            has_free_verify: matches!(self, CovOps::CurrIndEq(..)),
             stack_elem_count_sat: Some(0),
             stack_elem_count_dissat: Some(0),
             max_sat_size: Some((0, 0)),
@@ -474,13 +470,13 @@ impl<T: ExtParam> Extension for CovOps<T> {
         }
     }
 
-    fn from_name_tree(name: &str, children: &[Tree<'_>]) -> Result<Self, ()> {
+    fn from_name_tree(name: &str, children: &[Tree<'_>]) -> Result<Self, FromTokenIterError> {
         let tree = Tree {
             name,
             args: children.to_vec(), // Cloning references here, it is possible to avoid the to_vec() here,
                                      // but it requires lot of refactor.
         };
-        Self::from_tree(&tree).map_err(|_| ())
+        Self::from_tree(&tree).map_err(|_| FromTokenIterError)
     }
 
     fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError> {
@@ -571,8 +567,7 @@ impl ArgFromStr for confidential::Asset {
             ));
         }
         let asset_hex = Vec::<u8>::from_hex(s).map_err(|e| Error::Unexpected(e.to_string()))?;
-        Ok(elements::encode::deserialize(&asset_hex)
-            .map_err(|e| Error::Unexpected(e.to_string()))?)
+        elements::encode::deserialize(&asset_hex).map_err(|e| Error::Unexpected(e.to_string()))
     }
 }
 
@@ -584,8 +579,7 @@ impl ArgFromStr for confidential::Value {
             ));
         }
         let asset_hex = Vec::<u8>::from_hex(s).map_err(|e| Error::Unexpected(e.to_string()))?;
-        Ok(elements::encode::deserialize(&asset_hex)
-            .map_err(|e| Error::Unexpected(e.to_string()))?)
+        elements::encode::deserialize(&asset_hex).map_err(|e| Error::Unexpected(e.to_string()))
     }
 }
 
@@ -596,7 +590,7 @@ fn asset(pref: u8, comm: &[u8]) -> Option<confidential::Asset> {
     if comm.len() != 32 {
         return None;
     }
-    bytes[1..].copy_from_slice(&comm);
+    bytes[1..].copy_from_slice(comm);
     encode::deserialize(&bytes).ok()
 }
 
@@ -605,7 +599,7 @@ fn value(pref: u8, comm: &[u8]) -> Option<confidential::Value> {
     if comm.len() == 32 {
         let mut bytes = [0u8; 33];
         bytes[0] = pref;
-        bytes[1..].copy_from_slice(&comm);
+        bytes[1..].copy_from_slice(comm);
         encode::deserialize(&bytes).ok()
     } else if comm.len() == 8 {
         let mut bytes = [0u8; 8];
@@ -642,7 +636,10 @@ fn spk(pref: i8, prog: &[u8]) -> Option<elements::Script> {
 // This converts legacy programs to (-1, sha256::Hash(spk))
 fn spk_to_components(s: &elements::Script) -> (i8, Vec<u8>) {
     if !s.is_witness_program() {
-        (-1, sha256::Hash::hash(s.as_bytes()).to_vec())
+        (
+            -1,
+            sha256::Hash::hash(s.as_bytes()).to_byte_array().to_vec(),
+        )
     } else {
         // indirect way to get payload.
         // The address parameters don't really matter here
@@ -664,7 +661,7 @@ impl AssetExpr<CovExtArgs> {
             AssetExpr::Const(CovExtArgs::Asset(a)) => {
                 match a {
                     Asset::Null => unreachable!("Attempt to push Null asset"),
-                    Asset::Explicit(a) => builder.push_slice(&a.into_inner()).push_int(1), // explicit prefix
+                    Asset::Explicit(a) => builder.push_slice(a.into_inner().as_ref()).push_int(1), // explicit prefix
                     Asset::Confidential(c) => {
                         let ser = c.serialize();
                         builder.push_slice(&ser[1..]).push_int(ser[0] as i64)
@@ -839,7 +836,7 @@ impl SpkExpr<CovExtArgs> {
             SpkExpr::Const(CovExtArgs::Script(s)) => {
                 let (ver, prog) = match &s.0 {
                     SpkInner::Script(s) => spk_to_components(s),
-                    SpkInner::Hashed(h) => (-1, h.to_vec()),
+                    SpkInner::Hashed(h) => (-1, h.to_byte_array().to_vec()),
                 };
                 builder.push_slice(&prog).push_int(ver as i64)
             }
@@ -864,7 +861,7 @@ impl SpkExpr<CovExtArgs> {
         let res = match self {
             SpkExpr::Const(CovExtArgs::Script(s)) => match &s.0 {
                 SpkInner::Script(s) => spk_to_components(s),
-                SpkInner::Hashed(h) => (-1, h.to_vec()),
+                SpkInner::Hashed(h) => (-1, h.to_byte_array().to_vec()),
             },
             SpkExpr::Const(_) => unreachable!(
                 "Both constructors from_str and from_token_iter
@@ -908,7 +905,7 @@ impl SpkExpr<CovExtArgs> {
         } else if let Some(&[Tk::Bytes32(spk_vec), Tk::NumNeg1]) = tks.get(e.checked_sub(2)?..e) {
             let mut inner = [0u8; 32];
             inner.copy_from_slice(spk_vec);
-            let hashed_spk = Spk(SpkInner::Hashed(sha256::Hash::from_inner(inner)));
+            let hashed_spk = Spk(SpkInner::Hashed(sha256::Hash::from_byte_array(inner)));
             Some((SpkExpr::Const(CovExtArgs::Script(hashed_spk)), e - 2))
         } else if let Some(&[Tk::Push(ref spk_vec), Tk::Num(i)]) = tks.get(e.checked_sub(2)?..e) {
             let script = spk(i8::try_from(i).ok()?, spk_vec)?;
@@ -1155,20 +1152,20 @@ impl ParseableExt for CovOps<CovExtArgs> {
         self.push_to_builder(builder)
     }
 
-    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, FromTokenIterError> {
         let len = tokens.len();
-        match Self::from_tokens(&tokens.as_inner_mut()) {
+        match Self::from_tokens(tokens.as_inner_mut()) {
             Some((res, last_pos)) => {
-                tokens.advance(len - last_pos).ok_or(())?;
+                tokens.advance(len - last_pos).ok_or(FromTokenIterError)?;
                 Ok(res)
             }
-            None => Err(()),
+            None => Err(FromTokenIterError),
         }
     }
 
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        stack: &mut interpreter::Stack<'txin>,
+    fn evaluate(
+        &self,
+        stack: &mut interpreter::Stack,
         txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         let txenv = txenv
@@ -1218,7 +1215,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::XOnlyPublicKey;
+    use bitcoin::key::XOnlyPublicKey;
 
     use super::*;
     use crate::test_utils::{StrExtTranslator, StrXOnlyKeyTranslator};

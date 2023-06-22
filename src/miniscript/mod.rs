@@ -203,25 +203,23 @@ where
     /// use elements_miniscript::bitcoin::secp256k1::XOnlyPublicKey;
     /// type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0>;
     /// type TapScript = Miniscript<XOnlyPublicKey, Tap>;
-    /// use bitcoin::hashes::hex::FromHex;
-    /// fn main() {
-    ///     // parse x-only miniscript in Taproot context
-    ///     let tapscript_ms = TapScript::parse(&elements::Script::from(Vec::<u8>::from_hex(
-    ///         "202788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
-    ///     ).expect("Even length hex")))
-    ///     .expect("Xonly keys are valid only in taproot context");
-    ///     // tapscript fails decoding when we use them with compressed keys
-    ///     let err = TapScript::parse(&elements::Script::from(Vec::<u8>::from_hex(
-    ///         "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
-    ///     ).expect("Even length hex")))
-    ///     .expect_err("Compressed keys cannot be used in Taproot context");
-    ///     // Segwitv0 succeeds decoding with full keys.
-    ///     Segwitv0Script::parse(&elements::Script::from(Vec::<u8>::from_hex(
-    ///         "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
-    ///     ).expect("Even length hex")))
-    ///     .expect("Compressed keys are allowed in Segwit context");
+    /// use elements::hex::FromHex;
     ///
-    /// }
+    /// // parse x-only miniscript in Taproot context
+    /// let tapscript_ms = TapScript::parse(&elements::Script::from(Vec::<u8>::from_hex(
+    ///     "202788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
+    /// ).expect("Even length hex")))
+    /// .expect("Xonly keys are valid only in taproot context");
+    /// // tapscript fails decoding when we use them with compressed keys
+    /// let err = TapScript::parse(&elements::Script::from(Vec::<u8>::from_hex(
+    ///     "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
+    /// ).expect("Even length hex")))
+    /// .expect_err("Compressed keys cannot be used in Taproot context");
+    /// // Segwitv0 succeeds decoding with full keys.
+    /// Segwitv0Script::parse(&elements::Script::from(Vec::<u8>::from_hex(
+    ///     "21022788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99ac",
+    /// ).expect("Even length hex")))
+    /// .expect("Compressed keys are allowed in Segwit context");
     /// ```
     pub fn parse(script: &script::Script) -> Result<Miniscript<Ctx::Key, Ctx, Ext>, Error> {
         let ms = Self::parse_with_ext(script, &ExtParams::sane())?;
@@ -522,8 +520,11 @@ serde_string_impl_pk!(Miniscript, "a miniscript", Ctx; ScriptContext => Ext2 ; E
 pub mod hash256 {
     use bitcoin::hashes::{hash_newtype, sha256d};
 
-    #[rustfmt::skip]
-    hash_newtype!(Hash, sha256d::Hash, 32, doc = "A bitcoin block hash.", false);
+    hash_newtype! {
+        /// A hash256 of preimage.
+        #[hash_newtype(forward)]
+        pub struct Hash(sha256d::Hash);
+    }
 }
 
 #[cfg(test)]
@@ -534,7 +535,8 @@ mod tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use bitcoin::{self, XOnlyPublicKey};
+    use bitcoin::key::XOnlyPublicKey;
+    use bitcoin::{self};
     use elements::hashes::{hash160, sha256, Hash};
     use elements::taproot::TapLeafHash;
     use elements::{self, secp256k1_zkp, Sequence};
@@ -736,7 +738,7 @@ mod tests {
              ",
         )
         .unwrap();
-        let hash = hash160::Hash::from_inner([17; 20]);
+        let hash = hash160::Hash::from_byte_array([17; 20]);
 
         let pkk_ms: Miniscript<String, Segwitv0> = Miniscript {
             node: Terminal::Check(Arc::new(Miniscript {
@@ -1088,7 +1090,7 @@ mod tests {
         );
         assert_eq!(
             ms.unwrap_err().to_string(),
-            "unexpected «key hex decoding error»",
+            "unexpected «PublicKey hex should be 66 or 130 digits long, got: 64»",
         );
         Tapscript::from_str_insane(
             "pk(2788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)",
@@ -1160,7 +1162,8 @@ mod tests {
             .unwrap();
         // script rtt test
         assert_eq!(
-            Miniscript::<bitcoin::XOnlyPublicKey, Tap>::parse_insane(&tap_ms.encode()).unwrap(),
+            Miniscript::<bitcoin::key::XOnlyPublicKey, Tap>::parse_insane(&tap_ms.encode())
+                .unwrap(),
             tap_ms
         );
         assert_eq!(tap_ms.script_size(), 104);

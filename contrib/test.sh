@@ -7,10 +7,9 @@ FEATURES="compiler serde rand base64"
 cargo --version
 rustc --version
 
-# Pin dependencies required to build with Rust 1.41.1
-if cargo --version | grep "1\.41\.0"; then
+# Pin dependencies required to build with Rust 1.48
+if cargo --version | grep "1\.48"; then
     cargo update -p serde --precise 1.0.156
-    cargo update -p syn --precise 1.0.107
 fi
 
 # Format if told to
@@ -18,17 +17,6 @@ if [ "$DO_FMT" = true ]
 then
     rustup component add rustfmt
     cargo fmt -- --check
-fi
-
-# Fuzz if told to
-if [ "$DO_FUZZ" = true ]
-then
-    cd fuzz
-    cargo test --verbose
-    ./travis-fuzz.sh
-
-    # Exit out of the fuzzer, do not run other tests.
-    exit 0
 fi
 
 # Test bitcoind integration tests if told to (this only works with the stable toolchain)
@@ -68,7 +56,7 @@ fi
 # Bench if told to (this only works with the nightly toolchain)
 if [ "$DO_BENCH" = true ]
 then
-    cargo bench --features="unstable compiler"
+    RUSTFLAGS=--cfg=miniscript_bench cargo bench --features="compiler"
 fi
 
 # Build the docs if told to (this only works with the nightly toolchain)

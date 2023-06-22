@@ -75,7 +75,7 @@ pub(crate) fn build_scriptint(n: i64) -> Vec<u8> {
 #[cfg(test)]
 pub(crate) fn count_non_push_opcodes(script: &Script) -> Result<usize, elements::script::Error> {
     let mut count = 0;
-    for ins in script.instructions().into_iter() {
+    for ins in script.instructions() {
         if let script::Instruction::Op(..) = ins? {
             count += 1;
         }
@@ -115,9 +115,9 @@ impl MsKeyBuilder for script::Builder {
         Ctx: ScriptContext,
     {
         match Ctx::sig_type() {
-            context::SigType::Ecdsa => self.push_slice(&key.to_public_key().pubkey_hash()),
+            context::SigType::Ecdsa => self.push_slice(key.to_public_key().pubkey_hash().as_ref()),
             context::SigType::Schnorr => {
-                self.push_slice(&PubkeyHash::hash(&key.to_x_only_pubkey().serialize()))
+                self.push_slice(PubkeyHash::hash(&key.to_x_only_pubkey().serialize()).as_ref())
             }
         }
     }

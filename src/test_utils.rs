@@ -64,20 +64,20 @@ impl Translator<String, bitcoin::PublicKey, ()> for StrKeyTranslator {
     }
 }
 
-/// Same as [`StrKeyTranslator`], but for [`bitcoin::XOnlyPublicKey`]
+/// Same as [`StrKeyTranslator`], but for [`bitcoin::key::XOnlyPublicKey`]
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct StrXOnlyKeyTranslator {
-    pub pk_map: HashMap<String, bitcoin::XOnlyPublicKey>,
+    pub pk_map: HashMap<String, bitcoin::key::XOnlyPublicKey>,
     pub pkh_map: HashMap<String, hash160::Hash>,
     pub sha256_map: HashMap<String, sha256::Hash>,
     pub ripemd160_map: HashMap<String, ripemd160::Hash>,
     pub hash160_map: HashMap<String, hash160::Hash>,
 }
 
-impl Translator<String, bitcoin::XOnlyPublicKey, ()> for StrXOnlyKeyTranslator {
-    fn pk(&mut self, pk: &String) -> Result<bitcoin::XOnlyPublicKey, ()> {
+impl Translator<String, bitcoin::key::XOnlyPublicKey, ()> for StrXOnlyKeyTranslator {
+    fn pk(&mut self, pk: &String) -> Result<bitcoin::key::XOnlyPublicKey, ()> {
         let key = self.pk_map.get(pk).copied().unwrap_or_else(|| {
-            bitcoin::XOnlyPublicKey::from_str(
+            bitcoin::key::XOnlyPublicKey::from_str(
                 "c2122e30e73f7fe37986e3f81ded00158e94b7ad472369b83bbdd28a9a198a39",
             )
             .unwrap()
@@ -163,13 +163,13 @@ impl StrXOnlyKeyTranslator {
             .iter()
             .map(|sk| {
                 let keypair = secp256k1::KeyPair::from_secret_key(&secp, sk);
-                let (pk, _parity) = bitcoin::XOnlyPublicKey::from_keypair(&keypair);
+                let (pk, _parity) = bitcoin::key::XOnlyPublicKey::from_keypair(&keypair);
                 pk
             })
             .collect();
         let mut pk_map = HashMap::new();
         let mut pkh_map = HashMap::new();
-        for (i, c) in (b'A'..b'Z').enumerate() {
+        for (i, c) in (b'A'..=b'Z').enumerate() {
             let key = String::from_utf8(vec![c]).unwrap();
             pk_map.insert(key.clone(), pks[i]);
             pkh_map.insert(key, pks[i].to_pubkeyhash(SigType::Schnorr));

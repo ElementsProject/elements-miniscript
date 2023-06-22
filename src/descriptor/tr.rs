@@ -429,8 +429,7 @@ where
     type Item = (usize, &'a Miniscript<Pk, Tap, Ext>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while !self.stack.is_empty() {
-            let (depth, last) = self.stack.pop().expect("Size checked above");
+        while let Some((depth, last)) = self.stack.pop() {
             match *last {
                 TapTree::Tree(ref l, ref r) => {
                     self.stack.push((depth + 1, r));
@@ -496,19 +495,19 @@ impl_from_tree!(
                     Tr::new(expression::terminal(key, Pk::from_str)?, Some(ret))
                 }
                 _ => {
-                    return Err(Error::Unexpected(format!(
+                    Err(Error::Unexpected(format!(
                         "{}[#{} args] while parsing taproot descriptor",
                         top.name,
                         top.args.len()
-                    )));
+                    )))
                 }
             }
         } else {
-            return Err(Error::Unexpected(format!(
+            Err(Error::Unexpected(format!(
                 "{}[#{} args] while parsing taproot descriptor",
                 top.name,
                 top.args.len()
-            )));
+            )))
         }
     }
 );
@@ -554,7 +553,7 @@ fn parse_tr_tree(s: &str) -> Result<expression::Tree<'_>, Error> {
         }
     }
 
-    let ret = if s.len() > 5 && &s[..5] == "eltr(" && s.as_bytes()[s.len() - 1] == b')' {
+    if s.len() > 5 && &s[..5] == "eltr(" && s.as_bytes()[s.len() - 1] == b')' {
         let rest = &s[5..s.len() - 1];
         if !rest.contains(',') {
             let internal_key = expression::Tree {
@@ -591,12 +590,11 @@ fn parse_tr_tree(s: &str) -> Result<expression::Tree<'_>, Error> {
         }
     } else {
         Err(Error::Unexpected("invalid taproot descriptor".to_string()))
-    };
-    ret
+    }
 }
 
 fn split_once(inp: &str, delim: char) -> Option<(&str, &str)> {
-    let ret = if inp.is_empty() {
+    if inp.is_empty() {
         None
     } else {
         let mut found = inp.len();
@@ -612,8 +610,7 @@ fn split_once(inp: &str, delim: char) -> Option<(&str, &str)> {
         } else {
             Some((&inp[..found], &inp[found + 1..]))
         }
-    };
-    ret
+    }
 }
 
 impl<Pk: MiniscriptKey, Ext: Extension> Liftable<Pk> for TapTree<Pk, Ext> {

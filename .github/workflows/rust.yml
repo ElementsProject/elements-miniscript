@@ -1,10 +1,14 @@
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - master
+  pull_request: {}
 
 name: Continuous integration
 
 jobs:
   lint_fuzz_stable:
-    name: Lint + Fuzz
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Crate
@@ -19,7 +23,6 @@ jobs:
           override: true
       - name: Running fuzzer
         env:
-          DO_FUZZ: true
           DO_LINT: true
         run: ./contrib/test.sh
 
@@ -66,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable, beta, nightly, 1.41.1]
+        rust: [stable, beta, nightly, 1.48.0]
     steps:
       - name: Checkout Crate
         uses: actions/checkout@v2

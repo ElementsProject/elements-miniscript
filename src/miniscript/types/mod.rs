@@ -11,7 +11,7 @@ pub mod malleability;
 
 use std::{error, fmt};
 
-use elements::{LockTime, PackedLockTime, Sequence};
+use elements::{LockTime, Sequence};
 
 pub use self::correctness::{Base, Correctness, Input};
 pub use self::extra_props::ExtData;
@@ -432,7 +432,7 @@ pub trait Property: Sized {
                 // Note that for CLTV this is a limitation not of Bitcoin but Miniscript. The
                 // number on the stack would be a 5 bytes signed integer but Miniscript's B type
                 // only consumes 4 bytes from the stack.
-                if t == PackedLockTime::ZERO {
+                if t == LockTime::ZERO.into() {
                     return Err(Error {
                         fragment: fragment.clone(),
                         error: ErrorKind::InvalidTime,
@@ -831,7 +831,7 @@ impl Property for Type {
                 // Note that for CLTV this is a limitation not of Bitcoin but Miniscript. The
                 // number on the stack would be a 5 bytes signed integer but Miniscript's B type
                 // only consumes 4 bytes from the stack.
-                if t == PackedLockTime::ZERO {
+                if t == LockTime::ZERO.into() {
                     return Err(Error {
                         fragment: fragment.clone(),
                         error: ErrorKind::InvalidTime,

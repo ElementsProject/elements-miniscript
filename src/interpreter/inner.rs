@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: CC0-1.0
 
 use bitcoin;
-use bitcoin::util::taproot::TAPROOT_ANNEX_PREFIX;
+use bitcoin::taproot::TAPROOT_ANNEX_PREFIX;
 use elements::hashes::{hash160, sha256, Hash};
-use elements::schnorr::TapTweak;
+use elements::schnorr::TweakedPublicKey;
 use elements::taproot::ControlBlock;
 use elements::{self, script};
 
@@ -238,11 +238,11 @@ pub fn from_txdata<'txin, Ext: ParseableExt>(
             }
         }
     // ** pay to taproot **//
-    } else if is_v1_p2tr(&spk) {
+    } else if is_v1_p2tr(spk) {
         if !ssig_stack.is_empty() {
             Err(Error::NonEmptyScriptSig)
         } else {
-            let output_key = bitcoin::XOnlyPublicKey::from_slice(&spk[2..])
+            let output_key = bitcoin::key::XOnlyPublicKey::from_slice(&spk[2..])
                 .map_err(|_| Error::XOnlyPublicKeyParseError)?;
             let has_annex = wit_stack
                 .last()
@@ -280,7 +280,7 @@ pub fn from_txdata<'txin, Ext: ParseableExt>(
                     // This is fixed in rust-bitcoin. Should also be fixed in rust-elements
                     if ctrl_blk.verify_taproot_commitment(
                         &secp,
-                        &output_key.dangerous_assume_tweaked(),
+                        &TweakedPublicKey::new(output_key),
                         &tap_script,
                     ) {
                         Ok((
@@ -434,18 +434,18 @@ impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
 }
 
 impl<Ctx: ScriptContext, Ext: Extension> ToNoChecks<Ext>
-    for Miniscript<bitcoin::XOnlyPublicKey, Ctx, Ext>
+    for Miniscript<bitcoin::key::XOnlyPublicKey, Ctx, Ext>
 {
     fn to_no_checks_ms(&self) -> Miniscript<BitcoinKey, NoChecks, Ext> {
         // specify the () error type as this cannot error
         struct TranslateXOnlyPk;
 
-        impl Translator<bitcoin::XOnlyPublicKey, BitcoinKey, ()> for TranslateXOnlyPk {
-            fn pk(&mut self, pk: &bitcoin::XOnlyPublicKey) -> Result<BitcoinKey, ()> {
+        impl Translator<bitcoin::key::XOnlyPublicKey, BitcoinKey, ()> for TranslateXOnlyPk {
+            fn pk(&mut self, pk: &bitcoin::key::XOnlyPublicKey) -> Result<BitcoinKey, ()> {
                 Ok(BitcoinKey::XOnlyPublicKey(*pk))
             }
 
-            translate_hash_clone!(bitcoin::XOnlyPublicKey, BitcoinKey, ());
+            translate_hash_clone!(bitcoin::key::XOnlyPublicKey, BitcoinKey, ());
         }
         self.real_translate_pk(&mut TranslateXOnlyPk)
             .expect("Translation should succeed")
@@ -457,8 +457,8 @@ mod tests {
 
     use std::str::FromStr;
 
-    use elements::hashes::hex::FromHex;
     use elements::hashes::{hash160, sha256, Hash};
+    use elements::hex::FromHex;
     use elements::{self, script, Script};
 
     use super::*;

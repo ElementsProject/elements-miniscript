@@ -1,9 +1,9 @@
 extern crate elements_miniscript as miniscript;
 extern crate regex;
 
-use miniscript::Descriptor;
-use regex::Regex;
 use std::str::FromStr;
+
+use miniscript::Descriptor;
 
 fn do_test(data: &[u8]) {
     // This is how we test in rust-miniscript. It is difficult to enforce wrapping logic in fuzzer
@@ -18,22 +18,9 @@ fn do_test(data: &[u8]) {
     }
 }
 
-#[cfg(feature = "afl")]
-extern crate afl;
-#[cfg(feature = "afl")]
-fn main() {
-    afl::read_stdio_bytes(|data| {
-        do_test(&data);
-    });
-}
-
-#[cfg(feature = "honggfuzz")]
-#[macro_use]
-extern crate honggfuzz;
-#[cfg(feature = "honggfuzz")]
 fn main() {
     loop {
-        fuzz!(|data| {
+        honggfuzz::fuzz!(|data| {
             do_test(data);
         });
     }
@@ -41,9 +28,11 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use miniscript::elements::hex::FromHex;
+
     #[test]
-    fn test() {
-        do_test(b"elc:pk_h()");
+    fn duplicate_crash() {
+        let hex = Vec::<u8>::from_hex("00").unwrap();
+        super::do_test(&hex);
     }
 }

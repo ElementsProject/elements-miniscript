@@ -59,13 +59,13 @@ mod tests {
 
     use bitcoin;
     use elements::encode::serialize;
-    use elements::hashes::hex::ToHex;
+    use elements::hex::ToHex;
     use elements::opcodes::all::OP_PUSHNUM_1;
     use elements::secp256k1_zkp::ZERO_TWEAK;
     use elements::{
         self, confidential, opcodes, script, secp256k1_zkp, AssetId, AssetIssuance,
-        EcdsaSigHashType, LockTime, OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn,
-        TxInWitness, TxOut, Txid,
+        EcdsaSigHashType, LockTime, OutPoint, Script, Sequence, Transaction, TxIn, TxInWitness,
+        TxOut, Txid,
     };
 
     use super::cov::*;
@@ -191,7 +191,7 @@ mod tests {
         // Now create a transaction spending this.
         let mut spend_tx = Transaction {
             version: 2,
-            lock_time: PackedLockTime::ZERO,
+            lock_time: LockTime::ZERO,
             input: vec![txin_from_txid_vout(
                 "141f79c7c254ee3a9a9bc76b4f60564385b784bdfc1882b25154617801fe2237",
                 1,
@@ -314,13 +314,15 @@ mod tests {
 
         // Outputs Pref test
         // 1. Correct case
-        let mut out = TxOut::default();
-        out.script_pubkey = script::Builder::new()
-            .push_opcode(opcodes::all::OP_PUSHNUM_1)
-            .into_script()
-            .to_v0_p2wsh();
-        out.value = confidential::Value::Explicit(99_000);
-        out.asset = confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+        let out = TxOut {
+            script_pubkey: script::Builder::new()
+                .push_opcode(opcodes::all::OP_PUSHNUM_1)
+                .into_script()
+                .to_v0_p2wsh(),
+            value: confidential::Value::Explicit(99_000),
+            asset: confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap()),
+            ..Default::default()
+        };
         let desc = Descriptor::<bitcoin::PublicKey>::from_str(&format!(
             "elcovwsh({},outputs_pref({}))",
             pks[0],
@@ -330,13 +332,15 @@ mod tests {
         _satisfy_and_interpret(desc, sks[0]).unwrap();
 
         // 2. Chaning the amount should fail the test
-        let mut out = TxOut::default();
-        out.script_pubkey = script::Builder::new()
-            .push_opcode(opcodes::all::OP_PUSHNUM_1)
-            .into_script()
-            .to_v0_p2wsh();
-        out.value = confidential::Value::Explicit(99_001); // Changed to +1
-        out.asset = confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+        let out = TxOut {
+            script_pubkey: script::Builder::new()
+                .push_opcode(opcodes::all::OP_PUSHNUM_1)
+                .into_script()
+                .to_v0_p2wsh(),
+            value: confidential::Value::Explicit(99_001), // Changed to +1
+            asset: confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap()),
+            ..Default::default()
+        };
         let desc = Descriptor::<bitcoin::PublicKey>::from_str(&format!(
             "elcovwsh({},outputs_pref({}))",
             pks[0],
@@ -393,7 +397,7 @@ mod tests {
         // Now create a transaction spending this.
         let mut spend_tx = Transaction {
             version: 2,
-            lock_time: PackedLockTime::ZERO,
+            lock_time: LockTime::ZERO,
             input: vec![txin_from_txid_vout(
                 "7c8e615c8da947fefd2d9b6f83f313a9b59d249c93a5f232287633195b461cb7",
                 0,
@@ -485,7 +489,7 @@ mod tests {
         TxIn {
             previous_output: OutPoint {
                 txid: Txid::from_str(txid).unwrap(),
-                vout: vout,
+                vout,
             },
             sequence: Sequence::MAX,
             is_pegin: false,

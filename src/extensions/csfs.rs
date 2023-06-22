@@ -4,13 +4,12 @@
 use std::fmt;
 use std::str::FromStr;
 
-use bitcoin::hashes::hex::{FromHex, ToHex};
-use bitcoin::XOnlyPublicKey;
-use elements::hashes::hex;
+use bitcoin::key::XOnlyPublicKey;
+use elements::hex::{self, FromHex, ToHex};
 use elements::{self, opcodes, secp256k1_zkp};
 
 use super::param::{ExtParamTranslator, TranslateExtParam};
-use super::{ArgFromStr, CovExtArgs, ExtParam, ParseableExt, TxEnv};
+use super::{ArgFromStr, CovExtArgs, ExtParam, FromTokenIterError, ParseableExt, TxEnv};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::limits::MAX_STANDARD_P2WSH_STACK_ITEM_SIZE;
@@ -99,17 +98,20 @@ impl<T: ExtParam> Extension for CheckSigFromStack<T> {
         ))
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
+    fn from_name_tree(
+        name: &str,
+        children: &[expression::Tree<'_>],
+    ) -> Result<Self, FromTokenIterError> {
         if children.len() == 2 && name == "csfs" {
             if !children[0].args.is_empty() || !children[1].args.is_empty() {
-                return Err(());
+                return Err(FromTokenIterError);
             }
-            let pk = T::arg_from_str(children[0].name, name, 0).map_err(|_| ())?;
-            let msg = T::arg_from_str(children[1].name, name, 1).map_err(|_| ())?;
+            let pk = T::arg_from_str(children[0].name, name, 0).map_err(|_| FromTokenIterError)?;
+            let msg = T::arg_from_str(children[1].name, name, 1).map_err(|_| FromTokenIterError)?;
             Ok(Self { pk, msg })
         } else {
             // Correct error handling while parsing fromtree
-            Err(())
+            Err(FromTokenIterError)
         }
     }
 }
@@ -201,7 +203,7 @@ impl ArgFromStr for CsfsMsg {
 
 /// Wrapper around XOnlyKeys used in CheckSigfromstack
 #[derive(Debug, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]
-pub struct CsfsKey(pub bitcoin::XOnlyPublicKey);
+pub struct CsfsKey(pub bitcoin::key::XOnlyPublicKey);
 
 impl fmt::Display for CsfsKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -216,7 +218,7 @@ impl ArgFromStr for CsfsKey {
                 "Key must be at first position in csfs".to_string(),
             ));
         }
-        let k = bitcoin::XOnlyPublicKey::from_str(s)?;
+        let k = bitcoin::key::XOnlyPublicKey::from_str(s)?;
         Ok(Self(k))
     }
 }
@@ -237,7 +239,7 @@ impl CheckSigFromStack<CovExtArgs> {
     /// Obtains the message as Vec
     pub fn as_msg(&self) -> &CsfsMsg {
         if let CovExtArgs::CsfsMsg(msg) = &self.msg {
-            &msg
+            msg
         } else {
             unreachable!(
                 "Both constructors from_str and from_token_iter
@@ -281,31 +283,31 @@ impl ParseableExt for CheckSigFromStack<CovExtArgs> {
             .push_opcode(opcodes::all::OP_CHECKSIGFROMSTACK)
     }
 
-    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, FromTokenIterError> {
         let frag = {
-            let sl = tokens.peek_slice(3).ok_or(())?;
+            let sl = tokens.peek_slice(3).ok_or(FromTokenIterError)?;
             if let (Tk::Bytes32(pk), Tk::Bytes32(msg)) = (&sl[1], &sl[0]) {
                 if sl[2] == Tk::CheckSigFromStack {
-                    let xpk = XOnlyPublicKey::from_slice(&pk).map_err(|_| ())?;
-                    let msg = CsfsMsg::from_slice(msg).ok_or(())?;
+                    let xpk = XOnlyPublicKey::from_slice(pk).map_err(|_| FromTokenIterError)?;
+                    let msg = CsfsMsg::from_slice(msg).ok_or(FromTokenIterError)?;
                     Self {
                         pk: CovExtArgs::XOnlyKey(CsfsKey(xpk)),
                         msg: CovExtArgs::CsfsMsg(msg),
                     }
                 } else {
-                    return Err(());
+                    return Err(FromTokenIterError);
                 }
             } else {
-                return Err(());
+                return Err(FromTokenIterError);
             }
         };
         tokens.advance(3).expect("Size checked previously");
         Ok(frag)
     }
 
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        stack: &mut interpreter::Stack<'txin>,
+    fn evaluate(
+        &self,
+        stack: &mut interpreter::Stack,
         _txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         let sig = stack[0].try_push()?;
@@ -314,7 +316,7 @@ impl ParseableExt for CheckSigFromStack<CovExtArgs> {
             return Ok(false);
         }
 
-        let sig = secp256k1_zkp::schnorr::Signature::from_slice(&sig)?;
+        let sig = secp256k1_zkp::schnorr::Signature::from_slice(sig)?;
         // rust-secp-zkp API only signing/verification for 32 bytes messages. It is supported in upstream secp-zkp
         // but bindings are not exposed.
         // The interpreter will error on non 32 byte messages till it is fixed.
@@ -322,7 +324,7 @@ impl ParseableExt for CheckSigFromStack<CovExtArgs> {
 
         let secp = secp256k1_zkp::Secp256k1::verification_only();
 
-        secp.verify_schnorr(&sig, &msg, &self.as_pk())?;
+        secp.verify_schnorr(&sig, &msg, self.as_pk())?;
         Ok(true)
     }
 }
@@ -349,7 +351,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::XOnlyPublicKey;
+    use bitcoin::key::XOnlyPublicKey;
 
     use super::*;
     use crate::test_utils::{StrExtTranslator, StrXOnlyKeyTranslator};
@@ -388,7 +390,7 @@ mod tests {
         let mut t = StrXOnlyKeyTranslator::default();
         t.pk_map.insert(
             "B".to_string(),
-            bitcoin::XOnlyPublicKey::from_str(
+            bitcoin::key::XOnlyPublicKey::from_str(
                 "9064b3ac01fb4cb648e8899723ee4d50433920ae558c572e96d945805e0bc3ec",
             )
             .unwrap(),
@@ -401,7 +403,7 @@ mod tests {
         ext_t.ext_map.insert(
             "A".to_string(),
             CovExtArgs::XOnlyKey(CsfsKey(
-                bitcoin::XOnlyPublicKey::from_str(
+                bitcoin::key::XOnlyPublicKey::from_str(
                     "26d137d15e2ae24f2d5158663d190d1269ad6b1a6ce330aa825ba502e7519d44",
                 )
                 .unwrap(),

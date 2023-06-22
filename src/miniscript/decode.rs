@@ -12,7 +12,7 @@ use std::{error, fmt};
 
 use elements::hashes::{hash160, ripemd160, sha256, Hash};
 
-use crate::elements::{LockTime, PackedLockTime, Sequence};
+use crate::elements::Sequence;
 use crate::extensions::ParseableExt;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::limits::{MAX_BLOCK_WEIGHT, MAX_PUBKEYS_PER_MULTISIG};
@@ -21,7 +21,9 @@ use crate::miniscript::types::{Property, Type};
 use crate::miniscript::ScriptContext;
 #[cfg(doc)]
 use crate::Descriptor;
-use crate::{bitcoin, hash256, Error, Extension, Miniscript, MiniscriptKey, NoExt, ToPublicKey};
+use crate::{
+    bitcoin, hash256, AbsLockTime, Error, Extension, Miniscript, MiniscriptKey, NoExt, ToPublicKey,
+};
 
 fn return_none<T>(_: usize) -> Option<T> {
     None
@@ -39,9 +41,9 @@ impl ParseableKey for bitcoin::PublicKey {
     }
 }
 
-impl ParseableKey for bitcoin::XOnlyPublicKey {
+impl ParseableKey for bitcoin::key::XOnlyPublicKey {
     fn from_slice(sl: &[u8]) -> Result<Self, KeyParseError> {
-        bitcoin::XOnlyPublicKey::from_slice(sl).map_err(KeyParseError::XonlyKeyParseError)
+        bitcoin::key::XOnlyPublicKey::from_slice(sl).map_err(KeyParseError::XonlyKeyParseError)
     }
 }
 
@@ -49,7 +51,7 @@ impl ParseableKey for bitcoin::XOnlyPublicKey {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KeyParseError {
     /// Bitcoin PublicKey parse error
-    FullKeyParseError(bitcoin::util::key::Error),
+    FullKeyParseError(bitcoin::key::Error),
     /// Xonly key parse Error
     XonlyKeyParseError(bitcoin::secp256k1::Error),
 }
@@ -79,7 +81,7 @@ mod private {
 
     // Implement for those same types, but no others.
     impl Sealed for super::bitcoin::PublicKey {}
-    impl Sealed for super::bitcoin::XOnlyPublicKey {}
+    impl Sealed for super::bitcoin::key::XOnlyPublicKey {}
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -136,7 +138,7 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension = NoExt>
     RawPkH(hash160::Hash),
     // timelocks
     /// `n CHECKLOCKTIMEVERIFY`
-    After(PackedLockTime),
+    After(AbsLockTime),
     /// `n CHECKSEQUENCEVERIFY`
     Older(Sequence),
     // hashlocks
@@ -398,7 +400,7 @@ pub fn parse<Ctx: ScriptContext, Ext: ParseableExt>(
                     Tk::CheckSequenceVerify, Tk::Num(n)
                         => term.reduce0(Terminal::Older(Sequence::from_consensus(n)))?,
                     Tk::CheckLockTimeVerify, Tk::Num(n)
-                        => term.reduce0(Terminal::After(LockTime::from_consensus(n).into()))?,
+                        => term.reduce0(Terminal::After(AbsLockTime::from_consensus(n)))?,
                     // hashlocks
                     Tk::Equal => match_token!(
                         tokens,
@@ -653,13 +655,12 @@ pub fn parse<Ctx: ScriptContext, Ext: ParseableExt>(
 }
 
 fn is_and_v(tokens: &mut TokenIter<'_>) -> bool {
-    match tokens.peek() {
-        None
-        | Some(&Tk::If)
-        | Some(&Tk::NotIf)
-        | Some(&Tk::Else)
-        | Some(&Tk::ToAltStack)
-        | Some(&Tk::Swap) => false,
-        _ => true,
-    }
+    !matches!(
+        tokens.peek(),
+        None | Some(&Tk::If)
+            | Some(&Tk::NotIf)
+            | Some(&Tk::Else)
+            | Some(&Tk::ToAltStack)
+            | Some(&Tk::Swap)
+    )
 }

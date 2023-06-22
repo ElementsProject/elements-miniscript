@@ -6,7 +6,7 @@ use std::fmt;
 
 use elements::encode::serialize;
 
-use super::{ParseableExt, TxEnv};
+use super::{FromTokenIterError, ParseableExt, TxEnv};
 use crate::descriptor::CovError;
 use crate::miniscript::astelem::StackCtxOperations;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -84,13 +84,17 @@ impl Extension for LegacyVerEq {
         4 + 1 + 1 + 4 // opcodes + push opcodes + target size
     }
 
-    fn from_name_tree(name: &str, children: &[expression::Tree<'_>]) -> Result<Self, ()> {
+    fn from_name_tree(
+        name: &str,
+        children: &[expression::Tree<'_>],
+    ) -> Result<Self, FromTokenIterError> {
         if children.len() == 1 && name == "ver_eq" {
-            let n = expression::terminal(&children[0], expression::parse_num).map_err(|_| ())?;
+            let n = expression::terminal(&children[0], expression::parse_num)
+                .map_err(|_| FromTokenIterError)?;
             Ok(Self { n })
         } else {
             // Correct error handling while parsing fromtree
-            Err(())
+            Err(FromTokenIterError)
         }
     }
 }
@@ -143,9 +147,9 @@ impl ParseableExt for LegacyVerEq {
         builder.check_item_eq(12, &serialize(&self.n))
     }
 
-    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, FromTokenIterError> {
         let ver = {
-            let sl = tokens.peek_slice(5).ok_or(())?;
+            let sl = tokens.peek_slice(5).ok_or(FromTokenIterError)?;
             if let Tk::PickPush4(ver) = sl[3] {
                 if sl[0] == Tk::Depth
                     && sl[1] == Tk::Num(12)
@@ -154,19 +158,19 @@ impl ParseableExt for LegacyVerEq {
                 {
                     Self { n: ver }
                 } else {
-                    return Err(());
+                    return Err(FromTokenIterError);
                 }
             } else {
-                return Err(());
+                return Err(FromTokenIterError);
             }
         };
         tokens.advance(5).expect("Size checked previously");
         Ok(ver)
     }
 
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        stack: &mut interpreter::Stack<'txin>,
+    fn evaluate(
+        &self,
+        stack: &mut interpreter::Stack,
         _txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         // Version is at index 11

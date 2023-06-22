@@ -35,6 +35,9 @@ pub use self::outputs_pref::LegacyOutputsPref;
 pub use self::param::{ArgFromStr, CovExtArgs, ExtParam, NoExtParam};
 pub use self::tx_ver::LegacyVerEq;
 
+/// Failed to extract a token from an iterator of tokens
+pub struct FromTokenIterError;
+
 /// Extensions to elements-miniscript.
 /// Refer to implementations(unimplemented!) for example and tutorials
 pub trait Extension: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash {
@@ -65,7 +68,7 @@ pub trait Extension: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash {
     /// `Vec<Tree>`.
     // Ideally, we would want a FromTree implementation here, but that is not possible
     // as we would need to create a new Tree by removing wrappers from root.
-    fn from_name_tree(_name: &str, children: &[Tree<'_>]) -> Result<Self, ()>;
+    fn from_name_tree(_name: &str, children: &[Tree<'_>]) -> Result<Self, FromTokenIterError>;
 }
 
 /// Support for parsing/serializing/satisfaction of extensions.
@@ -81,7 +84,7 @@ pub trait ParseableExt:
     /// Parse the terminal from [`TokenIter`]. Implementers of this trait are responsible
     /// for making sure tokens is mutated correctly. If parsing is not successful, the tokens
     /// should not be consumed.
-    fn from_token_iter(_tokens: &mut TokenIter<'_>) -> Result<Self, ()>;
+    fn from_token_iter(_tokens: &mut TokenIter<'_>) -> Result<Self, FromTokenIterError>;
 
     /// Interpreter support
     /// Evaluate the fragment based on inputs from stack. If an implementation of this
@@ -90,9 +93,9 @@ pub trait ParseableExt:
     /// Output Ok(true) when the ext fragment is satisfied.
     /// Output Ok(false) when the ext fragment is dissatisfied,
     /// Output Some(Err) when there is an error in interpreter value.
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        stack: &mut Stack<'txin>,
+    fn evaluate(
+        &self,
+        stack: &mut Stack,
         txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error>;
 
@@ -140,9 +143,9 @@ impl Extension for NoExt {
         match *self {}
     }
 
-    fn from_name_tree(_name: &str, _children: &[Tree<'_>]) -> Result<Self, ()> {
+    fn from_name_tree(_name: &str, _children: &[Tree<'_>]) -> Result<Self, FromTokenIterError> {
         // No extensions should not parse any extensions from String
-        Err(())
+        Err(FromTokenIterError)
     }
 
     fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError> {
@@ -167,9 +170,9 @@ impl ParseableExt for NoExt {
         match *self {}
     }
 
-    fn evaluate<'intp, 'txin>(
-        &'intp self,
-        _stack: &mut Stack<'txin>,
+    fn evaluate(
+        &self,
+        _stack: &mut Stack,
         _txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         match *self {}
@@ -179,9 +182,9 @@ impl ParseableExt for NoExt {
         match *self {}
     }
 
-    fn from_token_iter(_tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
+    fn from_token_iter(_tokens: &mut TokenIter<'_>) -> Result<Self, FromTokenIterError> {
         // No extensions should return Err on parsing
-        Err(())
+        Err(FromTokenIterError)
     }
 }
 
@@ -255,7 +258,7 @@ macro_rules! try_from_arms {
         } else if let Ok(v) = <CovOps<$ext_arg> as $trt>::$f($($args, )*) {
             Ok(CovenantExt::Introspect(v))
         }else {
-            Err(())
+            Err(FromTokenIterError)
         }
     };
 }
@@ -277,7 +280,7 @@ impl<T: ExtParam> Extension for CovenantExt<T> {
         all_arms_fn!(self, Extension, script_size,)
     }
 
-    fn from_name_tree(name: &str, children: &[Tree<'_>]) -> Result<Self, ()> {
+    fn from_name_tree(name: &str, children: &[Tree<'_>]) -> Result<Self, FromTokenIterError> {
         try_from_arms!(Extension, T, from_name_tree, name, children,)
     }
 
@@ -303,9 +306,9 @@ impl ParseableExt for CovenantExt<CovExtArgs> {
         all_arms_fn!(self, ParseableExt, dissatisfy, sat,)
     }
 
-    fn evaluate<'intp, 'txin>(
+    fn evaluate(
         &self,
-        stack: &mut Stack<'txin>,
+        stack: &mut Stack,
         txenv: Option<&TxEnv>,
     ) -> Result<bool, interpreter::Error> {
         all_arms_fn!(self, ParseableExt, evaluate, stack, txenv,)
@@ -315,7 +318,7 @@ impl ParseableExt for CovenantExt<CovExtArgs> {
         all_arms_fn!(self, ParseableExt, push_to_builder, builder,)
     }
 
-    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, ()> {
+    fn from_token_iter(tokens: &mut TokenIter<'_>) -> Result<Self, FromTokenIterError> {
         try_from_arms!(ParseableExt, CovExtArgs, from_token_iter, tokens,)
     }
 }
@@ -422,7 +425,7 @@ pub fn check_sig_price_oracle_1<C: secp256k1_zkp::Verification>(
     let sha_msg = elements::hashes::sha256::Hash::hash(&buf);
 
     let msg = elements::secp256k1_zkp::Message::from_slice(&sha_msg[..]).unwrap();
-    secp.verify_schnorr(&sig, &msg, &pk).is_ok()
+    secp.verify_schnorr(sig, &msg, pk).is_ok()
 }
 
 /// [`secp256k1_zkp::Message`] for fragment `price_oracle_1`.

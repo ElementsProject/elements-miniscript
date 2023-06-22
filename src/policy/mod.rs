@@ -25,7 +25,7 @@ pub use self::concrete::Policy as Concrete;
 pub use self::semantic::Policy as Semantic;
 use crate::descriptor::{CovError, Descriptor};
 use crate::miniscript::{Miniscript, ScriptContext};
-use crate::{BtcPolicy, Error, Extension, MiniscriptKey, Terminal};
+use crate::{AbsLockTime, BtcPolicy, Error, Extension, MiniscriptKey, Terminal};
 
 /// Policy entailment algorithm maximum number of terminals allowed
 const ENTAILMENT_MAX_TERMINALS: usize = 20;
@@ -213,7 +213,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Concrete<Pk> {
             }
             Concrete::Or(ref subs) => {
                 let semantic_subs: Result<_, Error> =
-                    subs.iter().map(|&(ref _p, ref sub)| sub.lift()).collect();
+                    subs.iter().map(|(_p, sub)| sub.lift()).collect();
                 Semantic::Threshold(1, semantic_subs?)
             }
             Concrete::Threshold(k, ref subs) => {
@@ -237,7 +237,9 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for BtcPolicy<Pk> {
             BtcPolicy::Hash256(ref h) => Ok(Semantic::Hash256(h.clone())),
             BtcPolicy::Ripemd160(ref h) => Ok(Semantic::Ripemd160(h.clone())),
             BtcPolicy::Hash160(ref h) => Ok(Semantic::Hash160(h.clone())),
-            BtcPolicy::After(n) => Ok(Semantic::After(elements::PackedLockTime(n.to_u32()))),
+            BtcPolicy::After(n) => Ok(Semantic::After(AbsLockTime::from_consensus(
+                n.to_consensus_u32(),
+            ))),
             BtcPolicy::Older(n) => Ok(Semantic::Older(Sequence(n.to_consensus_u32()))),
             BtcPolicy::Threshold(k, ref subs) => {
                 let new_subs: Result<Vec<Semantic<Pk>>, _> =
@@ -467,13 +469,13 @@ mod tests {
                     node_policies[6]
                 )
             );
-            let descriptor = policy.compile_tr(Some(unspendable_key.clone())).unwrap();
+            let descriptor = policy.compile_tr(Some(unspendable_key)).unwrap();
 
             let mut sorted_policy_prob = node_policies
                 .iter()
                 .zip(node_probabilities.iter())
                 .collect::<Vec<_>>();
-            sorted_policy_prob.sort_by(|a, b| (a.1).partial_cmp(&b.1).unwrap());
+            sorted_policy_prob.sort_by(|a, b| (a.1).partial_cmp(b.1).unwrap());
             let sorted_policies = sorted_policy_prob
                 .into_iter()
                 .map(|(x, _prob)| x)
@@ -547,7 +549,7 @@ mod tests {
             let pol =
                 Concrete::<String>::from_str("thresh(3,pk(A),pk(B),pk(C),pk(D),pk(E))").unwrap();
             let desc = pol
-                .compile_tr_private_experimental(Some(unspendable_key.clone()))
+                .compile_tr_private_experimental(Some(unspendable_key))
                 .unwrap();
             let expected_desc = Descriptor::Tr(
                 Tr::<String>::from_str(
@@ -572,7 +574,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "compiler", feature = "unstable"))]
+#[cfg(all(miniscript_bench, feature = "compiler"))]
 mod benches {
     use core::str::FromStr;
 

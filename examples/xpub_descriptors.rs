@@ -45,7 +45,7 @@ fn p2wsh<C: Verification>(secp: &Secp256k1<C>) -> Address {
 
     let address = Descriptor::<DefiniteDescriptorKey>::from_str(&s)
         .unwrap()
-        .derived_descriptor(&secp)
+        .derived_descriptor(secp)
         .unwrap()
         .address(&elements::AddressParams::ELEMENTS)
         .unwrap();

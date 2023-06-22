@@ -3,7 +3,7 @@ pub extern crate elements_miniscript;
 use std::str::FromStr;
 use miniscript::elements;
 use elements::encode::{deserialize, serialize_hex};
-use elements::hashes::hex::FromHex;
+use elements::hex::FromHex;
 use elements::BlockHash;
 pub use elements_miniscript as miniscript;
 use elementsd::bitcoincore_rpc::jsonrpc::serde_json::{json, Value};
@@ -18,8 +18,8 @@ pub mod test_util;
 pub fn setup(validate_pegin: bool) -> (ElementsD, Option<BitcoinD>, elements::BlockHash) {
     // Lookup bitcoind binary path
     let curr_dir = std::env::current_dir().unwrap();
-    let bitcoind_path = curr_dir.clone().join("bin/bitcoind");
-    let elementsd_path = curr_dir.clone().join("bin/elementsd");
+    let bitcoind_path = curr_dir.join("bin/bitcoind");
+    let elementsd_path = curr_dir.join("bin/elementsd");
 
     std::env::set_var("BITCOIND_EXE", bitcoind_path);
     std::env::set_var("ELEMENTSD_EXE", elementsd_path);
@@ -28,7 +28,7 @@ pub fn setup(validate_pegin: bool) -> (ElementsD, Option<BitcoinD>, elements::Bl
     if validate_pegin {
         let bitcoind_exe = bitcoind::exe_path().unwrap();
         let bitcoind_conf = bitcoind::Conf::default();
-        bitcoind = Some(bitcoind::BitcoinD::with_conf(&bitcoind_exe, &bitcoind_conf).unwrap());
+        bitcoind = Some(bitcoind::BitcoinD::with_conf(bitcoind_exe, &bitcoind_conf).unwrap());
     }
 
     let mut conf = elementsd::Conf::new(bitcoind.as_ref());

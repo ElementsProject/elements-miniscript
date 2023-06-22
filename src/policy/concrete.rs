@@ -7,7 +7,7 @@
 use std::collections::HashSet;
 use std::{error, fmt, str};
 
-use elements::{LockTime, PackedLockTime, Sequence};
+use elements::{LockTime, Sequence};
 #[cfg(feature = "compiler")]
 use {
     crate::descriptor::TapTree,
@@ -29,7 +29,7 @@ use crate::expression::{self, FromTree};
 use crate::miniscript::types::extra_props::TimelockInfo;
 #[cfg(all(doc, not(feature = "compiler")))]
 use crate::Descriptor;
-use crate::{errstr, Error, ForEachKey, MiniscriptKey, Translator};
+use crate::{errstr, AbsLockTime, Error, ForEachKey, MiniscriptKey, Translator};
 
 /// Maximum TapLeafs allowed in a compiled TapTree
 #[cfg(feature = "compiler")]
@@ -47,7 +47,7 @@ pub enum Policy<Pk: MiniscriptKey> {
     /// A public key which must sign to satisfy the descriptor
     Key(Pk),
     /// An absolute locktime restriction
-    After(PackedLockTime),
+    After(AbsLockTime),
     /// A relative locktime restriction
     Older(Sequence),
     /// A SHA256 whose preimage must be provided to satisfy the descriptor
@@ -72,9 +72,9 @@ where
     Pk: MiniscriptKey,
 {
     /// Construct a `Policy::After` from `n`. Helper function equivalent to
-    /// `Policy::After(PackedLockTime::from(LockTime::from_consensus(n)))`.
+    /// `Policy::After(LockTime::from(LockTime::from_consensus(n)))`.
     pub fn after(n: u32) -> Policy<Pk> {
-        Policy::After(PackedLockTime::from(LockTime::from_consensus(n)))
+        Policy::After(AbsLockTime::from(LockTime::from_consensus(n)))
     }
 
     /// Construct a `Policy::Older` from `n`. Helper function equivalent to
@@ -124,7 +124,7 @@ impl<Pk: MiniscriptKey> From<PolicyArc<Pk>> for Policy<Pk> {
             PolicyArc::Unsatisfiable => Policy::Unsatisfiable,
             PolicyArc::Trivial => Policy::Trivial,
             PolicyArc::Key(pk) => Policy::Key(pk),
-            PolicyArc::After(t) => Policy::After(PackedLockTime::from(LockTime::from_consensus(t))),
+            PolicyArc::After(t) => Policy::After(AbsLockTime::from(LockTime::from_consensus(t))),
             PolicyArc::Older(t) => Policy::Older(Sequence::from_consensus(t)),
             PolicyArc::Sha256(hash) => Policy::Sha256(hash),
             PolicyArc::Hash256(hash) => Policy::Hash256(hash),
@@ -157,7 +157,7 @@ impl<Pk: MiniscriptKey> From<Policy<Pk>> for PolicyArc<Pk> {
             Policy::Unsatisfiable => PolicyArc::Unsatisfiable,
             Policy::Trivial => PolicyArc::Trivial,
             Policy::Key(pk) => PolicyArc::Key(pk),
-            Policy::After(PackedLockTime(t)) => PolicyArc::After(t),
+            Policy::After(t) => PolicyArc::After(t.to_consensus_u32()),
             Policy::Older(Sequence(t)) => PolicyArc::Older(t),
             Policy::Sha256(hash) => PolicyArc::Sha256(hash),
             Policy::Hash256(hash) => PolicyArc::Hash256(hash),
@@ -305,17 +305,15 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             Policy::Or(ref subs) => {
                 let total_odds: usize = subs.iter().map(|(ref k, _)| k).sum();
                 subs.iter()
-                    .map(|(k, ref policy)| {
+                    .flat_map(|(k, ref policy)| {
                         policy.to_tapleaf_prob_vec(prob * *k as f64 / total_odds as f64)
                     })
-                    .flatten()
                     .collect::<Vec<_>>()
             }
             Policy::Threshold(k, ref subs) if *k == 1 => {
                 let total_odds = subs.len();
                 subs.iter()
-                    .map(|policy| policy.to_tapleaf_prob_vec(prob / total_odds as f64))
-                    .flatten()
+                    .flat_map(|policy| policy.to_tapleaf_prob_vec(prob / total_odds as f64))
                     .collect::<Vec<_>>()
             }
             x => vec![(prob, x.clone())],
@@ -333,10 +331,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             let key_prob_map: HashMap<_, _> = self
                 .to_tapleaf_prob_vec(1.0)
                 .into_iter()
-                .filter(|(_, ref pol)| match *pol {
-                    Concrete::Key(..) => true,
-                    _ => false,
-                })
+                .filter(|(_, pol)| matches!(*pol, Concrete::Key(..)))
                 .map(|(prob, key)| (key, prob))
                 .collect();
 
@@ -359,7 +354,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             }
         }
         match (internal_key, unspendable_key) {
-            (Some(ref key), _) => Ok((key.clone(), self.translate_unsatisfiable_pk(&key))),
+            (Some(ref key), _) => Ok((key.clone(), self.translate_unsatisfiable_pk(key))),
             (_, Some(key)) => Ok((key, self)),
             _ => Err(errstr("No viable internal key found.")),
         }
@@ -763,7 +758,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             )),
             Policy::Or(ref subs) => Ok(Policy::Or(
                 subs.iter()
-                    .map(|&(ref prob, ref sub)| Ok((*prob, sub._translate_pk(t)?)))
+                    .map(|(prob, sub)| Ok((*prob, sub._translate_pk(t)?)))
                     .collect::<Result<Vec<(usize, Policy<Q>)>, E>>()?,
             )),
         }
@@ -795,7 +790,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 
     /// Get all keys in the policy
     pub fn keys(&self) -> Vec<&Pk> {
-        match &*self {
+        match self {
             Policy::Key(ref pk) => vec![pk],
             Policy::Threshold(_k, ref subs) => {
                 subs.iter().flat_map(|sub| sub.keys()).collect::<Vec<_>>()
@@ -893,9 +888,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                 TimelockInfo::combine_threshold(subs.len(), iter)
             }
             Policy::Or(ref subs) => {
-                let iter = subs
-                    .iter()
-                    .map(|&(ref _p, ref sub)| sub.check_timelocks_helper());
+                let iter = subs.iter().map(|(_p, sub)| sub.check_timelocks_helper());
                 TimelockInfo::combine_threshold(1, iter)
             }
         }
@@ -924,7 +917,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                     Err(PolicyError::NonBinaryArgOr)
                 } else {
                     subs.iter()
-                        .map(|&(ref _prob, ref sub)| sub.is_valid())
+                        .map(|(_prob, sub)| sub.is_valid())
                         .collect::<Result<Vec<()>, PolicyError>>()?;
                     Ok(())
                 }
@@ -940,7 +933,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                 }
             }
             Policy::After(n) => {
-                if n == PackedLockTime::ZERO {
+                if n == LockTime::ZERO.into() {
                     Err(PolicyError::ZeroTime)
                 } else if n.to_u32() > 2u32.pow(31) {
                     Err(PolicyError::TimeTooFar)
@@ -1001,7 +994,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             Policy::Or(ref subs) => {
                 let (all_safe, atleast_one_safe, all_non_mall) = subs
                     .iter()
-                    .map(|&(_, ref sub)| sub.is_safe_nonmalleable())
+                    .map(|(_, sub)| sub.is_safe_nonmalleable())
                     .fold((true, false, true), |acc, x| {
                         (acc.0 && x.0, acc.1 || x.0, acc.2 && x.1)
                     });
