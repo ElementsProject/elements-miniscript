@@ -146,7 +146,7 @@ mod tests {
     use elements::Address;
 
     use super::*;
-    use crate::NoExt;
+    use crate::{DefiniteDescriptorKey, NoExt};
 
     #[test]
     fn bare_addr_to_confidential() {
@@ -168,8 +168,8 @@ mod tests {
     }
 
     struct ConfidentialTest {
-        key: Key<secp256k1_zkp::PublicKey>,
-        descriptor: crate::Descriptor<secp256k1_zkp::PublicKey, NoExt>,
+        key: Key<DefiniteDescriptorKey>,
+        descriptor: crate::Descriptor<DefiniteDescriptorKey, NoExt>,
         descriptor_str: String,
         conf_addr: &'static str,
         unconf_addr: &'static str,
@@ -180,8 +180,8 @@ mod tests {
             &self,
             secp: &secp256k1_zkp::Secp256k1<C>,
         ) {
-            let desc: Descriptor<secp256k1_zkp::PublicKey, NoExt> = Descriptor {
-                key: self.key,
+            let desc: Descriptor<DefiniteDescriptorKey, NoExt> = Descriptor {
+                key: self.key.clone(),
                 descriptor: self.descriptor.clone(),
             };
             assert_eq!(self.descriptor_str, desc.to_string());
@@ -207,7 +207,7 @@ mod tests {
                 index, self.descriptor_str
             );
             match self.key {
-                Key::Bare(pk) => println!("** Blinding key: <code>{}</code>", pk),
+                Key::Bare(ref pk) => println!("** Blinding key: <code>{}</code>", pk),
                 Key::Slip77(mbk) => println!("** SLIP77 master blinding key: <code>{}</code>", mbk),
             }
             println!("** Confidential address: <code>{}</code>", self.conf_addr);
@@ -224,80 +224,80 @@ mod tests {
         let secp = secp256k1_zkp::Secp256k1::new();
 
         // CT key used for bare keys
-        let ct_key = secp256k1_zkp::PublicKey::from_str(
-            "02dce16018bbbb8e36de7b394df5b5166e9adb7498be7d881a85a09aeecf76b623",
+        let ct_key = DefiniteDescriptorKey::from_str(
+            "xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL",
         )
         .unwrap();
         // Auxiliary key to create scriptpubkeys from
-        let spk_key = secp256k1_zkp::PublicKey::from_str(
-            "03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4",
+        let spk_key = DefiniteDescriptorKey::from_str(
+            "xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH",
         )
         .unwrap();
 
         let tests = vec![
             // Bare key, P2PKH
             ConfidentialTest {
-                key: Key::Bare(ct_key),
-                descriptor: crate::Descriptor::new_pkh(spk_key),
-                descriptor_str: format!("ct({},elpkh({}))#y6sgetu5", ct_key, spk_key),
-                conf_addr: "CTEp9vcs3eU7zQoyrAqeu9LwdcB8QtC2igYSWt7dhaEQvDwVCceLHdLrREAeYrhC5Jz9Wedn3JyxMzpo",
-                unconf_addr: "2daq3zWYvigZd3i8VmBnFrZd4DPT9iV94EP",
+                key: Key::Bare(ct_key.clone()),
+                descriptor: crate::Descriptor::new_pkh(spk_key.clone()),
+                descriptor_str: format!("ct({},elpkh({}))#y0lg3d5y", ct_key, spk_key),
+                conf_addr: "CTEnDa5fqGccV3g3jvp4exSQwRfb6FpGchNBF4ZrAaq8ip8gvLqHCtzw1F7d7U5gYJYXBwymgEMmJjca",
+                unconf_addr: "2dhfebpgPWpeqPdCMMam5F2UHAgx3bbLzAg",
             },
             // Bare key, P2WPKH
             ConfidentialTest {
-                key: Key::Bare(ct_key),
-                descriptor: crate::Descriptor::new_wpkh(spk_key).unwrap(),
-                descriptor_str: format!("ct({},elwpkh({}))#h5e0p6m9", ct_key, spk_key),
-                conf_addr: "el1qq0r6pegudzm0tzpszelc34qjln4fdxawgwmgnza63wwpzdy6jrm0grmqvvk2ce5ksnxcs9ecgtnryt7xg34060uctupg60d02",
-                unconf_addr: "ert1qpasxxt9vv6tgfnvgzuuy9e3j9lryg6ha53x9q0",
+                key: Key::Bare(ct_key.clone()),
+                descriptor: crate::Descriptor::new_wpkh(spk_key.clone()).unwrap(),
+                descriptor_str: format!("ct({},elwpkh({}))#kt4e25qt", ct_key, spk_key),
+                conf_addr: "el1qqg5s7xj7upzl7h4q2k2wj4vq63nvaktn0egqu09nqcr6d44p4evaqknpl78t02k2xqgdh9ltmfmpy9ssk7qfvrldr2dttt3ez",
+                unconf_addr: "ert1qtfsllr4h4t9rqyxmjl4a5asjzcgt0qyk32h3ur",
             },
             // Bare key, P2SH-WPKH
             ConfidentialTest {
-                key: Key::Bare(ct_key),
-                descriptor: crate::Descriptor::new_sh_wpkh(spk_key).unwrap(),
-                descriptor_str: format!("ct({},elsh(wpkh({})))#3kvhe0a8", ct_key, spk_key),
-                conf_addr: "AzpsK7uqP1KVEMfDQvBXYUkpHmFagD3W4vaLe1X7uy8MS6nj41kNYnaexuXgx14PcbNnYAqBdCSWcbga",
-                unconf_addr: "XQ7ffnJkhMwj1H8Ma6N1vcU9mqAa96wB9w",
+                key: Key::Bare(ct_key.clone()),
+                descriptor: crate::Descriptor::new_sh_wpkh(spk_key.clone()).unwrap(),
+                descriptor_str: format!("ct({},elsh(wpkh({})))#xg9r4jej", ct_key, spk_key),
+                conf_addr: "AzpnREsN1RSi4JB7rAfpywmPsvGxyygmwm9o3iZcP43svg4frVW5DXvGj5yEx6mKcPtAyHgQWVikFRCM",
+                unconf_addr: "XKGUGskfGsNRR1Ww4ytemgBjuszohUaNgv",
             },
             // Bare key, P2TR
             ConfidentialTest {
-                key: Key::Bare(ct_key),
-                descriptor: crate::Descriptor::new_tr(spk_key, None).unwrap(),
-                descriptor_str: format!("ct({},eltr({}))#ytq9w7f3", ct_key, spk_key),
-                conf_addr: "el1pqw5c43qvxyvj52ua7crx7tv62zca5356rsx439dqkyyqyavpmq2hz6r5jd0rkpzukq6hd965kepcmwtxvg0fh4ak4f636gv25yky23ce6z5pdt3ksqn2",
-                unconf_addr: "ert1pdp6fxh3mq3wtqdtkja2tvsudh9nxy85m67m25agayx92ztz9guvs9wr5lg",
+                key: Key::Bare(ct_key.clone()),
+                descriptor: crate::Descriptor::new_tr(spk_key.clone(), None).unwrap(),
+                descriptor_str: format!("ct({},eltr({}))#c0pjjxyw", ct_key, spk_key),
+                conf_addr: "el1pq0nsl8du3gsuk7r90sgm78259mmv6mt9d4yvj30zr3u052ufs5meuc2tuvwx7k7g9kvhhpux07vqpm3qjj8uwdj94650265ustv0xy8z2pc847zht4k0",
+                unconf_addr: "ert1pv997x8r0t0yzmxtms7r8lxqqacsffr78xez6a284d2wg9k8nzr3q3s6527",
             },
             // SLIP77, P2PKH
             ConfidentialTest {
                 key: Key::Slip77(slip77::MasterBlindingKey::from_seed(b"abcd")),
-                descriptor: crate::Descriptor::new_pkh(spk_key),
-                descriptor_str: "ct(slip77(b2396b3ee20509cdb64fe24180a14a72dbd671728eaa49bac69d2bdecb5f5a04),elpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4))#8cdjnvav".into(),
-                conf_addr: "CTEkBfH2b6fyhfpn2iW1aoLFrC9DHooTsa7ouxXDuKVjLNF3GwJdgqQn63GriXDvTs7ntSU8NwXGrLKg",
-                unconf_addr: "2daq3zWYvigZd3i8VmBnFrZd4DPT9iV94EP",
+                descriptor: crate::Descriptor::new_pkh(spk_key.clone()),
+                descriptor_str: format!("ct(slip77(b2396b3ee20509cdb64fe24180a14a72dbd671728eaa49bac69d2bdecb5f5a04),elpkh({}))#hw2glz99", spk_key),
+                conf_addr: "CTEvn67jjJXDr3aDCZypTCJc6XHZ7ATyd89oXfNLQt1G2omPUpPkHA6zUAGPGF2YH4RnWfWut2f4dRSd",
+                unconf_addr: "2dhfebpgPWpeqPdCMMam5F2UHAgx3bbLzAg",
             },
             // SLIP77, P2WPKH
             ConfidentialTest {
                 key: Key::Slip77(slip77::MasterBlindingKey::from_seed(b"abcd")),
-                descriptor: crate::Descriptor::new_wpkh(spk_key).unwrap(),
-                descriptor_str: "ct(slip77(b2396b3ee20509cdb64fe24180a14a72dbd671728eaa49bac69d2bdecb5f5a04),elwpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4))#z5dnzfhk".into(),
-                conf_addr: "el1qqva2r6mg26rr86u9t3qz2amya9v3ckks9ztcxgur6y6pktfa26d2qrmqvvk2ce5ksnxcs9ecgtnryt7xg3406z5cvgcqsgt35",
-                unconf_addr: "ert1qpasxxt9vv6tgfnvgzuuy9e3j9lryg6ha53x9q0",
+                descriptor: crate::Descriptor::new_wpkh(spk_key.clone()).unwrap(),
+                descriptor_str: format!("ct(slip77(b2396b3ee20509cdb64fe24180a14a72dbd671728eaa49bac69d2bdecb5f5a04),elwpkh({}))#545pl285", spk_key),
+                conf_addr: "el1qqdx5wnttttzulcs6ujlg9pfts6mp3r4sdwg5ekdej566n5wxzk88vknpl78t02k2xqgdh9ltmfmpy9ssk7qfvge347y58xukt",
+                unconf_addr: "ert1qtfsllr4h4t9rqyxmjl4a5asjzcgt0qyk32h3ur",
             },
             // SLIP77, P2SH
             ConfidentialTest {
                 key: Key::Slip77(slip77::MasterBlindingKey::from_seed(b"abcd")),
-                descriptor: crate::Descriptor::new_sh_wpkh(spk_key).unwrap(),
-                descriptor_str: "ct(slip77(b2396b3ee20509cdb64fe24180a14a72dbd671728eaa49bac69d2bdecb5f5a04),elsh(wpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4)))#qgjmm4as".into(),
-                conf_addr: "AzprjJt3poXAJWLmanTHYB2zrkUMXiiVyCRhDS7VRRaXUsRqeCMi3vKe4YufizpYDyzvQFLsvjfMeLMD",
-                unconf_addr: "XQ7ffnJkhMwj1H8Ma6N1vcU9mqAa96wB9w",
+                descriptor: crate::Descriptor::new_sh_wpkh(spk_key.clone()).unwrap(),
+                descriptor_str: format!("ct(slip77(b2396b3ee20509cdb64fe24180a14a72dbd671728eaa49bac69d2bdecb5f5a04),elsh(wpkh({})))#m30vswxr", spk_key),
+                conf_addr: "AzptgrWR3xVX6Qg8mbkyZiESb6C9uy8VCUdCCmw7UtceiF5H8PdB6933YDT7vHsevK1yFmxfajdaedCH",
+                unconf_addr: "XKGUGskfGsNRR1Ww4ytemgBjuszohUaNgv",
             },
             // SLIP77, P2TR
             ConfidentialTest {
                 key: Key::Slip77(slip77::MasterBlindingKey::from_seed(b"abcd")),
-                descriptor: crate::Descriptor::new_tr(spk_key, None).unwrap(),
-                descriptor_str: "ct(slip77(b2396b3ee20509cdb64fe24180a14a72dbd671728eaa49bac69d2bdecb5f5a04),eltr(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4))#65xky8c4".into(),
-                conf_addr: "el1pqgkj53t6cpqytk65s7dygws4a6hny3rrev7rw3r5gl7ymnjdqtt9k6r5jd0rkpzukq6hd965kepcmwtxvg0fh4ak4f636gv25yky23cehlfsszhd84mc",
-                unconf_addr: "ert1pdp6fxh3mq3wtqdtkja2tvsudh9nxy85m67m25agayx92ztz9guvs9wr5lg",
+                descriptor: crate::Descriptor::new_tr(spk_key.clone(), None).unwrap(),
+                descriptor_str: format!("ct(slip77(b2396b3ee20509cdb64fe24180a14a72dbd671728eaa49bac69d2bdecb5f5a04),eltr({}))#n3v4t5cs", spk_key),
+                conf_addr: "el1pq26fndnz8ef6umlz6e2755sm6j5jwxv3tdt2295mr4mx6ux0uf8vcc2tuvwx7k7g9kvhhpux07vqpm3qjj8uwdj94650265ustv0xy8zwzhhycxfhdrm",
+                unconf_addr: "ert1pv997x8r0t0yzmxtms7r8lxqqacsffr78xez6a284d2wg9k8nzr3q3s6527",
             },
         ];
 
@@ -351,7 +351,7 @@ mod tests {
         */
 
         for bad_str in bad_strs {
-            let err = Descriptor::<secp256k1_zkp::PublicKey>::from_str(bad_str.0).unwrap_err();
+            let err = Descriptor::<DefiniteDescriptorKey>::from_str(bad_str.0).unwrap_err();
             assert_eq!(bad_str.1, err.to_string());
         }
     }
