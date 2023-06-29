@@ -25,17 +25,20 @@ use std::fmt;
 use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{desc_checksum, verify_checksum};
+use crate::descriptor::DescriptorSecretKey;
 use crate::expression::FromTree;
 use crate::extensions::{CovExtArgs, CovenantExt, Extension, ParseableExt};
 use crate::{expression, Error, MiniscriptKey, ToPublicKey};
 
 /// A description of a blinding key
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Key<Pk: MiniscriptKey> {
     /// Blinding key is computed using SLIP77 with the given master key
     Slip77(slip77::MasterBlindingKey),
     /// Blinding key is given directly
     Bare(Pk),
+    /// Blinding key is given directly, as a secret key
+    View(DescriptorSecretKey),
 }
 
 impl<Pk: MiniscriptKey> fmt::Display for Key<Pk> {
@@ -43,6 +46,7 @@ impl<Pk: MiniscriptKey> fmt::Display for Key<Pk> {
         match self {
             Key::Slip77(data) => write!(f, "slip77({})", data),
             Key::Bare(pk) => fmt::Display::fmt(pk, f),
+            Key::View(sk) => fmt::Display::fmt(sk, f),
         }
     }
 }
@@ -56,12 +60,13 @@ impl<Pk: MiniscriptKey + ToPublicKey> Key<Pk> {
         match *self {
             Key::Slip77(ref mbk) => mbk.blinding_key(secp, spk),
             Key::Bare(ref pk) => bare::tweak_key(secp, spk, pk),
+            Key::View(ref sk) => bare::tweak_key(secp, spk, &sk.to_public(secp).expect("view keys cannot be multipath keys").at_derivation_index(0).expect("FIXME deal with derivation paths properly")),
         }
     }
 }
 
 /// A confidential descriptor
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Descriptor<Pk: MiniscriptKey, T: Extension = CovenantExt<CovExtArgs>> {
     /// The blinding key
     pub key: Key<Pk>,
@@ -132,7 +137,8 @@ impl_from_str!(
                 ("slip77", _) => return Err(Error::BadDescriptor(
                     "slip77() must have exactly one argument".to_owned()
                 )),
-                _ => Key::Bare(expression::terminal(keyexpr, Pk::from_str)?),
+                _ => expression::terminal(keyexpr, Pk::from_str).map(Key::Bare)
+                .or_else(|_| expression::terminal(keyexpr, DescriptorSecretKey::from_str).map(Key::View))?,
             },
             descriptor: crate::Descriptor::from_tree(&top.args[1])?,
         })
@@ -207,7 +213,8 @@ mod tests {
                 index, self.descriptor_str
             );
             match self.key {
-                Key::Bare(ref pk) => println!("** Blinding key: <code>{}</code>", pk),
+                Key::Bare(ref pk) => println!("** Blinding public key: <code>{}</code>", pk),
+                Key::View(ref sk) => println!("** Blinding private key: <code>{}</code>", sk),
                 Key::Slip77(mbk) => println!("** SLIP77 master blinding key: <code>{}</code>", mbk),
             }
             println!("** Confidential address: <code>{}</code>", self.conf_addr);
@@ -354,5 +361,39 @@ mod tests {
             let err = Descriptor::<DefiniteDescriptorKey>::from_str(bad_str.0).unwrap_err();
             assert_eq!(bad_str.1, err.to_string());
         }
+    }
+
+    #[test]
+    fn view_descriptor() {
+        let secp = secp256k1_zkp::Secp256k1::new();
+
+        let view_key = DescriptorSecretKey::from_str(
+            "xprv9s21ZrQH143K28NgQ7bHCF61hy9VzwquBZvpzTwXLsbmQLRJ6iV9k2hUBRt5qzmBaSpeMj5LdcsHaXJvM7iFEivPryRcL8irN7Na9p65UUb",
+        ).unwrap();
+        let ct_key = view_key.to_public(&secp).unwrap().at_derivation_index(0).unwrap(); // FIXME figure out derivation
+        let spk_key = DefiniteDescriptorKey::from_str(
+            "xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH",
+        )
+        .unwrap();
+
+        // View key, P2PKH
+        let test = ConfidentialTest {
+            key: Key::View(view_key.clone()),
+            descriptor: crate::Descriptor::new_wpkh(spk_key.clone()).unwrap(),
+            descriptor_str: format!("ct({},elwpkh({}))#j95xktq7", view_key, spk_key),
+            conf_addr: "el1qq2r0pdvcknjpwev96qu9975alzqs78cvsut5ju82t7tv8d645dgmwknpl78t02k2xqgdh9ltmfmpy9ssk7qfvq78z9wukacu0",
+            unconf_addr: "ert1qtfsllr4h4t9rqyxmjl4a5asjzcgt0qyk32h3ur",
+        };
+        test.check(&secp);
+
+        // View key converted to Bare (note that addresses are the same)
+        let test = ConfidentialTest {
+            key: Key::Bare(ct_key.clone()),
+            descriptor: crate::Descriptor::new_wpkh(spk_key.clone()).unwrap(),
+            descriptor_str: format!("ct({},elwpkh({}))#elmfpmp9", ct_key, spk_key),
+            conf_addr: "el1qq2r0pdvcknjpwev96qu9975alzqs78cvsut5ju82t7tv8d645dgmwknpl78t02k2xqgdh9ltmfmpy9ssk7qfvq78z9wukacu0",
+            unconf_addr: "ert1qtfsllr4h4t9rqyxmjl4a5asjzcgt0qyk32h3ur",
+        };
+        test.check(&secp);
     }
 }
