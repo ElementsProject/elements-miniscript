@@ -9,7 +9,14 @@ rustc --version
 
 # Pin dependencies required to build with Rust 1.48
 if cargo --version | grep "1\.48"; then
+    cargo update -p serde_json --precise 1.0.99
     cargo update -p serde --precise 1.0.156
+    cargo update -p once_cell --precise 1.13.1
+    cargo update -p regex --precise 1.7.0
+    # These two needed for serde_derive with 1.48.0, *in addition*
+    # to pinning serde itself above.
+    cargo update -p quote --precise 1.0.30
+    cargo update -p proc-macro2 --precise 1.0.65
 fi
 
 # Format if told to
