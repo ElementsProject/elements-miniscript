@@ -190,7 +190,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> fmt::Display for TapTree<Pk, Ext> {
         match self {
             TapTree::Tree(ref left, ref right) => write!(f, "{{{},{}}}", *left, *right),
             TapTree::Leaf(ref script) => write!(f, "{}", *script),
-            TapTree::SimplicityLeaf(ref policy) => write!(f, "{}", policy),
+            TapTree::SimplicityLeaf(ref policy) => write!(f, "sim{{{}}}", policy),
         }
     }
 }
@@ -513,6 +513,10 @@ impl_block_str!(
     // Helper function to parse taproot script path
     fn parse_tr_script_spend(tree: &expression::Tree,) -> Result<TapTree<Pk, Ext>, Error> {
         match tree {
+            expression::Tree { name, args } if *name == "sim" && args.len() == 1 => {
+                let policy = crate::simplicity::PolicyWrapper::<Pk>::from_str(args[0].name)?;
+                Ok(TapTree::SimplicityLeaf(Arc::new(policy.0)))
+            }
             expression::Tree { name, args } if !name.is_empty() && args.is_empty() => {
                 let script = Miniscript::<Pk, Tap, Ext>::from_str(name)?;
                 Ok(TapTree::Leaf(Arc::new(script)))
@@ -864,5 +868,45 @@ mod tests {
         let tr = Tr::<String, NoExt>::from_str(&desc).unwrap();
         // Note the last ac12 only has ac and fails the predicate
         assert!(!tr.for_each_key(|k| k.starts_with("acc")));
+    }
+
+    fn verify_from_str<'a>(desc_str: &str, internal_key: &str, scripts: &[TapLeafScript<'a, String, NoExt>]) {
+        let desc = Tr::<String, NoExt>::from_str(desc_str).unwrap();
+        assert_eq!(desc_str, &desc.to_string());
+        assert_eq!(internal_key, &desc.internal_key);
+
+        let desc_scripts: Vec<_> = desc.iter_scripts().collect();
+        assert_eq!(scripts.len(), scripts.len());
+
+        for i in 0..scripts.len() {
+            let script = &scripts[i];
+            assert_eq!(script, &desc_scripts[i].1);
+        }
+    }
+
+    #[test]
+    fn tr_from_str() {
+        // Key spend only
+        verify_from_str("eltr(internal)#0aen4jhp", "internal", &[]);
+
+        // Miniscript key spend
+        let ms = Miniscript::<String, Tap>::from_str("pk(a)").unwrap();
+        verify_from_str(
+            "eltr(internal,pk(a))#vadmk9gd", "internal",
+            &[TapLeafScript::Miniscript(&ms)]
+        );
+
+        // Simplicity key spend
+        let sim = simplicity::Policy::Key("a".to_string());
+        verify_from_str(
+            "eltr(internal,sim{pk(a)})#duhmnzmm", "internal",
+            &[TapLeafScript::Simplicity(&sim)]
+        );
+
+        // Mixed Miniscript and Simplicity
+        verify_from_str(
+            "eltr(internal,{pk(a),sim{pk(a)}})#7vmfhpaj", "internal",
+            &[TapLeafScript::Miniscript(&ms), TapLeafScript::Simplicity(&sim)]
+        );
     }
 }
