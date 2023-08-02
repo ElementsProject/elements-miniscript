@@ -138,6 +138,7 @@ pub mod psbt;
 #[cfg(test)]
 mod test_utils;
 mod util;
+mod simplicity;
 
 use std::{cmp, error, fmt, str};
 
