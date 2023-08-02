@@ -1290,6 +1290,9 @@ where
         tr_derived.iter_scripts().zip(tr_xpk.iter_scripts())
     {
         debug_assert_eq!(_depth_der, depth);
+        let ms_derived = ms_derived.as_miniscript().unwrap();
+        let ms = ms.as_miniscript().unwrap();
+
         let leaf_script = (ms_derived.encode(), LeafVersion::default());
         let tapleaf_hash = TapLeafHash::from_script(&leaf_script.0, leaf_script.1);
         builder = builder

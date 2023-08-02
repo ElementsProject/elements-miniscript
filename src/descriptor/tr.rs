@@ -36,6 +36,8 @@ pub enum TapTree<Pk: MiniscriptKey, Ext: Extension = NoExt> {
     // in adding a LeafVersion with Leaf type here. All Miniscripts right now
     // are of Leafversion::default
     Leaf(Arc<Miniscript<Pk, Tap, Ext>>),
+    /// A taproot leaf denoting a spending condition in terms of Simplicity
+    SimplicityLeaf(Arc<simplicity::Policy<Pk>>),
 }
 
 /// A taproot descriptor
@@ -117,7 +119,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> TapTree<Pk, Ext> {
             TapTree::Tree(ref left_tree, ref right_tree) => {
                 1 + max(left_tree.taptree_height(), right_tree.taptree_height())
             }
-            TapTree::Leaf(..) => 0,
+            TapTree::Leaf(..) | TapTree::SimplicityLeaf(..) => 0,
         }
     }
 
@@ -136,12 +138,30 @@ impl<Pk: MiniscriptKey, Ext: Extension> TapTree<Pk, Ext> {
         Q: MiniscriptKey,
         Ext: Extension,
     {
+        struct SimTranslator<'a, T>(&'a mut T);
+
+        impl<'a, Pk, T, Q, Error> simplicity::Translator<Pk, Q, Error> for SimTranslator<'a, T>
+        where
+            Pk: MiniscriptKey,
+            T: Translator<Pk, Q, Error>,
+            Q: MiniscriptKey,
+        {
+            fn pk(&mut self, pk: &Pk) -> Result<Q, Error> {
+                self.0.pk(pk)
+            }
+
+            fn sha256(&mut self, sha256: &Pk::Sha256) -> Result<Q::Sha256, Error> {
+                self.0.sha256(sha256)
+            }
+        }
+
         let frag = match self {
             TapTree::Tree(l, r) => TapTree::Tree(
                 Arc::new(l.translate_helper(t)?),
                 Arc::new(r.translate_helper(t)?),
             ),
             TapTree::Leaf(ms) => TapTree::Leaf(Arc::new(ms.translate_pk(t)?)),
+            TapTree::SimplicityLeaf(sim) => TapTree::SimplicityLeaf(Arc::new(sim.translate(&mut SimTranslator(t))?))
         };
         Ok(frag)
     }
@@ -159,6 +179,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> TapTree<Pk, Ext> {
                 Arc::new(r.translate_ext_helper(t)?),
             ),
             TapTree::Leaf(ms) => TapTree::Leaf(Arc::new(ms.translate_ext(t)?)),
+            TapTree::SimplicityLeaf(sim) => TapTree::SimplicityLeaf(Arc::clone(sim)),
         };
         Ok(frag)
     }
@@ -169,6 +190,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> fmt::Display for TapTree<Pk, Ext> {
         match self {
             TapTree::Tree(ref left, ref right) => write!(f, "{{{},{}}}", *left, *right),
             TapTree::Leaf(ref script) => write!(f, "{}", *script),
+            TapTree::SimplicityLeaf(ref policy) => write!(f, "{}", policy),
         }
     }
 }
@@ -178,6 +200,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> fmt::Debug for TapTree<Pk, Ext> {
         match self {
             TapTree::Tree(ref left, ref right) => write!(f, "{{{:?},{:?}}}", *left, *right),
             TapTree::Leaf(ref script) => write!(f, "{:?}", *script),
+            TapTree::SimplicityLeaf(ref policy) => write!(f, "{:?}", policy),
         }
     }
 }
@@ -244,7 +267,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
         } else {
             let mut builder = TaprootBuilder::new();
             for (depth, ms) in self.iter_scripts() {
-                let script = ms.encode();
+                let script = ms.as_miniscript().unwrap().encode();
                 builder = builder
                     .add_leaf(depth, script)
                     .expect("Computing spend data on a valid Tree should always succeed");
@@ -263,7 +286,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
     /// Checks whether the descriptor is safe.
     pub fn sanity_check(&self) -> Result<(), Error> {
         for (_depth, ms) in self.iter_scripts() {
-            ms.sanity_check()?;
+            ms.as_miniscript().unwrap().sanity_check()?;
         }
         Ok(())
     }
@@ -293,6 +316,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
 
         tree.iter()
             .filter_map(|(depth, ms)| {
+                let ms = ms.as_miniscript().unwrap();
                 let script_size = ms.script_size();
                 let max_sat_elems = ms.max_satisfaction_witness_elements().ok()?;
                 let max_sat_size = ms.max_satisfaction_size().ok()?;
@@ -338,6 +362,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
 
         tree.iter()
             .filter_map(|(depth, ms)| {
+                let ms = ms.as_miniscript().unwrap();
                 let script_size = ms.script_size();
                 let max_sat_elems = ms.max_satisfaction_witness_elements().ok()?;
                 let max_sat_size = ms.max_satisfaction_size().ok()?;
@@ -404,8 +429,38 @@ impl<Pk: MiniscriptKey + ToPublicKey, Ext: ParseableExt> Tr<Pk, Ext> {
     }
 }
 
-/// Iterator for Taproot structures
-/// Yields a pair of (depth, miniscript) in a depth first walk
+/// Script at a tap leaf.
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub enum TapLeafScript<'a, Pk: MiniscriptKey, Ext: Extension> {
+    /// Miniscript leaf
+    Miniscript(&'a Miniscript<Pk, Tap, Ext>),
+    /// Simplicity leaf
+    Simplicity(&'a simplicity::Policy<Pk>)
+}
+
+impl<'a, Pk: MiniscriptKey, Ext: Extension> TapLeafScript<'a, Pk, Ext> {
+    /// Get the Miniscript at the leaf, if it exists.
+    pub fn as_miniscript(&self) -> Option<&'a Miniscript<Pk, Tap, Ext>> {
+        match self {
+            TapLeafScript::Miniscript(ms) => Some(ms),
+            _ => None,
+        }
+    }
+
+    /// Get the Simplicity policy at the leaf, if it exists.
+    pub fn as_simplicity(&self) -> Option<&'a simplicity::Policy<Pk>> {
+        match self {
+            TapLeafScript::Simplicity(sim) => Some(sim),
+            _ => None,
+        }
+    }
+}
+
+/// Iterator over the leaves of a tap tree.
+///
+/// Each leaf consists is a pair of (depth, script).
+/// The leaves are yielded in a depth-first walk.
+///
 /// For example, this tree:
 ///                                     - N0 -
 ///                                    /     \\
@@ -426,7 +481,7 @@ where
     Pk: MiniscriptKey + 'a,
     Ext: Extension,
 {
-    type Item = (usize, &'a Miniscript<Pk, Tap, Ext>);
+    type Item = (usize, TapLeafScript<'a, Pk, Ext>);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((depth, last)) = self.stack.pop() {
@@ -435,7 +490,12 @@ where
                     self.stack.push((depth + 1, r));
                     self.stack.push((depth + 1, l));
                 }
-                TapTree::Leaf(ref ms) => return Some((depth, ms)),
+                TapTree::Leaf(ref ms) => {
+                    return Some((depth, TapLeafScript::Miniscript(ms)))
+                },
+                TapTree::SimplicityLeaf(ref sim) => {
+                    return Some((depth, TapLeafScript::Simplicity(sim)))
+                }
             }
         }
         None
@@ -623,6 +683,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> Liftable<Pk> for TapTree<Pk, Ext> {
                     Ok(Policy::Threshold(1, vec![lift_helper(l)?, lift_helper(r)?]))
                 }
                 TapTree::Leaf(ref leaf) => leaf.lift(),
+                TapTree::SimplicityLeaf(..) => panic!("FIXME: Cannot lift Simplicity policy to Miniscript semantic policy"),
             }
         }
 
@@ -650,7 +711,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> ForEachKey<Pk> for Tr<Pk, Ext> {
     {
         let script_keys_res = self
             .iter_scripts()
-            .all(|(_d, ms)| ms.for_each_key(&mut pred));
+            .all(|(_d, ms)| ms.as_miniscript().unwrap().for_each_key(&mut pred));
         script_keys_res && pred(&self.internal_key)
     }
 }
@@ -729,6 +790,7 @@ where
         // map (lookup_control_block) from the satisfier here.
         let (mut min_wit, mut min_wit_len) = (None, None);
         for (depth, ms) in desc.iter_scripts() {
+            let ms = ms.as_miniscript().unwrap();
             let mut wit = if allow_mall {
                 match ms.satisfy_malleable(&satisfier) {
                     Ok(wit) => wit,
