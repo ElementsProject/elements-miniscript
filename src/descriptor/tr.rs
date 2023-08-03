@@ -266,10 +266,9 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
             TaprootSpendInfo::new_key_spend(&secp, self.internal_key.to_x_only_pubkey(), None)
         } else {
             let mut builder = TaprootBuilder::new();
-            for (depth, ms) in self.iter_scripts() {
-                let script = ms.as_miniscript().unwrap().encode();
+            for (depth, script) in self.iter_scripts() {
                 builder = builder
-                    .add_leaf(depth, script)
+                    .add_leaf_with_ver(depth, script.encode(), script.version())
                     .expect("Computing spend data on a valid Tree should always succeed");
             }
             // Assert builder cannot error here because we have a well formed descriptor
@@ -456,6 +455,27 @@ impl<'a, Pk: MiniscriptKey, Ext: Extension> TapLeafScript<'a, Pk, Ext> {
         match self {
             TapLeafScript::Simplicity(sim) => Some(sim),
             _ => None,
+        }
+    }
+
+    /// Return the version of the leaf.
+    pub fn version(&self) -> LeafVersion {
+        match self {
+            TapLeafScript::Miniscript(..) => LeafVersion::default(),
+            TapLeafScript::Simplicity(..) => simplicity::leaf_version(),
+        }
+    }
+}
+
+impl<'a, Pk: ToPublicKey, Ext: ParseableExt> TapLeafScript<'a, Pk, Ext> {
+    /// Encode the leaf script as Bitcoin script (witness script).
+    pub fn encode(&self) -> Script {
+        match self {
+            TapLeafScript::Miniscript(ms) => ms.encode(),
+            TapLeafScript::Simplicity(sim) => {
+                let commit = sim.serialize_no_witness();
+                Script::from(commit.cmr().as_ref().to_vec())
+            }
         }
     }
 }
