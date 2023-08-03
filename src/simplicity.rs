@@ -90,6 +90,37 @@ impl_from_str!(
     }
 );
 
+// We cannot implement ForEachKey for Policy<Pk> because it is not defined in this crate
+// We cannot use our wrapper because we don't own the Policy (we have a reference)
+// Implementing a wrapper of Cow<'a, Policy<Pk>> leads to lifetime issues
+// when implementing ForEachKey, because for_each_key() has its own lifetime 'a
+pub fn for_each_key<'a, Pk: MiniscriptKey, F: FnMut(&'a Pk) -> bool>(policy: &'a Policy<Pk>, mut pred: F) -> bool
+where
+    Pk: 'a,
+{
+    let mut stack = vec![policy];
+
+    while let Some(top) = stack.pop() {
+        match top {
+            Policy::Key(key) => {
+                if !pred(key) {
+                    return false;
+                }
+            }
+            Policy::And { left, right } | Policy::Or { left, right } => {
+                stack.push(right);
+                stack.push(left);
+            }
+            Policy::Threshold(_, sub_policies) => {
+                stack.extend(sub_policies.iter());
+            }
+            _ => {}
+        }
+    }
+
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use secp256k1::XOnlyPublicKey;

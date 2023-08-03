@@ -711,7 +711,12 @@ impl<Pk: MiniscriptKey, Ext: Extension> ForEachKey<Pk> for Tr<Pk, Ext> {
     {
         let script_keys_res = self
             .iter_scripts()
-            .all(|(_d, ms)| ms.as_miniscript().unwrap().for_each_key(&mut pred));
+            .all(|(_d, script)| {
+                match script {
+                    TapLeafScript::Miniscript(ms) => ms.for_each_key(&mut pred),
+                    TapLeafScript::Simplicity(sim) => crate::simplicity::for_each_key(sim, &mut pred),
+                }
+            });
         script_keys_res && pred(&self.internal_key)
     }
 }
