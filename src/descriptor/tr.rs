@@ -285,8 +285,12 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
 
     /// Checks whether the descriptor is safe.
     pub fn sanity_check(&self) -> Result<(), Error> {
-        for (_depth, ms) in self.iter_scripts() {
-            ms.as_miniscript().unwrap().sanity_check()?;
+        for (_depth, script) in self.iter_scripts() {
+            match script {
+                TapLeafScript::Miniscript(ms) => ms.sanity_check()?,
+                // TODO: Add sanity check for Simplicity policies
+                TapLeafScript::Simplicity(..) => {},
+            }
         }
         Ok(())
     }
