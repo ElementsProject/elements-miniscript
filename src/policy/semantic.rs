@@ -64,6 +64,7 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Policy<Pk> {
     where
         Pk: 'a,
     {
+        let mut pred = |x| pred(x);
         match *self {
             Policy::Unsatisfiable | Policy::Trivial => true,
             Policy::Key(ref _pkh) => todo!("Semantic Policy KeyHash must store Pk"),
