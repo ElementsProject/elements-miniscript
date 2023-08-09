@@ -20,17 +20,15 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use miniscript::{elements, bitcoin};
-use elements::hex::{FromHex, ToHex};
 use elements::hashes::{hash160, ripemd160, sha256, Hash};
-use elements::secp256k1_zkp as secp256k1;
-use elements::{confidential, encode, AddressParams, BlockHash};
+use elements::hex::{FromHex, ToHex};
+use elements::{confidential, encode, secp256k1_zkp as secp256k1, AddressParams, BlockHash};
 use miniscript::descriptor::{SinglePub, SinglePubKey};
 use miniscript::extensions::param::ExtParamTranslator;
 use miniscript::extensions::{CovExtArgs, CsfsKey, CsfsMsg};
 use miniscript::{
-    hash256, CovenantExt, Descriptor, DescriptorPublicKey, Error, Miniscript, ScriptContext,
-    TranslateExt, TranslatePk, Translator,
+    bitcoin, elements, hash256, CovenantExt, Descriptor, DescriptorPublicKey, Error, Miniscript,
+    ScriptContext, TranslateExt, TranslatePk, Translator,
 };
 use rand::RngCore;
 use {actual_rand as rand, elements_miniscript as miniscript};
@@ -138,7 +136,7 @@ impl TestData {
             assets: HashMap::new(),
             spks: HashMap::new(),
             timestamp: 414315315u64, // Some dummy time
-            price: 50_000i64, // Some dummy price
+            price: 50_000i64,        // Some dummy price
         };
         let secretdata = SecretData {
             sks,

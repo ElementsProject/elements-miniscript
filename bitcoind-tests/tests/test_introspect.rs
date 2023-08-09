@@ -3,17 +3,16 @@
 //! Arith expression fragment integration tests
 //!
 
-use miniscript::elements;
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SigHashCache;
 use elements::taproot::{LeafVersion, TapLeafHash};
 use elements::{
-    confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script,
-    Sequence, TxIn, TxOut, Txid,
+    confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script, Sequence,
+    TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
 use miniscript::psbt::{PsbtExt, PsbtInputExt};
-use miniscript::{Descriptor, ToPublicKey};
+use miniscript::{elements, Descriptor, ToPublicKey};
 use rand::RngCore;
 mod setup;
 use setup::test_util::{self, TestData, PARAMS};
@@ -136,10 +135,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
                 let x_only_pk = secp256k1::XOnlyPublicKey::from_keypair(&keypair).0;
                 psbt.inputs_mut()[0].tap_script_sigs.insert(
                     (x_only_pk, leaf_hash),
-                    elements::SchnorrSig {
-                        sig,
-                        hash_ty,
-                    },
+                    elements::SchnorrSig { sig, hash_ty },
                 );
             }
         }
