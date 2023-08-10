@@ -6,18 +6,19 @@
 
 use std::{error, fmt};
 
-use miniscript::{elements, bitcoin};
 use elements::hashes::{sha256d, Hash};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SigHashCache;
 use elements::taproot::{LeafVersion, TapLeafHash};
 use elements::{
-    confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, SchnorrSig,
-    Script, Sequence, TxIn, TxOut, Txid,
+    confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, SchnorrSig, Script,
+    Sequence, TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
 use miniscript::psbt::{PsbtExt, PsbtInputExt};
-use miniscript::{elementssig_to_rawsig, Descriptor, Miniscript, ScriptContext, ToPublicKey};
+use miniscript::{
+    bitcoin, elements, elementssig_to_rawsig, Descriptor, Miniscript, ScriptContext, ToPublicKey,
+};
 use rand::RngCore;
 mod setup;
 use ::secp256k1::Scalar;
@@ -205,10 +206,7 @@ pub fn test_desc_satisfy(
                 let (x_only_pk, _parity) = secp256k1::XOnlyPublicKey::from_keypair(&keypair);
                 psbt.inputs_mut()[0].tap_script_sigs.insert(
                     (x_only_pk, leaf_hash),
-                    elements::SchnorrSig {
-                        sig,
-                        hash_ty,
-                    },
+                    elements::SchnorrSig { sig, hash_ty },
                 );
             }
         }
@@ -286,7 +284,10 @@ pub fn test_desc_satisfy(
     println!("Testing descriptor: {}", definite_desc);
     // Finalize the transaction using psbt
     // Let miniscript do it's magic!
-    if psbt.finalize_mut(&secp, testdata.pubdata.genesis_hash).is_err() {
+    if psbt
+        .finalize_mut(&secp, testdata.pubdata.genesis_hash)
+        .is_err()
+    {
         return Err(DescError::PsbtFinalizeError);
     }
     let tx = psbt

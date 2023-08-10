@@ -7,19 +7,18 @@
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
-use miniscript::{elements, bitcoin};
 
 use bitcoin::hashes::{sha256d, Hash};
 use bitcoin::secp256k1::{self, Secp256k1};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::{
-    confidential, pset as psbt, secp256k1_zkp, AssetIssuance, LockTime, OutPoint, Script,
-    Sequence, TxIn, TxInWitness, TxOut, TxOutWitness, Txid,
+    confidential, pset as psbt, secp256k1_zkp, AssetIssuance, LockTime, OutPoint, Script, Sequence,
+    TxIn, TxInWitness, TxOut, TxOutWitness, Txid,
 };
 use elements_miniscript as miniscript;
 use elementsd::ElementsD;
 use miniscript::psbt::PsbtExt;
-use miniscript::{elementssig_to_rawsig, Descriptor};
+use miniscript::{bitcoin, elements, elementssig_to_rawsig, Descriptor};
 
 mod setup;
 use setup::test_util::{self, PubData, TestData, PARAMS};
@@ -90,10 +89,8 @@ pub fn test_from_cpp_ms(cl: &ElementsD, testdata: &TestData) {
     let mut psbts = vec![];
     for (desc, txid) in desc_vec.iter().zip(txids) {
         let mut psbt = Psbt::new_v2();
-        psbt.global.tx_data.fallback_locktime = Some(
-            LockTime::from_time(1_603_866_330)
-                .expect("valid timestamp"),
-        ); // 10/28/2020 @ 6:25am (UTC)
+        psbt.global.tx_data.fallback_locktime =
+            Some(LockTime::from_time(1_603_866_330).expect("valid timestamp")); // 10/28/2020 @ 6:25am (UTC)
         let (outpoint, witness_utxo) = get_vout(cl, txid, 100_000_000);
         let txin = TxIn {
             previous_output: outpoint,

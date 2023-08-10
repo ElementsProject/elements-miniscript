@@ -3,18 +3,17 @@
 //! CheckSigFromStack integration tests
 //!
 
-use miniscript::extensions::{sighash_msg_price_oracle_1, check_sig_price_oracle_1};
-use miniscript::{elements, bitcoin, TxEnv};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SigHashCache;
 use elements::taproot::{LeafVersion, TapLeafHash};
 use elements::{
-    confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script,
-    Sequence, TxIn, TxOut, Txid,
+    confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script, Sequence,
+    TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
+use miniscript::extensions::{check_sig_price_oracle_1, sighash_msg_price_oracle_1};
 use miniscript::psbt::{PsbtInputExt, PsbtInputSatisfier};
-use miniscript::{Descriptor, Satisfier, ToPublicKey};
+use miniscript::{bitcoin, elements, Descriptor, Satisfier, ToPublicKey, TxEnv};
 use rand::RngCore;
 mod setup;
 use setup::test_util::{self, TestData, PARAMS};
@@ -137,10 +136,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
                 let x_only_pk = secp256k1::XOnlyPublicKey::from_keypair(&keypair).0;
                 psbt.inputs_mut()[0].tap_script_sigs.insert(
                     (x_only_pk, leaf_hash),
-                    elements::SchnorrSig {
-                        sig,
-                        hash_ty,
-                    },
+                    elements::SchnorrSig { sig, hash_ty },
                 );
             }
         }
@@ -181,10 +177,10 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
         }
 
         fn lookup_price_oracle_sig(
-                &self,
-                pk: &bitcoin::key::XOnlyPublicKey,
-                time: u64,
-            ) -> Option<(secp256k1::schnorr::Signature, i64, u64)> {
+            &self,
+            pk: &bitcoin::key::XOnlyPublicKey,
+            time: u64,
+        ) -> Option<(secp256k1::schnorr::Signature, i64, u64)> {
             let xpk = pk.to_x_only_pubkey();
             let known_xpks = &self.0.pubdata.x_only_pks;
             let i = known_xpks.iter().position(|&x| x == xpk).unwrap();
@@ -199,7 +195,13 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
 
             let secp = secp256k1::Secp256k1::new();
             let sig = secp.sign_schnorr_with_aux_rand(&sighash_msg, keypair, &aux_rand);
-            assert!(check_sig_price_oracle_1(&secp, &sig, &xpk, time_signed, price));
+            assert!(check_sig_price_oracle_1(
+                &secp,
+                &sig,
+                &xpk,
+                time_signed,
+                price
+            ));
             Some((sig, self.0.pubdata.price, time_signed))
         }
     }
@@ -210,7 +212,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     let mut tx = psbt.extract_tx().unwrap();
     let txouts = vec![psbt.inputs()[0].witness_utxo.clone().unwrap()];
     let extracted_tx = tx.clone(); // Possible to optimize this, but we don't care for this
-    // Env requires reference of tx, while satisfaction requires mutable access to inputs.
+                                   // Env requires reference of tx, while satisfaction requires mutable access to inputs.
     let cov_sat = TxEnv::new(&extracted_tx, &txouts, 0).unwrap();
     derived_desc
         .satisfy(&mut tx.input[0], (psbt_sat, csfs_sat, cov_sat))
@@ -219,7 +221,6 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     for wit in tx.input[0].witness.script_witness.iter() {
         println!("Witness: {} {:x?}", wit.len(), wit);
     }
-
 
     // Send the transactions to bitcoin node for mining.
     // Regtest mode has standardness checks
@@ -258,14 +259,36 @@ fn test_descs(cl: &ElementsD, testdata: &TestData) {
 
     // test price oracle 1
     let price = testdata.pubdata.price;
-    let wit = test_desc_satisfy(cl, testdata, &format!("tr(X!,and_v(v:pk(X2),num64_eq(price_oracle1(X1,123213),{})))", price));
+    let wit = test_desc_satisfy(
+        cl,
+        testdata,
+        &format!(
+            "tr(X!,and_v(v:pk(X2),num64_eq(price_oracle1(X1,123213),{})))",
+            price
+        ),
+    );
     assert_eq!(wit.len(), 4 + 2); // 4 witness elements + 1 for price oracle + 1 for time
 
     // More complex tests
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X1),num64_eq(price_oracle1(X2,1),price_oracle1_w(X3,2))))");
-    test_desc_satisfy(cl, testdata, &format!("tr(X!,and_v(v:pk(X1),num64_eq({},price_oracle1_w(X3,2))))", price));
+    test_desc_satisfy(
+        cl,
+        testdata,
+        "tr(X!,and_v(v:pk(X1),num64_eq(price_oracle1(X2,1),price_oracle1_w(X3,2))))",
+    );
+    test_desc_satisfy(
+        cl,
+        testdata,
+        &format!(
+            "tr(X!,and_v(v:pk(X1),num64_eq({},price_oracle1_w(X3,2))))",
+            price
+        ),
+    );
     // Different keys and different times
-    test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X2),num64_eq(price_oracle1(X3,1),price_oracle1_w(X4,23))))");
+    test_desc_satisfy(
+        cl,
+        testdata,
+        "tr(X!,and_v(v:pk(X2),num64_eq(price_oracle1(X3,1),price_oracle1_w(X4,23))))",
+    );
     // Combination with other arith fragments
     test_desc_satisfy(cl, testdata, "tr(X!,and_v(v:pk(X2),num64_eq(div(add(price_oracle1(X3,1),price_oracle1_w(X4,2)),2),price_oracle1_w(X5,2))))");
 }
