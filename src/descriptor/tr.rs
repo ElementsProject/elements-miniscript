@@ -465,6 +465,15 @@ impl<'a, Pk: MiniscriptKey, Ext: Extension> TapLeafScript<'a, Pk, Ext> {
             TapLeafScript::Simplicity(..) => simplicity::leaf_version(),
         }
     }
+
+    /// Return the byte size of the encoded leaf script (witness script).
+    pub fn script_size(&self) -> usize {
+        match self {
+            TapLeafScript::Miniscript(ms) => ms.script_size(),
+            // Simplicity's witness script is always a 32-byte CMR
+            TapLeafScript::Simplicity(..) => 32,
+        }
+    }
 }
 
 impl<'a, Pk: ToPublicKey, Ext: ParseableExt> TapLeafScript<'a, Pk, Ext> {
@@ -476,6 +485,28 @@ impl<'a, Pk: ToPublicKey, Ext: ParseableExt> TapLeafScript<'a, Pk, Ext> {
                 let commit = sim.serialize_no_witness();
                 Script::from(commit.cmr().as_ref().to_vec())
             }
+        }
+    }
+
+    /// Attempt to produce a malleable satisfying witness for the leaf script.
+    pub fn satisfy_malleable<S: Satisfier<Pk>>(&self, satisfier: S) -> Result<Vec<Vec<u8>>, Error> {
+        match self {
+            TapLeafScript::Miniscript(ms) => ms.satisfy_malleable(satisfier),
+            // There doesn't (yet?) exist a malleable satisfaction of Simplicity policy
+            TapLeafScript::Simplicity(..) => self.satisfy(satisfier),
+        }
+    }
+
+    /// Attempt to produce a non-malleable satisfying witness for the leaf script.
+    pub fn satisfy<S: Satisfier<Pk>>(&self, satisfier: S) -> Result<Vec<Vec<u8>>, Error> {
+        match self {
+            TapLeafScript::Miniscript(ms) => ms.satisfy(satisfier),
+            TapLeafScript::Simplicity(sim) => {
+                let satisfier = crate::simplicity::SatisfierWrapper::new(satisfier);
+                let program = sim.satisfy(&satisfier).map_err(|_| Error::CouldNotSatisfy)?;
+                let program_and_witness_bytes = program.encode_to_vec();
+                Ok(vec![program_and_witness_bytes])
+            },
         }
     }
 }
@@ -822,15 +853,14 @@ where
         // Since we have the complete descriptor we can ignore the satisfier. We don't use the control block
         // map (lookup_control_block) from the satisfier here.
         let (mut min_wit, mut min_wit_len) = (None, None);
-        for (depth, ms) in desc.iter_scripts() {
-            let ms = ms.as_miniscript().unwrap();
+        for (depth, script) in desc.iter_scripts() {
             let mut wit = if allow_mall {
-                match ms.satisfy_malleable(&satisfier) {
+                match script.satisfy_malleable(&satisfier) {
                     Ok(wit) => wit,
                     Err(..) => continue, // No witness for this script in tr descriptor, look for next one
                 }
             } else {
-                match ms.satisfy(&satisfier) {
+                match script.satisfy(&satisfier) {
                     Ok(wit) => wit,
                     Err(..) => continue, // No witness for this script in tr descriptor, look for next one
                 }
@@ -840,12 +870,13 @@ where
             // The extra +2 elements are control block and script itself
             let wit_size = witness_size(&wit)
                 + control_block_len(depth)
-                + ms.script_size()
-                + varint_len(ms.script_size());
+                + script.script_size()
+                + varint_len(script.script_size());
+
             if min_wit_len.is_some() && Some(wit_size) > min_wit_len {
                 continue;
             } else {
-                let leaf_script = (ms.encode(), LeafVersion::default());
+                let leaf_script = (script.encode(), script.version());
                 let control_block = spend_info
                     .control_block(&leaf_script)
                     .expect("Control block must exist in script map for every known leaf");

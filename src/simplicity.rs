@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: CC0-1.0
 use std::fmt;
+use std::marker::PhantomData;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use simplicity::{Policy, FailEntropy};
+use bitcoin_miniscript::ToPublicKey;
+use elements::{LockTime, SchnorrSig, Sequence};
+use elements::taproot::TapLeafHash;
+use simplicity::{Policy, FailEntropy, Preimage32};
 
 use crate::policy::concrete::PolicyError;
 use crate::{expression, Error, MiniscriptKey};
@@ -119,6 +123,37 @@ where
     }
 
     true
+}
+
+// We could make crate::Satisfier a subtrait of simplicity::Satisfier,
+// but then we would have to implement simplicity::Satisfier for all the blanket implementations
+// of crate::Satisfier, such as HashMap<Pk, ElementsSig>, which is annoying
+// We might choose to do so in the future, but for now a crate-local wrapper is easier
+// This wrapper is internally used by `Tr` and is never encountered by users
+pub(crate) struct SatisfierWrapper<Pk: ToPublicKey, S: crate::Satisfier<Pk>>(S, PhantomData<Pk>);
+
+impl<Pk: ToPublicKey, S: crate::Satisfier<Pk>> SatisfierWrapper<Pk, S> {
+    pub fn new(satisfier: S) -> Self {
+        Self(satisfier, PhantomData)
+    }
+}
+
+impl<Pk: ToPublicKey, S: crate::Satisfier<Pk>> simplicity::Satisfier<Pk> for SatisfierWrapper<Pk, S> {
+    fn lookup_tap_leaf_script_sig(&self, pk: &Pk, hash: &TapLeafHash) -> Option<SchnorrSig> {
+        self.0.lookup_tap_leaf_script_sig(pk, hash)
+    }
+
+    fn lookup_sha256(&self, hash: &Pk::Sha256) -> Option<Preimage32> {
+        self.0.lookup_sha256(hash)
+    }
+
+    fn check_older(&self, sequence: Sequence) -> bool {
+        self.0.check_older(sequence)
+    }
+
+    fn check_after(&self, locktime: LockTime) -> bool {
+        self.0.check_after(locktime)
+    }
 }
 
 #[cfg(test)]
