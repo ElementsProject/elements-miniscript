@@ -496,6 +496,14 @@ impl<'a, Pk: MiniscriptKey, Ext: Extension> TapLeafScript<'a, Pk, Ext> {
             TapLeafScript::Simplicity(..) => Err(Error::AnalysisError(crate::AnalysisError::Malleable))
         }
     }
+
+    /// Return an iterator over the plain public keys (and not key hash values) of the leaf script.
+    pub fn iter_pk(&self) -> Box<dyn Iterator<Item=Pk> + 'a> {
+        match self {
+            TapLeafScript::Miniscript(ms) => Box::new(ms.iter_pk()),
+            TapLeafScript::Simplicity(sim) => Box::new(sim.iter_pk()),
+        }
+    }
 }
 
 impl<'a, Pk: ToPublicKey, Ext: ParseableExt> TapLeafScript<'a, Pk, Ext> {
