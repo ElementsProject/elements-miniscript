@@ -318,11 +318,10 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
         };
 
         tree.iter()
-            .filter_map(|(depth, ms)| {
-                let ms = ms.as_miniscript().unwrap();
-                let script_size = ms.script_size();
-                let max_sat_elems = ms.max_satisfaction_witness_elements().ok()?;
-                let max_sat_size = ms.max_satisfaction_size().ok()?;
+            .filter_map(|(depth, script)| {
+                let script_size = script.script_size();
+                let max_sat_elems = script.max_satisfaction_witness_elements().ok()?;
+                let max_sat_size = script.max_satisfaction_size().ok()?;
                 let control_block_size = control_block_len(depth);
 
                 // stack varint difference (+1 for ctrl block, witness script already included)
@@ -364,11 +363,10 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
         };
 
         tree.iter()
-            .filter_map(|(depth, ms)| {
-                let ms = ms.as_miniscript().unwrap();
-                let script_size = ms.script_size();
-                let max_sat_elems = ms.max_satisfaction_witness_elements().ok()?;
-                let max_sat_size = ms.max_satisfaction_size().ok()?;
+            .filter_map(|(depth, script)| {
+                let script_size = script.script_size();
+                let max_sat_elems = script.max_satisfaction_witness_elements().ok()?;
+                let max_sat_size = script.max_satisfaction_size().ok()?;
                 let control_block_size = control_block_len(depth);
                 Some(
                     // scriptSig len byte
@@ -472,6 +470,30 @@ impl<'a, Pk: MiniscriptKey, Ext: Extension> TapLeafScript<'a, Pk, Ext> {
             TapLeafScript::Miniscript(ms) => ms.script_size(),
             // Simplicity's witness script is always a 32-byte CMR
             TapLeafScript::Simplicity(..) => 32,
+        }
+    }
+
+    /// Return the maximum number of witness elements used to satisfied the leaf script,
+    /// including the witness script itself.
+    pub fn max_satisfaction_witness_elements(&self) -> Result<usize, Error> {
+        match self {
+            TapLeafScript::Miniscript(ms) => ms.max_satisfaction_witness_elements(),
+            // Simplicity always has one witness element plus leaf script:
+            // (1) Encoded program+witness
+            // (2) CMR program
+            // The third element is the control block, which is not counted by this method.
+            TapLeafScript::Simplicity(..) => Ok(2),
+        }
+    }
+
+    /// Return the maximum byte size of a satisfying witness.
+    pub fn max_satisfaction_size(&self) -> Result<usize, Error> {
+        match self {
+            TapLeafScript::Miniscript(ms) => ms.max_satisfaction_size(),
+            // There is currently no way to bound the Simplicity witness size without producing one
+            // We mark the witness size as malleable since it depends on the chosen spending path
+            // TODO: Add method to simplicity::Policy and use it here
+            TapLeafScript::Simplicity(..) => Err(Error::AnalysisError(crate::AnalysisError::Malleable))
         }
     }
 }
