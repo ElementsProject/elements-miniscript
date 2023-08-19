@@ -57,7 +57,7 @@ pub use self::key::{
     DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey, InnerXKey,
     SinglePriv, SinglePub, SinglePubKey, Wildcard,
 };
-pub use self::tr::{TapTree, Tr};
+pub use self::tr::{TapTree, Tr, TapLeafScript};
 /// Alias type for a map of public key to secret key
 ///
 /// This map is returned whenever a descriptor that contains secrets is parsed using

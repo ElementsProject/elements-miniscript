@@ -9,6 +9,7 @@ use miniscript::policy::Concrete;
 use miniscript::{
     translate_hash_fail, Descriptor, Miniscript, NoExt, Tap, TranslatePk, Translator,
 };
+use miniscript::descriptor::TapLeafScript;
 use secp256k1::{rand, KeyPair};
 
 // Refer to https://github.com/sanket1729/adv_btc_workshop/blob/master/workshop.md#creating-a-taproot-descriptor
@@ -70,14 +71,14 @@ fn main() {
             iter.next().unwrap(),
             (
                 1,
-                &Miniscript::<String, Tap, NoExt>::from_str("and_v(vc:pk_k(In),older(9))").unwrap()
+                TapLeafScript::Miniscript(&Miniscript::<String, Tap, NoExt>::from_str("and_v(vc:pk_k(In),older(9))").unwrap())
             )
         );
         assert_eq!(
             iter.next().unwrap(),
             (
                 1,
-                &Miniscript::<String, Tap, NoExt>::from_str("multi_a(2,hA,S)").unwrap()
+                TapLeafScript::Miniscript(&Miniscript::<String, Tap, NoExt>::from_str("multi_a(2,hA,S)").unwrap())
             )
         );
         assert_eq!(iter.next(), None);

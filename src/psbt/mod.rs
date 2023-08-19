@@ -1286,11 +1286,11 @@ where
 
     let mut builder = taproot::TaprootBuilder::new();
 
-    for ((_depth_der, ms_derived), (depth, ms)) in
+    for ((_depth_der, script_derived), (depth, script)) in
         tr_derived.iter_scripts().zip(tr_xpk.iter_scripts())
     {
         debug_assert_eq!(_depth_der, depth);
-        let leaf_script = (ms_derived.encode(), LeafVersion::default());
+        let leaf_script = (script_derived.encode(), script.version());
         let tapleaf_hash = TapLeafHash::from_script(&leaf_script.0, leaf_script.1);
         builder = builder
             .add_leaf(depth, leaf_script.0.clone())
@@ -1302,7 +1302,7 @@ where
             tap_scripts.insert(control_block, leaf_script);
         }
 
-        for (derived_pk, xpk) in ms_derived.iter_pk().zip(ms.iter_pk()) {
+        for (derived_pk, xpk) in script_derived.iter_pk().zip(script.iter_pk()) {
             let (xonly, xpk) = (derived_pk.to_x_only_pubkey(), xpk);
 
             item.tap_key_origins()

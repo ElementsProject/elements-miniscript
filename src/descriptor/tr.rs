@@ -36,6 +36,8 @@ pub enum TapTree<Pk: MiniscriptKey, Ext: Extension = NoExt> {
     // in adding a LeafVersion with Leaf type here. All Miniscripts right now
     // are of Leafversion::default
     Leaf(Arc<Miniscript<Pk, Tap, Ext>>),
+    /// A taproot leaf denoting a spending condition in terms of Simplicity
+    SimplicityLeaf(Arc<simplicity::Policy<Pk>>),
 }
 
 /// A taproot descriptor
@@ -117,7 +119,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> TapTree<Pk, Ext> {
             TapTree::Tree(ref left_tree, ref right_tree) => {
                 1 + max(left_tree.taptree_height(), right_tree.taptree_height())
             }
-            TapTree::Leaf(..) => 0,
+            TapTree::Leaf(..) | TapTree::SimplicityLeaf(..) => 0,
         }
     }
 
@@ -136,12 +138,30 @@ impl<Pk: MiniscriptKey, Ext: Extension> TapTree<Pk, Ext> {
         Q: MiniscriptKey,
         Ext: Extension,
     {
+        struct SimTranslator<'a, T>(&'a mut T);
+
+        impl<'a, Pk, T, Q, Error> simplicity::Translator<Pk, Q, Error> for SimTranslator<'a, T>
+        where
+            Pk: MiniscriptKey,
+            T: Translator<Pk, Q, Error>,
+            Q: MiniscriptKey,
+        {
+            fn pk(&mut self, pk: &Pk) -> Result<Q, Error> {
+                self.0.pk(pk)
+            }
+
+            fn sha256(&mut self, sha256: &Pk::Sha256) -> Result<Q::Sha256, Error> {
+                self.0.sha256(sha256)
+            }
+        }
+
         let frag = match self {
             TapTree::Tree(l, r) => TapTree::Tree(
                 Arc::new(l.translate_helper(t)?),
                 Arc::new(r.translate_helper(t)?),
             ),
             TapTree::Leaf(ms) => TapTree::Leaf(Arc::new(ms.translate_pk(t)?)),
+            TapTree::SimplicityLeaf(sim) => TapTree::SimplicityLeaf(Arc::new(sim.translate(&mut SimTranslator(t))?))
         };
         Ok(frag)
     }
@@ -159,6 +179,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> TapTree<Pk, Ext> {
                 Arc::new(r.translate_ext_helper(t)?),
             ),
             TapTree::Leaf(ms) => TapTree::Leaf(Arc::new(ms.translate_ext(t)?)),
+            TapTree::SimplicityLeaf(sim) => TapTree::SimplicityLeaf(Arc::clone(sim)),
         };
         Ok(frag)
     }
@@ -169,6 +190,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> fmt::Display for TapTree<Pk, Ext> {
         match self {
             TapTree::Tree(ref left, ref right) => write!(f, "{{{},{}}}", *left, *right),
             TapTree::Leaf(ref script) => write!(f, "{}", *script),
+            TapTree::SimplicityLeaf(ref policy) => write!(f, "sim{{{}}}", policy),
         }
     }
 }
@@ -178,6 +200,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> fmt::Debug for TapTree<Pk, Ext> {
         match self {
             TapTree::Tree(ref left, ref right) => write!(f, "{{{:?},{:?}}}", *left, *right),
             TapTree::Leaf(ref script) => write!(f, "{:?}", *script),
+            TapTree::SimplicityLeaf(ref policy) => write!(f, "{:?}", policy),
         }
     }
 }
@@ -243,10 +266,9 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
             TaprootSpendInfo::new_key_spend(&secp, self.internal_key.to_x_only_pubkey(), None)
         } else {
             let mut builder = TaprootBuilder::new();
-            for (depth, ms) in self.iter_scripts() {
-                let script = ms.encode();
+            for (depth, script) in self.iter_scripts() {
                 builder = builder
-                    .add_leaf(depth, script)
+                    .add_leaf_with_ver(depth, script.encode(), script.version())
                     .expect("Computing spend data on a valid Tree should always succeed");
             }
             // Assert builder cannot error here because we have a well formed descriptor
@@ -262,8 +284,12 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
 
     /// Checks whether the descriptor is safe.
     pub fn sanity_check(&self) -> Result<(), Error> {
-        for (_depth, ms) in self.iter_scripts() {
-            ms.sanity_check()?;
+        for (_depth, script) in self.iter_scripts() {
+            match script {
+                TapLeafScript::Miniscript(ms) => ms.sanity_check()?,
+                // TODO: Add sanity check for Simplicity policies
+                TapLeafScript::Simplicity(..) => {},
+            }
         }
         Ok(())
     }
@@ -292,10 +318,10 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
         };
 
         tree.iter()
-            .filter_map(|(depth, ms)| {
-                let script_size = ms.script_size();
-                let max_sat_elems = ms.max_satisfaction_witness_elements().ok()?;
-                let max_sat_size = ms.max_satisfaction_size().ok()?;
+            .filter_map(|(depth, script)| {
+                let script_size = script.script_size();
+                let max_sat_elems = script.max_satisfaction_witness_elements().ok()?;
+                let max_sat_size = script.max_satisfaction_size().ok()?;
                 let control_block_size = control_block_len(depth);
 
                 // stack varint difference (+1 for ctrl block, witness script already included)
@@ -337,10 +363,10 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
         };
 
         tree.iter()
-            .filter_map(|(depth, ms)| {
-                let script_size = ms.script_size();
-                let max_sat_elems = ms.max_satisfaction_witness_elements().ok()?;
-                let max_sat_size = ms.max_satisfaction_size().ok()?;
+            .filter_map(|(depth, script)| {
+                let script_size = script.script_size();
+                let max_sat_elems = script.max_satisfaction_witness_elements().ok()?;
+                let max_sat_size = script.max_satisfaction_size().ok()?;
                 let control_block_size = control_block_len(depth);
                 Some(
                     // scriptSig len byte
@@ -404,8 +430,122 @@ impl<Pk: MiniscriptKey + ToPublicKey, Ext: ParseableExt> Tr<Pk, Ext> {
     }
 }
 
-/// Iterator for Taproot structures
-/// Yields a pair of (depth, miniscript) in a depth first walk
+/// Script at a tap leaf.
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub enum TapLeafScript<'a, Pk: MiniscriptKey, Ext: Extension> {
+    /// Miniscript leaf
+    Miniscript(&'a Miniscript<Pk, Tap, Ext>),
+    /// Simplicity leaf
+    Simplicity(&'a simplicity::Policy<Pk>)
+}
+
+impl<'a, Pk: MiniscriptKey, Ext: Extension> TapLeafScript<'a, Pk, Ext> {
+    /// Get the Miniscript at the leaf, if it exists.
+    pub fn as_miniscript(&self) -> Option<&'a Miniscript<Pk, Tap, Ext>> {
+        match self {
+            TapLeafScript::Miniscript(ms) => Some(ms),
+            _ => None,
+        }
+    }
+
+    /// Get the Simplicity policy at the leaf, if it exists.
+    pub fn as_simplicity(&self) -> Option<&'a simplicity::Policy<Pk>> {
+        match self {
+            TapLeafScript::Simplicity(sim) => Some(sim),
+            _ => None,
+        }
+    }
+
+    /// Return the version of the leaf.
+    pub fn version(&self) -> LeafVersion {
+        match self {
+            TapLeafScript::Miniscript(..) => LeafVersion::default(),
+            TapLeafScript::Simplicity(..) => simplicity::leaf_version(),
+        }
+    }
+
+    /// Return the byte size of the encoded leaf script (witness script).
+    pub fn script_size(&self) -> usize {
+        match self {
+            TapLeafScript::Miniscript(ms) => ms.script_size(),
+            // Simplicity's witness script is always a 32-byte CMR
+            TapLeafScript::Simplicity(..) => 32,
+        }
+    }
+
+    /// Return the maximum number of witness elements used to satisfied the leaf script,
+    /// including the witness script itself.
+    pub fn max_satisfaction_witness_elements(&self) -> Result<usize, Error> {
+        match self {
+            TapLeafScript::Miniscript(ms) => ms.max_satisfaction_witness_elements(),
+            // Simplicity always has one witness element plus leaf script:
+            // (1) Encoded program+witness
+            // (2) CMR program
+            // The third element is the control block, which is not counted by this method.
+            TapLeafScript::Simplicity(..) => Ok(2),
+        }
+    }
+
+    /// Return the maximum byte size of a satisfying witness.
+    pub fn max_satisfaction_size(&self) -> Result<usize, Error> {
+        match self {
+            TapLeafScript::Miniscript(ms) => ms.max_satisfaction_size(),
+            // There is currently no way to bound the Simplicity witness size without producing one
+            // We mark the witness size as malleable since it depends on the chosen spending path
+            // TODO: Add method to simplicity::Policy and use it here
+            TapLeafScript::Simplicity(..) => Err(Error::AnalysisError(crate::AnalysisError::Malleable))
+        }
+    }
+
+    /// Return an iterator over the plain public keys (and not key hash values) of the leaf script.
+    pub fn iter_pk(&self) -> Box<dyn Iterator<Item=Pk> + 'a> {
+        match self {
+            TapLeafScript::Miniscript(ms) => Box::new(ms.iter_pk()),
+            TapLeafScript::Simplicity(sim) => Box::new(sim.iter_pk()),
+        }
+    }
+}
+
+impl<'a, Pk: ToPublicKey, Ext: ParseableExt> TapLeafScript<'a, Pk, Ext> {
+    /// Encode the leaf script as Bitcoin script (witness script).
+    pub fn encode(&self) -> Script {
+        match self {
+            TapLeafScript::Miniscript(ms) => ms.encode(),
+            TapLeafScript::Simplicity(sim) => {
+                let commit = sim.serialize_no_witness();
+                Script::from(commit.cmr().as_ref().to_vec())
+            }
+        }
+    }
+
+    /// Attempt to produce a malleable satisfying witness for the leaf script.
+    pub fn satisfy_malleable<S: Satisfier<Pk>>(&self, satisfier: S) -> Result<Vec<Vec<u8>>, Error> {
+        match self {
+            TapLeafScript::Miniscript(ms) => ms.satisfy_malleable(satisfier),
+            // There doesn't (yet?) exist a malleable satisfaction of Simplicity policy
+            TapLeafScript::Simplicity(..) => self.satisfy(satisfier),
+        }
+    }
+
+    /// Attempt to produce a non-malleable satisfying witness for the leaf script.
+    pub fn satisfy<S: Satisfier<Pk>>(&self, satisfier: S) -> Result<Vec<Vec<u8>>, Error> {
+        match self {
+            TapLeafScript::Miniscript(ms) => ms.satisfy(satisfier),
+            TapLeafScript::Simplicity(sim) => {
+                let satisfier = crate::simplicity::SatisfierWrapper::new(satisfier);
+                let program = sim.satisfy(&satisfier).map_err(|_| Error::CouldNotSatisfy)?;
+                let program_and_witness_bytes = program.encode_to_vec();
+                Ok(vec![program_and_witness_bytes])
+            },
+        }
+    }
+}
+
+/// Iterator over the leaves of a tap tree.
+///
+/// Each leaf consists is a pair of (depth, script).
+/// The leaves are yielded in a depth-first walk.
+///
 /// For example, this tree:
 ///                                     - N0 -
 ///                                    /     \\
@@ -426,7 +566,7 @@ where
     Pk: MiniscriptKey + 'a,
     Ext: Extension,
 {
-    type Item = (usize, &'a Miniscript<Pk, Tap, Ext>);
+    type Item = (usize, TapLeafScript<'a, Pk, Ext>);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((depth, last)) = self.stack.pop() {
@@ -435,7 +575,12 @@ where
                     self.stack.push((depth + 1, r));
                     self.stack.push((depth + 1, l));
                 }
-                TapTree::Leaf(ref ms) => return Some((depth, ms)),
+                TapTree::Leaf(ref ms) => {
+                    return Some((depth, TapLeafScript::Miniscript(ms)))
+                },
+                TapTree::SimplicityLeaf(ref sim) => {
+                    return Some((depth, TapLeafScript::Simplicity(sim)))
+                }
             }
         }
         None
@@ -449,6 +594,10 @@ impl_block_str!(
     // Helper function to parse taproot script path
     fn parse_tr_script_spend(tree: &expression::Tree,) -> Result<TapTree<Pk, Ext>, Error> {
         match tree {
+            expression::Tree { name, args } if *name == "sim" && args.len() == 1 => {
+                let policy = crate::simplicity::PolicyWrapper::<Pk>::from_str(args[0].name)?;
+                Ok(TapTree::SimplicityLeaf(Arc::new(policy.0)))
+            }
             expression::Tree { name, args } if !name.is_empty() && args.is_empty() => {
                 let script = Miniscript::<Pk, Tap, Ext>::from_str(name)?;
                 Ok(TapTree::Leaf(Arc::new(script)))
@@ -623,6 +772,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> Liftable<Pk> for TapTree<Pk, Ext> {
                     Ok(Policy::Threshold(1, vec![lift_helper(l)?, lift_helper(r)?]))
                 }
                 TapTree::Leaf(ref leaf) => leaf.lift(),
+                TapTree::SimplicityLeaf(..) => panic!("FIXME: Cannot lift Simplicity policy to Miniscript semantic policy"),
             }
         }
 
@@ -650,7 +800,12 @@ impl<Pk: MiniscriptKey, Ext: Extension> ForEachKey<Pk> for Tr<Pk, Ext> {
     {
         let script_keys_res = self
             .iter_scripts()
-            .all(|(_d, ms)| ms.for_each_key(&mut pred));
+            .all(|(_d, script)| {
+                match script {
+                    TapLeafScript::Miniscript(ms) => ms.for_each_key(&mut pred),
+                    TapLeafScript::Simplicity(sim) => crate::simplicity::for_each_key(sim, &mut pred),
+                }
+            });
         script_keys_res && pred(&self.internal_key)
     }
 }
@@ -728,14 +883,14 @@ where
         // Since we have the complete descriptor we can ignore the satisfier. We don't use the control block
         // map (lookup_control_block) from the satisfier here.
         let (mut min_wit, mut min_wit_len) = (None, None);
-        for (depth, ms) in desc.iter_scripts() {
+        for (depth, script) in desc.iter_scripts() {
             let mut wit = if allow_mall {
-                match ms.satisfy_malleable(&satisfier) {
+                match script.satisfy_malleable(&satisfier) {
                     Ok(wit) => wit,
                     Err(..) => continue, // No witness for this script in tr descriptor, look for next one
                 }
             } else {
-                match ms.satisfy(&satisfier) {
+                match script.satisfy(&satisfier) {
                     Ok(wit) => wit,
                     Err(..) => continue, // No witness for this script in tr descriptor, look for next one
                 }
@@ -745,12 +900,13 @@ where
             // The extra +2 elements are control block and script itself
             let wit_size = witness_size(&wit)
                 + control_block_len(depth)
-                + ms.script_size()
-                + varint_len(ms.script_size());
+                + script.script_size()
+                + varint_len(script.script_size());
+
             if min_wit_len.is_some() && Some(wit_size) > min_wit_len {
                 continue;
             } else {
-                let leaf_script = (ms.encode(), LeafVersion::default());
+                let leaf_script = (script.encode(), script.version());
                 let control_block = spend_info
                     .control_block(&leaf_script)
                     .expect("Control block must exist in script map for every known leaf");
@@ -793,5 +949,45 @@ mod tests {
         let tr = Tr::<String, NoExt>::from_str(&desc).unwrap();
         // Note the last ac12 only has ac and fails the predicate
         assert!(!tr.for_each_key(|k| k.starts_with("acc")));
+    }
+
+    fn verify_from_str<'a>(desc_str: &str, internal_key: &str, scripts: &[TapLeafScript<'a, String, NoExt>]) {
+        let desc = Tr::<String, NoExt>::from_str(desc_str).unwrap();
+        assert_eq!(desc_str, &desc.to_string());
+        assert_eq!(internal_key, &desc.internal_key);
+
+        let desc_scripts: Vec<_> = desc.iter_scripts().collect();
+        assert_eq!(scripts.len(), scripts.len());
+
+        for i in 0..scripts.len() {
+            let script = &scripts[i];
+            assert_eq!(script, &desc_scripts[i].1);
+        }
+    }
+
+    #[test]
+    fn tr_from_str() {
+        // Key spend only
+        verify_from_str("eltr(internal)#0aen4jhp", "internal", &[]);
+
+        // Miniscript key spend
+        let ms = Miniscript::<String, Tap>::from_str("pk(a)").unwrap();
+        verify_from_str(
+            "eltr(internal,pk(a))#vadmk9gd", "internal",
+            &[TapLeafScript::Miniscript(&ms)]
+        );
+
+        // Simplicity key spend
+        let sim = simplicity::Policy::Key("a".to_string());
+        verify_from_str(
+            "eltr(internal,sim{pk(a)})#duhmnzmm", "internal",
+            &[TapLeafScript::Simplicity(&sim)]
+        );
+
+        // Mixed Miniscript and Simplicity
+        verify_from_str(
+            "eltr(internal,{pk(a),sim{pk(a)}})#7vmfhpaj", "internal",
+            &[TapLeafScript::Miniscript(&ms), TapLeafScript::Simplicity(&sim)]
+        );
     }
 }

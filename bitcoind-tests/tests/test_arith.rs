@@ -5,7 +5,7 @@
 
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SigHashCache;
-use elements::taproot::{LeafVersion, TapLeafHash};
+use elements::taproot::TapLeafHash;
 use elements::{
     confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script, Sequence,
     TxIn, TxOut, Txid,
@@ -107,9 +107,9 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
             // ------------------ script spend -------------
             let x_only_keypairs_reqd: Vec<(secp256k1::KeyPair, TapLeafHash)> = tr
                 .iter_scripts()
-                .flat_map(|(_depth, ms)| {
-                    let leaf_hash = TapLeafHash::from_script(&ms.encode(), LeafVersion::default());
-                    ms.iter_pk().filter_map(move |pk| {
+                .flat_map(|(_depth, script)| {
+                    let leaf_hash = TapLeafHash::from_script(&script.encode(), script.version());
+                    script.iter_pk().filter_map(move |pk| {
                         let i = x_only_pks.iter().position(|&x| x.to_public_key() == pk);
                         i.map(|idx| (xonly_keypairs[idx], leaf_hash))
                     })
