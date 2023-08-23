@@ -717,7 +717,6 @@ mod tests {
     #[test]
     fn recursive_key_parsing() {
         type MsStr = Miniscript<String, Segwitv0, NoExt>;
-        assert!(MsStr::from_str("pk(slip77(k))").is_ok());
         assert!(MsStr::from_str("pk(musig(a))").is_ok());
         assert!(MsStr::from_str("pk(musig(a,b))").is_ok());
         assert!(MsStr::from_str("pk(musig(a,musig(b,c,d)))").is_ok());

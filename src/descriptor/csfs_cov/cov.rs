@@ -47,9 +47,9 @@ use elements::encode::{serialize, Encodable};
 use elements::hashes::{sha256d, Hash};
 use elements::{self, script, secp256k1_zkp, Script};
 
-use super::super::checksum::{desc_checksum, verify_checksum};
 use super::super::ELMTS_STR;
 use super::{CovError, CovOperations};
+use crate::descriptor::checksum::{self, verify_checksum};
 use crate::expression::{self, FromTree};
 use crate::extensions::ParseableExt;
 use crate::miniscript::lex::{lex, Token as Tk, TokenIter};
@@ -322,9 +322,10 @@ where
     Ext: Extension,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let desc = format!("{}covwsh({},{})", ELMTS_STR, self.pk, self.ms);
-        let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
-        write!(f, "{}#{}", &desc, &checksum)
+        use fmt::Write;
+        let mut wrapped_f = checksum::Formatter::new(f);
+        write!(wrapped_f, "{}covwsh({},{})", ELMTS_STR, self.pk, self.ms)?;
+        wrapped_f.write_checksum_if_not_alt()
     }
 }
 

@@ -127,6 +127,7 @@ mod pub_macros;
 
 pub use pub_macros::*;
 
+pub mod confidential;
 pub mod descriptor;
 pub mod expression;
 pub mod extensions;
@@ -146,6 +147,7 @@ use elements::hashes::sha256;
 use elements::secp256k1_zkp::Secp256k1;
 use elements::{locktime, opcodes, script, secp256k1_zkp};
 
+pub use crate::confidential::Descriptor as ConfidentialDescriptor;
 pub use crate::descriptor::{DefiniteDescriptorKey, Descriptor, DescriptorPublicKey};
 pub use crate::extensions::{CovenantExt, Extension, NoExt, TxEnv};
 pub use crate::interpreter::Interpreter;

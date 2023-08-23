@@ -50,7 +50,7 @@ pub fn desc_checksum(desc: &str) -> Result<String, Error> {
 /// descriptor types. Checks and verifies the checksum
 /// if it is present and returns the descriptor string
 /// without the checksum
-pub(super) fn verify_checksum(s: &str) -> Result<&str, Error> {
+pub(crate) fn verify_checksum(s: &str) -> Result<&str, Error> {
     for ch in s.as_bytes() {
         if *ch < 20 || *ch > 127 {
             return Err(Error::Unprintable(*ch));
