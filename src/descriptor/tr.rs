@@ -512,8 +512,7 @@ impl<'a, Pk: ToPublicKey, Ext: ParseableExt> TapLeafScript<'a, Pk, Ext> {
         match self {
             TapLeafScript::Miniscript(ms) => ms.encode(),
             TapLeafScript::Simplicity(sim) => {
-                let commit = sim.serialize_no_witness();
-                Script::from(commit.cmr().as_ref().to_vec())
+                Script::from(sim.cmr().as_ref().to_vec())
             }
         }
     }
