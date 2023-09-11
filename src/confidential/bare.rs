@@ -115,4 +115,16 @@ mod tests {
             "e1e52419a2934d278c50e29608969d2f23c1bd1243a09bfc8026d4ed4b085e39",
         );
     }
+
+    #[test]
+    fn tweak() {
+        // Check that tweaking blinding keys produce consistent results
+        let secp = secp256k1_zkp::Secp256k1::new();
+        let sk = secp256k1_zkp::SecretKey::from_slice(&[1u8; 32]).unwrap();
+        let pk = sk.public_key(&secp);
+        let spk = elements::Script::default();
+        let tweaked_pk = tweak_key(&secp, &spk, &pk);
+        let tweaked_sk = tweak_private_key(&secp, &spk, &sk);
+        assert_eq!(tweaked_pk, tweaked_sk.public_key(&secp));
+    }
 }
