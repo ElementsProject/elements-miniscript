@@ -17,10 +17,10 @@ use bitcoin::bip32;
 use elements::hashes::{hash160, sha256d, Hash};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::secp256k1_zkp::{self as secp256k1, Secp256k1, VerifyOnly};
-use elements::sighash::SigHashCache;
+use elements::sighash::SighashCache;
 use elements::taproot::{self, ControlBlock, LeafVersion, TapLeafHash};
 use elements::{
-    self, pset as psbt, EcdsaSigHashType, LockTime, SchnorrSigHashType, Script, Sequence,
+    self, pset as psbt, EcdsaSighashType, LockTime, SchnorrSighashType, Script, Sequence,
 };
 
 use crate::extensions::{CovExtArgs, CovenantExt, ParseableExt};
@@ -149,11 +149,11 @@ pub enum InputError {
     /// Non standard sighash type
     NonStandardSighashType,
     /// Sighash did not match
-    WrongSigHashFlag {
+    WrongSighashFlag {
         /// required sighash type
-        required: EcdsaSigHashType,
+        required: EcdsaSighashType,
         /// the sighash type we got
-        got: EcdsaSigHashType,
+        got: EcdsaSighashType,
         /// the corresponding publickey
         pubkey: bitcoin::PublicKey,
     },
@@ -176,7 +176,7 @@ impl error::Error for InputError {
             | NonEmptyWitnessScript
             | NonEmptyRedeemScript
             | NonStandardSighashType
-            | WrongSigHashFlag { .. } => None,
+            | WrongSighashFlag { .. } => None,
             SecpErr(e) => Some(e),
             KeyErr(e) => Some(e),
             Interpreter(e) => Some(e),
@@ -226,7 +226,7 @@ impl fmt::Display for InputError {
             InputError::NonEmptyWitnessScript => {
                 write!(f, "PSET has non-empty witness script at for legacy input")
             }
-            InputError::WrongSigHashFlag {
+            InputError::WrongSighashFlag {
                 required,
                 got,
                 pubkey,
@@ -612,10 +612,10 @@ pub trait PsbtExt {
 
     /// Get the sighash message(data to sign) at input index `idx` based on the sighash
     /// flag specified in the [`Psbt`] sighash field. If the input sighash flag psbt field is `None`
-    /// the [`SchnorrSigHashType::Default`](elements::sighash::SchnorrSigHashType::Default) is chosen
-    /// for for taproot spends, otherwise [`EcdsaSignatureHashType::All`](elements::EcdsaSigHashType::All) is chosen.
-    /// If the utxo at `idx` is a taproot output, returns a [`PsbtSigHashMsg::TapSigHash`] variant.
-    /// If the utxo at `idx` is a pre-taproot output, returns a [`PsbtSigHashMsg::EcdsaSigHash`] variant.
+    /// the [`SchnorrSighashType::Default`](elements::sighash::SchnorrSighashType::Default) is chosen
+    /// for for taproot spends, otherwise [`EcdsaSignatureHashType::All`](elements::EcdsaSighashType::All) is chosen.
+    /// If the utxo at `idx` is a taproot output, returns a [`PsbtSighashMsg::TapSighash`] variant.
+    /// If the utxo at `idx` is a pre-taproot output, returns a [`PsbtSighashMsg::EcdsaSighash`] variant.
     /// The `tapleaf_hash` parameter can be used to specify which tapleaf script hash has to be computed. If
     /// `tapleaf_hash` is [`None`], and the output is taproot output, the key spend hash is computed. This parameter must be
     /// set to [`None`] while computing sighash for pre-taproot outputs.
@@ -631,10 +631,10 @@ pub trait PsbtExt {
     fn sighash_msg<T: Deref<Target = elements::Transaction>>(
         &self,
         idx: usize,
-        cache: &mut SigHashCache<T>,
+        cache: &mut SighashCache<T>,
         tapleaf_hash: Option<TapLeafHash>,
         genesis_hash: elements::BlockHash,
-    ) -> Result<PsbtSigHashMsg, SighashError>;
+    ) -> Result<PsbtSighashMsg, SighashError>;
 }
 
 impl PsbtExt for Psbt {
@@ -877,10 +877,10 @@ impl PsbtExt for Psbt {
     fn sighash_msg<T: Deref<Target = elements::Transaction>>(
         &self,
         idx: usize,
-        cache: &mut SigHashCache<T>,
+        cache: &mut SighashCache<T>,
         tapleaf_hash: Option<TapLeafHash>,
         genesis_hash: elements::BlockHash,
-    ) -> Result<PsbtSigHashMsg, SighashError> {
+    ) -> Result<PsbtSighashMsg, SighashError> {
         // Infer a descriptor at idx
         if idx >= self.inputs().len() {
             return Err(SighashError::IndexOutOfBounds(idx, self.inputs().len()));
@@ -888,7 +888,7 @@ impl PsbtExt for Psbt {
         let inp = &self.inputs()[idx];
         let prevouts = finalizer::prevouts(self).map_err(|_e| SighashError::MissingSpendUtxos)?;
         // Note that as per Psbt spec we should have access to spent_utxos for the transaction
-        // Even if the transaction does not require SigHashAll, we create `Prevouts::All` for code simplicity
+        // Even if the transaction does not require SighashAll, we create `Prevouts::All` for code simplicity
         let prevouts = elements::sighash::Prevouts::All(&prevouts);
         let inp_spk =
             finalizer::get_scriptpubkey(self, idx).map_err(|_e| SighashError::MissingInputUtxo)?;
@@ -896,8 +896,8 @@ impl PsbtExt for Psbt {
             let hash_ty = inp
                 .sighash_type
                 .map(|h| h.schnorr_hash_ty())
-                .unwrap_or(Some(SchnorrSigHashType::Default))
-                .ok_or(SighashError::InvalidSigHashType)?;
+                .unwrap_or(Some(SchnorrSighashType::Default))
+                .ok_or(SighashError::InvalidSighashType)?;
             match tapleaf_hash {
                 Some(leaf_hash) => {
                     let tap_sighash_msg = cache.taproot_script_spend_signature_hash(
@@ -907,7 +907,7 @@ impl PsbtExt for Psbt {
                         hash_ty,
                         genesis_hash,
                     )?;
-                    Ok(PsbtSigHashMsg::TapSigHash(tap_sighash_msg))
+                    Ok(PsbtSighashMsg::TapSighash(tap_sighash_msg))
                 }
                 None => {
                     let tap_sighash_msg = cache.taproot_key_spend_signature_hash(
@@ -916,15 +916,15 @@ impl PsbtExt for Psbt {
                         hash_ty,
                         genesis_hash,
                     )?;
-                    Ok(PsbtSigHashMsg::TapSigHash(tap_sighash_msg))
+                    Ok(PsbtSighashMsg::TapSighash(tap_sighash_msg))
                 }
             }
         } else {
             let hash_ty = inp
                 .sighash_type
                 .map(|h| h.ecdsa_hash_ty())
-                .unwrap_or(Some(EcdsaSigHashType::All))
-                .ok_or(SighashError::InvalidSigHashType)?;
+                .unwrap_or(Some(EcdsaSighashType::All))
+                .ok_or(SighashError::InvalidSighashType)?;
             let amt = finalizer::get_utxo(self, idx)
                 .map_err(|_e| SighashError::MissingInputUtxo)?
                 .value;
@@ -959,7 +959,7 @@ impl PsbtExt for Psbt {
                         .ok_or(SighashError::MissingWitnessScript)?;
                     cache.segwitv0_sighash(idx, script_code, amt, hash_ty)
                 };
-                Ok(PsbtSigHashMsg::EcdsaSigHash(msg))
+                Ok(PsbtSighashMsg::EcdsaSighash(msg))
             } else {
                 // legacy sighash case
                 let script_code = if inp_spk.is_p2sh() {
@@ -970,7 +970,7 @@ impl PsbtExt for Psbt {
                     inp_spk
                 };
                 let msg = cache.legacy_sighash(idx, script_code, hash_ty);
-                Ok(PsbtSigHashMsg::EcdsaSigHash(msg))
+                Ok(PsbtSighashMsg::EcdsaSighash(msg))
             }
         }
     }
@@ -1456,11 +1456,11 @@ pub enum SighashError {
     /// Missing Prevouts
     MissingSpendUtxos,
     /// Invalid Sighash type
-    InvalidSigHashType,
+    InvalidSighashType,
     /// Sighash computation error
     /// Only happens when single does not have corresponding output as psbts
     /// already have information to compute the sighash
-    SigHashComputationError(elements::sighash::Error),
+    SighashComputationError(elements::sighash::Error),
     /// Missing Witness script
     MissingWitnessScript,
     /// Missing Redeem script,
@@ -1475,8 +1475,8 @@ impl fmt::Display for SighashError {
             }
             SighashError::MissingInputUtxo => write!(f, "Missing input utxo in pbst"),
             SighashError::MissingSpendUtxos => write!(f, "Missing Psbt spend utxos"),
-            SighashError::InvalidSigHashType => write!(f, "Invalid Sighash type"),
-            SighashError::SigHashComputationError(e) => {
+            SighashError::InvalidSighashType => write!(f, "Invalid Sighash type"),
+            SighashError::SighashComputationError(e) => {
                 write!(f, "Sighash computation error : {}", e)
             }
             SighashError::MissingWitnessScript => write!(f, "Missing Witness Script"),
@@ -1487,7 +1487,7 @@ impl fmt::Display for SighashError {
 
 impl From<elements::sighash::Error> for SighashError {
     fn from(e: elements::sighash::Error) -> Self {
-        SighashError::SigHashComputationError(e)
+        SighashError::SighashComputationError(e)
     }
 }
 
@@ -1499,32 +1499,32 @@ impl error::Error for SighashError {
             IndexOutOfBounds(_, _)
             | MissingInputUtxo
             | MissingSpendUtxos
-            | InvalidSigHashType
+            | InvalidSighashType
             | MissingWitnessScript
             | MissingRedeemScript => None,
-            SigHashComputationError(e) => Some(e),
+            SighashComputationError(e) => Some(e),
         }
     }
 }
 
 /// Sighash message(signing data) for a given psbt transaction input.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
-pub enum PsbtSigHashMsg {
+pub enum PsbtSighashMsg {
     /// Taproot Signature hash
-    TapSigHash(taproot::TapSighashHash),
-    /// Ecdsa SigHash message (includes sighash for legacy/p2sh/segwitv0 outputs)
-    EcdsaSigHash(elements::SigHash),
+    TapSighash(taproot::TapSighashHash),
+    /// Ecdsa Sighash message (includes sighash for legacy/p2sh/segwitv0 outputs)
+    EcdsaSighash(elements::Sighash),
 }
 
-impl PsbtSigHashMsg {
+impl PsbtSighashMsg {
     /// Convert the message to a [`secp256k1::Message`].
     pub fn to_secp_msg(&self) -> secp256k1::Message {
         match *self {
-            PsbtSigHashMsg::TapSigHash(msg) => {
-                secp256k1::Message::from_slice(msg.as_ref()).expect("SigHashes are 32 bytes")
+            PsbtSighashMsg::TapSighash(msg) => {
+                secp256k1::Message::from_slice(msg.as_ref()).expect("Sighashes are 32 bytes")
             }
-            PsbtSigHashMsg::EcdsaSigHash(msg) => {
-                secp256k1::Message::from_slice(msg.as_ref()).expect("SigHashes are 32 bytes")
+            PsbtSighashMsg::EcdsaSighash(msg) => {
+                secp256k1::Message::from_slice(msg.as_ref()).expect("Sighashes are 32 bytes")
             }
         }
     }

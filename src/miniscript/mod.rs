@@ -1180,7 +1180,7 @@ mod tests {
             ) -> Option<elements::SchnorrSig> {
                 Some(elements::SchnorrSig {
                     sig: self.0,
-                    hash_ty: elements::SchnorrSigHashType::Default,
+                    hash_ty: elements::SchnorrSighashType::Default,
                 })
             }
         }

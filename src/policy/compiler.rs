@@ -1403,7 +1403,7 @@ mod tests {
         assert_eq!(abs.n_keys(), 5);
         assert_eq!(abs.minimum_n_keys(), Some(3));
 
-        let elements_sig = (sig, elements::EcdsaSigHashType::All);
+        let elements_sig = (sig, elements::EcdsaSighashType::All);
         let mut sigvec = elements_sig.0.serialize_der().to_vec();
         sigvec.push(elements_sig.1 as u8);
 

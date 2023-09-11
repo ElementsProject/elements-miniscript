@@ -24,7 +24,7 @@ use crate::util::witness_size;
 use crate::{Miniscript, MiniscriptKey, ScriptContext, Terminal, ToPublicKey};
 
 /// Type alias for a signature/hashtype pair
-pub type ElementsSig = (secp256k1_zkp::ecdsa::Signature, elements::EcdsaSigHashType);
+pub type ElementsSig = (secp256k1_zkp::ecdsa::Signature, elements::EcdsaSighashType);
 /// Type alias for 32 byte Preimage.
 pub type Preimage32 = [u8; 32];
 
@@ -41,7 +41,7 @@ pub fn elementssig_to_rawsig(sig: &ElementsSig) -> Vec<u8> {
 /// Returns underlying secp if the Signature is not of correct format
 pub fn elementssig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, crate::interpreter::Error> {
     let (flag, sig) = rawsig.split_last().unwrap();
-    let flag = elements::EcdsaSigHashType::from_u32(*flag as u32);
+    let flag = elements::EcdsaSighashType::from_u32(*flag as u32);
     let sig = secp256k1_zkp::ecdsa::Signature::from_der(sig)?;
     Ok((sig, flag))
 }

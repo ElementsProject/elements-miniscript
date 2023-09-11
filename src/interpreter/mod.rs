@@ -14,7 +14,7 @@ use std::str::FromStr;
 
 use bitcoin;
 use elements::hashes::{hash160, ripemd160, sha256, Hash, HashEngine};
-use elements::{self, secp256k1_zkp, sighash, EcdsaSigHashType, LockTime, Sequence, SigHash};
+use elements::{self, secp256k1_zkp, sighash, EcdsaSighashType, LockTime, Sequence, Sighash};
 
 use crate::extensions::{CovExtArgs, ParseableExt, TxEnv};
 use crate::miniscript::context::{NoChecks, SigType};
@@ -259,7 +259,7 @@ where
                 sighash::Prevouts::All(prevouts) => prevouts.get(input_index),
             }
         }
-        let mut cache = elements::sighash::SigHashCache::new(tx);
+        let mut cache = elements::sighash::SighashCache::new(tx);
         match sig {
             KeySigPair::Ecdsa(key, ecdsa_sig) => {
                 let script_pubkey = self.script_code.as_ref().expect("Legacy have script code");
@@ -1101,7 +1101,7 @@ where
             {
                 let sighash_bytes = self.stack[1].as_push().expect("Push checked above");
                 let sighash_u32 = util::slice_to_u32_le(sighash_bytes);
-                let sighash_ty = EcdsaSigHashType::from_u32(sighash_u32);
+                let sighash_ty = EcdsaSighashType::from_u32(sighash_u32);
                 let sig_vec = self.stack[0].as_push().expect("Size checked above");
                 ser_sig.extend(sig_vec);
                 ser_sig.push(sighash_ty as u8);
@@ -1117,9 +1117,9 @@ where
                     .rev()
                     .flat_map(|x| Vec::from(x.as_push().expect("Push checked above")))
                     .collect();
-                let mut eng = SigHash::engine();
+                let mut eng = Sighash::engine();
                 eng.input(&sighash_msg);
-                let sighash_u256 = SigHash::from_engine(eng);
+                let sighash_u256 = Sighash::from_engine(eng);
                 let msg = elements::secp256k1_zkp::Message::from_slice(&sighash_u256[..]).unwrap();
 
                 // Legacy Cov scripts only operate on Ecdsa key sig pairs
@@ -1242,7 +1242,7 @@ mod tests {
                 compressed: true,
             };
             let sig = secp.sign_ecdsa(&msg, &sk);
-            ecdsa_sigs.push((sig, elements::EcdsaSigHashType::All));
+            ecdsa_sigs.push((sig, elements::EcdsaSighashType::All));
             let mut sigser = sig.serialize_der().to_vec();
             sigser.push(0x01); // sighash_all
             pks.push(pk);
@@ -1254,7 +1254,7 @@ mod tests {
             let schnorr_sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &[0u8; 32]);
             let schnorr_sig = elements::SchnorrSig {
                 sig: schnorr_sig,
-                hash_ty: elements::SchnorrSigHashType::Default,
+                hash_ty: elements::SchnorrSighashType::Default,
             };
             ser_schnorr_sigs.push(schnorr_sig.to_vec());
             schnorr_sigs.push(schnorr_sig);

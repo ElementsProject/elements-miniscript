@@ -16,8 +16,8 @@
 
 use elements::encode::Encodable;
 use elements::hashes::{sha256d, Hash};
-use elements::sighash::SigHashCache;
-use elements::{self, confidential, EcdsaSigHashType, OutPoint, Script, SigHash, Transaction};
+use elements::sighash::SighashCache;
+use elements::{self, confidential, EcdsaSighashType, OutPoint, Script, Sighash, Transaction};
 
 use super::CovError;
 use crate::{MiniscriptKey, Satisfier, ToPublicKey};
@@ -36,7 +36,7 @@ pub struct LegacyCovSatisfier<'tx, 'ptx> {
     /// The input index being spent
     idx: u32,
     /// The sighash type
-    hash_type: EcdsaSigHashType,
+    hash_type: EcdsaSighashType,
 
     // Segwitv0
     /// The script code required for segwit sighash
@@ -53,7 +53,7 @@ impl<'tx, 'ptx> LegacyCovSatisfier<'tx, 'ptx> {
         idx: u32,
         value: confidential::Value,
         script_code: &'ptx Script,
-        hash_type: EcdsaSigHashType,
+        hash_type: EcdsaSighashType,
     ) -> Self {
         assert!((idx as usize) < tx.input.len());
         Self {
@@ -70,8 +70,8 @@ impl<'tx, 'ptx> LegacyCovSatisfier<'tx, 'ptx> {
     /// Note that this does not do any caching, so it
     /// will be slightly inefficient as compared to
     /// using sighash
-    pub fn segwit_sighash(&self) -> Result<SigHash, CovError> {
-        let mut cache = SigHashCache::new(self.tx);
+    pub fn segwit_sighash(&self) -> Result<Sighash, CovError> {
+        let mut cache = SighashCache::new(self.tx);
         // TODO: error types
         let script_code = self.script_code.ok_or(CovError::MissingScriptCode)?;
         let value = self.value.ok_or(CovError::MissingValue)?;

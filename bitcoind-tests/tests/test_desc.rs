@@ -8,7 +8,7 @@ use std::{error, fmt};
 
 use elements::hashes::{sha256d, Hash};
 use elements::pset::PartiallySignedTransaction as Psbt;
-use elements::sighash::SigHashCache;
+use elements::sighash::SighashCache;
 use elements::taproot::TapLeafHash;
 use elements::{
     confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, SchnorrSig, Script,
@@ -133,11 +133,11 @@ pub fn test_desc_satisfy(
     // Get all the pubkeys and the corresponding secret keys
 
     let unsigned_tx = &psbt.extract_tx().unwrap();
-    let mut sighash_cache = SigHashCache::new(unsigned_tx);
+    let mut sighash_cache = SighashCache::new(unsigned_tx);
     match derived_desc {
         Descriptor::Tr(ref tr) => {
             // Fixme: take a parameter
-            let hash_ty = sighash::SchnorrSigHashType::Default;
+            let hash_ty = sighash::SchnorrSighashType::Default;
 
             let internal_key_present = x_only_pks
                 .iter()
@@ -251,7 +251,7 @@ pub fn test_desc_satisfy(
                 .to_secp_msg();
 
             // Fixme: Take a parameter
-            let hash_ty = elements::EcdsaSigHashType::All;
+            let hash_ty = elements::EcdsaSighashType::All;
 
             // Finally construct the signature and add to psbt
             for sk in sks_reqd {
