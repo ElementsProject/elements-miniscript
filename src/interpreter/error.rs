@@ -46,13 +46,13 @@ pub enum Error {
     /// MultiSig missing at least `1` witness elements out of `k + 1` required
     InsufficientSignaturesMultiSig,
     /// Invalid Sighash type
-    InvalidSchnorrSigHashType(Vec<u8>),
+    InvalidSchnorrSighashType(Vec<u8>),
     /// ecdsa Signature failed to verify
     InvalidEcdsaSignature(bitcoin::PublicKey),
     /// Signature failed to verify
     InvalidSchnorrSignature(bitcoin::key::XOnlyPublicKey),
     /// Last byte of this signature isn't a standard sighash type
-    NonStandardSigHash(Vec<u8>),
+    NonStandardSighash(Vec<u8>),
     /// Miniscript error
     Miniscript(crate::Error),
     /// MultiSig requires 1 extra zero element apart from the `k` signatures
@@ -154,14 +154,14 @@ impl fmt::Display for Error {
             }
             Error::IncorrectWScriptHash => f.write_str("witness script did not match scriptpubkey"),
             Error::InsufficientSignaturesMultiSig => f.write_str("Insufficient signatures for CMS"),
-            Error::InvalidSchnorrSigHashType(ref sig) => write!(
+            Error::InvalidSchnorrSighashType(ref sig) => write!(
                 f,
                 "Invalid sighash type for schnorr signature '{}'",
                 sig.to_hex()
             ),
             Error::InvalidEcdsaSignature(pk) => write!(f, "bad ecdsa signature with pk {}", pk),
             Error::InvalidSchnorrSignature(pk) => write!(f, "bad schnorr signature with pk {}", pk),
-            Error::NonStandardSigHash(ref sig) => write!(
+            Error::NonStandardSighash(ref sig) => write!(
                 f,
                 "Non standard sighash type for signature '{}'",
                 sig.to_hex()
@@ -233,8 +233,8 @@ impl error::Error for Error {
             | InsufficientSignaturesMultiSig
             | InvalidEcdsaSignature(_)
             | InvalidSchnorrSignature(_)
-            | InvalidSchnorrSigHashType(_)
-            | NonStandardSigHash(_)
+            | InvalidSchnorrSighashType(_)
+            | NonStandardSighash(_)
             | MissingExtraZeroMultiSig
             | MultiSigEvaluationError
             | NonEmptyWitness

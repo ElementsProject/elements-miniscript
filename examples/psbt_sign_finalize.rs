@@ -3,7 +3,7 @@ use std::str::FromStr;
 use elements::bitcoin::PrivateKey;
 use elements::encode::{serialize, serialize_hex};
 use elements::hashes::Hash;
-use elements::sighash::SigHashCache;
+use elements::sighash::SighashCache;
 use elements::{confidential, AssetId, LockTime, TxOutWitness};
 use miniscript::elements::pset::PartiallySignedTransaction as Psbt;
 use miniscript::elements::{
@@ -135,7 +135,7 @@ fn main() {
     psbt.inputs_mut()[0].witness_utxo = Some(witness_utxo);
 
     let tx = &psbt.extract_tx().unwrap();
-    let mut sighash_cache = SigHashCache::new(tx);
+    let mut sighash_cache = SighashCache::new(tx);
 
     // genesis hash is not used at all for sighash calculation
     let genesis_hash = elements::BlockHash::all_zeros();
@@ -145,7 +145,7 @@ fn main() {
         .to_secp_msg();
 
     // Fixme: Take a parameter
-    let hash_ty = elements::EcdsaSigHashType::All;
+    let hash_ty = elements::EcdsaSighashType::All;
 
     let sk1 = backup1_private.inner;
     let sk2 = backup2_private.inner;

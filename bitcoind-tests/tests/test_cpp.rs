@@ -142,8 +142,8 @@ pub fn test_from_cpp_ms(cl: &ElementsD, testdata: &TestData) {
         // Get the required sighash message
         let amt = confidential::Value::Explicit(100_000_000);
         let unsigned_tx = psbts[i].extract_tx().unwrap();
-        let mut sighash_cache = elements::sighash::SigHashCache::new(&unsigned_tx);
-        let sighash_ty = elements::EcdsaSigHashType::All;
+        let mut sighash_cache = elements::sighash::SighashCache::new(&unsigned_tx);
+        let sighash_ty = elements::EcdsaSighashType::All;
         let sighash = sighash_cache.segwitv0_sighash(0, &ms.encode(), amt, sighash_ty);
 
         // requires both signing and verification because we check the tx

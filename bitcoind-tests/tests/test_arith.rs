@@ -4,7 +4,7 @@
 //!
 
 use elements::pset::PartiallySignedTransaction as Psbt;
-use elements::sighash::SigHashCache;
+use elements::sighash::SighashCache;
 use elements::taproot::TapLeafHash;
 use elements::{
     confidential, pset as psbt, secp256k1_zkp as secp256k1, sighash, OutPoint, Script, Sequence,
@@ -97,10 +97,10 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     // Get all the pubkeys and the corresponding secret keys
 
     let unsigned_tx = &psbt.extract_tx().unwrap();
-    let mut sighash_cache = SigHashCache::new(unsigned_tx);
+    let mut sighash_cache = SighashCache::new(unsigned_tx);
     match derived_desc {
         Descriptor::TrExt(ref tr) => {
-            let hash_ty = sighash::SchnorrSigHashType::Default;
+            let hash_ty = sighash::SchnorrSighashType::Default;
 
             let prevouts = [witness_utxo];
             let prevouts = sighash::Prevouts::All(&prevouts);
