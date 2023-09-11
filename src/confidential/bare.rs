@@ -59,26 +59,22 @@ where
 }
 
 /// Tweaks a bare key using the scriptPubKey of a descriptor
-pub fn tweak_private_key<'a, Pk, V>(
+pub fn tweak_private_key<V>(
     secp: &secp256k1_zkp::Secp256k1<V>,
     spk: &elements::Script,
-    pk: &Pk,
-) -> secp256k1_zkp::PublicKey
+    sk: &secp256k1_zkp::SecretKey,
+) -> secp256k1_zkp::SecretKey
 where
-    Pk: ToPublicKey + 'a,
-    V: secp256k1_zkp::Verification,
+    V: secp256k1_zkp::Signing,
 {
     let mut eng = TweakHash::engine();
-    pk.to_public_key()
+    bitcoin::PublicKey::new(sk.public_key(secp))
         .write_into(&mut eng)
         .expect("engines don't error");
     spk.consensus_encode(&mut eng).expect("engines don't error");
     let hash_bytes = TweakHash::from_engine(eng).to_byte_array();
     let hash_scalar = secp256k1_zkp::Scalar::from_be_bytes(hash_bytes).expect("bytes from hash");
-    pk.to_public_key()
-        .inner
-        .add_exp_tweak(secp, &hash_scalar)
-        .unwrap()
+    sk.add_tweak(&hash_scalar).unwrap()
 }
 
 #[cfg(test)]
