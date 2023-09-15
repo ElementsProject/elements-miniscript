@@ -140,6 +140,22 @@ mod tests {
     }
 
     #[test]
+    fn slip77_from_rust_elements() {
+        // taken from rust-elements
+        let mbk = MasterBlindingKey::from_seed(&unhex("731e9b42eb9774f8a6b51af35a06f6ef1cdb6cf04402163ceacf0c8bace2831a"));
+        assert_eq!(
+            mbk.as_bytes(),
+            &unhex("c2f338e32ad1a2bd9cac569e67728163bf4c326a1770ec2293ba65548a581e97")[..]
+        );
+
+        let spk = elements::Script::from_str("a914afa92d77cd3541b443771649572db096cf49bf8c87").unwrap();
+        let expected = secp256k1_zkp::SecretKey::from_slice(&unhex(
+            "02b067c374bb56c54c016fae29218c000ada60f81ef45b4aeebbeb24931bb8bc"
+        )).unwrap();
+        assert_eq!(mbk.blinding_private_key(&spk), expected);
+    }
+
+    #[test]
     fn local_test_elements_22_0() {
         // Local test on elements 22.0
         let mbk = MasterBlindingKey::from_hex(
