@@ -1433,7 +1433,6 @@ impl fmt::Display for OutputUpdateError {
     }
 }
 
-#[cfg(feature = "std")]
 impl error::Error for OutputUpdateError {
     fn cause(&self) -> Option<&dyn error::Error> {
         use self::OutputUpdateError::*;
