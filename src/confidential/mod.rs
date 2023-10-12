@@ -25,23 +25,23 @@ use std::fmt;
 use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{desc_checksum, verify_checksum};
-use crate::descriptor::DescriptorSecretKey;
+use crate::descriptor::{DescriptorSecretKey, DescriptorPublicKey};
 use crate::expression::FromTree;
 use crate::extensions::{CovExtArgs, CovenantExt, Extension, ParseableExt};
 use crate::{expression, Error, MiniscriptKey, ToPublicKey};
 
 /// A description of a blinding key
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Key<Pk: MiniscriptKey> {
+pub enum Key {
     /// Blinding key is computed using SLIP77 with the given master key
     Slip77(slip77::MasterBlindingKey),
     /// Blinding key is given directly
-    Bare(Pk),
+    Bare(DescriptorPublicKey),
     /// Blinding key is given directly, as a secret key
     View(DescriptorSecretKey),
 }
 
-impl<Pk: MiniscriptKey> fmt::Display for Key<Pk> {
+impl fmt::Display for Key {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Key::Slip77(data) => write!(f, "slip77({})", data),
@@ -51,7 +51,7 @@ impl<Pk: MiniscriptKey> fmt::Display for Key<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey + ToPublicKey> Key<Pk> {
+impl Key {
     fn to_public_key<C: secp256k1_zkp::Signing + secp256k1_zkp::Verification>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
@@ -59,7 +59,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Key<Pk> {
     ) -> secp256k1_zkp::PublicKey {
         match *self {
             Key::Slip77(ref mbk) => mbk.blinding_key(secp, spk),
-            Key::Bare(ref pk) => bare::tweak_key(secp, spk, pk),
+            Key::Bare(ref pk) => bare::tweak_key(secp, spk, &pk.clone().at_derivation_index(0).expect("FIXME deal with derivation paths properly")),
             Key::View(ref sk) => bare::tweak_key(secp, spk, &sk.to_public(secp).expect("view keys cannot be multipath keys").at_derivation_index(0).expect("FIXME deal with derivation paths properly")),
         }
     }
@@ -69,7 +69,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Key<Pk> {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Descriptor<Pk: MiniscriptKey, T: Extension = CovenantExt<CovExtArgs>> {
     /// The blinding key
-    pub key: Key<Pk>,
+    pub key: Key,
     /// The script descriptor
     pub descriptor: crate::Descriptor<Pk, T>,
 }
@@ -137,7 +137,7 @@ impl_from_str!(
                 ("slip77", _) => return Err(Error::BadDescriptor(
                     "slip77() must have exactly one argument".to_owned()
                 )),
-                _ => expression::terminal(keyexpr, Pk::from_str).map(Key::Bare)
+                _ => expression::terminal(keyexpr, DescriptorPublicKey::from_str).map(Key::Bare)
                 .or_else(|_| expression::terminal(keyexpr, DescriptorSecretKey::from_str).map(Key::View))?,
             },
             descriptor: crate::Descriptor::from_tree(&top.args[1])?,
@@ -161,7 +161,7 @@ mod tests {
         // taken from libwally src/test/test_confidential_addr.py
         let mut addr = Address::from_str("Q7qcjTLsYGoMA7TjUp97R6E6AM5VKqBik6").unwrap();
         let key = Key::Bare(
-            bitcoin::PublicKey::from_str(
+            DescriptorPublicKey::from_str(
                 "02dce16018bbbb8e36de7b394df5b5166e9adb7498be7d881a85a09aeecf76b623",
             )
             .unwrap(),
@@ -174,7 +174,7 @@ mod tests {
     }
 
     struct ConfidentialTest {
-        key: Key<DefiniteDescriptorKey>,
+        key: Key,
         descriptor: crate::Descriptor<DefiniteDescriptorKey, NoExt>,
         descriptor_str: String,
         conf_addr: &'static str,
@@ -231,7 +231,7 @@ mod tests {
         let secp = secp256k1_zkp::Secp256k1::new();
 
         // CT key used for bare keys
-        let ct_key = DefiniteDescriptorKey::from_str(
+        let ct_key = DescriptorPublicKey::from_str(
             "xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL",
         )
         .unwrap();
@@ -370,7 +370,7 @@ mod tests {
         let view_key = DescriptorSecretKey::from_str(
             "xprv9s21ZrQH143K28NgQ7bHCF61hy9VzwquBZvpzTwXLsbmQLRJ6iV9k2hUBRt5qzmBaSpeMj5LdcsHaXJvM7iFEivPryRcL8irN7Na9p65UUb",
         ).unwrap();
-        let ct_key = view_key.to_public(&secp).unwrap().at_derivation_index(0).unwrap(); // FIXME figure out derivation
+        let ct_key = view_key.to_public(&secp).unwrap();
         let spk_key = DefiniteDescriptorKey::from_str(
             "xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH",
         )
