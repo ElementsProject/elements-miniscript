@@ -22,10 +22,14 @@ pub mod slip77;
 
 use std::fmt;
 
+use bitcoin::bip32;
 use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{desc_checksum, verify_checksum};
-use crate::descriptor::{DescriptorSecretKey, DescriptorPublicKey};
+use crate::descriptor::{
+    ConversionError, DefiniteDescriptorKey, DescriptorSecretKey, DescriptorPublicKey,
+    DescriptorXKey, Wildcard
+};
 use crate::expression::FromTree;
 use crate::extensions::{CovExtArgs, CovenantExt, Extension, ParseableExt};
 use crate::{expression, Error, MiniscriptKey, ToPublicKey};
@@ -79,6 +83,51 @@ impl<Pk: MiniscriptKey, T: Extension> Descriptor<Pk, T> {
     pub fn sanity_check(&self) -> Result<(), Error> {
         self.descriptor.sanity_check()?;
         Ok(())
+    }
+}
+
+impl<T: Extension + ParseableExt> Descriptor<DescriptorPublicKey, T> {
+    /// Replaces all wildcards (i.e. `/*`) in the descriptor and the descriptor blinding key
+    /// with a particular derivation index, turning it into a *definite* descriptor.
+    ///
+    /// # Errors
+    /// - If index ≥ 2^31
+    pub fn at_derivation_index(&self, index: u32) -> Result<Descriptor<DefiniteDescriptorKey, T>, ConversionError> {
+        let definite_key = match self.key.clone() {
+            Key::Slip77(k) => Key::Slip77(k),
+            Key::Bare(k) => Key::Bare(k.at_derivation_index(index)?.into_descriptor_public_key()),
+            Key::View(k) => Key::View(match k {
+                // Consider implementing DescriptorSecretKey::at_derivation_index
+                DescriptorSecretKey::Single(_) => k,
+                DescriptorSecretKey::XPrv(xprv) => {
+                    let derivation_path = match xprv.wildcard {
+                        Wildcard::None => xprv.derivation_path,
+                        Wildcard::Unhardened => xprv.derivation_path.into_child(
+                            bip32::ChildNumber::from_normal_idx(index)
+                                .ok()
+                                .ok_or(ConversionError::HardenedChild)?,
+                        ),
+                        Wildcard::Hardened => xprv.derivation_path.into_child(
+                            bip32::ChildNumber::from_hardened_idx(index)
+                                .ok()
+                                .ok_or(ConversionError::HardenedChild)?,
+                        ),
+                    };
+                    DescriptorSecretKey::XPrv(DescriptorXKey {
+                        origin: xprv.origin,
+                        xkey: xprv.xkey,
+                        derivation_path,
+                        wildcard: Wildcard::None,
+                    })
+                },
+                DescriptorSecretKey::MultiXPrv(_) => return Err(ConversionError::MultiKey),
+            }),
+        };
+        let definite_descriptor = self.descriptor.at_derivation_index(index)?;
+        Ok(Descriptor{
+            key: definite_key,
+            descriptor: definite_descriptor,
+        })
     }
 }
 
