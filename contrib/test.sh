@@ -9,11 +9,6 @@ rustc --version
 
 # Pin dependencies required to build with Rust 1.58
 if cargo --version | grep "1\.58"; then
-    cargo update -p serde_json --precise 1.0.99
-    cargo update -p serde --precise 1.0.156
-    cargo update -p quote --precise 1.0.30
-    cargo update -p proc-macro2 --precise 1.0.63
-    cargo update -p serde_test --precise 1.0.152
     cargo update -p byteorder --precise 1.4.3
 fi
 
