@@ -47,8 +47,11 @@ Some dependencies do not play nicely with our MSRV, if you are running the tests
 you may need to pin as follows:
 
 ```
-cargo update -p serde --precise 1.0.156
+cargo update -p byteorder --precise 1.4.3
 ```
+
+Note this list could sometimes be not exhaustive because not enforced by CI. 
+If you have any issues check the script executed in CI: `contrib/test.sh`
 
 ## Contributing
 Contributions are generally welcome. If you intend to make larger changes please

@@ -18,6 +18,8 @@ fi
 cargo --version
 rustc --version
 
+cargo update -p byteorder --precise 1.4.3
+
 # Testing
 cargo install --force honggfuzz --no-default-features
 for targetFile in $targetFiles; do
