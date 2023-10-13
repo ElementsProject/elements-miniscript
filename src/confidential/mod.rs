@@ -469,4 +469,38 @@ mod tests {
         };
         test.check(&secp);
     }
+
+    #[test]
+    fn descriptor_wildcard() {
+        let secp = secp256k1_zkp::Secp256k1::new();
+        let params = &elements::AddressParams::ELEMENTS;
+
+        let xprv = "xprv9s21ZrQH143K28NgQ7bHCF61hy9VzwquBZvpzTwXLsbmQLRJ6iV9k2hUBRt5qzmBaSpeMj5LdcsHaXJvM7iFEivPryRcL8irN7Na9p65UUb";
+        let xpub = "xpub661MyMwAqRbcEcT9W98HZP2kFzyzQQZkYnrRnrM8uD8kH8kSeFoQHq1x2iihLgC6PXGy5LrjCL66uSNhJ8pwjfx2rMUTLWuRMns2EG9xnjs";
+        let desc_view_str = format!("ct({}/*,elwpkh({}/*))#wk8ltq6h", xprv, xpub);
+        let desc_bare_str = format!("ct({}/*,elwpkh({}/*))#zzac2dpf", xpub, xpub);
+        let index = 1;
+        let conf_addr = "el1qqf6690fpw2y00hv5a84zsydjgztg2089d5xnll4k4cstzn63uvgudd907qpvlvvwd5ym9gx7j0v46elf23kfxunucm6ejjyk0";
+        let unconf_addr = "ert1qkjhlqqk0kx8x6zdj5r0f8k2avl54gmyn7qjk2k";
+
+        let desc_view = Descriptor::<DescriptorPublicKey>::from_str(&desc_view_str).unwrap();
+        let desc_bare = Descriptor::<DescriptorPublicKey>::from_str(&desc_bare_str).unwrap();
+        let definite_desc_view = desc_view.at_derivation_index(index).unwrap();
+        let definite_desc_bare = desc_bare.at_derivation_index(index).unwrap();
+        assert_eq!(definite_desc_view.address(&secp, params).unwrap().to_string(), conf_addr.to_string());
+        assert_eq!(definite_desc_bare.address(&secp, params).unwrap().to_string(), conf_addr.to_string());
+        assert_eq!(definite_desc_view.unconfidential_address(params).unwrap().to_string(), unconf_addr.to_string());
+        assert_eq!(definite_desc_bare.unconfidential_address(params).unwrap().to_string(), unconf_addr.to_string());
+
+        // It's not possible to get an address if the blinding key has a wildcard,
+        // because the descriptor blinding key is not *definite*,
+        // but we can't enforce this with the Descriptor generic.
+        let desc_view_str = format!("ct({}/*,elwpkh({}))#ls6mx2ac", xprv, xpub);
+        let desc_view = Descriptor::<DefiniteDescriptorKey>::from_str(&desc_view_str).unwrap();
+        assert_eq!(desc_view.address(&secp, params).unwrap_err(), Error::Unexpected("wildcard blinding key".into()));
+
+        let desc_bare_str = format!("ct({}/*,elwpkh({}))#czkz0hwn", xpub, xpub);
+        let desc_bare = Descriptor::<DefiniteDescriptorKey>::from_str(&desc_bare_str).unwrap();
+        assert_eq!(desc_bare.address(&secp, params).unwrap_err(), Error::Unexpected("wildcard blinding key".into()));
+    }
 }
