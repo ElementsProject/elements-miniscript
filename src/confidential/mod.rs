@@ -60,11 +60,35 @@ impl Key {
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
         spk: &elements::Script,
-    ) -> secp256k1_zkp::PublicKey {
+    ) -> Result<secp256k1_zkp::PublicKey, Error> {
         match *self {
-            Key::Slip77(ref mbk) => mbk.blinding_key(secp, spk),
-            Key::Bare(ref pk) => bare::tweak_key(secp, spk, &pk.clone().at_derivation_index(0).expect("FIXME deal with derivation paths properly")),
-            Key::View(ref sk) => bare::tweak_key(secp, spk, &sk.to_public(secp).expect("view keys cannot be multipath keys").at_derivation_index(0).expect("FIXME deal with derivation paths properly")),
+            Key::Slip77(ref mbk) => Ok(mbk.blinding_key(secp, spk)),
+            Key::Bare(ref pk) => {
+                if pk.is_multipath() {
+                    Err(Error::Unexpected("multipath blinding key".into()))
+                } else if pk.has_wildcard() {
+                    Err(Error::Unexpected("wildcard blinding key".into()))
+                } else {
+                    // Convert into a DefiniteDescriptorKey, note that we are deriving the xpub
+                    // since there is not wildcard.
+                    // Consider adding DescriptorPublicKey::to_definite_descriptor
+                    let pk = pk.clone().at_derivation_index(0).expect("single or xpub without wildcards");
+                    Ok(bare::tweak_key(secp, spk, &pk))
+                }
+            },
+            Key::View(ref sk) => {
+                if sk.is_multipath() {
+                    Err(Error::Unexpected("multipath blinding key".into()))
+                } else {
+                    let pk = sk.to_public(secp).expect("single or xprv");
+                    if pk.has_wildcard() {
+                        Err(Error::Unexpected("wildcard blinding key".into()))
+                    } else {
+                        let pk = pk.at_derivation_index(0).expect("single or xprv without wildcards");
+                        Ok(bare::tweak_key(secp, spk, &pk))
+                    }
+                }
+            },
         }
     }
 }
@@ -148,7 +172,7 @@ impl<Pk: MiniscriptKey + ToPublicKey, T: Extension + ParseableExt> Descriptor<Pk
     ) -> Result<elements::Address, Error> {
         let spk = self.descriptor.script_pubkey();
         self.descriptor
-            .blinded_address(self.key.to_public_key(secp, &spk), params)
+            .blinded_address(self.key.to_public_key(secp, &spk)?, params)
     }
 }
 
@@ -215,7 +239,7 @@ mod tests {
             )
             .unwrap(),
         );
-        addr.blinding_pubkey = Some(key.to_public_key(&secp, &addr.script_pubkey()));
+        addr.blinding_pubkey = Some(key.to_public_key(&secp, &addr.script_pubkey()).unwrap());
         assert_eq!(
             addr.to_string(),
             "VTpt7krqRQPJwqe3XQXPg2cVdEKYVFbuprTr7es7pNRMe8mndnq2iYWddxJWYowhLAwoDF8QrZ1v2EXv"
