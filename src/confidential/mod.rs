@@ -22,26 +22,30 @@ pub mod slip77;
 
 use std::fmt;
 
+use bitcoin::bip32;
 use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{desc_checksum, verify_checksum};
-use crate::descriptor::DescriptorSecretKey;
+use crate::descriptor::{
+    ConversionError, DefiniteDescriptorKey, DescriptorSecretKey, DescriptorPublicKey,
+    DescriptorXKey, Wildcard
+};
 use crate::expression::FromTree;
 use crate::extensions::{CovExtArgs, CovenantExt, Extension, ParseableExt};
 use crate::{expression, Error, MiniscriptKey, ToPublicKey};
 
 /// A description of a blinding key
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Key<Pk: MiniscriptKey> {
+pub enum Key {
     /// Blinding key is computed using SLIP77 with the given master key
     Slip77(slip77::MasterBlindingKey),
     /// Blinding key is given directly
-    Bare(Pk),
+    Bare(DescriptorPublicKey),
     /// Blinding key is given directly, as a secret key
     View(DescriptorSecretKey),
 }
 
-impl<Pk: MiniscriptKey> fmt::Display for Key<Pk> {
+impl fmt::Display for Key {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Key::Slip77(data) => write!(f, "slip77({})", data),
@@ -51,16 +55,40 @@ impl<Pk: MiniscriptKey> fmt::Display for Key<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey + ToPublicKey> Key<Pk> {
+impl Key {
     fn to_public_key<C: secp256k1_zkp::Signing + secp256k1_zkp::Verification>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
         spk: &elements::Script,
-    ) -> secp256k1_zkp::PublicKey {
+    ) -> Result<secp256k1_zkp::PublicKey, Error> {
         match *self {
-            Key::Slip77(ref mbk) => mbk.blinding_key(secp, spk),
-            Key::Bare(ref pk) => bare::tweak_key(secp, spk, pk),
-            Key::View(ref sk) => bare::tweak_key(secp, spk, &sk.to_public(secp).expect("view keys cannot be multipath keys").at_derivation_index(0).expect("FIXME deal with derivation paths properly")),
+            Key::Slip77(ref mbk) => Ok(mbk.blinding_key(secp, spk)),
+            Key::Bare(ref pk) => {
+                if pk.is_multipath() {
+                    Err(Error::Unexpected("multipath blinding key".into()))
+                } else if pk.has_wildcard() {
+                    Err(Error::Unexpected("wildcard blinding key".into()))
+                } else {
+                    // Convert into a DefiniteDescriptorKey, note that we are deriving the xpub
+                    // since there is not wildcard.
+                    // Consider adding DescriptorPublicKey::to_definite_descriptor
+                    let pk = pk.clone().at_derivation_index(0).expect("single or xpub without wildcards");
+                    Ok(bare::tweak_key(secp, spk, &pk))
+                }
+            },
+            Key::View(ref sk) => {
+                if sk.is_multipath() {
+                    Err(Error::Unexpected("multipath blinding key".into()))
+                } else {
+                    let pk = sk.to_public(secp).expect("single or xprv");
+                    if pk.has_wildcard() {
+                        Err(Error::Unexpected("wildcard blinding key".into()))
+                    } else {
+                        let pk = pk.at_derivation_index(0).expect("single or xprv without wildcards");
+                        Ok(bare::tweak_key(secp, spk, &pk))
+                    }
+                }
+            },
         }
     }
 }
@@ -69,7 +97,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Key<Pk> {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Descriptor<Pk: MiniscriptKey, T: Extension = CovenantExt<CovExtArgs>> {
     /// The blinding key
-    pub key: Key<Pk>,
+    pub key: Key,
     /// The script descriptor
     pub descriptor: crate::Descriptor<Pk, T>,
 }
@@ -79,6 +107,51 @@ impl<Pk: MiniscriptKey, T: Extension> Descriptor<Pk, T> {
     pub fn sanity_check(&self) -> Result<(), Error> {
         self.descriptor.sanity_check()?;
         Ok(())
+    }
+}
+
+impl<T: Extension + ParseableExt> Descriptor<DescriptorPublicKey, T> {
+    /// Replaces all wildcards (i.e. `/*`) in the descriptor and the descriptor blinding key
+    /// with a particular derivation index, turning it into a *definite* descriptor.
+    ///
+    /// # Errors
+    /// - If index ≥ 2^31
+    pub fn at_derivation_index(&self, index: u32) -> Result<Descriptor<DefiniteDescriptorKey, T>, ConversionError> {
+        let definite_key = match self.key.clone() {
+            Key::Slip77(k) => Key::Slip77(k),
+            Key::Bare(k) => Key::Bare(k.at_derivation_index(index)?.into_descriptor_public_key()),
+            Key::View(k) => Key::View(match k {
+                // Consider implementing DescriptorSecretKey::at_derivation_index
+                DescriptorSecretKey::Single(_) => k,
+                DescriptorSecretKey::XPrv(xprv) => {
+                    let derivation_path = match xprv.wildcard {
+                        Wildcard::None => xprv.derivation_path,
+                        Wildcard::Unhardened => xprv.derivation_path.into_child(
+                            bip32::ChildNumber::from_normal_idx(index)
+                                .ok()
+                                .ok_or(ConversionError::HardenedChild)?,
+                        ),
+                        Wildcard::Hardened => xprv.derivation_path.into_child(
+                            bip32::ChildNumber::from_hardened_idx(index)
+                                .ok()
+                                .ok_or(ConversionError::HardenedChild)?,
+                        ),
+                    };
+                    DescriptorSecretKey::XPrv(DescriptorXKey {
+                        origin: xprv.origin,
+                        xkey: xprv.xkey,
+                        derivation_path,
+                        wildcard: Wildcard::None,
+                    })
+                },
+                DescriptorSecretKey::MultiXPrv(_) => return Err(ConversionError::MultiKey),
+            }),
+        };
+        let definite_descriptor = self.descriptor.at_derivation_index(index)?;
+        Ok(Descriptor{
+            key: definite_key,
+            descriptor: definite_descriptor,
+        })
     }
 }
 
@@ -99,7 +172,7 @@ impl<Pk: MiniscriptKey + ToPublicKey, T: Extension + ParseableExt> Descriptor<Pk
     ) -> Result<elements::Address, Error> {
         let spk = self.descriptor.script_pubkey();
         self.descriptor
-            .blinded_address(self.key.to_public_key(secp, &spk), params)
+            .blinded_address(self.key.to_public_key(secp, &spk)?, params)
     }
 }
 
@@ -137,7 +210,7 @@ impl_from_str!(
                 ("slip77", _) => return Err(Error::BadDescriptor(
                     "slip77() must have exactly one argument".to_owned()
                 )),
-                _ => expression::terminal(keyexpr, Pk::from_str).map(Key::Bare)
+                _ => expression::terminal(keyexpr, DescriptorPublicKey::from_str).map(Key::Bare)
                 .or_else(|_| expression::terminal(keyexpr, DescriptorSecretKey::from_str).map(Key::View))?,
             },
             descriptor: crate::Descriptor::from_tree(&top.args[1])?,
@@ -161,12 +234,12 @@ mod tests {
         // taken from libwally src/test/test_confidential_addr.py
         let mut addr = Address::from_str("Q7qcjTLsYGoMA7TjUp97R6E6AM5VKqBik6").unwrap();
         let key = Key::Bare(
-            bitcoin::PublicKey::from_str(
+            DescriptorPublicKey::from_str(
                 "02dce16018bbbb8e36de7b394df5b5166e9adb7498be7d881a85a09aeecf76b623",
             )
             .unwrap(),
         );
-        addr.blinding_pubkey = Some(key.to_public_key(&secp, &addr.script_pubkey()));
+        addr.blinding_pubkey = Some(key.to_public_key(&secp, &addr.script_pubkey()).unwrap());
         assert_eq!(
             addr.to_string(),
             "VTpt7krqRQPJwqe3XQXPg2cVdEKYVFbuprTr7es7pNRMe8mndnq2iYWddxJWYowhLAwoDF8QrZ1v2EXv"
@@ -174,7 +247,7 @@ mod tests {
     }
 
     struct ConfidentialTest {
-        key: Key<DefiniteDescriptorKey>,
+        key: Key,
         descriptor: crate::Descriptor<DefiniteDescriptorKey, NoExt>,
         descriptor_str: String,
         conf_addr: &'static str,
@@ -231,7 +304,7 @@ mod tests {
         let secp = secp256k1_zkp::Secp256k1::new();
 
         // CT key used for bare keys
-        let ct_key = DefiniteDescriptorKey::from_str(
+        let ct_key = DescriptorPublicKey::from_str(
             "xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL",
         )
         .unwrap();
@@ -370,7 +443,7 @@ mod tests {
         let view_key = DescriptorSecretKey::from_str(
             "xprv9s21ZrQH143K28NgQ7bHCF61hy9VzwquBZvpzTwXLsbmQLRJ6iV9k2hUBRt5qzmBaSpeMj5LdcsHaXJvM7iFEivPryRcL8irN7Na9p65UUb",
         ).unwrap();
-        let ct_key = view_key.to_public(&secp).unwrap().at_derivation_index(0).unwrap(); // FIXME figure out derivation
+        let ct_key = view_key.to_public(&secp).unwrap();
         let spk_key = DefiniteDescriptorKey::from_str(
             "xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH",
         )
@@ -395,5 +468,39 @@ mod tests {
             unconf_addr: "ert1qtfsllr4h4t9rqyxmjl4a5asjzcgt0qyk32h3ur",
         };
         test.check(&secp);
+    }
+
+    #[test]
+    fn descriptor_wildcard() {
+        let secp = secp256k1_zkp::Secp256k1::new();
+        let params = &elements::AddressParams::ELEMENTS;
+
+        let xprv = "xprv9s21ZrQH143K28NgQ7bHCF61hy9VzwquBZvpzTwXLsbmQLRJ6iV9k2hUBRt5qzmBaSpeMj5LdcsHaXJvM7iFEivPryRcL8irN7Na9p65UUb";
+        let xpub = "xpub661MyMwAqRbcEcT9W98HZP2kFzyzQQZkYnrRnrM8uD8kH8kSeFoQHq1x2iihLgC6PXGy5LrjCL66uSNhJ8pwjfx2rMUTLWuRMns2EG9xnjs";
+        let desc_view_str = format!("ct({}/*,elwpkh({}/*))#wk8ltq6h", xprv, xpub);
+        let desc_bare_str = format!("ct({}/*,elwpkh({}/*))#zzac2dpf", xpub, xpub);
+        let index = 1;
+        let conf_addr = "el1qqf6690fpw2y00hv5a84zsydjgztg2089d5xnll4k4cstzn63uvgudd907qpvlvvwd5ym9gx7j0v46elf23kfxunucm6ejjyk0";
+        let unconf_addr = "ert1qkjhlqqk0kx8x6zdj5r0f8k2avl54gmyn7qjk2k";
+
+        let desc_view = Descriptor::<DescriptorPublicKey>::from_str(&desc_view_str).unwrap();
+        let desc_bare = Descriptor::<DescriptorPublicKey>::from_str(&desc_bare_str).unwrap();
+        let definite_desc_view = desc_view.at_derivation_index(index).unwrap();
+        let definite_desc_bare = desc_bare.at_derivation_index(index).unwrap();
+        assert_eq!(definite_desc_view.address(&secp, params).unwrap().to_string(), conf_addr.to_string());
+        assert_eq!(definite_desc_bare.address(&secp, params).unwrap().to_string(), conf_addr.to_string());
+        assert_eq!(definite_desc_view.unconfidential_address(params).unwrap().to_string(), unconf_addr.to_string());
+        assert_eq!(definite_desc_bare.unconfidential_address(params).unwrap().to_string(), unconf_addr.to_string());
+
+        // It's not possible to get an address if the blinding key has a wildcard,
+        // because the descriptor blinding key is not *definite*,
+        // but we can't enforce this with the Descriptor generic.
+        let desc_view_str = format!("ct({}/*,elwpkh({}))#ls6mx2ac", xprv, xpub);
+        let desc_view = Descriptor::<DefiniteDescriptorKey>::from_str(&desc_view_str).unwrap();
+        assert_eq!(desc_view.address(&secp, params).unwrap_err(), Error::Unexpected("wildcard blinding key".into()));
+
+        let desc_bare_str = format!("ct({}/*,elwpkh({}))#czkz0hwn", xpub, xpub);
+        let desc_bare = Descriptor::<DefiniteDescriptorKey>::from_str(&desc_bare_str).unwrap();
+        assert_eq!(desc_bare.address(&secp, params).unwrap_err(), Error::Unexpected("wildcard blinding key".into()));
     }
 }
