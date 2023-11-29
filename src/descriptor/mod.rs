@@ -55,6 +55,7 @@ pub use self::key::{
     DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey, InnerXKey,
     SinglePriv, SinglePub, SinglePubKey, Wildcard,
 };
+pub(crate) use self::key::maybe_fmt_master_id;
 pub use self::tr::{TapTree, Tr, TapLeafScript};
 /// Alias type for a map of public key to secret key
 ///

@@ -50,7 +50,17 @@ impl fmt::Display for Key {
         match self {
             Key::Slip77(data) => write!(f, "slip77({})", data),
             Key::Bare(pk) => fmt::Display::fmt(pk, f),
-            Key::View(sk) => fmt::Display::fmt(sk, f),
+            Key::View(sk) => {
+                if let DescriptorSecretKey::Single(sk) = sk {
+                    crate::descriptor::maybe_fmt_master_id(f, &sk.origin)?;
+                    for byte in &sk.key.inner.secret_bytes() {
+                        write!(f, "{:02x}", byte)?;
+                    }
+                    Ok(())
+                } else {
+                    fmt::Display::fmt(sk, f)
+                }
+            }
         }
     }
 }
@@ -211,7 +221,7 @@ impl_from_str!(
                     "slip77() must have exactly one argument".to_owned()
                 )),
                 _ => expression::terminal(keyexpr, DescriptorPublicKey::from_str).map(Key::Bare)
-                .or_else(|_| expression::terminal(keyexpr, DescriptorSecretKey::from_str).map(Key::View))?,
+                .or_else(|_| expression::terminal(keyexpr, |s: &str| DescriptorSecretKey::from_str_inner(s, true)).map(Key::View))?,
             },
             descriptor: crate::Descriptor::from_tree(&top.args[1])?,
         })
@@ -420,6 +430,10 @@ mod tests {
                 "ct(pk(02dce16018bbbb8e36de7b394df5b5166e9adb7498be7d881a85a09aeecf76b623),elwpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4))#nvax6rau",
                 "unexpected «pk»",
             ),
+            (
+                "ct(L3jXxwef3fpB7hcrFozcWgHeJCPSAFiZ1Ji2YJMPxceaGvy3PC1q,elwpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4))#gcy6hcfz",
+                "unexpected «Error while parsing xkey.»",
+            ),
         ];
 
         /*
@@ -468,6 +482,26 @@ mod tests {
             unconf_addr: "ert1qtfsllr4h4t9rqyxmjl4a5asjzcgt0qyk32h3ur",
         };
         test.check(&secp);
+    }
+
+    #[test]
+    fn view_single_key_descriptor() {
+        let secp = secp256k1_zkp::Secp256k1::new();
+        let view_key = "c25deb86fa11e49d651d7eae27c220ef930fbd86ea023eebfa73e54875647963";
+        let ct_key = "0286fc9a38e765d955e9b0bcc18fa9ae81b0c893e2dd1ef5542a9c73780a086b90";
+        let pk = "021a8fb6bd5a653b021b98a2a785725b8ddacfe3687bc043aa7f4d25d3a48d40b5";
+        let addr_conf = "el1qq265u4g3k3m3qpyxjwpdrtnm293wuxgvs9xzmzcs2ck0mv5rx23w4d7xfsednsmmxrszfe7s9rs0c6cvf3dfyqwa4jj40uffq";
+        let addr_unconf = "ert1qklrycvkecdanpcpyulgz3c8udvxyck5jkzxddw";
+
+        for desc_str in [
+            format!("ct({view_key},elwpkh({pk}))#c2kx9zll"),
+            format!("ct({ct_key},elwpkh({pk}))#m5mvyh29"),
+        ] {
+            let desc = Descriptor::<DefiniteDescriptorKey>::from_str(&desc_str).unwrap();
+            assert_eq!(desc.to_string(), desc_str);
+            assert_eq!(addr_conf, &desc.address(&secp, &elements::AddressParams::ELEMENTS).unwrap().to_string());
+            assert_eq!(addr_unconf, &desc.unconfidential_address(&elements::AddressParams::ELEMENTS).unwrap().to_string());
+        }
     }
 
     #[test]
