@@ -148,7 +148,7 @@ impl FromStr for DescriptorType {
             Ok(DescriptorType::WshSortedMulti)
         } else if s.len() >= 3 && &s[0..3] == "wsh" {
             Ok(DescriptorType::Wsh)
-        } else if s.len() >= 6 && &s[0..6] == "covwsh" {
+        } else if s.len() >= 8 && &s[0..8] == "elcovwsh" {
             Ok(DescriptorType::Cov)
         } else {
             Ok(DescriptorType::Bare)
