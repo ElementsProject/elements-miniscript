@@ -7,6 +7,7 @@ use std::{error, fmt};
 use bitcoin::hash_types::XpubIdentifier;
 use bitcoin::{self, bip32};
 use elements::hashes::{hash160, ripemd160, sha256, Hash, HashEngine};
+use elements::hex::FromHex;
 use elements::secp256k1_zkp::{Secp256k1, Signing, Verification};
 
 #[cfg(feature = "serde")]
@@ -382,7 +383,7 @@ impl DescriptorSecretKey {
 }
 
 /// Writes the fingerprint of the origin, if there is one.
-fn maybe_fmt_master_id(
+pub(crate) fn maybe_fmt_master_id(
     f: &mut fmt::Formatter<'_>,
     origin: &Option<(bip32::Fingerprint, bip32::DerivationPath)>,
 ) -> fmt::Result {
@@ -691,13 +692,21 @@ impl DescriptorPublicKey {
     }
 }
 
-impl FromStr for DescriptorSecretKey {
-    type Err = DescriptorKeyParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+impl DescriptorSecretKey {
+    pub(crate) fn from_str_inner(s: &str, single_hex: bool) -> Result<Self, DescriptorKeyParseError> {
         let (key_part, origin) = parse_key_origin(s)?;
 
-        if key_part.len() <= 52 {
+        if single_hex && key_part.len() == 64 {
+            let bytes = Vec::<u8>::from_hex(key_part)
+                .map_err(|_| DescriptorKeyParseError("Error while parsing a HEX private key"))?;
+            let network = bitcoin::network::constants::Network::Bitcoin; // Use any network
+            let sk = bitcoin::PrivateKey::from_slice(&bytes, network)
+                .map_err(|_| DescriptorKeyParseError("Error while parsing a HEX private key"))?;
+            Ok(DescriptorSecretKey::Single(SinglePriv {
+                key: sk,
+                origin: None,
+            }))
+        } else if !single_hex && key_part.len() <= 52 {
             let sk = bitcoin::PrivateKey::from_str(key_part)
                 .map_err(|_| DescriptorKeyParseError("Error while parsing a WIF private key"))?;
             Ok(DescriptorSecretKey::Single(SinglePriv {
@@ -723,6 +732,14 @@ impl FromStr for DescriptorSecretKey {
                 }))
             }
         }
+    }
+}
+
+impl FromStr for DescriptorSecretKey {
+    type Err = DescriptorKeyParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_str_inner(s, false)
     }
 }
 
