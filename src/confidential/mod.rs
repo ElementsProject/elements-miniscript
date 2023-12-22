@@ -220,8 +220,8 @@ impl_from_str!(
                 ("slip77", _) => return Err(Error::BadDescriptor(
                     "slip77() must have exactly one argument".to_owned()
                 )),
-                _ => expression::terminal(keyexpr, DescriptorPublicKey::from_str).map(Key::Bare)
-                .or_else(|_| expression::terminal(keyexpr, |s: &str| DescriptorSecretKey::from_str_inner(s, true)).map(Key::View))?,
+                _ => expression::terminal(keyexpr, |s: &str| DescriptorSecretKey::from_str_inner(s, true)).map(Key::View)
+                .or_else(|_| expression::terminal(keyexpr, DescriptorPublicKey::from_str).map(Key::Bare))?,
             },
             descriptor: crate::Descriptor::from_tree(&top.args[1])?,
         })
@@ -432,7 +432,7 @@ mod tests {
             ),
             (
                 "ct(L3jXxwef3fpB7hcrFozcWgHeJCPSAFiZ1Ji2YJMPxceaGvy3PC1q,elwpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4))#gcy6hcfz",
-                "unexpected «Error while parsing xkey.»",
+                "unexpected «Key too short (<66 char), doesn't match any format»",
             ),
         ];
 
@@ -502,6 +502,19 @@ mod tests {
             assert_eq!(addr_conf, &desc.address(&secp, &elements::AddressParams::ELEMENTS).unwrap().to_string());
             assert_eq!(addr_unconf, &desc.unconfidential_address(&elements::AddressParams::ELEMENTS).unwrap().to_string());
         }
+    }
+
+    #[test]
+    fn view_xonly_pubkey_descriptor() {
+        // View keys are 64 hex chars, but also x-only public keys are 64 hex chars
+        let view_key = "ab16855a17319477d4283fe5c29cc7d047f81e8ffb199e20d9be1bc31a751c4c";
+        // This view key can also be interpreted as a public key
+        let _public_key = DescriptorPublicKey::from_str(view_key).unwrap();
+        // But since compressed public keys are disallowed, it must be interpreted as a view key
+        let pk = "021a8fb6bd5a653b021b98a2a785725b8ddacfe3687bc043aa7f4d25d3a48d40b5";
+        let desc_str = format!("ct({view_key},elwpkh({pk}))#n9uc7tzt");
+        let desc = Descriptor::<DefiniteDescriptorKey>::from_str(&desc_str).unwrap();
+        assert!(matches!(desc.key, Key::View(_)));
     }
 
     #[test]
