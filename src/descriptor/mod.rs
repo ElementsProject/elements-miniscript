@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 pub mod pegin;
 
-use bitcoin::address::WitnessVersion;
+use bitcoin::WitnessVersion;
 use elements::hashes::{hash160, ripemd160, sha256};
 use elements::{secp256k1_zkp as secp256k1, secp256k1_zkp, Script, TxIn};
 use {bitcoin, elements};
@@ -50,13 +50,13 @@ pub use self::sortedmulti::SortedMultiVec;
 pub mod checksum;
 mod key;
 pub use self::csfs_cov::{CovError, CovOperations, LegacyCSFSCov, LegacyCovSatisfier};
+pub(crate) use self::key::maybe_fmt_master_id;
 pub use self::key::{
     ConversionError, DefiniteDescriptorKey, DerivPaths, DescriptorKeyParseError,
     DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey, InnerXKey,
     SinglePriv, SinglePub, SinglePubKey, Wildcard,
 };
-pub(crate) use self::key::maybe_fmt_master_id;
-pub use self::tr::{TapTree, Tr, TapLeafScript};
+pub use self::tr::{TapLeafScript, TapTree, Tr};
 /// Alias type for a map of public key to secret key
 ///
 /// This map is returned whenever a descriptor that contains secrets is parsed using
@@ -1566,8 +1566,9 @@ mod tests {
             inner: secp256k1_zkp::PublicKey::from_secret_key(&secp, &sk),
             compressed: true,
         };
-        let msg = secp256k1_zkp::Message::from_slice(&b"michael was a message, amusingly"[..])
-            .expect("32 bytes");
+        let msg =
+            secp256k1_zkp::Message::from_digest_slice(&b"michael was a message, amusingly"[..])
+                .expect("32 bytes");
         let sig = secp.sign_ecdsa(&msg, &sk);
         let mut sigser = sig.serialize_der().to_vec();
         sigser.push(0x01); // sighash_all
@@ -1894,7 +1895,7 @@ mod tests {
                 ][..])
                 .into(),
             )),
-            xkey: bip32::ExtendedPubKey::from_str("xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL").unwrap(),
+            xkey: bip32::Xpub::from_str("xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL").unwrap(),
             derivation_path: (&[bip32::ChildNumber::from_normal_idx(1).unwrap()][..]).into(),
             wildcard: Wildcard::Unhardened,
         });
@@ -1905,7 +1906,7 @@ mod tests {
         let key = "xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL/1";
         let expected = DescriptorPublicKey::XPub(DescriptorXKey {
             origin: None,
-            xkey: bip32::ExtendedPubKey::from_str("xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL").unwrap(),
+            xkey: bip32::Xpub::from_str("xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL").unwrap(),
             derivation_path: (&[bip32::ChildNumber::from_normal_idx(1).unwrap()][..]).into(),
             wildcard: Wildcard::None,
         });
@@ -1916,7 +1917,7 @@ mod tests {
         let key = "tpubD6NzVbkrYhZ4YqYr3amYH15zjxHvBkUUeadieW8AxTZC7aY2L8aPSk3tpW6yW1QnWzXAB7zoiaNMfwXPPz9S68ZCV4yWvkVXjdeksLskCed/1";
         let expected = DescriptorPublicKey::XPub(DescriptorXKey {
             origin: None,
-            xkey: bip32::ExtendedPubKey::from_str("tpubD6NzVbkrYhZ4YqYr3amYH15zjxHvBkUUeadieW8AxTZC7aY2L8aPSk3tpW6yW1QnWzXAB7zoiaNMfwXPPz9S68ZCV4yWvkVXjdeksLskCed").unwrap(),
+            xkey: bip32::Xpub::from_str("tpubD6NzVbkrYhZ4YqYr3amYH15zjxHvBkUUeadieW8AxTZC7aY2L8aPSk3tpW6yW1QnWzXAB7zoiaNMfwXPPz9S68ZCV4yWvkVXjdeksLskCed").unwrap(),
             derivation_path: (&[bip32::ChildNumber::from_normal_idx(1).unwrap()][..]).into(),
             wildcard: Wildcard::None,
         });
@@ -1927,7 +1928,7 @@ mod tests {
         let key = "xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL";
         let expected = DescriptorPublicKey::XPub(DescriptorXKey {
             origin: None,
-            xkey: bip32::ExtendedPubKey::from_str("xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL").unwrap(),
+            xkey: bip32::Xpub::from_str("xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL").unwrap(),
             derivation_path: bip32::DerivationPath::from(&[][..]),
             wildcard: Wildcard::None,
         });

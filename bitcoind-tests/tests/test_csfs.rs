@@ -106,7 +106,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
             let prevouts = [witness_utxo];
             let prevouts = sighash::Prevouts::All(&prevouts);
             // ------------------ script spend -------------
-            let x_only_keypairs_reqd: Vec<(secp256k1::KeyPair, TapLeafHash)> = tr
+            let x_only_keypairs_reqd: Vec<(secp256k1::Keypair, TapLeafHash)> = tr
                 .iter_scripts()
                 .flat_map(|(_depth, script)| {
                     let leaf_hash = TapLeafHash::from_script(&script.encode(), script.version());
@@ -126,7 +126,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
                         testdata.pubdata.genesis_hash,
                     )
                     .unwrap();
-                let msg = secp256k1::Message::from_slice(&sighash_msg[..]).unwrap();
+                let msg = secp256k1::Message::from_digest_slice(&sighash_msg[..]).unwrap();
                 let mut aux_rand = [0u8; 32];
                 rand::thread_rng().fill_bytes(&mut aux_rand);
                 let sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &aux_rand);
@@ -167,7 +167,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
 
             // Create a signature
             let keypair = &self.0.secretdata.x_only_keypairs[i];
-            let msg = secp256k1::Message::from_slice(msg.as_inner()).unwrap();
+            let msg = secp256k1::Message::from_digest_slice(msg.as_inner()).unwrap();
             let mut aux_rand = [0u8; 32];
             rand::thread_rng().fill_bytes(&mut aux_rand);
 

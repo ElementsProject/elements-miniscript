@@ -1234,7 +1234,7 @@ mod tests {
             ret.push(pk);
         }
         let sig = secp.sign_ecdsa(
-            &secp256k1_zkp::Message::from_slice(&sk[..]).expect("secret key"),
+            &secp256k1_zkp::Message::from_digest_slice(&sk[..]).expect("secret key"),
             &secp256k1_zkp::SecretKey::from_slice(&sk[..]).expect("secret key"),
         );
         (ret, sig)

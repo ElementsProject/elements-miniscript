@@ -57,7 +57,7 @@ pub struct PubData {
 #[derive(Debug, Clone)]
 pub struct SecretData {
     pub sks: Vec<bitcoin::secp256k1::SecretKey>,
-    pub x_only_keypairs: Vec<bitcoin::key::KeyPair>,
+    pub x_only_keypairs: Vec<bitcoin::key::Keypair>,
     pub sha256_pre: [u8; 32],
     pub hash256_pre: [u8; 32],
     pub ripemd160_pre: [u8; 32],
@@ -75,7 +75,7 @@ fn setup_keys(
 ) -> (
     Vec<bitcoin::secp256k1::SecretKey>,
     Vec<miniscript::bitcoin::PublicKey>,
-    Vec<bitcoin::key::KeyPair>,
+    Vec<bitcoin::key::Keypair>,
     Vec<bitcoin::key::XOnlyPublicKey>,
 ) {
     let secp_sign = secp256k1::Secp256k1::signing_only();
@@ -100,7 +100,7 @@ fn setup_keys(
     let mut x_only_pks = vec![];
 
     for sk in &sks {
-        let keypair = bitcoin::key::KeyPair::from_secret_key(&secp_sign, sk);
+        let keypair = bitcoin::key::Keypair::from_secret_key(&secp_sign, sk);
         let (xpk, _parity) = bitcoin::key::XOnlyPublicKey::from_keypair(&keypair);
         x_only_keypairs.push(keypair);
         x_only_pks.push(xpk);

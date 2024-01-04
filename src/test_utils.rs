@@ -162,7 +162,7 @@ impl StrXOnlyKeyTranslator {
         let pks: Vec<_> = sks
             .iter()
             .map(|sk| {
-                let keypair = secp256k1::KeyPair::from_secret_key(&secp, sk);
+                let keypair = secp256k1::Keypair::from_secret_key(&secp, sk);
                 let (pk, _parity) = bitcoin::key::XOnlyPublicKey::from_keypair(&keypair);
                 pk
             })

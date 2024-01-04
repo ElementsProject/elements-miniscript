@@ -120,7 +120,7 @@ fn main() {
     // 3. Example three: same, but with the wrong signature hash, to demonstrate
     //    what happens given an apparently invalid script
     let secp = secp256k1_zkp::Secp256k1::new();
-    let message = secp256k1_zkp::Message::from_slice(&[0x01; 32][..]).expect("32-byte hash");
+    let message = secp256k1_zkp::Message::from_digest_slice(&[0x01; 32][..]).expect("32-byte hash");
     let interpreter = miniscript::Interpreter::from_txdata(
         &spk_input_1,
         &transaction.input[0].script_sig,

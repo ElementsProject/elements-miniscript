@@ -275,7 +275,8 @@ where
                     // taproot(or future) signatures in segwitv0 context
                     return false;
                 };
-                let msg = secp256k1_zkp::Message::from_slice(sighash.as_ref()).expect("32 byte");
+                let msg =
+                    secp256k1_zkp::Message::from_digest_slice(sighash.as_ref()).expect("32 byte");
                 secp.verify_ecdsa(&msg, &ecdsa_sig.0, &key.inner).is_ok()
             }
             KeySigPair::Schnorr(xpk, schnorr_sig) => {
@@ -305,7 +306,7 @@ where
                     return false;
                 };
                 let msg = sighash_msg.map(|hash| {
-                    secp256k1_zkp::Message::from_slice(hash.as_ref()).expect("32 byte")
+                    secp256k1_zkp::Message::from_digest_slice(hash.as_ref()).expect("32 byte")
                 });
                 let success =
                     msg.map(|msg| secp.verify_schnorr(&schnorr_sig.sig, &msg, xpk).is_ok());
@@ -1120,7 +1121,8 @@ where
                 let mut eng = Sighash::engine();
                 eng.input(&sighash_msg);
                 let sighash_u256 = Sighash::from_engine(eng);
-                let msg = elements::secp256k1_zkp::Message::from_slice(&sighash_u256[..]).unwrap();
+                let msg =
+                    elements::secp256k1_zkp::Message::from_digest_slice(&sighash_u256[..]).unwrap();
 
                 // Legacy Cov scripts only operate on Ecdsa key sig pairs
                 let (ec_pk, ecdsa_sig) = match sig {
@@ -1221,8 +1223,9 @@ mod tests {
         Vec<Vec<u8>>,
     ) {
         let secp = secp256k1_zkp::Secp256k1::new();
-        let msg = secp256k1_zkp::Message::from_slice(&b"Yoda: btc, I trust. HODL I must!"[..])
-            .expect("32 bytes");
+        let msg =
+            secp256k1_zkp::Message::from_digest_slice(&b"Yoda: btc, I trust. HODL I must!"[..])
+                .expect("32 bytes");
         let mut pks = vec![];
         let mut ecdsa_sigs = vec![];
         let mut der_sigs = vec![];
@@ -1248,7 +1251,7 @@ mod tests {
             pks.push(pk);
             der_sigs.push(sigser);
 
-            let keypair = bitcoin::key::KeyPair::from_secret_key(&secp, &sk);
+            let keypair = bitcoin::key::Keypair::from_secret_key(&secp, &sk);
             let (x_only_pk, _parity) = bitcoin::key::XOnlyPublicKey::from_keypair(&keypair);
             x_only_pks.push(x_only_pk);
             let schnorr_sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &[0u8; 32]);

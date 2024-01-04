@@ -105,7 +105,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
             let prevouts = [witness_utxo];
             let prevouts = sighash::Prevouts::All(&prevouts);
             // ------------------ script spend -------------
-            let x_only_keypairs_reqd: Vec<(secp256k1::KeyPair, TapLeafHash)> = tr
+            let x_only_keypairs_reqd: Vec<(secp256k1::Keypair, TapLeafHash)> = tr
                 .iter_scripts()
                 .flat_map(|(_depth, script)| {
                     let leaf_hash = TapLeafHash::from_script(&script.encode(), script.version());

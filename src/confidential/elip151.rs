@@ -29,20 +29,12 @@ use crate::descriptor::{DescriptorSecretKey, SinglePriv};
 use crate::extensions::{Extension, ParseableExt};
 use crate::{Descriptor as OrdinaryDescriptor, DescriptorPublicKey, Error};
 
-/// The SHA-256 initial midstate value for the [`Elip151Hash`].
-const MIDSTATE_ELIP151: [u8; 32] = [
-    0x49, 0x81, 0x61, 0xd8, 0x52, 0x45, 0xf7, 0xaa, 0xd8, 0x24, 0x27, 0xb5, 0x64, 0x69, 0xe7, 0xd6,
-    0x98, 0x17, 0xeb, 0x0f, 0x27, 0x14, 0x6f, 0x4e, 0x7b, 0x95, 0xb3, 0x6e, 0x46, 0xc1, 0xb5, 0x61,
-];
-
-sha256t_hash_newtype!(
-    Elip151Hash,
-    Elip151Tag,
-    MIDSTATE_ELIP151,
-    64,
-    doc = "ELIP-151 Deterministic descriptor blinding keys",
-    forward
-);
+sha256t_hash_newtype! {
+    pub struct Elip151Tag = hash_str("ELIP-151 Deterministic descriptor blinding keys");
+    /// ELIP-151 Deterministic descriptor blinding keys
+    #[hash_newtype(forward)]
+    pub struct Elip151Hash(_);
+}
 
 impl Key {
     pub fn from_elip151<T: Extension + ParseableExt>(
@@ -114,6 +106,13 @@ mod test {
     use bitcoin::hashes::{sha256, HashEngine};
     use std::str::FromStr;
 
+    /// The SHA-256 initial midstate value for the [`Elip151Hash`].
+    const MIDSTATE_ELIP151: [u8; 32] = [
+        0x49, 0x81, 0x61, 0xd8, 0x52, 0x45, 0xf7, 0xaa, 0xd8, 0x24, 0x27, 0xb5, 0x64, 0x69, 0xe7,
+        0xd6, 0x98, 0x17, 0xeb, 0x0f, 0x27, 0x14, 0x6f, 0x4e, 0x7b, 0x95, 0xb3, 0x6e, 0x46, 0xc1,
+        0xb5, 0x61,
+    ];
+
     #[test]
     fn tagged_hash_elip151() {
         // Check that cached midstate is computed correctly, code from rust-bitcoin
@@ -175,7 +174,8 @@ mod test {
         ] {
             let conf_desc = confidential_descriptor(desc).unwrap();
             let elip151_desc = add_checksum(&format!("ct(elip151,{})", desc));
-            let conf_desc_elip151 = ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&elip151_desc).unwrap();
+            let conf_desc_elip151 =
+                ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&elip151_desc).unwrap();
             assert_eq!(conf_desc, conf_desc_elip151);
 
             // Uncomment this and below to regenerate test vectors; to see the output, run
