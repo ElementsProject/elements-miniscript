@@ -18,6 +18,7 @@
 //!
 
 pub mod bare;
+pub mod elip151;
 pub mod slip77;
 
 use std::fmt;
@@ -216,6 +217,10 @@ impl_from_str!(
         let keyexpr = &top.args[0];
         Ok(Descriptor {
             key: match (keyexpr.name, keyexpr.args.len()) {
+                ("elip151", 0) => {
+                    let d = crate::Descriptor::<DescriptorPublicKey>::from_tree(&top.args[1])?;
+                    Key::from_elip151(&d)?
+                }
                 ("slip77", 1) => Key::Slip77(expression::terminal(&keyexpr.args[0], slip77::MasterBlindingKey::from_str)?),
                 ("slip77", _) => return Err(Error::BadDescriptor(
                     "slip77() must have exactly one argument".to_owned()
