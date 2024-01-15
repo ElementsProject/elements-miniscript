@@ -139,6 +139,7 @@ pub mod psbt;
 #[cfg(test)]
 mod test_utils;
 mod util;
+#[cfg(feature = "simplicity")]
 mod simplicity;
 
 use std::{cmp, error, fmt, str};
