@@ -320,7 +320,7 @@ impl ParseableExt for CheckSigFromStack<CovExtArgs> {
         // rust-secp-zkp API only signing/verification for 32 bytes messages. It is supported in upstream secp-zkp
         // but bindings are not exposed.
         // The interpreter will error on non 32 byte messages till it is fixed.
-        let msg = secp256k1_zkp::Message::from_slice(&self.as_msg().0)?;
+        let msg = secp256k1_zkp::Message::from_digest_slice(&self.as_msg().0)?;
 
         let secp = secp256k1_zkp::Secp256k1::verification_only();
 

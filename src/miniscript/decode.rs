@@ -48,7 +48,8 @@ impl ParseableKey for bitcoin::key::XOnlyPublicKey {
 }
 
 /// Decoding error while parsing keys
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+// #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]  // bitcoin::key:Error don't implement PartialOrd, Ord, Hash
+#[derive(Debug, PartialEq, Eq)]
 pub enum KeyParseError {
     /// Bitcoin PublicKey parse error
     FullKeyParseError(bitcoin::key::Error),

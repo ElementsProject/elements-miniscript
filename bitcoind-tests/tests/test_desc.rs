@@ -163,7 +163,7 @@ pub fn test_desc_satisfy(
                         testdata.pubdata.genesis_hash,
                     )
                     .unwrap();
-                let msg = secp256k1::Message::from_slice(&sighash_msg[..]).unwrap();
+                let msg = secp256k1::Message::from_digest_slice(&sighash_msg[..]).unwrap();
                 let mut aux_rand = [0u8; 32];
                 rand::thread_rng().fill_bytes(&mut aux_rand);
                 let schnorr_sig =
@@ -176,7 +176,7 @@ pub fn test_desc_satisfy(
                 // No internal key
             }
             // ------------------ script spend -------------
-            let x_only_keypairs_reqd: Vec<(secp256k1::KeyPair, TapLeafHash)> = tr
+            let x_only_keypairs_reqd: Vec<(secp256k1::Keypair, TapLeafHash)> = tr
                 .iter_scripts()
                 .flat_map(|(_depth, script)| {
                     let leaf_hash = TapLeafHash::from_script(&script.encode(), script.version());
@@ -196,7 +196,7 @@ pub fn test_desc_satisfy(
                         testdata.pubdata.genesis_hash,
                     )
                     .unwrap();
-                let msg = secp256k1::Message::from_slice(&sighash_msg[..]).unwrap();
+                let msg = secp256k1::Message::from_digest_slice(&sighash_msg[..]).unwrap();
                 let mut aux_rand = [0u8; 32];
                 rand::thread_rng().fill_bytes(&mut aux_rand);
                 let sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &aux_rand);

@@ -1100,7 +1100,7 @@ trait PsbtFields {
     fn tap_scripts(&mut self) -> Option<&mut BTreeMap<ControlBlock, (Script, LeafVersion)>> {
         None
     }
-    fn tap_merkle_root(&mut self) -> Option<&mut Option<taproot::TapBranchHash>> {
+    fn tap_merkle_root(&mut self) -> Option<&mut Option<taproot::TapNodeHash>> {
         None
     }
 }
@@ -1133,7 +1133,7 @@ impl PsbtFields for psbt::Input {
     fn tap_scripts(&mut self) -> Option<&mut BTreeMap<ControlBlock, (Script, LeafVersion)>> {
         Some(&mut self.tap_scripts)
     }
-    fn tap_merkle_root(&mut self) -> Option<&mut Option<taproot::TapBranchHash>> {
+    fn tap_merkle_root(&mut self) -> Option<&mut Option<taproot::TapNodeHash>> {
         Some(&mut self.tap_merkle_root)
     }
 }
@@ -1520,10 +1520,10 @@ impl PsbtSighashMsg {
     pub fn to_secp_msg(&self) -> secp256k1::Message {
         match *self {
             PsbtSighashMsg::TapSighash(msg) => {
-                secp256k1::Message::from_slice(msg.as_ref()).expect("Sighashes are 32 bytes")
+                secp256k1::Message::from_digest_slice(msg.as_ref()).expect("Sighashes are 32 bytes")
             }
             PsbtSighashMsg::EcdsaSighash(msg) => {
-                secp256k1::Message::from_slice(msg.as_ref()).expect("Sighashes are 32 bytes")
+                secp256k1::Message::from_digest_slice(msg.as_ref()).expect("Sighashes are 32 bytes")
             }
         }
     }
@@ -1533,7 +1533,7 @@ impl PsbtSighashMsg {
 mod tests {
     use std::str::FromStr;
 
-    use bitcoin::bip32::{DerivationPath, ExtendedPubKey};
+    use bitcoin::bip32::{DerivationPath, Xpub};
     use elements::encode::deserialize;
     use elements::hex::FromHex;
     use elements::secp256k1_zkp::XOnlyPublicKey;
@@ -1569,7 +1569,7 @@ mod tests {
     #[test]
     fn test_update_item_tr_no_script() {
         // keys taken from: https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki#Specifications
-        let root_xpub = ExtendedPubKey::from_str("xpub661MyMwAqRbcFkPHucMnrGNzDwb6teAX1RbKQmqtEF8kK3Z7LZ59qafCjB9eCRLiTVG3uxBxgKvRgbubRhqSKXnGGb1aoaqLrpMBDrVxga8").unwrap();
+        let root_xpub = Xpub::from_str("xpub661MyMwAqRbcFkPHucMnrGNzDwb6teAX1RbKQmqtEF8kK3Z7LZ59qafCjB9eCRLiTVG3uxBxgKvRgbubRhqSKXnGGb1aoaqLrpMBDrVxga8").unwrap();
         let fingerprint = root_xpub.fingerprint();
         let desc = format!("eltr([{}/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/0)", fingerprint);
         let desc = Descriptor::from_str(&desc).unwrap();
@@ -1605,7 +1605,7 @@ mod tests {
     fn test_update_item_tr_with_tapscript() {
         use crate::Tap;
         // keys taken from: https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki#Specifications
-        let root_xpub = ExtendedPubKey::from_str("xpub661MyMwAqRbcFkPHucMnrGNzDwb6teAX1RbKQmqtEF8kK3Z7LZ59qafCjB9eCRLiTVG3uxBxgKvRgbubRhqSKXnGGb1aoaqLrpMBDrVxga8").unwrap();
+        let root_xpub = Xpub::from_str("xpub661MyMwAqRbcFkPHucMnrGNzDwb6teAX1RbKQmqtEF8kK3Z7LZ59qafCjB9eCRLiTVG3uxBxgKvRgbubRhqSKXnGGb1aoaqLrpMBDrVxga8").unwrap();
         let fingerprint = root_xpub.fingerprint();
         let xpub = format!("[{}/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ", fingerprint);
         let desc = format!(
@@ -1684,7 +1684,7 @@ mod tests {
     #[test]
     fn test_update_item_non_tr_multi() {
         // values taken from https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki (after removing zpub thingy)
-        let root_xpub = ExtendedPubKey::from_str("xpub661MyMwAqRbcFkPHucMnrGNzDwb6teAX1RbKQmqtEF8kK3Z7LZ59qafCjB9eCRLiTVG3uxBxgKvRgbubRhqSKXnGGb1aoaqLrpMBDrVxga8").unwrap();
+        let root_xpub = Xpub::from_str("xpub661MyMwAqRbcFkPHucMnrGNzDwb6teAX1RbKQmqtEF8kK3Z7LZ59qafCjB9eCRLiTVG3uxBxgKvRgbubRhqSKXnGGb1aoaqLrpMBDrVxga8").unwrap();
         let fingerprint = root_xpub.fingerprint();
         let xpub = format!("[{}/84'/0'/0']xpub6CatWdiZiodmUeTDp8LT5or8nmbKNcuyvz7WyksVFkKB4RHwCD3XyuvPEbvqAQY3rAPshWcMLoP2fMFMKHPJ4ZeZXYVUhLv1VMrjPC7PW6V", fingerprint);
         let pubkeys = [

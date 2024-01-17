@@ -3,14 +3,14 @@ extern crate elements_miniscript as miniscript;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use bitcoin::address::WitnessVersion;
+use bitcoin::WitnessVersion;
 use miniscript::descriptor::DescriptorType;
+use miniscript::descriptor::TapLeafScript;
 use miniscript::policy::Concrete;
 use miniscript::{
     translate_hash_fail, Descriptor, Miniscript, NoExt, Tap, TranslatePk, Translator,
 };
-use miniscript::descriptor::TapLeafScript;
-use secp256k1::{rand, KeyPair};
+use secp256k1::{rand, Keypair};
 
 // Refer to https://github.com/sanket1729/adv_btc_workshop/blob/master/workshop.md#creating-a-taproot-descriptor
 // for a detailed explanation of the policy and it's compilation
@@ -71,14 +71,19 @@ fn main() {
             iter.next().unwrap(),
             (
                 1,
-                TapLeafScript::Miniscript(&Miniscript::<String, Tap, NoExt>::from_str("and_v(vc:pk_k(In),older(9))").unwrap())
+                TapLeafScript::Miniscript(
+                    &Miniscript::<String, Tap, NoExt>::from_str("and_v(vc:pk_k(In),older(9))")
+                        .unwrap()
+                )
             )
         );
         assert_eq!(
             iter.next().unwrap(),
             (
                 1,
-                TapLeafScript::Miniscript(&Miniscript::<String, Tap, NoExt>::from_str("multi_a(2,hA,S)").unwrap())
+                TapLeafScript::Miniscript(
+                    &Miniscript::<String, Tap, NoExt>::from_str("multi_a(2,hA,S)").unwrap()
+                )
             )
         );
         assert_eq!(iter.next(), None);
@@ -88,7 +93,7 @@ fn main() {
 
     // We require secp for generating a random XOnlyPublicKey
     let secp = secp256k1::Secp256k1::new();
-    let key_pair = KeyPair::new(&secp, &mut rand::thread_rng());
+    let key_pair = Keypair::new(&secp, &mut rand::thread_rng());
     // Random unspendable XOnlyPublicKey provided for compilation to Taproot Descriptor
     let (unspendable_pubkey, _parity) = bitcoin::key::XOnlyPublicKey::from_keypair(&key_pair);
 

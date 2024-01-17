@@ -148,7 +148,7 @@ pub fn test_from_cpp_ms(cl: &ElementsD, testdata: &TestData) {
 
         // requires both signing and verification because we check the tx
         // after we psbt extract it
-        let msg = secp256k1_zkp::Message::from_slice(&sighash[..]).unwrap();
+        let msg = secp256k1_zkp::Message::from_digest_slice(&sighash[..]).unwrap();
 
         // Finally construct the signature and add to psbt
         for sk in sks_reqd {
