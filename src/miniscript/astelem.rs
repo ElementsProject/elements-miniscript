@@ -18,7 +18,7 @@ use elements::{opcodes, script, Sequence};
 use super::limits::{MAX_SCRIPT_ELEMENT_SIZE, MAX_STANDARD_P2WSH_STACK_ITEM_SIZE};
 use crate::extensions::ParseableExt;
 use crate::miniscript::context::SigType;
-use crate::miniscript::types::{self, Property};
+use crate::miniscript::types;
 use crate::miniscript::ScriptContext;
 use crate::util::MsKeyBuilder;
 use crate::{
@@ -303,7 +303,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("[")?;
-        if let Ok(type_map) = types::Type::type_check(self, |_| None) {
+        if let Ok(type_map) = types::Type::type_check(self) {
             f.write_str(match type_map.corr.base {
                 types::Base::B => "B",
                 types::Base::K => "K",

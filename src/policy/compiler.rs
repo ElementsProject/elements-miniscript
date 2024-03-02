@@ -13,9 +13,11 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::{cmp, error, f64, fmt, hash, mem};
 
+use elements::{LockTime, Sequence};
+
 use crate::miniscript::context::SigType;
 use crate::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
-use crate::miniscript::types::{self, ErrorKind, ExtData, Property, Type};
+use crate::miniscript::types::{self, ErrorKind, ExtData, Property, Type, Error};
 use crate::miniscript::ScriptContext;
 use crate::policy::Concrete;
 use crate::{policy, Extension, Miniscript, MiniscriptKey, Terminal};
@@ -152,6 +154,169 @@ struct CompilerExtData {
     /// (total length of all witness pushes, plus their own length prefixes)
     /// for fragments that can be dissatisfied without failing the script.
     dissat_cost: Option<f64>,
+}
+
+/// None-returning function to help type inference when we need a
+/// closure that simply returns `None`
+fn return_none<T>(_: usize) -> Option<T> {
+    None
+}
+
+impl CompilerExtData {
+    /// Compute the type of a fragment, given a function to look up
+    /// the types of its children, if available and relevant for the
+    /// given fragment
+    pub fn type_check<Pk, Ctx, C, Ext>(
+        fragment: &Terminal<Pk, Ctx, Ext>,
+        mut child: C,
+    ) -> Result<Self, Error<Pk, Ctx, Ext>>
+    where
+        C: FnMut(usize) -> Option<Self>,
+        Pk: MiniscriptKey,
+        Ctx: ScriptContext,
+        Ext: Extension,
+    {
+        let mut get_child = |sub, n| {
+            child(n)
+                .map(Ok)
+                .unwrap_or_else(|| Self::type_check(sub, return_none))
+        };
+        let wrap_err = |result: Result<Self, ErrorKind>| {
+            result.map_err(|kind| Error {
+                fragment: fragment.clone(),
+                error: kind,
+            })
+        };
+
+        let ret = match *fragment {
+            Terminal::True => Ok(Self::from_true()),
+            Terminal::False => Ok(Self::from_false()),
+            Terminal::PkK(..) => Ok(Self::from_pk_k::<Ctx>()),
+            Terminal::PkH(..) | Terminal::RawPkH(..) => Ok(Self::from_pk_h::<Ctx>()),
+            Terminal::Multi(k, ref pks) | Terminal::MultiA(k, ref pks) => {
+                if k == 0 {
+                    return Err(Error {
+                        fragment: fragment.clone(),
+                        error: ErrorKind::ZeroThreshold,
+                    });
+                }
+                if k > pks.len() {
+                    return Err(Error {
+                        fragment: fragment.clone(),
+                        error: ErrorKind::OverThreshold(k, pks.len()),
+                    });
+                }
+                match *fragment {
+                    Terminal::Multi(..) => Ok(Self::from_multi(k, pks.len())),
+                    Terminal::MultiA(..) => Ok(Self::from_multi_a(k, pks.len())),
+                    _ => unreachable!(),
+                }
+            }
+            Terminal::After(t) => {
+                // Note that for CLTV this is a limitation not of Bitcoin but Miniscript. The
+                // number on the stack would be a 5 bytes signed integer but Miniscript's B type
+                // only consumes 4 bytes from the stack.
+                if t == LockTime::ZERO.into() {
+                    return Err(Error {
+                        fragment: fragment.clone(),
+                        error: ErrorKind::InvalidTime,
+                    });
+                }
+                Ok(Self::from_after(t.into()))
+            }
+            Terminal::Older(t) => {
+                if t == Sequence::ZERO || !t.is_relative_lock_time() {
+                    return Err(Error {
+                        fragment: fragment.clone(),
+                        error: ErrorKind::InvalidTime,
+                    });
+                }
+                Ok(Self::from_older(t))
+            }
+            Terminal::Sha256(..) => Ok(Self::from_sha256()),
+            Terminal::Hash256(..) => Ok(Self::from_hash256()),
+            Terminal::Ripemd160(..) => Ok(Self::from_ripemd160()),
+            Terminal::Hash160(..) => Ok(Self::from_hash160()),
+            Terminal::Alt(ref sub) => wrap_err(Self::cast_alt(get_child(&sub.node, 0)?)),
+            Terminal::Swap(ref sub) => wrap_err(Self::cast_swap(get_child(&sub.node, 0)?)),
+            Terminal::Check(ref sub) => wrap_err(Self::cast_check(get_child(&sub.node, 0)?)),
+            Terminal::DupIf(ref sub) => wrap_err(Self::cast_dupif(get_child(&sub.node, 0)?)),
+            Terminal::Verify(ref sub) => wrap_err(Self::cast_verify(get_child(&sub.node, 0)?)),
+            Terminal::NonZero(ref sub) => wrap_err(Self::cast_nonzero(get_child(&sub.node, 0)?)),
+            Terminal::ZeroNotEqual(ref sub) => {
+                wrap_err(Self::cast_zeronotequal(get_child(&sub.node, 0)?))
+            }
+            Terminal::AndB(ref l, ref r) => {
+                let ltype = get_child(&l.node, 0)?;
+                let rtype = get_child(&r.node, 1)?;
+                wrap_err(Self::and_b(ltype, rtype))
+            }
+            Terminal::AndV(ref l, ref r) => {
+                let ltype = get_child(&l.node, 0)?;
+                let rtype = get_child(&r.node, 1)?;
+                wrap_err(Self::and_v(ltype, rtype))
+            }
+            Terminal::OrB(ref l, ref r) => {
+                let ltype = get_child(&l.node, 0)?;
+                let rtype = get_child(&r.node, 1)?;
+                wrap_err(Self::or_b(ltype, rtype))
+            }
+            Terminal::OrD(ref l, ref r) => {
+                let ltype = get_child(&l.node, 0)?;
+                let rtype = get_child(&r.node, 1)?;
+                wrap_err(Self::or_d(ltype, rtype))
+            }
+            Terminal::OrC(ref l, ref r) => {
+                let ltype = get_child(&l.node, 0)?;
+                let rtype = get_child(&r.node, 1)?;
+                wrap_err(Self::or_c(ltype, rtype))
+            }
+            Terminal::OrI(ref l, ref r) => {
+                let ltype = get_child(&l.node, 0)?;
+                let rtype = get_child(&r.node, 1)?;
+                wrap_err(Self::or_i(ltype, rtype))
+            }
+            Terminal::AndOr(ref a, ref b, ref c) => {
+                let atype = get_child(&a.node, 0)?;
+                let btype = get_child(&b.node, 1)?;
+                let ctype = get_child(&c.node, 2)?;
+                wrap_err(Self::and_or(atype, btype, ctype))
+            }
+            Terminal::Thresh(k, ref subs) => {
+                if k == 0 {
+                    return Err(Error {
+                        fragment: fragment.clone(),
+                        error: ErrorKind::ZeroThreshold,
+                    });
+                }
+                if k > subs.len() {
+                    return Err(Error {
+                        fragment: fragment.clone(),
+                        error: ErrorKind::OverThreshold(k, subs.len()),
+                    });
+                }
+
+                let mut last_err_frag = None;
+                let res = Self::threshold(k, subs.len(), |n| match get_child(&subs[n].node, n) {
+                    Ok(x) => Ok(x),
+                    Err(e) => {
+                        last_err_frag = Some(e.fragment);
+                        Err(e.error)
+                    }
+                });
+
+                res.map_err(|kind| Error {
+                    fragment: last_err_frag.unwrap_or_else(|| fragment.clone()),
+                    error: kind,
+                })
+            }
+            Terminal::Ext(ref ext) => Ok(Self::from_ext(ext)),
+        };
+        if let Ok(ref ret) = ret {
+            ret.sanity_checks()
+        }
+        ret
+    }
 }
 
 impl Property for CompilerExtData {
@@ -483,7 +648,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> AstElemExt<Pk, Ctx> {
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> AstElemExt<Pk, Ctx> {
     fn terminal(ast: Terminal<Pk, Ctx>) -> AstElemExt<Pk, Ctx> {
         AstElemExt {
-            comp_ext_data: CompilerExtData::type_check(&ast, |_| None).unwrap(),
+            comp_ext_data: CompilerExtData::type_check(&ast, return_none).unwrap(),
             ms: Arc::new(Miniscript::from_ast(ast).expect("Terminal creation must always succeed")),
         }
     }
@@ -500,8 +665,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> AstElemExt<Pk, Ctx> {
         };
         //Types and ExtData are already cached and stored in children. So, we can
         //type_check without cache. For Compiler extra data, we supply a cache.
-        let ty = types::Type::type_check(&ast, |_| None)?;
-        let ext = types::ExtData::type_check(&ast, |_| None)?;
+        let ty = types::Type::type_check(&ast)?;
+        let ext = types::ExtData::type_check(&ast)?;
         let comp_ext_data = CompilerExtData::type_check(&ast, lookup_ext)?;
         Ok(AstElemExt {
             ms: Arc::new(Miniscript {
@@ -528,8 +693,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> AstElemExt<Pk, Ctx> {
         };
         //Types and ExtData are already cached and stored in children. So, we can
         //type_check without cache. For Compiler extra data, we supply a cache.
-        let ty = types::Type::type_check(&ast, |_| None)?;
-        let ext = types::ExtData::type_check(&ast, |_| None)?;
+        let ty = types::Type::type_check(&ast)?;
+        let ext = types::ExtData::type_check(&ast)?;
         let comp_ext_data = CompilerExtData::type_check(&ast, lookup_ext)?;
         Ok(AstElemExt {
             ms: Arc::new(Miniscript {

@@ -890,15 +890,14 @@ impl Property for ExtData {
     fn from_ext<E: Extension>(e: &E) -> Self {
         e.extra_prop()
     }
-
+}
+impl ExtData {
     /// Compute the type of a fragment assuming all the children of
     /// Miniscript have been computed already.
-    fn type_check<Pk, Ctx, C, Ext>(
+    pub fn type_check<Pk, Ctx, Ext>(
         fragment: &Terminal<Pk, Ctx, Ext>,
-        _child: C,
     ) -> Result<Self, Error<Pk, Ctx, Ext>>
     where
-        C: FnMut(usize) -> Option<Self>,
         Ctx: ScriptContext,
         Pk: MiniscriptKey,
         Ext: Extension,

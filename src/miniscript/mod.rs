@@ -36,7 +36,6 @@ use std::cmp;
 use std::sync::Arc;
 
 use self::lex::{lex, TokenIter};
-use self::types::Property;
 use crate::extensions::ParseableExt;
 pub use crate::miniscript::context::ScriptContext;
 use crate::miniscript::decode::Terminal;
@@ -117,8 +116,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Miniscript<Pk, Ctx, 
     /// Display code of type_check.
     pub fn from_ast(t: Terminal<Pk, Ctx, Ext>) -> Result<Miniscript<Pk, Ctx, Ext>, Error> {
         Ok(Miniscript {
-            ty: Type::type_check(&t, |_| None)?,
-            ext: ExtData::type_check(&t, |_| None)?,
+            ty: Type::type_check(&t)?,
+            ext: ExtData::type_check(&t)?,
             node: t,
             phantom: PhantomData,
         })
@@ -177,7 +176,7 @@ where
 
         let top = decode::parse(&mut iter)?;
         Ctx::check_global_validity(&top)?;
-        let type_check = types::Type::type_check(&top.node, |_| None)?;
+        let type_check = types::Type::type_check(&top.node)?;
         if type_check.corr.base != types::Base::B {
             return Err(Error::NonTopLevel(format!("{:?}", top)));
         };
@@ -491,8 +490,8 @@ impl_from_tree!(
     fn from_tree(top: &expression::Tree<'_>) -> Result<Miniscript<Pk, Ctx, Ext>, Error> {
         let inner: Terminal<Pk, Ctx, Ext> = expression::FromTree::from_tree(top)?;
         Ok(Miniscript {
-            ty: Type::type_check(&inner, |_| None)?,
-            ext: ExtData::type_check(&inner, |_| None)?,
+            ty: Type::type_check(&inner)?,
+            ext: ExtData::type_check(&inner)?,
             node: inner,
             phantom: PhantomData,
         })

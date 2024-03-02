@@ -17,17 +17,13 @@ use crate::extensions::ParseableExt;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::limits::{MAX_BLOCK_WEIGHT, MAX_PUBKEYS_PER_MULTISIG};
 use crate::miniscript::types::extra_props::ExtData;
-use crate::miniscript::types::{Property, Type};
+use crate::miniscript::types::Type;
 use crate::miniscript::ScriptContext;
 #[cfg(doc)]
 use crate::Descriptor;
 use crate::{
     bitcoin, hash256, AbsLockTime, Error, Extension, Miniscript, MiniscriptKey, NoExt, ToPublicKey,
 };
-
-fn return_none<T>(_: usize) -> Option<T> {
-    None
-}
 
 /// Trait for parsing keys from byte slices
 pub trait ParseableKey: Sized + ToPublicKey + private::Sealed {
@@ -211,8 +207,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> TerminalStack<Pk, Ct
 
     ///reduce, type check and push a 0-arg node
     fn reduce0(&mut self, ms: Terminal<Pk, Ctx, Ext>) -> Result<(), Error> {
-        let ty = Type::type_check(&ms, return_none)?;
-        let ext = ExtData::type_check(&ms, return_none)?;
+        let ty = Type::type_check(&ms)?;
+        let ext = ExtData::type_check(&ms)?;
         let ms = Miniscript {
             node: ms,
             ty,
@@ -232,8 +228,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> TerminalStack<Pk, Ct
         let top = self.pop().unwrap();
         let wrapped_ms = wrap(Arc::new(top));
 
-        let ty = Type::type_check(&wrapped_ms, return_none)?;
-        let ext = ExtData::type_check(&wrapped_ms, return_none)?;
+        let ty = Type::type_check(&wrapped_ms)?;
+        let ext = ExtData::type_check(&wrapped_ms)?;
         let ms = Miniscript {
             node: wrapped_ms,
             ty,
@@ -258,8 +254,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> TerminalStack<Pk, Ct
 
         let wrapped_ms = wrap(Arc::new(left), Arc::new(right));
 
-        let ty = Type::type_check(&wrapped_ms, return_none)?;
-        let ext = ExtData::type_check(&wrapped_ms, return_none)?;
+        let ty = Type::type_check(&wrapped_ms)?;
+        let ext = ExtData::type_check(&wrapped_ms)?;
         let ms = Miniscript {
             node: wrapped_ms,
             ty,
@@ -562,8 +558,8 @@ pub fn parse<Ctx: ScriptContext, Ext: ParseableExt>(
                 let c = term.pop().unwrap();
                 let wrapped_ms = Terminal::AndOr(Arc::new(a), Arc::new(c), Arc::new(b));
 
-                let ty = Type::type_check(&wrapped_ms, return_none)?;
-                let ext = ExtData::type_check(&wrapped_ms, return_none)?;
+                let ty = Type::type_check(&wrapped_ms)?;
+                let ext = ExtData::type_check(&wrapped_ms)?;
 
                 term.0.push(Miniscript {
                     node: wrapped_ms,
