@@ -228,17 +228,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> TerminalStack<Pk, Ct
         let top = self.pop().unwrap();
         let wrapped_ms = wrap(Arc::new(top));
 
-        let ty = Type::type_check(&wrapped_ms)?;
-        let ext = ExtData::type_check(&wrapped_ms)?;
-        let ms = Miniscript {
-            node: wrapped_ms,
-            ty,
-            ext,
-            phantom: PhantomData,
-        };
-        Ctx::check_global_validity(&ms)?;
-        self.0.push(ms);
-        Ok(())
+        self.reduce0(wrapped_ms)
     }
 
     ///reduce, type check and push a 2-arg node
@@ -254,17 +244,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> TerminalStack<Pk, Ct
 
         let wrapped_ms = wrap(Arc::new(left), Arc::new(right));
 
-        let ty = Type::type_check(&wrapped_ms)?;
-        let ext = ExtData::type_check(&wrapped_ms)?;
-        let ms = Miniscript {
-            node: wrapped_ms,
-            ty,
-            ext,
-            phantom: PhantomData,
-        };
-        Ctx::check_global_validity(&ms)?;
-        self.0.push(ms);
-        Ok(())
+        self.reduce0(wrapped_ms)
     }
 }
 
