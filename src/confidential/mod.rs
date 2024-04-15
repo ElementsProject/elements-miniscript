@@ -400,7 +400,7 @@ mod tests {
             test.check(&secp);
         }
         // Uncomment to regenerate test vectors; to see the output, run
-        // cargo test confidential::tests:;confidential_descriptor -- --nocapture
+        // cargo test confidential::tests::confidential_descriptor -- --nocapture
         /*
         for (n, test) in tests.iter().enumerate() {
             test.output_elip_test_vector(n + 1);
