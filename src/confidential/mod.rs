@@ -329,6 +329,16 @@ mod tests {
         )
         .unwrap();
 
+
+        let single_ct_key = DescriptorPublicKey::from_str(
+            "02dce16018bbbb8e36de7b394df5b5166e9adb7498be7d881a85a09aeecf76b623",
+        )
+        .unwrap();
+        let single_spk_key = DefiniteDescriptorKey::from_str(
+            "03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4",
+        )
+        .unwrap();
+
         let tests = vec![
             // Bare key, P2PKH
             ConfidentialTest {
@@ -393,6 +403,13 @@ mod tests {
                 descriptor_str: format!("ct(slip77(b2396b3ee20509cdb64fe24180a14a72dbd671728eaa49bac69d2bdecb5f5a04),eltr({}))#n3v4t5cs", spk_key),
                 conf_addr: "lq1pq26fndnz8ef6umlz6e2755sm6j5jwxv3tdt2295mr4mx6ux0uf8vcc2tuvwx7k7g9kvhhpux07vqpm3qjj8uwdj94650265ustv0xy8z8wfacw9e5a5t",
                 unconf_addr: "ex1pv997x8r0t0yzmxtms7r8lxqqacsffr78xez6a284d2wg9k8nzr3qxa9kvf",
+            },
+            ConfidentialTest {
+                key: Key::Bare(single_ct_key),
+                descriptor: crate::Descriptor::new_wpkh(single_spk_key).unwrap(),
+                descriptor_str: format!("ct(02dce16018bbbb8e36de7b394df5b5166e9adb7498be7d881a85a09aeecf76b623,elwpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4))#h5e0p6m9"),
+                conf_addr: "lq1qq0r6pegudzm0tzpszelc34qjln4fdxawgwmgnza63wwpzdy6jrm0grmqvvk2ce5ksnxcs9ecgtnryt7xg3406y5ccl0k2glns",
+                unconf_addr: "ex1qpasxxt9vv6tgfnvgzuuy9e3j9lryg6hawrval4",
             },
         ];
 
