@@ -19,6 +19,7 @@ cargo --version
 rustc --version
 
 cargo update -p byteorder --precise 1.4.3
+cargo update -p cc --precise 1.0.94
 
 # Testing
 cargo install --force honggfuzz --no-default-features
