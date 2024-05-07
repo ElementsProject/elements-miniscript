@@ -30,7 +30,7 @@ use crate::extensions::{Extension, ParseableExt};
 use crate::{Descriptor as OrdinaryDescriptor, DescriptorPublicKey, Error};
 
 sha256t_hash_newtype! {
-    pub struct Elip151Tag = hash_str("ELIP-151 Deterministic descriptor blinding keys");
+    pub struct Elip151Tag = hash_str("Deterministic-View-Key/1.0");
     /// ELIP-151 Deterministic descriptor blinding keys
     #[hash_newtype(forward)]
     pub struct Elip151Hash(_);
@@ -103,7 +103,7 @@ impl<T: Extension + ParseableExt> ConfidentialDescriptor<DescriptorPublicKey, T>
 mod test {
     use super::*;
     use crate::descriptor::checksum::desc_checksum;
-    use bitcoin::hashes::{sha256, HashEngine};
+    use bitcoin::hashes::{sha256, HashEngine, sha256t::Tag};
     use std::str::FromStr;
 
     /// The SHA-256 initial midstate value for the [`Elip151Hash`].
@@ -121,6 +121,11 @@ mod test {
         engine.input(&tag_hash[..]);
         engine.input(&tag_hash[..]);
         assert_eq!(MIDSTATE_ELIP151, engine.midstate().to_byte_array());
+
+        // Test empty hash
+        let expected = "dcd8403dcf5af960f69fa41d114931a840877dfb5378046018f78ea894a36ebd";
+        assert_eq!(Elip151Hash::from_engine(Elip151Tag::engine()).to_string(), expected);
+        assert_eq!(Elip151Hash::hash(&[]).to_string(), expected);
     }
 
     fn add_checksum(desc: &str) -> String {
@@ -168,15 +173,16 @@ mod test {
         let pubkey = "03d902f35f560e0470c63313c7369168d9d7df2d49bf295fd9fb7cb109ccee0494";
 
         let mut _i = 0;
-        for desc in [
-            &format!("elwpkh({xpub}/<0;1>/*)"),
-            &format!("elwpkh({xpub}/0/*)"),
+        for (desc, key) in [
+            (&format!("elwpkh({xpub}/<0;1>/*)"), "b3baf94d60cf8423cd257283575997a2c00664ced3e8de00f8726703142b1989"),
+            (&format!("elwpkh({xpub}/0/*)"), "de9c5fb624154624146a8aea0489b30f05c720eed6b493b1f3ab63405a11bf37"),
         ] {
             let conf_desc = confidential_descriptor(desc).unwrap();
             let elip151_desc = add_checksum(&format!("ct(elip151,{})", desc));
             let conf_desc_elip151 =
                 ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&elip151_desc).unwrap();
             assert_eq!(conf_desc, conf_desc_elip151);
+            assert_eq!(conf_desc.key.to_string(), key);
 
             // Uncomment this and below to regenerate test vectors; to see the output, run
             // cargo test test_vectors_elip151 -- --nocapture
