@@ -30,7 +30,7 @@ use crate::extensions::{Extension, ParseableExt};
 use crate::{Descriptor as OrdinaryDescriptor, DescriptorPublicKey, Error};
 
 sha256t_hash_newtype! {
-    pub struct Elip151Tag = hash_str("ELIP-151 Deterministic descriptor blinding keys");
+    pub struct Elip151Tag = hash_str("Deterministic-View-Key/1.0");
     /// ELIP-151 Deterministic descriptor blinding keys
     #[hash_newtype(forward)]
     pub struct Elip151Hash(_);
