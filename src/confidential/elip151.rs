@@ -17,12 +17,10 @@
 //! https://github.com/ElementsProject/ELIPs/blob/main/elip-0151.md
 //!
 
-use bitcoin::hashes::{sha256t_hash_newtype, Hash};
+use bitcoin::hashes::{sha256t_hash_newtype, Hash, HashEngine};
 use bitcoin::secp256k1;
 use bitcoin::Network;
-use elements::encode::Encodable;
 use elements::opcodes;
-use elements::script::Builder;
 
 use crate::confidential::{Descriptor as ConfidentialDescriptor, Key};
 use crate::descriptor::{DescriptorSecretKey, SinglePriv};
@@ -63,14 +61,8 @@ impl Key {
 
         let mut eng = Elip151Hash::engine();
         for script_pubkey in script_pubkeys {
-            Builder::new()
-                .push_opcode(opcodes::all::OP_INVALIDOPCODE)
-                .into_script()
-                .consensus_encode(&mut eng)
-                .expect("engines don't error");
-            script_pubkey
-                .consensus_encode(&mut eng)
-                .expect("engines don't error");
+            eng.input(&[opcodes::all::OP_INVALIDOPCODE.into_u8()]);
+            eng.input(script_pubkey.as_bytes());
         }
         let hash_bytes = Elip151Hash::from_engine(eng).to_byte_array();
 
@@ -174,8 +166,8 @@ mod test {
 
         let mut _i = 0;
         for (desc, key) in [
-            (&format!("elwpkh({xpub}/<0;1>/*)"), "b3baf94d60cf8423cd257283575997a2c00664ced3e8de00f8726703142b1989"),
-            (&format!("elwpkh({xpub}/0/*)"), "de9c5fb624154624146a8aea0489b30f05c720eed6b493b1f3ab63405a11bf37"),
+            (&format!("elwpkh({xpub}/<0;1>/*)"), "35f9c6646466c0088f23d2a82395bc80ed162ee7a3ff7d877a3d64ac9f87ca96"),
+            (&format!("elwpkh({xpub}/0/*)"), "4dfd13090ec81054fa45ca50589bfc8fd2178e5626c348cc400530f598121920"),
         ] {
             let conf_desc = confidential_descriptor(desc).unwrap();
             let elip151_desc = add_checksum(&format!("ct(elip151,{})", desc));
