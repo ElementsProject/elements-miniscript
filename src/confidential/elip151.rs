@@ -173,15 +173,16 @@ mod test {
         let pubkey = "03d902f35f560e0470c63313c7369168d9d7df2d49bf295fd9fb7cb109ccee0494";
 
         let mut _i = 0;
-        for desc in [
-            &format!("elwpkh({xpub}/<0;1>/*)"),
-            &format!("elwpkh({xpub}/0/*)"),
+        for (desc, key) in [
+            (&format!("elwpkh({xpub}/<0;1>/*)"), "b3baf94d60cf8423cd257283575997a2c00664ced3e8de00f8726703142b1989"),
+            (&format!("elwpkh({xpub}/0/*)"), "de9c5fb624154624146a8aea0489b30f05c720eed6b493b1f3ab63405a11bf37"),
         ] {
             let conf_desc = confidential_descriptor(desc).unwrap();
             let elip151_desc = add_checksum(&format!("ct(elip151,{})", desc));
             let conf_desc_elip151 =
                 ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&elip151_desc).unwrap();
             assert_eq!(conf_desc, conf_desc_elip151);
+            assert_eq!(conf_desc.key.to_string(), key);
 
             // Uncomment this and below to regenerate test vectors; to see the output, run
             // cargo test test_vectors_elip151 -- --nocapture
