@@ -103,7 +103,7 @@ impl<T: Extension + ParseableExt> ConfidentialDescriptor<DescriptorPublicKey, T>
 mod test {
     use super::*;
     use crate::descriptor::checksum::desc_checksum;
-    use bitcoin::hashes::{sha256, HashEngine};
+    use bitcoin::hashes::{sha256, HashEngine, sha256t::Tag};
     use std::str::FromStr;
 
     /// The SHA-256 initial midstate value for the [`Elip151Hash`].
@@ -121,6 +121,11 @@ mod test {
         engine.input(&tag_hash[..]);
         engine.input(&tag_hash[..]);
         assert_eq!(MIDSTATE_ELIP151, engine.midstate().to_byte_array());
+
+        // Test empty hash
+        let expected = "dcd8403dcf5af960f69fa41d114931a840877dfb5378046018f78ea894a36ebd";
+        assert_eq!(Elip151Hash::from_engine(Elip151Tag::engine()).to_string(), expected);
+        assert_eq!(Elip151Hash::hash(&[]).to_string(), expected);
     }
 
     fn add_checksum(desc: &str) -> String {
