@@ -1,3 +1,7 @@
+# 0.3.1 - May 10, 2024
+
+- [Fixed](https://github.com/ElementsProject/elements-miniscript/pull/81) ELIP-151 hash calculation
+
 # 0.3.0 - Jan 30, 2024
 
 - Add simplicity
