@@ -140,7 +140,7 @@ mod test {
         desc: &str,
     ) -> Result<ConfidentialDescriptor<DescriptorPublicKey>, Error> {
         let desc = add_checksum(desc);
-        let desc = OrdinaryDescriptor::<DescriptorPublicKey>::from_str(&desc).unwrap();
+        let desc = OrdinaryDescriptor::<DescriptorPublicKey>::from_str(&desc)?;
         ConfidentialDescriptor::with_elip151_descriptor_blinding_key(desc)
     }
 
@@ -176,6 +176,8 @@ mod test {
         for (desc, key) in [
             (&format!("elwpkh({xpub}/<0;1>/*)"), "b3baf94d60cf8423cd257283575997a2c00664ced3e8de00f8726703142b1989"),
             (&format!("elwpkh({xpub}/0/*)"), "de9c5fb624154624146a8aea0489b30f05c720eed6b493b1f3ab63405a11bf37"),
+            (&format!("elwsh(multi(2,{xpub}/<0;1>/*,{xpub}/0/<0;1>/*))"), "7fcc1b9a20bbf611d157016192a7d28e353033cfa6a4885b3c48fa5ff9ce1881"),
+            (&format!("elwsh(multi(2,{xpub}/<0;1>/*,{xpub}/0/<1;2>/*))"), "ff0a08050417f0ca95fb6ef7df979ae464739cb79b8c8f4b05408e0ac681a527"),
         ] {
             let conf_desc = confidential_descriptor(desc).unwrap();
             let elip151_desc = add_checksum(&format!("ct(elip151,{})", desc));
@@ -198,10 +200,14 @@ mod test {
         }
 
         _i = 0;
-        for invalid_desc in [&format!("elwpkh({xpub})"), &format!("elwpkh({pubkey})")] {
+        let text = "Descriptors without wildcards are not supported in elip151".to_string();
+        for (invalid_desc, expected_err) in [
+            (&format!("elwpkh({xpub})"), Error::Unexpected(text.to_string())),
+            (&format!("elwpkh({pubkey})"), Error::Unexpected(text.to_string())),
+            (&format!("elwsh(multi(2,{xpub}/<0;1>/*,{xpub}/0/<0;1;2>/*))"), Error::MultipathDescLenMismatch),
+        ] {
             let err = confidential_descriptor(invalid_desc).unwrap_err();
-            let text = "Descriptors without wildcards are not supported in elip151".to_string();
-            assert_eq!(err, Error::Unexpected(text));
+            assert_eq!(err, expected_err);
             /*
             _i = _i + 1;
             println!("* Invalid Test vector {}", _i);
@@ -209,5 +215,6 @@ mod test {
             println!("** Invalid confidential descriptor: <code>{}</code>", add_checksum(&format!("ct(elip151,{})", invalid_desc)));
             */
         }
+
     }
 }
