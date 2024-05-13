@@ -140,7 +140,7 @@ mod test {
         desc: &str,
     ) -> Result<ConfidentialDescriptor<DescriptorPublicKey>, Error> {
         let desc = add_checksum(desc);
-        let desc = OrdinaryDescriptor::<DescriptorPublicKey>::from_str(&desc).unwrap();
+        let desc = OrdinaryDescriptor::<DescriptorPublicKey>::from_str(&desc)?;
         ConfidentialDescriptor::with_elip151_descriptor_blinding_key(desc)
     }
 
@@ -200,10 +200,14 @@ mod test {
         }
 
         _i = 0;
-        for invalid_desc in [&format!("elwpkh({xpub})"), &format!("elwpkh({pubkey})")] {
+        let text = "Descriptors without wildcards are not supported in elip151".to_string();
+        for (invalid_desc, expected_err) in [
+            (&format!("elwpkh({xpub})"), Error::Unexpected(text.to_string())),
+            (&format!("elwpkh({pubkey})"), Error::Unexpected(text.to_string())),
+            (&format!("elwsh(multi(2,{xpub}/<0;1>/*,{xpub}/0/<0;1;2>/*))"), Error::MultipathDescLenMismatch),
+        ] {
             let err = confidential_descriptor(invalid_desc).unwrap_err();
-            let text = "Descriptors without wildcards are not supported in elip151".to_string();
-            assert_eq!(err, Error::Unexpected(text));
+            assert_eq!(err, expected_err);
             /*
             _i = _i + 1;
             println!("* Invalid Test vector {}", _i);
@@ -211,5 +215,6 @@ mod test {
             println!("** Invalid confidential descriptor: <code>{}</code>", add_checksum(&format!("ct(elip151,{})", invalid_desc)));
             */
         }
+
     }
 }
