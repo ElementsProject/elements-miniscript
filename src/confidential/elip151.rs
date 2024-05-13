@@ -176,6 +176,8 @@ mod test {
         for (desc, key) in [
             (&format!("elwpkh({xpub}/<0;1>/*)"), "b3baf94d60cf8423cd257283575997a2c00664ced3e8de00f8726703142b1989"),
             (&format!("elwpkh({xpub}/0/*)"), "de9c5fb624154624146a8aea0489b30f05c720eed6b493b1f3ab63405a11bf37"),
+            (&format!("elwsh(multi(2,{xpub}/<0;1>/*,{xpub}/0/<0;1>/*))"), "7fcc1b9a20bbf611d157016192a7d28e353033cfa6a4885b3c48fa5ff9ce1881"),
+            (&format!("elwsh(multi(2,{xpub}/<0;1>/*,{xpub}/0/<1;2>/*))"), "ff0a08050417f0ca95fb6ef7df979ae464739cb79b8c8f4b05408e0ac681a527"),
         ] {
             let conf_desc = confidential_descriptor(desc).unwrap();
             let elip151_desc = add_checksum(&format!("ct(elip151,{})", desc));
