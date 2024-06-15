@@ -434,10 +434,6 @@ impl<Pk: MiniscriptKey, Ext: Extension> Descriptor<Pk, Ext> {
         }
     }
 
-    /// Return a string without the checksum
-    pub fn to_string_no_chksum(&self) -> String {
-        format!("{:?}", self)
-    }
     /// Checks whether the descriptor is safe.
     ///
     /// Checks whether all the spend paths in the descriptor are possible on the
