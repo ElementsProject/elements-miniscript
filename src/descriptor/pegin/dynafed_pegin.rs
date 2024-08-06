@@ -33,7 +33,7 @@ use crate::expression::{self, FromTree};
 use crate::extensions::{CovExtArgs, CovenantExt};
 use crate::policy::{semantic, Liftable};
 use crate::{
-    BtcDescriptor, BtcError, BtcFromTree, BtcLiftable, BtcPolicy, BtcSatisfier, BtcTree,
+    tweak_key, BtcDescriptor, BtcError, BtcFromTree, BtcLiftable, BtcPolicy, BtcSatisfier, BtcTree,
     Descriptor, Error, MiniscriptKey, ToPublicKey,
 };
 
@@ -198,7 +198,7 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
     /// for the others it is the witness script.
     pub fn bitcoin_witness_script<C: secp256k1_zkp::Verification>(
         &self,
-        _secp: &secp256k1_zkp::Secp256k1<C>,
+        secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> Result<BtcScript, Error>
     where
         Pk: ToPublicKey,
@@ -208,36 +208,31 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
             .explicit_script()
             .expect("Tr pegins unknown yet")
             .into_bytes();
-        let _tweak = hashes::sha256::Hash::hash(&tweak_vec);
+        let tweak = hashes::sha256::Hash::hash(&tweak_vec);
 
-        unreachable!("TODO: After upstream Refactor for Translator trait")
-        // let derived = self.fed_desc.derive
+        struct TranslateTweak<'a, C: secp256k1_zkp::Verification>(
+            hashes::sha256::Hash,
+            &'a secp256k1_zkp::Secp256k1<C>,
+        );
 
-        // struct TranslateTweak<'a, C: secp256k1_zkp::Verification>(
-        //     hashes::sha256::Hash,
-        //     &'a secp256k1_zkp::Secp256k1<C>,
-        // );
+        impl<'a, Pk, C> bitcoin_miniscript::Translator<Pk, bitcoin::PublicKey, ()> for TranslateTweak<'a, C>
+        where
+            Pk: MiniscriptKey + ToPublicKey,
+            C: secp256k1_zkp::Verification,
+        {
+            fn pk(&mut self, pk: &Pk) -> Result<bitcoin::PublicKey, ()> {
+                Ok(tweak_key(&pk.to_public_key(), self.1, &self.0[..]))
+            }
 
-        // impl<'a, Pk, C> PkTranslator<Pk, bitcoin::PublicKey, ()> for TranslateTweak<'a, C>
-        // where
-        //     Pk: MiniscriptKey,
-        //     C: secp256k1_zkp::Verification,
-        // {
-        //     fn pk(&mut self, pk: &Pk) -> Result<bitcoin::PublicKey, ()> {
-        //         tweak_key(pk, self.1, self.0.as_inner())
-        //     }
+            // We don't need to implement these methods as we are not using them in the policy.
+            // Fail if we encounter any hash fragments. See also translate_hash_clone! macro.
+            translate_hash_fail!(Pk, bitcoin::PublicKey, ());
+        }
+        let mut t = TranslateTweak(tweak, secp);
 
-        //     fn pkh(
-        //         &mut self,
-        //         pkh: &<Pk as MiniscriptKey>::Hash,
-        //     ) -> Result<<bitcoin::PublicKey as MiniscriptKey>::Hash, ()> {
-        //         unreachable!("No keyhashes in elements descriptors")
-        //     }
-        // }
-        // let mut t = TranslateTweak(tweak, secp);
-
-        // let tweaked_desc = <bitcoin_miniscript::TranslatePk>::translate_pk(&self.fed_desc, t).expect("Tweaking must succeed"),
-        // Ok(tweaked_desc.explicit_script()?)
+        let tweaked_desc = bitcoin_miniscript::TranslatePk::translate_pk(&self.fed_desc, &mut t)
+            .expect("Tweaking must succeed");
+        Ok(tweaked_desc.explicit_script()?)
     }
 
     /// Returns satisfying witness and scriptSig to spend an
