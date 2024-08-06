@@ -208,31 +208,7 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
             .explicit_script()
             .expect("Tr pegins unknown yet")
             .into_bytes();
-        let tweak = hashes::sha256::Hash::hash(&tweak_vec);
-
-        struct TranslateTweak<'a, C: secp256k1_zkp::Verification>(
-            hashes::sha256::Hash,
-            &'a secp256k1_zkp::Secp256k1<C>,
-        );
-
-        impl<'a, Pk, C> bitcoin_miniscript::Translator<Pk, bitcoin::PublicKey, ()> for TranslateTweak<'a, C>
-        where
-            Pk: MiniscriptKey + ToPublicKey,
-            C: secp256k1_zkp::Verification,
-        {
-            fn pk(&mut self, pk: &Pk) -> Result<bitcoin::PublicKey, ()> {
-                Ok(tweak_key(&pk.to_public_key(), self.1, &self.0[..]))
-            }
-
-            // We don't need to implement these methods as we are not using them in the policy.
-            // Fail if we encounter any hash fragments. See also translate_hash_clone! macro.
-            translate_hash_fail!(Pk, bitcoin::PublicKey, ());
-        }
-        let mut t = TranslateTweak(tweak, secp);
-
-        let tweaked_desc = bitcoin_miniscript::TranslatePk::translate_pk(&self.fed_desc, &mut t)
-            .expect("Tweaking must succeed");
-        Ok(tweaked_desc.explicit_script()?)
+        bitcoin_witness_script(&self.fed_desc, &tweak_vec[..], secp)
     }
 
     /// Returns satisfying witness and scriptSig to spend an
@@ -297,4 +273,36 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
     pub fn into_user_descriptor(self) -> Descriptor<Pk, CovenantExt<CovExtArgs>> {
         self.elem_desc
     }
+}
+
+fn bitcoin_witness_script<C: secp256k1_zkp::Verification, Pk: ToPublicKey>(
+    fed_desc: &BtcDescriptor<Pk>,
+    claim_script: &[u8],
+    secp: &secp256k1_zkp::Secp256k1<C>,
+) -> Result<BtcScript, Error> {
+    let tweak = hashes::sha256::Hash::hash(&claim_script);
+
+    struct TranslateTweak<'a, C: secp256k1_zkp::Verification>(
+        hashes::sha256::Hash,
+        &'a secp256k1_zkp::Secp256k1<C>,
+    );
+
+    impl<'a, Pk, C> bitcoin_miniscript::Translator<Pk, bitcoin::PublicKey, ()> for TranslateTweak<'a, C>
+    where
+        Pk: MiniscriptKey + ToPublicKey,
+        C: secp256k1_zkp::Verification,
+    {
+        fn pk(&mut self, pk: &Pk) -> Result<bitcoin::PublicKey, ()> {
+            Ok(tweak_key(&pk.to_public_key(), self.1, &self.0[..]))
+        }
+
+        // We don't need to implement these methods as we are not using them in the policy.
+        // Fail if we encounter any hash fragments. See also translate_hash_clone! macro.
+        translate_hash_fail!(Pk, bitcoin::PublicKey, ());
+    }
+    let mut t = TranslateTweak(tweak, secp);
+
+    let tweaked_desc = bitcoin_miniscript::TranslatePk::translate_pk(fed_desc, &mut t)
+        .expect("Tweaking must succeed");
+    Ok(tweaked_desc.explicit_script()?)
 }
