@@ -24,8 +24,7 @@ use std::convert::TryFrom;
 use std::fmt;
 
 use bitcoin::blockdata::script::{self, PushBytes};
-use bitcoin::hashes::Hash;
-use bitcoin::{self, hashes, ScriptBuf as BtcScript};
+use bitcoin::{self, ScriptBuf as BtcScript};
 use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{desc_checksum, verify_checksum};
@@ -216,26 +215,25 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
     /// construct one using the satisfier S.
     pub fn get_bitcoin_satisfaction<S, C: secp256k1_zkp::Verification>(
         &self,
-        _secp: &secp256k1_zkp::Secp256k1<C>,
-        _satisfier: S,
+        secp: &secp256k1_zkp::Secp256k1<C>,
+        satisfier: S,
     ) -> Result<(Vec<Vec<u8>>, BtcScript), Error>
     where
         S: BtcSatisfier<bitcoin::PublicKey>,
         Pk: ToPublicKey,
     {
-        let tweak_vec = self
+        let claim_script = self
             .elem_desc
             .explicit_script()
             .expect("Tr pegins unknown yet")
             .into_bytes();
-        let _tweak = hashes::sha256::Hash::hash(&tweak_vec);
-        unreachable!("TODO: After upstream refactor");
-        // let tweaked_desc = self.fed_desc.translate_pk_infallible(
-        //     |pk| tweak_key(pk, secp, tweak.as_inner()),
-        //     |_| unreachable!("No keyhashes in elements descriptors"),
-        // );
-        // let res = tweaked_desc.get_satisfaction(satisfier)?;
-        // Ok(res)
+        let mut t = TranslateTweak(&claim_script[..], secp);
+
+        let tweaked_desc = bitcoin_miniscript::TranslatePk::translate_pk(&self.fed_desc, &mut t)
+            .expect("Tweaking must succeed");
+
+        let res = tweaked_desc.get_satisfaction(satisfier)?;
+        Ok(res)
     }
 
     /// Computes an upper bound on the weight of a satisfying witness to the
