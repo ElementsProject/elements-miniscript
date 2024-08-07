@@ -280,14 +280,13 @@ fn bitcoin_witness_script<C: secp256k1_zkp::Verification, Pk: ToPublicKey>(
     claim_script: &[u8],
     secp: &secp256k1_zkp::Secp256k1<C>,
 ) -> Result<BtcScript, Error> {
-    let tweak = hashes::sha256::Hash::hash(&claim_script);
-
-    struct TranslateTweak<'a, C: secp256k1_zkp::Verification>(
-        hashes::sha256::Hash,
-        &'a secp256k1_zkp::Secp256k1<C>,
+    struct TranslateTweak<'a, 'b, C: secp256k1_zkp::Verification>(
+        &'a [u8],
+        &'b secp256k1_zkp::Secp256k1<C>,
     );
 
-    impl<'a, Pk, C> bitcoin_miniscript::Translator<Pk, bitcoin::PublicKey, ()> for TranslateTweak<'a, C>
+    impl<'a, 'b, Pk, C> bitcoin_miniscript::Translator<Pk, bitcoin::PublicKey, ()>
+        for TranslateTweak<'a, 'b, C>
     where
         Pk: MiniscriptKey + ToPublicKey,
         C: secp256k1_zkp::Verification,
@@ -300,7 +299,7 @@ fn bitcoin_witness_script<C: secp256k1_zkp::Verification, Pk: ToPublicKey>(
         // Fail if we encounter any hash fragments. See also translate_hash_clone! macro.
         translate_hash_fail!(Pk, bitcoin::PublicKey, ());
     }
-    let mut t = TranslateTweak(tweak, secp);
+    let mut t = TranslateTweak(claim_script, secp);
 
     let tweaked_desc = bitcoin_miniscript::TranslatePk::translate_pk(fed_desc, &mut t)
         .expect("Tweaking must succeed");
