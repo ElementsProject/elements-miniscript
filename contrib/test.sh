@@ -22,7 +22,14 @@ fi
 
 # Test bitcoind integration tests if told to (this only works with the stable toolchain)
 if [ "$DO_BITCOIND_TESTS" = true ]; then
+
+    BITCOIND_EXE_DEFAULT="$(git rev-parse --show-toplevel)/bitcoind-tests/bin/bitcoind"
+    ELEMENTSD_EXE_DEFAULT="$(git rev-parse --show-toplevel)/bitcoind-tests/bin/elementsd"
+
     cd bitcoind-tests
+
+    BITCOIND_EXE=${BITCOIND_EXE:=${BITCOIND_EXE_DEFAULT}} \
+    ELEMENTSD_EXE=${ELEMENTSD_EXE:=${ELEMENTSD_EXE_DEFAULT}} \
     cargo test --verbose
 
     # Exit integration tests, do not run other tests.
