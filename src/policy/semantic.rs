@@ -10,7 +10,7 @@ use elements::{LockTime, Sequence};
 
 use super::concrete::PolicyError;
 use super::ENTAILMENT_MAX_TERMINALS;
-use crate::{errstr, expression, AbsLockTime, Error, ForEachKey, MiniscriptKey, Translator};
+use crate::{errstr, expression, AbsLockTime, Error, MiniscriptKey, Translator};
 
 /// Abstract policy which corresponds to the semantics of a Miniscript
 /// and which allows complex forms of analysis, e.g. filtering and
@@ -56,26 +56,6 @@ where
     /// `Policy::Older(Sequence::from_consensus(n))`.
     pub fn older(n: u32) -> Policy<Pk> {
         Policy::Older(Sequence::from_consensus(n))
-    }
-}
-
-impl<Pk: MiniscriptKey> ForEachKey<Pk> for Policy<Pk> {
-    fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool
-    where
-        Pk: 'a,
-    {
-        let mut pred = |x| pred(x);
-        match *self {
-            Policy::Unsatisfiable | Policy::Trivial => true,
-            Policy::Key(ref _pkh) => todo!("Semantic Policy KeyHash must store Pk"),
-            Policy::Sha256(..)
-            | Policy::Hash256(..)
-            | Policy::Ripemd160(..)
-            | Policy::Hash160(..)
-            | Policy::After(..)
-            | Policy::Older(..) => true,
-            Policy::Threshold(_, ref subs) => subs.iter().all(|sub| sub.for_each_key(&mut pred)),
-        }
     }
 }
 

@@ -662,7 +662,12 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Policy<Pk> {
     where
         Pk: 'a,
     {
-        let mut pred = |x| pred(x);
+        self.for_each_key_internal(&mut pred)
+    }
+}
+
+impl<Pk: MiniscriptKey> Policy<Pk> {
+    fn for_each_key_internal<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: &mut F) -> bool {
         match *self {
             Policy::Unsatisfiable | Policy::Trivial => true,
             Policy::Key(ref pk) => pred(pk),
@@ -673,14 +678,12 @@ impl<Pk: MiniscriptKey> ForEachKey<Pk> for Policy<Pk> {
             | Policy::After(..)
             | Policy::Older(..) => true,
             Policy::Threshold(_, ref subs) | Policy::And(ref subs) => {
-                subs.iter().all(|sub| sub.for_each_key(&mut pred))
+                subs.iter().all(|sub| sub.for_each_key_internal(pred))
             }
-            Policy::Or(ref subs) => subs.iter().all(|(_, sub)| sub.for_each_key(&mut pred)),
+            Policy::Or(ref subs) => subs.iter().all(|(_, sub)| sub.for_each_key_internal(pred)),
         }
     }
-}
 
-impl<Pk: MiniscriptKey> Policy<Pk> {
     /// Convert a policy using one kind of public key to another
     /// type of public key
     ///
