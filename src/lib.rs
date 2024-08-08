@@ -125,8 +125,6 @@ mod macros;
 #[macro_use]
 mod pub_macros;
 
-pub use pub_macros::*;
-
 pub mod confidential;
 pub mod descriptor;
 pub mod expression;
