@@ -11,6 +11,7 @@ rustc --version
 if cargo --version | grep "1\.58"; then
     cargo update -p byteorder --precise 1.4.3
     cargo update -p cc --precise 1.0.94
+    cargo update -p ppv-lite86 --precise 0.2.17
 fi
 
 # Format if told to
