@@ -46,7 +46,7 @@ fn main() {
         }],
     };
 
-    #[cfg_attr(feature="cargo-fmt", rustfmt_skip)]
+    #[rustfmt::skip]
     let public_keys = vec![
         bitcoin::PublicKey::from_slice(&[2; 33]).expect("key 1"),
         bitcoin::PublicKey::from_slice(&[
