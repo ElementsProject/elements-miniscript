@@ -25,7 +25,7 @@
 //! 1. nVersion of the transaction (4-byte little endian)
 //! 2. hashPrevouts (32-byte hash)
 //! 3. hashSequence (32-byte hash)
-//! 3b. ELEMENTS EXTRA hashIssuances (32-byte hash)
+//! 3. ELEMENTS EXTRA hashIssuances (32-byte hash)
 //! 4. outpoint (32-byte hash + 4-byte little endian)
 //! 5. scriptCode of the input (serialized as scripts inside CTxOuts)
 //! 6. value of the output spent by this input (8-byte little endian)
