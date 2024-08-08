@@ -443,6 +443,7 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
     }
 }
 
+#[allow(clippy::ptr_arg)] // complains about &Vec but this is used in a closure context
 fn try_vec_as_preimage32(vec: &Vec<u8>) -> Option<Preimage32> {
     if vec.len() == 32 {
         let mut arr = [0u8; 32];
