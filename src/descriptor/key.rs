@@ -947,7 +947,7 @@ impl<K: InnerXKey> DescriptorXKey<K> {
             Some((fingerprint, ref path)) => (
                 fingerprint,
                 path.into_iter()
-                    .chain(self.derivation_path.into_iter())
+                    .chain(&self.derivation_path)
                     .collect(),
             ),
             None => (

@@ -297,7 +297,7 @@ where
     C: secp256k1_zkp::Verification,
 {
     fn pk(&mut self, pk: &Pk) -> Result<bitcoin::PublicKey, ()> {
-        Ok(tweak_key(&pk.to_public_key(), self.1, &self.0[..]))
+        Ok(tweak_key(&pk.to_public_key(), self.1, self.0))
     }
 
     // We don't need to implement these methods as we are not using them in the policy.

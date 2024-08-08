@@ -1016,7 +1016,6 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     ///
     /// For multipath descriptors it will return as many descriptors as there is
     /// "parallel" paths. For regular descriptors it will just return itself.
-    #[allow(clippy::blocks_in_if_conditions)]
     pub fn into_single_descriptors(self) -> Result<Vec<Self>, Error> {
         // All single-path descriptors contained in this descriptor.
         let mut descriptors = Vec::new();

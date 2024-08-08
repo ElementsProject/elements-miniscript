@@ -373,13 +373,6 @@ mod tests {
                 .to_string(),
             "ert1qamjdykcfzkcsvc9z32a6qcz3mwr85a3k7z7qf2uaufem2q3lsjxqj4y4fy"
         );
-
-        println!(
-            "{}",
-            desc.address(&elements::AddressParams::ELEMENTS)
-                .unwrap()
-                .to_string()
-        );
     }
     #[test]
     fn spend_tx() {

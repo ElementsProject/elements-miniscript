@@ -973,7 +973,7 @@ mod tests {
         assert!(!tr.for_each_key(|k| k.starts_with("acc")));
     }
 
-    fn verify_from_str<'a>(desc_str: &str, internal_key: &str, scripts: &[TapLeafScript<'a, String, NoExt>]) {
+    fn verify_from_str(desc_str: &str, internal_key: &str, scripts: &[TapLeafScript<String, NoExt>]) {
         let desc = Tr::<String, NoExt>::from_str(desc_str).unwrap();
         assert_eq!(desc_str, &desc.to_string());
         assert_eq!(internal_key, &desc.internal_key);
