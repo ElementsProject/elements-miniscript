@@ -34,7 +34,7 @@ impl Eq for OrdF64 {}
 // to derive both or neither. Better to be explicit.
 impl PartialOrd for OrdF64 {
     fn partial_cmp(&self, other: &OrdF64) -> Option<cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.cmp(other))
     }
 }
 impl Ord for OrdF64 {

@@ -87,11 +87,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> Eq for Tr<Pk, Ext> {}
 
 impl<Pk: MiniscriptKey, Ext: Extension> PartialOrd for Tr<Pk, Ext> {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        match self.internal_key.partial_cmp(&other.internal_key) {
-            Some(cmp::Ordering::Equal) => {}
-            ord => return ord,
-        }
-        self.tree.partial_cmp(&other.tree)
+        Some(self.cmp(other))
     }
 }
 

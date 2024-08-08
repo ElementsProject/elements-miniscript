@@ -132,9 +132,7 @@ impl CovExtArgs {
 
 impl PartialOrd for CovExtArgs {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        // HACKY implementation, need Ord/PartialOrd to make it work with other components
-        // in the library
-        self.to_string().partial_cmp(&other.to_string())
+        Some(self.cmp(other))
     }
 }
 
