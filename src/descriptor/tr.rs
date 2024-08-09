@@ -87,11 +87,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> Eq for Tr<Pk, Ext> {}
 
 impl<Pk: MiniscriptKey, Ext: Extension> PartialOrd for Tr<Pk, Ext> {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        match self.internal_key.partial_cmp(&other.internal_key) {
-            Some(cmp::Ordering::Equal) => {}
-            ord => return ord,
-        }
-        self.tree.partial_cmp(&other.tree)
+        Some(self.cmp(other))
     }
 }
 
@@ -977,7 +973,7 @@ mod tests {
         assert!(!tr.for_each_key(|k| k.starts_with("acc")));
     }
 
-    fn verify_from_str<'a>(desc_str: &str, internal_key: &str, scripts: &[TapLeafScript<'a, String, NoExt>]) {
+    fn verify_from_str(desc_str: &str, internal_key: &str, scripts: &[TapLeafScript<String, NoExt>]) {
         let desc = Tr::<String, NoExt>::from_str(desc_str).unwrap();
         assert_eq!(desc_str, &desc.to_string());
         assert_eq!(internal_key, &desc.internal_key);

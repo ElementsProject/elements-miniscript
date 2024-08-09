@@ -26,7 +26,7 @@
 //! 1. nVersion of the transaction (4-byte little endian)
 //! 2. hashPrevouts (32-byte hash)
 //! 3. hashSequence (32-byte hash)
-//! 3b. ELEMENTS EXTRA hashIssuances (32-byte hash)
+//! 3. ELEMENTS EXTRA hashIssuances (32-byte hash)
 //! 4. outpoint (32-byte hash + 4-byte little endian)
 //! 5. scriptCode of the input (serialized as scripts inside CTxOuts)
 //! 6. value of the output spent by this input (8-byte little endian)
@@ -372,13 +372,6 @@ mod tests {
                 .unwrap()
                 .to_string(),
             "ert1qamjdykcfzkcsvc9z32a6qcz3mwr85a3k7z7qf2uaufem2q3lsjxqj4y4fy"
-        );
-
-        println!(
-            "{}",
-            desc.address(&elements::AddressParams::ELEMENTS)
-                .unwrap()
-                .to_string()
         );
     }
     #[test]

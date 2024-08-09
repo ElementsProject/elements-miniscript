@@ -757,7 +757,7 @@ impl ScriptContext for BareCtx {
         }
         match ms.node {
             Terminal::PkK(ref key) if key.is_x_only_key() => {
-                return Err(ScriptContextError::XOnlyKeysNotAllowed(
+                Err(ScriptContextError::XOnlyKeysNotAllowed(
                     key.to_string(),
                     Self::name_str(),
                 ))

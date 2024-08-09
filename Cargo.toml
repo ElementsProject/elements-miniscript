@@ -35,6 +35,8 @@ bitcoin = { version = "0.31.0", features = ["base64"] }
 secp256k1 = {version = "0.28.0", features = ["rand-std"]}
 actual-base64 = { package = "base64", version = "0.13.0" }
 
+[lints.rust]
+unexpected_cfgs = { level = "deny", check-cfg = ['cfg(miniscript_bench)'] }
 
 [[example]]
 name = "htlc"

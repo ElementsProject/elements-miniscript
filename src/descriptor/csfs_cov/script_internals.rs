@@ -67,7 +67,10 @@ impl CovOperations for script::Builder {
             .push_opcode(all::OP_ENDIF)
     }
 
+    #[rustfmt::skip]
     fn verify_cov(self, key: &bitcoin::PublicKey) -> Self {
+        use elements::opcodes::all::{OP_CAT, OP_SWAP};
+
         let mut builder = self;
         // The miniscript is of type B, which should have pushed 1
         // onto the stack if it satisfied correctly.(which it should)
@@ -100,25 +103,22 @@ impl CovOperations for script::Builder {
         builder = builder.push_opcode(all::OP_TOALTSTACK);
         // alt_stk = [bitcoinsig]
         // stk = [ecsig i10 i9 i8 i7 i6 i5 i4 i3b i3 i2 i1]
-        // Ignore fmt skip because it butchers these lines
-        #[cfg_attr(feature="cargo-fmt", rustfmt_skip)]
-        {
-            // Do the size checks on all respective items in sighash calculation
-            use elements::opcodes::all::{OP_CAT, OP_SWAP};
-            builder = builder.chk_size(4).push_opcode(OP_SWAP); // item 1: ver
-            builder = builder.chk_size(32).push_opcode(OP_CAT).push_opcode(OP_SWAP);//item 2: hashprevouts
-            builder = builder.chk_size(32).push_opcode(OP_CAT).push_opcode(OP_SWAP);//item 3: hashsequence
-            builder = builder.chk_size(32).push_opcode(OP_CAT).push_opcode(OP_SWAP);//item 3b: hashissuances
-            builder = builder.chk_size(36).push_opcode(OP_CAT).push_opcode(OP_SWAP);//item 4: outpoint
-            // Item 5: Script code is of constant size because we only consider everything after
-            // codeseparator. This will be replaced with a push slice in a later commit
-            builder = builder.chk_size(3).push_opcode(OP_CAT).push_opcode(OP_SWAP);//item 5: script code
-            builder = builder.chk_amt().push_opcode(OP_CAT).push_opcode(OP_SWAP);       //item 6: check confAmt
-            builder = builder.chk_size(4).push_opcode(OP_CAT).push_opcode(OP_SWAP); //item 7: sequence
-            builder = builder.chk_size(32).push_opcode(OP_CAT).push_opcode(OP_SWAP);//item 8: hashoutputs
-            builder = builder.chk_size(4).push_opcode(OP_CAT).push_opcode(OP_SWAP); //item 9: nlocktime
-            builder = builder.chk_size(4).push_opcode(OP_CAT);                           //item 10: sighash type
-        }
+
+        // Do the size checks on all respective items in sighash calculation
+        builder = builder.chk_size(4).push_opcode(OP_SWAP); // item 1: ver
+        builder = builder.chk_size(32).push_opcode(OP_CAT).push_opcode(OP_SWAP);//item 2: hashprevouts
+        builder = builder.chk_size(32).push_opcode(OP_CAT).push_opcode(OP_SWAP);//item 3: hashsequence
+        builder = builder.chk_size(32).push_opcode(OP_CAT).push_opcode(OP_SWAP);//item 3b: hashissuances
+        builder = builder.chk_size(36).push_opcode(OP_CAT).push_opcode(OP_SWAP);//item 4: outpoint
+        // Item 5: Script code is of constant size because we only consider everything after
+        // codeseparator. This will be replaced with a push slice in a later commit
+        builder = builder.chk_size(3).push_opcode(OP_CAT).push_opcode(OP_SWAP); //item 5: script code
+        builder = builder.chk_amt().push_opcode(OP_CAT).push_opcode(OP_SWAP);   //item 6: check confAmt
+        builder = builder.chk_size(4).push_opcode(OP_CAT).push_opcode(OP_SWAP); //item 7: sequence
+        builder = builder.chk_size(32).push_opcode(OP_CAT).push_opcode(OP_SWAP);//item 8: hashoutputs
+        builder = builder.chk_size(4).push_opcode(OP_CAT).push_opcode(OP_SWAP); //item 9: nlocktime
+        builder = builder.chk_size(4).push_opcode(OP_CAT);                      //item 10: sighash type
+
         // Now sighash is on the top of the stack
         // alt_stk = [bitcoinsig]
         // stk = [ecsig (i1||i2||i3||i3b||i4||i5||i6||i7||i8||i9||i10)]

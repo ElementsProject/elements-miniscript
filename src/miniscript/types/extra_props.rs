@@ -51,7 +51,7 @@ impl OpLimits {
 
     /// Worst case opcode count when this element is satisfied
     pub fn op_count(&self) -> Option<usize> {
-        opt_add(Some(self.count), self.sat)
+        self.sat.map(|sat| self.count + sat)
     }
 }
 
@@ -821,11 +821,11 @@ impl Property for ExtData {
                 .iter()
                 .rev()
                 .enumerate()
-                .fold(Some(0), |acc, (i, &(x, y))| {
+                .try_fold(0, |acc, (i, &(x, y))| {
                     if i <= k {
-                        opt_add(acc, x)
+                        x.map(|x| x + acc)
                     } else {
-                        opt_add(acc, y)
+                        y.map(|y| y + acc)
                     }
                 });
 
@@ -834,11 +834,11 @@ impl Property for ExtData {
             .iter()
             .rev()
             .enumerate()
-            .fold(Some(0), |acc, (i, &(x, y))| {
+            .try_fold(0, |acc, (i, &(x, y))| {
                 if i <= k {
-                    opt_max(acc, x)
+                    x.map(|x| cmp::max(x, acc))
                 } else {
-                    opt_max(acc, y)
+                    y.map(|y| cmp::max(y, acc))
                 }
             });
 
@@ -848,11 +848,11 @@ impl Property for ExtData {
             max_sat_size_vec
                 .iter()
                 .enumerate()
-                .fold(Some((0, 0)), |acc, (i, &(x, y))| {
+                .try_fold((0, 0), |acc, (i, &(x, y))| {
                     if i <= k {
-                        opt_tuple_add(acc, x)
+                        x.map(|x| (acc.0 + x.0, acc.1 + x.1))
                     } else {
-                        opt_tuple_add(acc, y)
+                        y.map(|y| (acc.0 + y.0, acc.1 + y.1))
                     }
                 });
 
@@ -861,11 +861,11 @@ impl Property for ExtData {
             ops_count_sat_vec
                 .iter()
                 .enumerate()
-                .fold(Some(0), |acc, (i, &(x, y))| {
+                .try_fold(0, |acc, (i, &(x, y))| {
                     if i <= k {
-                        opt_add(acc, x)
+                        x.map(|x| x + acc)
                     } else {
-                        opt_add(acc, Some(y))
+                        Some(y + acc)
                     }
                 });
 
@@ -1081,11 +1081,6 @@ fn opt_max<T: Ord>(a: Option<T>, b: Option<T>) -> Option<T> {
 /// Returns Some(x+y) is both x and y are Some. Otherwise, returns `None`.
 fn opt_add(a: Option<usize>, b: Option<usize>) -> Option<usize> {
     a.and_then(|x| b.map(|y| x + y))
-}
-
-/// Returns Some((x0+y0, x1+y1)) is both x and y are Some. Otherwise, returns `None`.
-fn opt_tuple_add(a: Option<(usize, usize)>, b: Option<(usize, usize)>) -> Option<(usize, usize)> {
-    a.and_then(|x| b.map(|(w, s)| (w + x.0, s + x.1)))
 }
 
 #[cfg(test)]

@@ -98,9 +98,7 @@ impl_from_str!(
 // We cannot use our wrapper because we don't own the Policy (we have a reference)
 // Implementing a wrapper of Cow<'a, Policy<Pk>> leads to lifetime issues
 // when implementing ForEachKey, because for_each_key() has its own lifetime 'a
-pub fn for_each_key<'a, Pk: MiniscriptKey, F: FnMut(&'a Pk) -> bool>(policy: &'a Policy<Pk>, mut pred: F) -> bool
-where
-    Pk: 'a,
+pub fn for_each_key<'a, Pk: MiniscriptKey + 'a, F: FnMut(&'a Pk) -> bool>(policy: &'a Policy<Pk>, mut pred: F) -> bool
 {
     let mut stack = vec![policy];
 

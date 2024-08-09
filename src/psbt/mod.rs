@@ -443,6 +443,7 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
     }
 }
 
+#[allow(clippy::ptr_arg)] // complains about &Vec but this is used in a closure context
 fn try_vec_as_preimage32(vec: &Vec<u8>) -> Option<Preimage32> {
     if vec.len() == 32 {
         let mut arr = [0u8; 32];
@@ -1088,7 +1089,9 @@ trait PsbtFields {
     fn tap_key_origins(
         &mut self,
     ) -> &mut BTreeMap<bitcoin::key::XOnlyPublicKey, (Vec<TapLeafHash>, bip32::KeySource)>;
+    #[allow(dead_code)]
     fn proprietary(&mut self) -> &mut BTreeMap<psbt::raw::ProprietaryKey, Vec<u8>>;
+    #[allow(dead_code)]
     fn unknown(&mut self) -> &mut BTreeMap<psbt::raw::Key, Vec<u8>>;
 
     // `tap_tree` only appears in psbt::Output, so it's returned as an option of a mutable ref
