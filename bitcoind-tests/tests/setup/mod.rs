@@ -17,14 +17,6 @@ pub mod test_util;
 // We are not using pegins right now, but it might be required in case in future
 // if we extend the tests to check pegins etc.
 pub fn setup(validate_pegin: bool) -> (ElementsD, Option<BitcoinD>, elements::BlockHash) {
-    // Lookup bitcoind binary path
-    let curr_dir = std::env::current_dir().unwrap();
-    let bitcoind_path = curr_dir.join("bin/bitcoind");
-    let elementsd_path = curr_dir.join("bin/elementsd");
-
-    std::env::set_var("BITCOIND_EXE", bitcoind_path);
-    std::env::set_var("ELEMENTSD_EXE", elementsd_path);
-
     let mut bitcoind = None;
     if validate_pegin {
         let bitcoind_exe = bitcoind::exe_path().unwrap();
