@@ -1,3 +1,7 @@
+# Unreleased
+
+- [Removed `to_string_no_chksum`](https://github.com/ElementsProject/elements-miniscript/pull/86). This method was poorly-named and broken. Use the alternate display `{:#}` formatter instead to format descriptors without a checksum.
+
 # 0.3.1 - May 10, 2024
 
 - [Fixed](https://github.com/ElementsProject/elements-miniscript/pull/81) ELIP-151 hash calculation

@@ -84,7 +84,7 @@ mod tests {
 
     fn string_rtt(desc_str: &str) {
         let desc = Descriptor::<String>::from_str(desc_str).unwrap();
-        assert_eq!(desc.to_string_no_chksum(), desc_str);
+        assert_eq!(format!("{:#}", desc), desc_str);
         let cov_desc = desc.as_cov().unwrap();
         assert_eq!(cov_desc.to_string(), desc.to_string());
     }
