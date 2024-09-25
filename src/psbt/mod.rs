@@ -106,7 +106,7 @@ pub enum InputError {
     /// Get the secp Errors directly
     SecpErr(elements::secp256k1_zkp::Error),
     /// Key errors
-    KeyErr(bitcoin::key::Error),
+    KeyErr(bitcoin::key::FromSliceError),
     /// Error doing an interpreter-check on a finalized psbt
     Interpreter(interpreter::Error),
     /// Redeem script does not match the p2sh hash
@@ -257,8 +257,8 @@ impl From<elements::secp256k1_zkp::Error> for InputError {
 }
 
 #[doc(hidden)]
-impl From<bitcoin::key::Error> for InputError {
-    fn from(e: bitcoin::key::Error) -> InputError {
+impl From<bitcoin::key::FromSliceError> for InputError {
+    fn from(e: bitcoin::key::FromSliceError) -> InputError {
         InputError::KeyErr(e)
     }
 }
@@ -1664,7 +1664,7 @@ mod tests {
             let (leaf_hashes, (key_fingerprint, deriv_path)) =
                 psbt_input.tap_key_origins.get(&key_0_1).unwrap();
             assert_eq!(key_fingerprint, &fingerprint);
-            assert_eq!(&deriv_path.to_string(), "m/86'/0'/0'/0/1");
+            assert_eq!(&deriv_path.to_string(), "86'/0'/0'/0/1");
             assert_eq!(leaf_hashes.len(), 2);
             assert!(leaf_hashes.contains(&first_leaf_hash));
         }
@@ -1678,7 +1678,7 @@ mod tests {
             let (leaf_hashes, (key_fingerprint, deriv_path)) =
                 psbt_input.tap_key_origins.get(&key_1_0).unwrap();
             assert_eq!(key_fingerprint, &fingerprint);
-            assert_eq!(&deriv_path.to_string(), "m/86'/0'/0'/1/0");
+            assert_eq!(&deriv_path.to_string(), "86'/0'/0'/1/0");
             assert_eq!(leaf_hashes.len(), 1);
             assert!(!leaf_hashes.contains(&first_leaf_hash));
         }

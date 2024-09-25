@@ -143,14 +143,21 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         timelock: bitcoin::Sequence,
         desc: Descriptor<Pk, CovenantExt<CovExtArgs>>,
     ) -> Self {
-        let fed_ms = BtcMiniscript::from_ast(BtcTerminal::Multi(fed_k, fed_pks.clone()))
-            .expect("Multi type check can't fail");
+        let fed_ms = BtcMiniscript::from_ast(BtcTerminal::Multi(
+            bitcoin_miniscript::Threshold::new(fed_k, fed_pks.clone()).expect("TODO"),
+        ))
+        .expect("Multi type check can't fail");
         let csv = BtcMiniscript::from_ast(BtcTerminal::Verify(Arc::new(
-            BtcMiniscript::from_ast(BtcTerminal::Older(timelock)).unwrap(),
+            BtcMiniscript::from_ast(BtcTerminal::Older(
+                bitcoin_miniscript::RelLockTime::try_from(timelock).expect("TODO"),
+            ))
+            .unwrap(),
         )))
         .unwrap();
-        let emer_ms = BtcMiniscript::from_ast(BtcTerminal::Multi(emer_k, emer_pks.clone()))
-            .expect("Multi type check can't fail");
+        let emer_ms = BtcMiniscript::from_ast(BtcTerminal::Multi(
+            bitcoin_miniscript::Threshold::new(emer_k, emer_pks.clone()).expect("TODO"),
+        ))
+        .expect("Multi type check can't fail");
         let emer_ms =
             BtcMiniscript::from_ast(BtcTerminal::AndV(Arc::new(csv), Arc::new(emer_ms))).unwrap();
         let ms = BtcMiniscript::from_ast(BtcTerminal::OrD(Arc::new(fed_ms), Arc::new(emer_ms)))
@@ -176,8 +183,8 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         // Can we avoid this without NLL?
         let ms_clone = ms.clone();
         let (fed_pks, fed_k, right) = if let BtcTerminal::OrD(ref a, ref b) = ms_clone.node {
-            if let (BtcTerminal::Multi(fed_k, fed_pks), right) = (&a.node, &b.node) {
-                (fed_pks, *fed_k, right)
+            if let (BtcTerminal::Multi(t), right) = (&a.node, &b.node) {
+                (t.data(), t.k(), right)
             } else {
                 unreachable!("Only valid pegin miniscripts");
             }
@@ -185,11 +192,9 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
             unreachable!("Only valid pegin miniscripts");
         };
         let (timelock, emer_pks, emer_k) = if let BtcTerminal::AndV(l, r) = right {
-            if let (BtcTerminal::Verify(csv), BtcTerminal::Multi(emer_k, emer_pks)) =
-                (&l.node, &r.node)
-            {
+            if let (BtcTerminal::Verify(csv), BtcTerminal::Multi(t)) = (&l.node, &r.node) {
                 if let BtcTerminal::Older(timelock) = csv.node {
-                    (timelock, emer_pks, *emer_k)
+                    (timelock, t.data(), t.k())
                 } else {
                     unreachable!("Only valid pegin miniscripts");
                 }
@@ -204,7 +209,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
             fed_k,
             emer_pks: emer_pks.to_vec(),
             emer_k,
-            timelock,
+            timelock: timelock.into(),
             desc,
             ms,
         }

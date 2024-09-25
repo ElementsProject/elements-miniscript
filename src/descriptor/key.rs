@@ -1286,7 +1286,7 @@ mod test {
         assert_eq!(public_key.master_fingerprint().to_string(), "abcdef00");
         assert_eq!(
             public_key.full_derivation_path().unwrap().to_string(),
-            "m/0'/1'/2"
+            "0'/1'/2"
         );
         assert!(!public_key.has_wildcard());
 
@@ -1294,7 +1294,7 @@ mod test {
         assert_eq!(public_key.master_fingerprint().to_string(), "abcdef00");
         assert_eq!(
             public_key.full_derivation_path().unwrap().to_string(),
-            "m/0'/1'"
+            "0'/1'"
         );
         assert!(public_key.has_wildcard());
 
@@ -1302,7 +1302,7 @@ mod test {
         assert_eq!(public_key.master_fingerprint().to_string(), "abcdef00");
         assert_eq!(
             public_key.full_derivation_path().unwrap().to_string(),
-            "m/0'/1'"
+            "0'/1'"
         );
         assert!(public_key.has_wildcard());
     }
@@ -1317,7 +1317,7 @@ mod test {
         assert_eq!(public_key.master_fingerprint().to_string(), "2cbe2a6d");
         assert_eq!(
             public_key.full_derivation_path().unwrap().to_string(),
-            "m/0'/1'/2"
+            "0'/1'/2"
         );
         assert!(!public_key.has_wildcard());
 
@@ -1327,7 +1327,7 @@ mod test {
         assert_eq!(public_key.master_fingerprint().to_string(), "2cbe2a6d");
         assert_eq!(
             public_key.full_derivation_path().unwrap().to_string(),
-            "m/0'/1'/2'"
+            "0'/1'/2'"
         );
 
         let secret_key = DescriptorSecretKey::from_str("tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/0/1/2").unwrap();
@@ -1336,7 +1336,7 @@ mod test {
         assert_eq!(public_key.master_fingerprint().to_string(), "2cbe2a6d");
         assert_eq!(
             public_key.full_derivation_path().unwrap().to_string(),
-            "m/0/1/2"
+            "0/1/2"
         );
 
         let secret_key = DescriptorSecretKey::from_str("[aabbccdd]tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/0/1/2").unwrap();
@@ -1345,7 +1345,7 @@ mod test {
         assert_eq!(public_key.master_fingerprint().to_string(), "aabbccdd");
         assert_eq!(
             public_key.full_derivation_path().unwrap().to_string(),
-            "m/0/1/2"
+            "0/1/2"
         );
 
         let secret_key = DescriptorSecretKey::from_str("[aabbccdd/90']tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/0'/1'/2").unwrap();
@@ -1354,7 +1354,7 @@ mod test {
         assert_eq!(public_key.master_fingerprint().to_string(), "aabbccdd");
         assert_eq!(
             public_key.full_derivation_path().unwrap().to_string(),
-            "m/90'/0'/1'/2"
+            "90'/0'/1'/2"
         );
     }
 
