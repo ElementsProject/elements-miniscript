@@ -229,7 +229,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Concrete<Pk> {
 // Implement lifting from bitcoin policy to elements one
 impl<Pk: MiniscriptKey> Liftable<Pk> for BtcPolicy<Pk> {
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
-        match *self {
+        match self {
             BtcPolicy::Unsatisfiable => Ok(Semantic::Unsatisfiable),
             BtcPolicy::Trivial => Ok(Semantic::Trivial),
             BtcPolicy::Key(ref pkh) => Ok(Semantic::Key(pkh.clone())),
@@ -241,10 +241,13 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for BtcPolicy<Pk> {
                 n.to_consensus_u32(),
             ))),
             BtcPolicy::Older(n) => Ok(Semantic::Older(Sequence(n.to_consensus_u32()))),
-            BtcPolicy::Threshold(k, ref subs) => {
-                let new_subs: Result<Vec<Semantic<Pk>>, _> =
-                    subs.iter().map(|sub| Liftable::lift(sub)).collect();
-                Ok(Semantic::Threshold(k, new_subs?))
+            BtcPolicy::Thresh(t) => {
+                let new_subs: Result<Vec<Semantic<Pk>>, _> = t
+                    .data()
+                    .iter()
+                    .map(|sub| Liftable::lift(sub.as_ref()))
+                    .collect();
+                Ok(Semantic::Threshold(t.k(), new_subs?))
             }
         }
     }

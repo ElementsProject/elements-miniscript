@@ -1088,7 +1088,7 @@ mod tests {
         );
         assert_eq!(
             ms.unwrap_err().to_string(),
-            "unexpected «pubkey hex should be 66 or 130 digits long, got: 64»",
+            "unexpected «pubkey string should be 66 or 130 digits long, got: 64»",
         );
         Tapscript::from_str_insane(
             "pk(2788ee41e76f4f3af603da5bc8fa22997bc0344bb0f95666ba6aaff0242baa99)",

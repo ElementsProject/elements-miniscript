@@ -6,7 +6,7 @@ use crate::miniscript::context;
 use crate::{ScriptContext, ToPublicKey};
 
 pub(crate) fn varint_len(n: usize) -> usize {
-    elements::VarInt(n as u64).size()
+    bitcoin::VarInt(n as u64).size()
 }
 
 // Helper function to calculate witness size

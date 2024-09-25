@@ -134,11 +134,11 @@ pub mod miniscript;
 pub mod policy;
 pub mod psbt;
 
+#[cfg(feature = "simplicity")]
+mod simplicity;
 #[cfg(test)]
 mod test_utils;
 mod util;
-#[cfg(feature = "simplicity")]
-mod simplicity;
 
 use std::{cmp, error, fmt, str};
 
@@ -146,8 +146,8 @@ use elements::hashes::sha256;
 use elements::secp256k1_zkp::Secp256k1;
 use elements::{locktime, opcodes, script, secp256k1_zkp};
 
-pub use crate::confidential::Descriptor as ConfidentialDescriptor;
 pub use crate::confidential::slip77;
+pub use crate::confidential::Descriptor as ConfidentialDescriptor;
 pub use crate::descriptor::{DefiniteDescriptorKey, Descriptor, DescriptorPublicKey};
 pub use crate::extensions::{CovenantExt, Extension, NoExt, TxEnv};
 pub use crate::interpreter::Interpreter;
@@ -291,7 +291,7 @@ pub enum Error {
     /// rust-bitcoin script error
     Script(script::Error),
     /// rust-bitcoin address error
-    AddrError(bitcoin::address::Error),
+    AddrError(bitcoin::address::ParseError),
     /// A `CHECKMULTISIG` opcode was preceded by a number > 20
     CmsTooManyKeys(u32),
     /// A tapscript multi_a cannot support more than MAX_BLOCK_WEIGHT/32 keys
@@ -317,7 +317,9 @@ pub enum Error {
     /// Parsed a miniscript but there were more script opcodes after it
     Trailing(String),
     /// Failed to parse a push as a public key
-    BadPubkey(bitcoin::key::Error),
+    BadPubkey(bitcoin::key::ParsePublicKeyError),
+    /// Failed to parse a slice as public key
+    BadPubkeySlice(bitcoin::key::FromSliceError),
     /// Could not satisfy a script (fragment) because of a missing hash preimage
     MissingHash(sha256::Hash),
     /// Could not satisfy a script (fragment) because of a missing signature
@@ -428,14 +430,21 @@ impl From<elements::secp256k1_zkp::UpstreamError> for Error {
 }
 
 #[doc(hidden)]
-impl From<bitcoin::key::Error> for Error {
-    fn from(e: bitcoin::key::Error) -> Error {
+impl From<bitcoin::key::ParsePublicKeyError> for Error {
+    fn from(e: bitcoin::key::ParsePublicKeyError) -> Error {
         Error::BadPubkey(e)
     }
 }
 
-impl From<bitcoin::address::Error> for Error {
-    fn from(e: bitcoin::address::Error) -> Error {
+#[doc(hidden)]
+impl From<bitcoin::key::FromSliceError> for Error {
+    fn from(e: bitcoin::key::FromSliceError) -> Error {
+        Error::BadPubkeySlice(e)
+    }
+}
+
+impl From<bitcoin::address::ParseError> for Error {
+    fn from(e: bitcoin::address::ParseError) -> Error {
         Error::AddrError(e)
     }
 }
@@ -483,6 +492,7 @@ impl fmt::Display for Error {
             ),
             Error::CouldNotSatisfy => f.write_str("could not satisfy"),
             Error::BadPubkey(ref e) => fmt::Display::fmt(e, f),
+            Error::BadPubkeySlice(ref e) => fmt::Display::fmt(e, f),
             Error::TypeCheck(ref e) => write!(f, "typecheck: {}", e),
             Error::BadDescriptor(ref e) => write!(f, "Invalid descriptor: {}", e),
             Error::Secp(ref e) => fmt::Display::fmt(e, f),
@@ -565,6 +575,7 @@ impl error::Error for Error {
             Script(_e) => None, // should be Some(e), but requires changes upstream
             AddrError(e) => Some(e),
             BadPubkey(e) => Some(e),
+            BadPubkeySlice(e) => Some(e),
             Secp(e) => Some(e),
             #[cfg(feature = "compiler")]
             CompilerError(e) => Some(e),
