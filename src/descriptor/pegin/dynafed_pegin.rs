@@ -32,8 +32,8 @@ use crate::expression::{self, FromTree};
 use crate::extensions::{CovExtArgs, CovenantExt};
 use crate::policy::{semantic, Liftable};
 use crate::{
-    tweak_key, BtcDescriptor, BtcError, BtcLiftable, BtcPolicy, BtcSatisfier, Descriptor, Error,
-    MiniscriptKey, ToPublicKey,
+    tweak_key, BtcDescriptor, BtcError, BtcFromTree, BtcLiftable, BtcPolicy, BtcSatisfier, BtcTree,
+    Descriptor, Error, MiniscriptKey, ToPublicKey,
 };
 
 /// New Pegin Descriptor with Miniscript support
@@ -94,17 +94,15 @@ impl_from_tree!(
         if top.name == "pegin" && top.args.len() == 2 {
             // a roundtrip hack to use FromTree from bitcoin::Miniscript from
             // expression::Tree in elements.
-            // let ms_str = top.args[0].to_string();
-            // let ms_expr = BtcTree::from_str(&ms_str)?;
+            let ms_str = top.args[0].to_string();
+            let ms_expr = BtcTree::from_str(&ms_str)?;
             //
             // TODO: Confirm with Andrew about the descriptor type for dynafed
             // Assuming sh(wsh) for now.
-            // let fed_desc = crate::BtcDescriptor::<Pk>::from_tree(&ms_expr)?;
 
-            // let fed_desc = BtcDescriptor::<Pk>::from_tree(&ms_expr)?;
-            // let elem_desc = Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(&top.args[1])?;
-            // Ok(Pegin::new(fed_desc, elem_desc))
-            todo!()
+            let fed_desc = BtcDescriptor::<Pk>::from_tree(&ms_expr)?;
+            let elem_desc = Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(&top.args[1])?;
+            Ok(Pegin::new(fed_desc, elem_desc))
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing legacy_pegin descriptor",
