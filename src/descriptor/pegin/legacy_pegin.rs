@@ -31,6 +31,7 @@ use bitcoin::blockdata::script::PushBytes;
 use bitcoin::blockdata::{opcodes, script};
 use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
 use bitcoin::{self, hashes, ScriptBuf as BtcScript};
+use bitcoin_miniscript::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
 use bitcoin_miniscript::TranslatePk as BtcTranslatePk;
 use elements::secp256k1_zkp;
 
@@ -114,16 +115,15 @@ impl MiniscriptKey for LegacyPeginKey {
 /// Legacy Pegin Descriptor
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct LegacyPegin<Pk: MiniscriptKey> {
-    /// The federation pks
-    pub fed_pks: Vec<LegacyPeginKey>,
     /// The federation threshold
-    pub fed_k: usize,
-    /// The emergency pks
-    pub emer_pks: Vec<LegacyPeginKey>,
+    fed: bitcoin_miniscript::Threshold<LegacyPeginKey, MAX_PUBKEYS_PER_MULTISIG>,
+
     /// The emergency threshold
-    pub emer_k: usize,
+    emer: bitcoin_miniscript::Threshold<LegacyPeginKey, MAX_PUBKEYS_PER_MULTISIG>,
+
     /// csv timelock
-    pub timelock: bitcoin::Sequence,
+    timelock: bitcoin_miniscript::RelLockTime,
+
     /// The elements descriptor required to redeem
     ///
     /// TODO: Allow extension user descriptors when claiming pegins
@@ -136,17 +136,13 @@ pub struct LegacyPegin<Pk: MiniscriptKey> {
 impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
     /// Create a new LegacyPegin descriptor
     pub fn new(
-        fed_pks: Vec<LegacyPeginKey>,
-        fed_k: usize,
-        emer_pks: Vec<LegacyPeginKey>,
-        emer_k: usize,
-        timelock: bitcoin::Sequence,
+        fed: bitcoin_miniscript::Threshold<LegacyPeginKey, MAX_PUBKEYS_PER_MULTISIG>,
+        emer: bitcoin_miniscript::Threshold<LegacyPeginKey, MAX_PUBKEYS_PER_MULTISIG>,
+        timelock: bitcoin_miniscript::RelLockTime,
         desc: Descriptor<Pk, CovenantExt<CovExtArgs>>,
     ) -> Self {
-        let fed_ms = BtcMiniscript::from_ast(BtcTerminal::Multi(
-            bitcoin_miniscript::Threshold::new(fed_k, fed_pks.clone()).expect("TODO"),
-        ))
-        .expect("Multi type check can't fail");
+        let fed_ms = BtcMiniscript::from_ast(BtcTerminal::Multi(fed.clone()))
+            .expect("Multi type check can't fail");
         let csv = BtcMiniscript::from_ast(BtcTerminal::Verify(Arc::new(
             BtcMiniscript::from_ast(BtcTerminal::Older(
                 bitcoin_miniscript::RelLockTime::try_from(timelock).expect("TODO"),
@@ -154,19 +150,15 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
             .unwrap(),
         )))
         .unwrap();
-        let emer_ms = BtcMiniscript::from_ast(BtcTerminal::Multi(
-            bitcoin_miniscript::Threshold::new(emer_k, emer_pks.clone()).expect("TODO"),
-        ))
-        .expect("Multi type check can't fail");
+        let emer_ms = BtcMiniscript::from_ast(BtcTerminal::Multi(emer.clone()))
+            .expect("Multi type check can't fail");
         let emer_ms =
             BtcMiniscript::from_ast(BtcTerminal::AndV(Arc::new(csv), Arc::new(emer_ms))).unwrap();
         let ms = BtcMiniscript::from_ast(BtcTerminal::OrD(Arc::new(fed_ms), Arc::new(emer_ms)))
             .expect("Type check");
         Self {
-            fed_pks,
-            fed_k,
-            emer_pks,
-            emer_k,
+            fed,
+            emer,
             timelock,
             desc,
             ms,
@@ -182,19 +174,19 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         // Miniscript is a bunch of Arc's. So, cloning is not as bad.
         // Can we avoid this without NLL?
         let ms_clone = ms.clone();
-        let (fed_pks, fed_k, right) = if let BtcTerminal::OrD(ref a, ref b) = ms_clone.node {
+        let (fed, right) = if let BtcTerminal::OrD(ref a, ref b) = ms_clone.node {
             if let (BtcTerminal::Multi(t), right) = (&a.node, &b.node) {
-                (t.data(), t.k(), right)
+                (t.clone(), right)
             } else {
                 unreachable!("Only valid pegin miniscripts");
             }
         } else {
             unreachable!("Only valid pegin miniscripts");
         };
-        let (timelock, emer_pks, emer_k) = if let BtcTerminal::AndV(l, r) = right {
+        let (timelock, emer) = if let BtcTerminal::AndV(l, r) = right {
             if let (BtcTerminal::Verify(csv), BtcTerminal::Multi(t)) = (&l.node, &r.node) {
                 if let BtcTerminal::Older(timelock) = csv.node {
-                    (timelock, t.data(), t.k())
+                    (timelock, t.clone())
                 } else {
                     unreachable!("Only valid pegin miniscripts");
                 }
@@ -205,11 +197,9 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
             unreachable!("Only valid pegin miniscripts");
         };
         Self {
-            fed_pks: fed_pks.to_vec(),
-            fed_k,
-            emer_pks: emer_pks.to_vec(),
-            emer_k,
-            timelock: timelock.into(),
+            fed,
+            emer,
+            timelock,
             desc,
             ms,
         }
@@ -227,18 +217,18 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         // Hopefully, we never have to use this and dynafed is deployed
         let mut builder = script::Builder::new()
             .push_opcode(opcodes::all::OP_DEPTH)
-            .push_int(self.fed_k as i64 + 1)
+            .push_int(self.fed.k() as i64 + 1)
             .push_opcode(opcodes::all::OP_EQUAL)
             .push_opcode(opcodes::all::OP_IF)
             // manually serialize the left CMS branch, without the OP_CMS
-            .push_int(self.fed_k as i64);
+            .push_int(self.fed.k() as i64);
 
-        for key in &self.fed_pks {
+        for key in self.fed.iter() {
             let tweaked_pk = tweak_key(key.as_untweaked(), secp, tweak.as_byte_array());
             builder = builder.push_key(&tweaked_pk);
         }
         let mut nearly_done = builder
-            .push_int(self.fed_pks.len() as i64)
+            .push_int(self.fed.n() as i64)
             .push_opcode(opcodes::all::OP_ELSE)
             .into_script()
             .to_bytes();
@@ -303,6 +293,8 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
             .map(|pk| LegacyPeginKey::Functionary(bitcoin::PublicKey::from_str(pk).unwrap()))
             .collect();
 
+        let fed = bitcoin_miniscript::Threshold::new(22, fed_pks).expect("statically defined");
+
         let emer_pks = "
                     03aab896d53a8e7d6433137bbba940f9c521e085dd07e60994579b64a6d992cf79,
                     0291b7d0b1b692f8f524516ed950872e5da10fb1b808b5a526dedc6fed1cf29807,
@@ -312,12 +304,12 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
             .map(|pk| LegacyPeginKey::Functionary(bitcoin::PublicKey::from_str(pk).unwrap()))
             .collect();
 
+        let emer = bitcoin_miniscript::Threshold::new(2, emer_pks).expect("statically defined");
+
         Self::new(
-            fed_pks,
-            11,
-            emer_pks,
-            2,
-            bitcoin::Sequence::from_consensus(4032),
+            fed,
+            emer,
+            bitcoin_miniscript::RelLockTime::from_consensus(4032).expect("statically defined"),
             user_desc,
         )
     }
@@ -477,28 +469,28 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         let tweak = hashes::sha256::Hash::hash(&tweak_vec);
         let unsigned_script_sig = self.bitcoin_unsigned_script_sig(secp);
         let mut sigs = vec![];
-        for key in &self.fed_pks {
+        for key in self.fed.iter() {
             let tweaked_pk = tweak_key(key.as_untweaked(), secp, tweak.as_byte_array());
             if let Some(sig) = satisfier.lookup_ecdsa_sig(&tweaked_pk) {
                 sigs.push(sig.to_vec());
             }
         }
         sigs.sort_by_key(|a| a.len());
-        if sigs.len() >= self.fed_k {
+        if sigs.len() >= self.fed.k() {
             // Prefer using federation keys over emergency paths
-            let mut sigs: Vec<Vec<u8>> = sigs.into_iter().take(self.fed_k).collect();
+            let mut sigs: Vec<Vec<u8>> = sigs.into_iter().take(self.fed.k()).collect();
             sigs.push(vec![0]); // CMS extra value
             Ok((sigs, unsigned_script_sig))
         } else {
             let mut emer_sigs = vec![];
-            for emer_key in &self.emer_pks {
+            for emer_key in self.emer.iter() {
                 if let Some(sig) = satisfier.lookup_ecdsa_sig(emer_key.as_untweaked()) {
                     emer_sigs.push(sig.to_vec());
                 }
             }
             emer_sigs.sort_by_key(|a| a.len());
-            if emer_sigs.len() >= self.emer_k {
-                let mut sigs: Vec<Vec<u8>> = emer_sigs.into_iter().take(self.emer_k).collect();
+            if emer_sigs.len() >= self.emer.k() {
+                let mut sigs: Vec<Vec<u8>> = emer_sigs.into_iter().take(self.emer.k()).collect();
                 sigs.push(vec![0]); // CMS extra value
                 Ok((sigs, unsigned_script_sig))
             } else {
