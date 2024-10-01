@@ -19,7 +19,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.58.0
+          toolchain: 1.63.0
           override: true
       - name: Running fuzzer
         env:
@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable, beta, nightly, 1.58.0]
+        rust: [stable, beta, nightly, 1.63.0]
     steps:
       - name: Checkout Crate
         uses: actions/checkout@v2
