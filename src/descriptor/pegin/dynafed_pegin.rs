@@ -27,7 +27,7 @@ use bitcoin::blockdata::script::{self, PushBytes};
 use bitcoin::{self, ScriptBuf as BtcScript};
 use elements::secp256k1_zkp;
 
-use crate::descriptor::checksum::{desc_checksum, verify_checksum};
+use crate::descriptor::checksum::{self, verify_checksum};
 use crate::expression::{self, FromTree};
 use crate::extensions::{CovExtArgs, CovenantExt};
 use crate::policy::{semantic, Liftable};
@@ -69,9 +69,10 @@ impl<Pk: MiniscriptKey> fmt::Debug for Pegin<Pk> {
 
 impl<Pk: MiniscriptKey> fmt::Display for Pegin<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let desc = format!("pegin({},{})", self.fed_desc, self.elem_desc);
-        let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
-        write!(f, "{}#{}", &desc, &checksum)
+        use fmt::Write;
+        let mut wrapped_f = checksum::Formatter::new(f);
+        write!(wrapped_f, "pegin({},{})", self.fed_desc, self.elem_desc)?;
+        wrapped_f.write_checksum_if_not_alt()
     }
 }
 
