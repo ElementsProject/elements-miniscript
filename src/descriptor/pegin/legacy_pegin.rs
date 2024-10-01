@@ -34,7 +34,7 @@ use bitcoin::{self, hashes, ScriptBuf as BtcScript};
 use bitcoin_miniscript::TranslatePk as BtcTranslatePk;
 use elements::secp256k1_zkp;
 
-use crate::descriptor::checksum::{desc_checksum, verify_checksum};
+use crate::descriptor::checksum::{self, verify_checksum};
 use crate::expression::{self, FromTree};
 use crate::extensions::{CovExtArgs, CovenantExt};
 use crate::policy::{semantic, Liftable};
@@ -326,9 +326,10 @@ impl<Pk: MiniscriptKey> fmt::Debug for LegacyPegin<Pk> {
 
 impl<Pk: MiniscriptKey> fmt::Display for LegacyPegin<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let desc = format!("legacy_pegin({},{})", self.ms, self.desc);
-        let checksum = desc_checksum(&desc).map_err(|_| fmt::Error)?;
-        write!(f, "{}#{}", &desc, &checksum)
+        use fmt::Write;
+        let mut wrapped_f = checksum::Formatter::new(f);
+        write!(wrapped_f, "legacy_pegin({},{})", self.ms, self.desc)?;
+        wrapped_f.write_checksum_if_not_alt()
     }
 }
 
