@@ -64,3 +64,7 @@ required-features = ["base64"]
 
 [workspace]
 members = ["bitcoind-tests", "fuzz"]
+
+[patch.crates-io.simplicity-lang]
+git = "https://github.com/BlockstreamResearch/rust-simplicity/"
+rev = "9eed0133eb08f1859be45a3d223b6f9a9571e943"
