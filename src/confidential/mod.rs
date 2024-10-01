@@ -26,7 +26,7 @@ use std::fmt;
 use bitcoin::bip32;
 use elements::secp256k1_zkp;
 
-use crate::descriptor::checksum::{desc_checksum, verify_checksum};
+use crate::descriptor::checksum::{self, verify_checksum};
 use crate::descriptor::{
     ConversionError, DefiniteDescriptorKey, DescriptorSecretKey, DescriptorPublicKey,
     DescriptorXKey, Wildcard
@@ -189,9 +189,10 @@ impl<Pk: MiniscriptKey + ToPublicKey, T: Extension + ParseableExt> Descriptor<Pk
 
 impl<Pk: MiniscriptKey, T: Extension> fmt::Display for Descriptor<Pk, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let desc_str = format!("ct({},{:#})", self.key, self.descriptor);
-        let checksum = desc_checksum(&desc_str).map_err(|_| fmt::Error)?;
-        write!(f, "{}#{}", desc_str, checksum)
+        use fmt::Write;
+        let mut wrapped_f = checksum::Formatter::new(f);
+        write!(wrapped_f, "ct({},{:#})", self.key, self.descriptor)?;
+        wrapped_f.write_checksum_if_not_alt()
     }
 }
 
