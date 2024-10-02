@@ -8,6 +8,8 @@
 use core::fmt;
 use core::iter::FromIterator;
 
+use bitcoin_miniscript::expression::check_valid_chars;
+
 use crate::Error;
 
 const INPUT_CHARSET: &str =  "0123456789()[],'/*abcdefgh@:$%{}IJKLMNOPQRSTUVWXYZ&+-.;<=>?!^_|~ijklmnopqrstuvwxyzABCDEFGH`#\"\\ ";
@@ -51,11 +53,7 @@ pub fn desc_checksum(desc: &str) -> Result<String, Error> {
 /// if it is present and returns the descriptor string
 /// without the checksum
 pub(crate) fn verify_checksum(s: &str) -> Result<&str, Error> {
-    for ch in s.as_bytes() {
-        if *ch < 20 || *ch > 127 {
-            return Err(Error::Unprintable(*ch));
-        }
-    }
+    check_valid_chars(s)?;
 
     let mut parts = s.splitn(2, '#');
     let desc_str = parts.next().unwrap();
