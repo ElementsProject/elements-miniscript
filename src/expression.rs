@@ -7,6 +7,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+use bitcoin_miniscript::expression::check_valid_chars;
+
 use crate::{errstr, Error, MAX_RECURSION_DEPTH};
 
 #[derive(Debug, Clone)]
@@ -202,13 +204,7 @@ impl<'a> Tree<'a> {
     /// Parses a tree from a string
     #[allow(clippy::should_implement_trait)] // seems to be a false positive
     pub fn from_str(s: &'a str) -> Result<Tree<'a>, Error> {
-        // Filter out non-ASCII because we byte-index strings all over the
-        // place and Rust gets very upsbt when you splinch a string.
-        for ch in s.bytes() {
-            if !ch.is_ascii() {
-                return Err(Error::Unprintable(ch));
-            }
-        }
+        check_valid_chars(s)?;
 
         let (top, rem) = Tree::from_slice(s)?;
         if rem.is_empty() {

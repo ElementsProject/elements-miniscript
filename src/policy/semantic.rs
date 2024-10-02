@@ -6,6 +6,7 @@
 use std::str::FromStr;
 use std::{fmt, str};
 
+use bitcoin_miniscript::expression::check_valid_chars;
 use elements::{LockTime, Sequence};
 
 use super::concrete::PolicyError;
@@ -287,11 +288,7 @@ impl_from_str!(
     Policy<Pk>,
     type Err = Error;,
     fn from_str(s: &str) -> Result<Policy<Pk>, Error> {
-        for ch in s.as_bytes() {
-            if *ch < 20 || *ch > 127 {
-                return Err(Error::Unprintable(*ch));
-            }
-        }
+        check_valid_chars(s)?;
 
         let tree = expression::Tree::from_str(s)?;
         expression::FromTree::from_tree(&tree)

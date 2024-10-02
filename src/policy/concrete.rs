@@ -7,6 +7,7 @@
 use std::collections::HashSet;
 use std::{error, fmt, str};
 
+use bitcoin_miniscript::expression::check_valid_chars;
 use elements::{LockTime, Sequence};
 #[cfg(feature = "compiler")]
 use {
@@ -1098,11 +1099,7 @@ impl_from_str!(
     Policy<Pk>,
     type Err = Error;,
     fn from_str(s: &str) -> Result<Policy<Pk>, Error> {
-        for ch in s.as_bytes() {
-            if *ch < 20 || *ch > 127 {
-                return Err(Error::Unprintable(*ch));
-            }
-        }
+        check_valid_chars(s)?;
 
         let tree = expression::Tree::from_str(s)?;
         let policy: Policy<Pk> = FromTree::from_tree(&tree)?;
