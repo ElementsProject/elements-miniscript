@@ -1,6 +1,12 @@
-# Unreleased
+# 0.4.0 - Oct 2, 2024
 
+- Use rust-bitcoin 0.32.0 and rust-elements 0.25.0 [#90](https://github.com/ElementsProject/elements-miniscript/pull/90)
+- Check input charset [#92](https://github.com/ElementsProject/elements-miniscript/pull/92)
+- Fix a bunch of clippy lints and get CI working again [#89](https://github.com/ElementsProject/elements-miniscript/pull/89)
+- avoid setting {BITCOIND,ELEMENTSD}\_EXE in setup [#88](https://github.com/ElementsProject/elements-miniscript/pull/88)
 - [Removed `to_string_no_chksum`](https://github.com/ElementsProject/elements-miniscript/pull/86). This method was poorly-named and broken. Use the alternate display `{:#}` formatter instead to format descriptors without a checksum.
+- Implement federation descriptor tweak with claiming script to match elements core getpeginaddress [#87](https://github.com/ElementsProject/elements-miniscript/pull/87)
+- elip151: multisig test vectors [#84](https://github.com/ElementsProject/elements-miniscript/pull/84)
 
 # 0.3.1 - May 10, 2024
 
