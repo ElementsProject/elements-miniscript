@@ -4,6 +4,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::{fmt, hash};
 
+use bitcoin_miniscript::expression::check_valid_chars;
 use elements::taproot::{
     LeafVersion, TaprootBuilder, TaprootSpendInfo, TAPROOT_CONTROL_BASE_SIZE,
     TAPROOT_CONTROL_MAX_NODE_COUNT, TAPROOT_CONTROL_NODE_SIZE,
@@ -716,11 +717,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> fmt::Display for Tr<Pk, Ext> {
 
 // Helper function to parse string into miniscript tree form
 fn parse_tr_tree(s: &str) -> Result<expression::Tree<'_>, Error> {
-    for ch in s.bytes() {
-        if !ch.is_ascii() {
-            return Err(Error::Unprintable(ch));
-        }
-    }
+    check_valid_chars(s)?;
 
     if s.len() > 5 && &s[..5] == "eltr(" && s.as_bytes()[s.len() - 1] == b')' {
         let rest = &s[5..s.len() - 1];
