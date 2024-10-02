@@ -296,8 +296,6 @@ pub enum Error {
     CmsTooManyKeys(u32),
     /// A tapscript multi_a cannot support more than MAX_BLOCK_WEIGHT/32 keys
     MultiATooManyKeys(u32),
-    /// Encountered unprintable character in descriptor
-    Unprintable(u8),
     /// expected character while parsing descriptor; didn't find one
     ExpectedChar(char),
     /// While parsing backward, hit beginning of script
@@ -463,7 +461,6 @@ impl fmt::Display for Error {
             Error::Script(ref e) => fmt::Display::fmt(e, f),
             Error::AddrError(ref e) => fmt::Display::fmt(e, f),
             Error::CmsTooManyKeys(n) => write!(f, "checkmultisig with {} keys", n),
-            Error::Unprintable(x) => write!(f, "unprintable character 0x{:02x}", x),
             Error::ExpectedChar(c) => write!(f, "expected {}", c),
             Error::UnexpectedStart => f.write_str("unexpected start of script"),
             Error::Unexpected(ref s) => write!(f, "unexpected «{}»", s),
@@ -537,7 +534,6 @@ impl error::Error for Error {
             | InvalidPush(_)
             | CmsTooManyKeys(_)
             | MultiATooManyKeys(_)
-            | Unprintable(_)
             | ExpectedChar(_)
             | UnexpectedStart
             | Unexpected(_)
