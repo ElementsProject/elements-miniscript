@@ -144,10 +144,7 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         let fed_ms = BtcMiniscript::from_ast(BtcTerminal::Multi(fed.clone()))
             .expect("Multi type check can't fail");
         let csv = BtcMiniscript::from_ast(BtcTerminal::Verify(Arc::new(
-            BtcMiniscript::from_ast(BtcTerminal::Older(
-                bitcoin_miniscript::RelLockTime::try_from(timelock).expect("TODO"),
-            ))
-            .unwrap(),
+            BtcMiniscript::from_ast(BtcTerminal::Older(timelock)).unwrap(),
         )))
         .unwrap();
         let emer_ms = BtcMiniscript::from_ast(BtcTerminal::Multi(emer.clone()))
