@@ -30,16 +30,7 @@ macro_rules! impl_from_tree {
     ) => {
         impl<Pk $(, $gen)* $(, $ext)?> $crate::expression::FromTree for $name
         where
-            Pk: MiniscriptKey + core::str::FromStr,
-            Pk::Sha256: core::str::FromStr,
-            Pk::Hash256: core::str::FromStr,
-            Pk::Ripemd160: core::str::FromStr,
-            Pk::Hash160: core::str::FromStr,
-            <Pk as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Sha256 as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Hash256 as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Ripemd160 as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Hash160 as core::str::FromStr>::Err: std::string::ToString,
+            Pk: bitcoin_miniscript::FromStrKey,
             $($gen : $gen_con,)*
             $($ext: $trt)?
             {
@@ -64,16 +55,7 @@ macro_rules! impl_from_str {
     ) => {
         impl<Pk $(, $gen)* $(, $ext)?> core::str::FromStr for $name
         where
-            Pk: MiniscriptKey + core::str::FromStr,
-            Pk::Sha256: core::str::FromStr,
-            Pk::Hash256: core::str::FromStr,
-            Pk::Ripemd160: core::str::FromStr,
-            Pk::Hash160: core::str::FromStr,
-            <Pk as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Sha256 as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Hash256 as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Ripemd160 as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Hash160 as core::str::FromStr>::Err: std::string::ToString,
+            Pk: bitcoin_miniscript::FromStrKey,
             $($gen : $gen_con,)*
             $($ext: $trt)?
             {
@@ -98,16 +80,7 @@ macro_rules! impl_block_str {
     ) => {
         impl<Pk $(, $gen)* $(, $ext)?> $name
         where
-            Pk: MiniscriptKey + core::str::FromStr,
-            Pk::Sha256: core::str::FromStr,
-            Pk::Hash256: core::str::FromStr,
-            Pk::Ripemd160: core::str::FromStr,
-            Pk::Hash160: core::str::FromStr,
-            <Pk as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Sha256 as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Hash256 as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Ripemd160 as core::str::FromStr>::Err: std::string::ToString,
-            <<Pk as MiniscriptKey>::Hash160 as core::str::FromStr>::Err: std::string::ToString,
+            Pk: bitcoin_miniscript::FromStrKey,
             $($gen : $gen_con,)*
             $($ext: $trt)?
             {
@@ -126,20 +99,7 @@ macro_rules! serde_string_impl_pk {
         #[cfg(feature = "serde")]
         impl<'de, Pk $(, $gen)* $(, $ext)*> $crate::serde::Deserialize<'de> for $name<Pk $(, $gen)* $(, $ext)* >
         where
-            Pk: $crate::MiniscriptKey + core::str::FromStr,
-            Pk::Sha256: core::str::FromStr,
-            Pk::Hash256: core::str::FromStr,
-            Pk::Ripemd160: core::str::FromStr,
-            Pk::Hash160: core::str::FromStr,
-            <Pk as core::str::FromStr>::Err: core::fmt::Display,
-            <<Pk as $crate::MiniscriptKey>::Sha256 as core::str::FromStr>::Err:
-                core::fmt::Display,
-            <<Pk as $crate::MiniscriptKey>::Hash256 as core::str::FromStr>::Err:
-                core::fmt::Display,
-            <<Pk as $crate::MiniscriptKey>::Ripemd160 as core::str::FromStr>::Err:
-                core::fmt::Display,
-            <<Pk as $crate::MiniscriptKey>::Hash160 as core::str::FromStr>::Err:
-                core::fmt::Display,
+            Pk: bitcoin_miniscript::FromStrKey,
             $($gen : $gen_con,)*
             $($ext : $ext_bound,)*
         {
@@ -155,20 +115,7 @@ macro_rules! serde_string_impl_pk {
                 struct Visitor<Pk $(, $gen)* $(, $ext)*>(PhantomData<(Pk $(, $gen)* $(, $ext)*)>);
                 impl<'de, Pk $(, $gen)* $(, $ext)*> $crate::serde::de::Visitor<'de> for Visitor<Pk $(, $gen)* $(, $ext)*>
                 where
-                    Pk: $crate::MiniscriptKey + core::str::FromStr,
-                    Pk::Sha256: core::str::FromStr,
-                    Pk::Hash256: core::str::FromStr,
-                    Pk::Ripemd160: core::str::FromStr,
-                    Pk::Hash160: core::str::FromStr,
-                    <Pk as core::str::FromStr>::Err: core::fmt::Display,
-                    <<Pk as $crate::MiniscriptKey>::Sha256 as core::str::FromStr>::Err:
-                        core::fmt::Display,
-                    <<Pk as $crate::MiniscriptKey>::Hash256 as core::str::FromStr>::Err:
-                        core::fmt::Display,
-                    <<Pk as $crate::MiniscriptKey>::Ripemd160 as core::str::FromStr>::Err:
-                        core::fmt::Display,
-                    <<Pk as $crate::MiniscriptKey>::Hash160 as core::str::FromStr>::Err:
-                        core::fmt::Display,
+                    Pk: bitcoin_miniscript::FromStrKey,
                     $($gen: $gen_con,)*
                     $($ext : $ext_bound,)*
                 {

@@ -1,6 +1,6 @@
 ![Build](https://github.com/ElementsProject/elements-miniscript/workflows/Continuous%20integration/badge.svg)
 
-**Minimum Supported Rust Version:** 1.58.0
+**Minimum Supported Rust Version:** 1.63.0
 
 *This crate uses "2018" edition
 
@@ -40,7 +40,7 @@ Enabling the `no-std` feature does not disable `std`. To disable the `std` featu
 To run the benchmarks run `RUSTFLAGS=--cfg=miniscript_bench cargo +nightly bench --all-features`.
 
 ## Minimum Supported Rust Version (MSRV)
-This library should always compile with any combination of features on **Rust 1.58.0**.
+This library should always compile with any combination of features on **Rust 1.63.0**.
 
 
 Some dependencies do not play nicely with our MSRV, if you are running the tests

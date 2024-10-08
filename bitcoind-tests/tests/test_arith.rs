@@ -125,7 +125,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
                         testdata.pubdata.genesis_hash,
                     )
                     .unwrap();
-                let msg = secp256k1::Message::from_slice(&sighash_msg[..]).unwrap();
+                let msg = secp256k1::Message::from_digest_slice(&sighash_msg[..]).unwrap();
                 let mut aux_rand = [0u8; 32];
                 rand::thread_rng().fill_bytes(&mut aux_rand);
                 let sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &aux_rand);

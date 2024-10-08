@@ -24,7 +24,7 @@ use std::convert::TryFrom;
 use std::fmt;
 
 use bitcoin::blockdata::script::{self, PushBytes};
-use bitcoin::{self, ScriptBuf as BtcScript};
+use bitcoin::{self, ScriptBuf as BtcScript, Weight};
 use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{self, verify_checksum};
@@ -100,6 +100,7 @@ impl_from_tree!(
             //
             // TODO: Confirm with Andrew about the descriptor type for dynafed
             // Assuming sh(wsh) for now.
+
             let fed_desc = BtcDescriptor::<Pk>::from_tree(&ms_expr)?;
             let elem_desc = Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(&top.args[1])?;
             Ok(Pegin::new(fed_desc, elem_desc))
@@ -242,7 +243,7 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
     /// and sighash suffix. Includes the weight of the VarInts encoding the
     /// scriptSig and witness stack length.
     // FIXME: the ToPublicKey bound here should not needed. Fix after upstream
-    pub fn max_satisfaction_weight(&self) -> Result<usize, Error>
+    pub fn max_satisfaction_weight(&self) -> Result<Weight, Error>
     where
         Pk: ToPublicKey,
     {
