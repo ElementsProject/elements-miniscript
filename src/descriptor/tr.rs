@@ -554,7 +554,7 @@ impl<'a, Pk: ToPublicKey, Ext: ParseableExt> TapLeafScript<'a, Pk, Ext> {
                 let satisfier = crate::simplicity::SatisfierWrapper::new(satisfier);
                 let program = sim.satisfy(&satisfier).map_err(|_| Error::CouldNotSatisfy)?;
                 let (program_bytes, witness_bytes) = program.encode_to_vec();
-                Ok(vec![program_bytes, witness_bytes])
+                Ok(vec![witness_bytes, program_bytes])
             }
         }
     }
