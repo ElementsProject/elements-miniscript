@@ -24,7 +24,7 @@ use std::convert::TryFrom;
 use std::fmt;
 
 use bitcoin::blockdata::script::{self, PushBytes};
-use bitcoin::{self, ScriptBuf as BtcScript, Weight};
+use bitcoin::{self, PublicKey, ScriptBuf as BtcScript, Weight};
 use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{self, verify_checksum};
@@ -41,7 +41,7 @@ use crate::{
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Pegin<Pk: MiniscriptKey> {
     /// The untweaked pegin bitcoin descriptor
-    pub fed_desc: BtcDescriptor<Pk>,
+    pub fed_desc: BtcDescriptor<PublicKey>,
     /// The redeem elements descriptor
     ///
     /// TODO: Allow pegin redeem descriptor with extensions
@@ -51,7 +51,7 @@ pub struct Pegin<Pk: MiniscriptKey> {
 impl<Pk: MiniscriptKey> Pegin<Pk> {
     /// Create a new LegacyPegin descriptor
     pub fn new(
-        fed_desc: BtcDescriptor<Pk>,
+        fed_desc: BtcDescriptor<PublicKey>,
         elem_desc: Descriptor<Pk, CovenantExt<CovExtArgs>>,
     ) -> Self {
         Self {
@@ -76,15 +76,15 @@ impl<Pk: MiniscriptKey> fmt::Display for Pegin<Pk> {
     }
 }
 
-impl<Pk: MiniscriptKey> Liftable<Pk> for Pegin<Pk> {
-    fn lift(&self) -> Result<semantic::Policy<Pk>, Error> {
+impl<Pk: MiniscriptKey> Liftable<PublicKey> for Pegin<Pk> {
+    fn lift(&self) -> Result<semantic::Policy<PublicKey>, Error> {
         let btc_pol = BtcLiftable::lift(&self.fed_desc)?;
         Liftable::lift(&btc_pol)
     }
 }
 
-impl<Pk: MiniscriptKey> BtcLiftable<Pk> for Pegin<Pk> {
-    fn lift(&self) -> Result<BtcPolicy<Pk>, BtcError> {
+impl<Pk: MiniscriptKey> BtcLiftable<PublicKey> for Pegin<Pk> {
+    fn lift(&self) -> Result<BtcPolicy<PublicKey>, BtcError> {
         self.fed_desc.lift()
     }
 }
@@ -101,7 +101,7 @@ impl_from_tree!(
             // TODO: Confirm with Andrew about the descriptor type for dynafed
             // Assuming sh(wsh) for now.
 
-            let fed_desc = BtcDescriptor::<Pk>::from_tree(&ms_expr)?;
+            let fed_desc = BtcDescriptor::<PublicKey>::from_tree(&ms_expr)?;
             let elem_desc = Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(&top.args[1])?;
             Ok(Pegin::new(fed_desc, elem_desc))
         } else {
