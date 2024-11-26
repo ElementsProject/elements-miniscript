@@ -373,6 +373,9 @@ pub enum Error {
     /// At least two BIP389 key expressions in the descriptor contain tuples of
     /// derivation indexes of different lengths.
     MultipathDescLenMismatch,
+
+    /// Conversion error in descriptor
+    Conversion(descriptor::ConversionError),
 }
 
 #[doc(hidden)]
@@ -446,6 +449,12 @@ impl From<bitcoin::key::FromSliceError> for Error {
 impl From<bitcoin::address::ParseError> for Error {
     fn from(e: bitcoin::address::ParseError) -> Error {
         Error::AddrError(e)
+    }
+}
+
+impl From<descriptor::ConversionError> for Error {
+    fn from(e: descriptor::ConversionError) -> Error {
+        Error::Conversion(e)
     }
 }
 
@@ -530,6 +539,8 @@ impl fmt::Display for Error {
             Error::TrNoScriptCode => write!(f, "No script code for Tr descriptors"),
             Error::TrNoExplicitScript => write!(f, "No script code for Tr descriptors"),
             Error::MultipathDescLenMismatch => write!(f, "At least two BIP389 key expressions in the descriptor contain tuples of derivation indexes of different lengths"),
+            Error::Conversion(ref e) => e.fmt(f),
+
         }
     }
 }
@@ -584,6 +595,7 @@ impl error::Error for Error {
             ContextError(e) => Some(e),
             AnalysisError(e) => Some(e),
             PubKeyCtxError(e, _) => Some(e),
+            Conversion(e) => Some(e),
         }
     }
 }
