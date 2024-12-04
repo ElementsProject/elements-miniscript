@@ -374,6 +374,9 @@ pub enum Error {
     /// derivation indexes of different lengths.
     MultipathDescLenMismatch,
 
+    /// The federation descriptor has a type not supported
+    UnsupportedAddressForPegin,
+
     /// Conversion error in descriptor
     Conversion(descriptor::ConversionError),
 }
@@ -540,6 +543,7 @@ impl fmt::Display for Error {
             Error::TrNoExplicitScript => write!(f, "No script code for Tr descriptors"),
             Error::MultipathDescLenMismatch => write!(f, "At least two BIP389 key expressions in the descriptor contain tuples of derivation indexes of different lengths"),
             Error::Conversion(ref e) => e.fmt(f),
+            Error::UnsupportedAddressForPegin => write!(f, "Cannot create the address from the pegin descriptor, the federation descriptor is of an unsuppported type"),
 
         }
     }
@@ -579,6 +583,7 @@ impl error::Error for Error {
             | BareDescriptorAddr
             | TaprootSpendInfoUnavialable
             | TrNoScriptCode
+            | UnsupportedAddressForPegin
             | TrNoExplicitScript => None,
             MultipathDescLenMismatch => None,
             BtcError(e) => Some(e),

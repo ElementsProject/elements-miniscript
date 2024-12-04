@@ -25,6 +25,7 @@ use std::fmt;
 
 use bitcoin::blockdata::script::{self, PushBytes};
 use bitcoin::{self, PublicKey, ScriptBuf as BtcScript, Weight};
+use bitcoin_miniscript::descriptor::DescriptorType;
 use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{self, verify_checksum};
@@ -158,14 +159,21 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
     where
         Pk: ToPublicKey,
     {
-        // TODO
-        Ok(bitcoin::Address::p2shwsh(
-            // Should the address type taken from the top level user desc?
-            &self
-                .bitcoin_witness_script(secp)
-                .expect("DO this cleanly after TR. Pay to taproot pegins unspecified till now"),
-            network,
-        ))
+        match self.fed_desc.desc_type() {
+            DescriptorType::Wsh => Ok(bitcoin::Address::p2wsh(
+                &self
+                    .bitcoin_witness_script(secp)
+                    .expect("DO this cleanly after TR. Pay to taproot pegins unspecified till now"),
+                network,
+            )),
+            DescriptorType::ShWsh => Ok(bitcoin::Address::p2shwsh(
+                &self
+                    .bitcoin_witness_script(secp)
+                    .expect("DO this cleanly after TR. Pay to taproot pegins unspecified till now"),
+                network,
+            )),
+            _ => return Err(Error::UnsupportedAddressForPegin),
+        }
     }
 
     /// Computes the bitcoin scriptpubkey of the descriptor.
@@ -387,23 +395,21 @@ mod tests {
         let pegin = Pegin::new(fed_peg_desc, elem_desc.descriptor);
         let secp = secp256k1::Secp256k1::new();
 
-        let witness_script_0 = pegin
+        let address_0 = pegin
             .derived_descriptor(0, &secp)
             .unwrap()
-            .bitcoin_witness_script(&secp)
+            .bitcoin_address(bitcoin::Network::Bitcoin, &secp)
             .unwrap();
-        let address_0 = bitcoin::Address::p2wsh(&witness_script_0, bitcoin::Network::Bitcoin);
         assert_eq!(
             address_0.to_string(),
             "bc1qqkq6czql4zqwsylgrfzttjrn5wjeqmwfq5yn80p39amxtnkng9lsn6c5qr"
         );
 
-        let witness_script_1 = pegin
+        let address_1 = pegin
             .derived_descriptor(1, &secp)
             .unwrap()
-            .bitcoin_witness_script(&secp)
+            .bitcoin_address(bitcoin::Network::Bitcoin, &secp)
             .unwrap();
-        let address_1 = bitcoin::Address::p2wsh(&witness_script_1, bitcoin::Network::Bitcoin);
         assert_ne!(address_0, address_1);
         assert_eq!(
             address_1.to_string(),
