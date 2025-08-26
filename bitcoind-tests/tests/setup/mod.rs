@@ -60,6 +60,7 @@ pub fn setup(validate_pegin: bool) -> (ElementsD, Option<BitcoinD>, elements::Bl
     (elementsd, bitcoind, genesis_hash)
 }
 // Upstream all common methods later
+#[allow(unused)]
 pub trait Call {
     fn call(&self, cmd: &str, args: &[Value]) -> Value;
     fn get_new_address(&self) -> elements::Address;

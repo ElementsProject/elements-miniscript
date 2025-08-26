@@ -850,11 +850,10 @@ fn insert_elem<Pk: MiniscriptKey, Ctx: ScriptContext>(
     // cost, don't consider this element.
     let is_worse = map
         .iter()
-        .map(|(existing_key, existing_elem)| {
+        .any(|(existing_key, existing_elem)| {
             let existing_elem_cost = existing_elem.cost_1d(sat_prob, dissat_prob);
             existing_key.is_subtype(elem_key) && existing_elem_cost <= elem_cost
-        })
-        .any(|x| x);
+        });
     if !is_worse {
         // If the element is not worse any element in the map, remove elements
         // whose subtype is the current element and have worse cost.

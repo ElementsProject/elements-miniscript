@@ -9,6 +9,7 @@ keywords = [ "crypto", "bitcoin", "miniscript", "script" ]
 readme = "README.md"
 homepage = "https://github.com/rust-bitcoin/rust-miniscript/"
 edition = "2018"
+rust-version = "1.63.0"
 
 [features]
 compiler = []
@@ -61,3 +62,6 @@ required-features = ["base64"]
 
 [workspace]
 members = ["bitcoind-tests", "fuzz"]
+
+[lints.rust]
+unexpected_cfgs = { level = "deny", check-cfg = ['cfg(miniscript_bench)'] }

@@ -326,7 +326,7 @@ where
     }
 }
 
-impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'a S {
+impl<Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'_ S {
     fn lookup_ecdsa_sig(&self, p: &Pk) -> Option<ElementsSig> {
         (**self).lookup_ecdsa_sig(p)
     }
@@ -460,7 +460,7 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
     }
 }
 
-impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'a mut S {
+impl<Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'_ mut S {
     fn lookup_ecdsa_sig(&self, p: &Pk) -> Option<ElementsSig> {
         (**self).lookup_ecdsa_sig(p)
     }
