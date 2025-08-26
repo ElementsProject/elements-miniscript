@@ -6,6 +6,8 @@
 //! Optimizing compiler from concrete policies to Miniscript.
 //! Currently the policy compiler does not support any extensions
 
+#![allow(clippy::cast_precision_loss)] // we repeatedly cast sizes to f64s, which truncates at 2^52 elements
+
 use std::collections::vec_deque::VecDeque;
 use std::collections::BTreeMap;
 use std::convert::From;

@@ -41,7 +41,7 @@ pub fn elementssig_to_rawsig(sig: &ElementsSig) -> Vec<u8> {
 /// Returns underlying secp if the Signature is not of correct format
 pub fn elementssig_from_rawsig(rawsig: &[u8]) -> Result<ElementsSig, crate::interpreter::Error> {
     let (flag, sig) = rawsig.split_last().unwrap();
-    let flag = elements::EcdsaSighashType::from_u32(*flag as u32);
+    let flag = elements::EcdsaSighashType::from_u32(u32::from(*flag));
     let sig = secp256k1_zkp::ecdsa::Signature::from_der(sig)?;
     Ok((sig, flag))
 }

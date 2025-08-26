@@ -969,7 +969,7 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
 
         impl<'a> Translator<DescriptorPublicKey, String, ()> for KeyMapLookUp<'a> {
             fn pk(&mut self, pk: &DescriptorPublicKey) -> Result<String, ()> {
-                key_to_string(pk, self.0)
+                Ok(key_to_string(pk, self.0))
             }
 
             fn sha256(&mut self, sha256: &sha256::Hash) -> Result<String, ()> {
@@ -989,11 +989,11 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
             }
         }
 
-        fn key_to_string(pk: &DescriptorPublicKey, key_map: &KeyMap) -> Result<String, ()> {
-            Ok(match key_map.get(pk) {
+        fn key_to_string(pk: &DescriptorPublicKey, key_map: &KeyMap) -> String {
+            match key_map.get(pk) {
                 Some(secret) => secret.to_string(),
                 None => pk.to_string(),
-            })
+            }
         }
 
         let descriptor = self

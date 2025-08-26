@@ -111,7 +111,7 @@ impl fmt::Display for ScriptContextError {
                     pk
                 )
             }
-            ScriptContextError::XOnlyKeysNotAllowed(ref pk, ref ctx) => {
+            ScriptContextError::XOnlyKeysNotAllowed(ref pk, ctx) => {
                 write!(f, "x-only key {} not allowed in {}", pk, ctx)
             }
             ScriptContextError::UncompressedKeysNotAllowed => {

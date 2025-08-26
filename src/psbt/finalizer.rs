@@ -360,7 +360,7 @@ fn input_sanity_checks(psbt: &Psbt, index: usize) -> Result<(), super::Error> {
             ));
         }
         let (flag, sig) = rawsig.split_last().unwrap();
-        let flag = elements::EcdsaSighashType::from_u32(*flag as u32);
+        let flag = elements::EcdsaSighashType::from_u32(u32::from(*flag));
         if target != flag {
             return Err(Error::InputError(
                 InputError::WrongSighashFlag {

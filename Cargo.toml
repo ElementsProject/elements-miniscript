@@ -68,3 +68,47 @@ members = ["bitcoind-tests", "fuzz"]
 
 [lints.rust]
 unexpected_cfgs = { level = "deny", check-cfg = ['cfg(miniscript_bench)'] }
+
+[lints.clippy]
+# Exclude lints we don't think are valuable.
+needless_question_mark = "allow" # https://github.com/rust-bitcoin/rust-bitcoin/pull/2134
+manual_range_contains = "allow" # More readable than clippy's format.
+uninlined_format_args = "allow" # This is a subjective style choice.
+float_cmp = "allow" # Bitcoin floats are typically limited to 8 decimal places and we want them exact.
+match_bool = "allow" # Adds extra indentation and LOC.
+match_same_arms = "allow" # Collapses things that are conceptually unrelated to each other.
+must_use_candidate = "allow" # Useful for audit but many false positives.
+similar_names = "allow" # Too many (subjectively) false positives.
+# Exhaustive list of pedantic clippy lints
+assigning_clones = "warn"
+borrow_as_ptr = "warn"
+cast_lossless = "warn"
+cast_possible_truncation = "allow" # All casts should include a code comment (except test code).
+cast_possible_wrap = "allow" # Same as above re code comment.
+cast_precision_loss = "warn"
+cast_ptr_alignment = "warn"
+cast_sign_loss = "allow" # All casts should include a code comment (except in test code).
+invalid_upcast_comparisons = "warn"
+option_as_ref_cloned = "warn"
+ptr_as_ptr = "warn"
+ptr_cast_constness = "warn"
+ref_as_ptr = "warn"
+ref_binding_to_reference = "warn"
+ref_option_ref = "warn"
+same_functions_in_if_condition = "warn"
+should_panic_without_expect = "warn"
+single_char_pattern = "warn"
+stable_sort_primitive = "warn"
+str_split_at_newline = "warn"
+string_add_assign = "warn"
+transmute_ptr_to_ptr = "warn"
+trivially_copy_pass_by_ref = "warn"
+unchecked_duration_subtraction = "warn"
+unicode_not_nfc = "warn"
+unnecessary_box_returns = "warn"
+unnecessary_join = "warn"
+unnecessary_literal_bound = "warn"
+unnecessary_wraps = "warn"
+unsafe_derive_deserialize = "warn"
+unused_async = "warn"
+unused_self = "warn"

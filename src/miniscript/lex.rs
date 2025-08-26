@@ -180,20 +180,19 @@ impl<'s> Iterator for TokenIter<'s> {
 pub fn lex(script: &script::Script) -> Result<Vec<Token<'_>>, Error> {
     let mut ret = Vec::with_capacity(script.len());
 
-    fn process_candidate_push(ret: &mut [Token<'_>]) -> Result<(), Error> {
+    fn process_candidate_push(ret: &mut [Token<'_>]) {
         let ret_len = ret.len();
 
         if ret_len < 2 || ret[ret_len - 1] != Token::Swap {
-            return Ok(());
+            return;
         }
         let token = match &ret[ret_len - 2] {
             Token::Hash20(x) => Token::Push(x.to_vec()),
             Token::Bytes32(x) | Token::Bytes33(x) | Token::Bytes65(x) => Token::Push(x.to_vec()),
-            Token::Num(k) => Token::Push(build_scriptint(*k as i64)),
-            _x => return Ok(()), // no change required
+            Token::Num(k) => Token::Push(build_scriptint(i64::from(*k))),
+            _x => return, // no change required
         };
         ret[ret_len - 2] = token;
-        Ok(())
     }
 
     for ins in script.instructions_minimal() {
@@ -329,7 +328,7 @@ pub fn lex(script: &script::Script) -> Result<Vec<Token<'_>>, Error> {
                 ret.push(Token::Dup2);
             }
             script::Instruction::Op(opcodes::all::OP_CAT) => {
-                process_candidate_push(&mut ret)?;
+                process_candidate_push(&mut ret);
                 ret.push(Token::Cat);
             }
             script::Instruction::Op(opcodes::all::OP_CODESEPARATOR) => {

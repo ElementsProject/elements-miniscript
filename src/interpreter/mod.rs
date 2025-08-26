@@ -701,20 +701,12 @@ where
                 Terminal::After(ref n) => {
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self
-                        .stack
-                        .evaluate_after(&LockTime::from(*n), self.lock_time);
-                    if res.is_some() {
-                        return res;
-                    }
+                    return Some(self.stack.evaluate_after(LockTime::from(*n), self.lock_time));
                 }
                 Terminal::Older(ref n) => {
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_older(n, self.age);
-                    if res.is_some() {
-                        return res;
-                    }
+                    return Some(self.stack.evaluate_older(*n, self.age));
                 }
                 Terminal::Sha256(ref hash) => {
                     debug_assert_eq!(node_state.n_evaluated, 0);
