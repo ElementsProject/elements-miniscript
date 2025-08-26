@@ -15,7 +15,7 @@
 //! SLIP77
 //!
 //! Implementation of the SLIP77 protocol, documented at
-//! https://github.com/satoshilabs/slips/blob/master/slip-0077.md
+//! <https://github.com/satoshilabs/slips/blob/master/slip-0077.md>
 //!
 
 use std::{borrow, fmt};

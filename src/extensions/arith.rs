@@ -915,8 +915,8 @@ pub enum ArithInner<T: ExtParam> {
     Geq(Expr<T>, Expr<T>),
 }
 
-/// Wrapper around [`ArithInner`] that ensures that the expression is valid.
-/// See [`ArithInner`] for more details.
+/// Wrapper around `ArithInner` that ensures that the expression is valid.
+/// See `ArithInner` for more details.
 ///
 /// Note that the library allows construction of unchecked [`Expr], but
 /// [`Arith`] is always checked.

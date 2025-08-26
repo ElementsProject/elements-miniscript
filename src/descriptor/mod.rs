@@ -870,10 +870,9 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     /// ```
     ///
     /// and is only here really here for backwards compatbility.
-    /// See [`at_derivation_index`] and `[derived_descriptor`] for more documentation.
+    /// See [`at_derivation_index`] for more documentation.
     ///
     /// [`at_derivation_index`]: Self::at_derivation_index
-    /// [`derived_descriptor`]: crate::DerivedDescriptor::derived_descriptor
     ///
     /// # Errors
     ///
