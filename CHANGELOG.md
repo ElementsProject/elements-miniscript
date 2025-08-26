@@ -1,3 +1,11 @@
+# 0.5.0 - Aug 26, 2025
+
+- bump rust elements dep to 0.26.0
+- get CI up to date; pin nightly rust version; fix some clippy lints [#98](https://github.com/ElementsProject/elements-miniscript/pull/98)
+- Pegin desc wildcard [#96](https://github.com/ElementsProject/elements-miniscript/pull/96)
+- Remove inner checksum in pegin descriptor [#95](https://github.com/ElementsProject/elements-miniscript/pull/95)
+- simplicity: swap program and witness data in satisfaction [#94](https://github.com/ElementsProject/elements-miniscript/pull/94)
+
 # 0.4.0 - Oct 8, 2024
 
 - Use rust-bitcoin 0.32.0 and rust-elements 0.25.0 [#90](https://github.com/ElementsProject/elements-miniscript/pull/90)
