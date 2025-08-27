@@ -4,6 +4,8 @@
 //! Concrete Policies
 //!
 
+#![allow(clippy::cast_precision_loss)] // we repeatedly cast sizes to f64s, which truncates at 2^52 elements
+
 use std::collections::HashSet;
 use std::{error, fmt, str};
 
@@ -979,8 +981,8 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                     .map(|sub| sub.is_safe_nonmalleable())
                     .fold((0, 0), |(safe_count, non_mall_count), (safe, non_mall)| {
                         (
-                            safe_count + safe as usize,
-                            non_mall_count + non_mall as usize,
+                            safe_count + usize::from(safe),
+                            non_mall_count + usize::from(non_mall),
                         )
                     });
                 (

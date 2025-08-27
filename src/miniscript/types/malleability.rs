@@ -30,8 +30,8 @@ pub enum Dissat {
 impl Dissat {
     /// Check whether given `Dissat` is a subtype of `other`. That is,
     /// if some Dissat is `Unique` then it must be `Unknown`.
-    fn is_subtype(&self, other: Self) -> bool {
-        match (*self, other) {
+    fn is_subtype(self, other: Self) -> bool {
+        match (self, other) {
             (x, y) if x == y => true,
             (_, Dissat::Unknown) => true,
             _ => false,

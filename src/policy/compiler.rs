@@ -6,6 +6,8 @@
 //! Optimizing compiler from concrete policies to Miniscript.
 //! Currently the policy compiler does not support any extensions
 
+#![allow(clippy::cast_precision_loss)] // we repeatedly cast sizes to f64s, which truncates at 2^52 elements
+
 use std::collections::vec_deque::VecDeque;
 use std::collections::BTreeMap;
 use std::convert::From;
@@ -850,11 +852,10 @@ fn insert_elem<Pk: MiniscriptKey, Ctx: ScriptContext>(
     // cost, don't consider this element.
     let is_worse = map
         .iter()
-        .map(|(existing_key, existing_elem)| {
+        .any(|(existing_key, existing_elem)| {
             let existing_elem_cost = existing_elem.cost_1d(sat_prob, dissat_prob);
             existing_key.is_subtype(elem_key) && existing_elem_cost <= elem_cost
-        })
-        .any(|x| x);
+        });
     if !is_worse {
         // If the element is not worse any element in the map, remove elements
         // whose subtype is the current element and have worse cost.

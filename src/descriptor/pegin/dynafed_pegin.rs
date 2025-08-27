@@ -69,7 +69,7 @@ impl Pegin<DescriptorPublicKey> {
         secp: &secp256k1_zkp::Secp256k1<C>,
     ) -> Result<Pegin<PublicKey>, Error> {
         let elem_desc = self.elem_desc.at_derivation_index(arg)?;
-        let elem_desc = elem_desc.derived_descriptor(&secp)?;
+        let elem_desc = elem_desc.derived_descriptor(secp)?;
         Ok(Pegin::new(self.fed_desc.clone(), elem_desc))
     }
 }
@@ -172,7 +172,7 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
                     .expect("DO this cleanly after TR. Pay to taproot pegins unspecified till now"),
                 network,
             )),
-            _ => return Err(Error::UnsupportedAddressForPegin),
+            _ => Err(Error::UnsupportedAddressForPegin),
         }
     }
 

@@ -14,7 +14,7 @@
 //! ELIP151
 //!
 //! Implementation of the ELIP151 protocol, documented at
-//! https://github.com/ElementsProject/ELIPs/blob/main/elip-0151.md
+//! <https://github.com/ElementsProject/ELIPs/blob/main/elip-0151.md>
 //!
 
 use bitcoin::hashes::{sha256t_hash_newtype, Hash};

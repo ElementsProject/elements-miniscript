@@ -245,27 +245,27 @@ impl<'txin> Stack<'txin> {
     /// booleans
     pub(super) fn evaluate_after<Ext: Extension>(
         &mut self,
-        n: &LockTime,
+        n: LockTime,
         lock_time: LockTime,
-    ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
+    ) -> Result<SatisfiedConstraint<Ext>, Error> {
         use LockTime::*;
 
-        let is_satisfied = match (*n, lock_time) {
+        let is_satisfied = match (n, lock_time) {
             (Blocks(n), Blocks(lock_time)) => n <= lock_time,
             (Seconds(n), Seconds(lock_time)) => n <= lock_time,
             _ => {
-                return Some(Err(Error::AbsoluteLocktimeComparisonInvalid(
+                return Err(Error::AbsoluteLocktimeComparisonInvalid(
                     n.to_consensus_u32(),
                     lock_time.to_consensus_u32(),
-                )))
+                ))
             }
         };
 
         if is_satisfied {
             self.push(Element::Satisfied);
-            Some(Ok(SatisfiedConstraint::AbsoluteTimelock { n: *n }))
+            Ok(SatisfiedConstraint::AbsoluteTimelock { n })
         } else {
-            Some(Err(Error::AbsoluteLocktimeNotMet(n.to_consensus_u32())))
+            Err(Error::AbsoluteLocktimeNotMet(n.to_consensus_u32()))
         }
     }
 
@@ -277,14 +277,14 @@ impl<'txin> Stack<'txin> {
     /// booleans
     pub(super) fn evaluate_older<Ext: Extension>(
         &mut self,
-        n: &Sequence,
+        n: Sequence,
         age: Sequence,
-    ) -> Option<Result<SatisfiedConstraint<Ext>, Error>> {
-        if age >= *n {
+    ) -> Result<SatisfiedConstraint<Ext>, Error> {
+        if age >= n {
             self.push(Element::Satisfied);
-            Some(Ok(SatisfiedConstraint::RelativeTimelock { n: *n }))
+            Ok(SatisfiedConstraint::RelativeTimelock { n })
         } else {
-            Some(Err(Error::RelativeLocktimeNotMet(n.to_consensus_u32())))
+            Err(Error::RelativeLocktimeNotMet(n.to_consensus_u32()))
         }
     }
 

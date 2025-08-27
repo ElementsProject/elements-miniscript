@@ -623,7 +623,7 @@ fn spk(pref: i8, prog: &[u8]) -> Option<elements::Script> {
     } else if pref <= 16 && pref >= 0 {
         Some(
             script::Builder::new()
-                .push_int(pref as i64)
+                .push_int(i64::from(pref))
                 .push_slice(prog)
                 .into_script(),
         )
@@ -664,7 +664,7 @@ impl AssetExpr<CovExtArgs> {
                     Asset::Explicit(a) => builder.push_slice(a.into_inner().as_ref()).push_int(1), // explicit prefix
                     Asset::Confidential(c) => {
                         let ser = c.serialize();
-                        builder.push_slice(&ser[1..]).push_int(ser[0] as i64)
+                        builder.push_slice(&ser[1..]).push_int(i64::from(ser[0]))
                     }
                 }
             }
@@ -752,7 +752,7 @@ impl ValueExpr<CovExtArgs> {
                     } // explicit prefix
                     confidential::Value::Confidential(c) => {
                         let ser = c.serialize();
-                        builder.push_slice(&ser[1..]).push_int(ser[0] as i64)
+                        builder.push_slice(&ser[1..]).push_int(i64::from(ser[0]))
                     }
                 }
             }
@@ -838,7 +838,7 @@ impl SpkExpr<CovExtArgs> {
                     SpkInner::Script(s) => spk_to_components(s),
                     SpkInner::Hashed(h) => (-1, h.to_byte_array().to_vec()),
                 };
-                builder.push_slice(&prog).push_int(ver as i64)
+                builder.push_slice(&prog).push_int(i64::from(ver))
             }
             SpkExpr::Const(_) => unreachable!(
                 "Both constructors from_str and from_token_iter

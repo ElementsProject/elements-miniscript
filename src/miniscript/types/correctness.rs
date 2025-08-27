@@ -51,8 +51,8 @@ impl Input {
     /// Check whether given `Input` is a subtype of `other`. That is,
     /// if some Input is `OneNonZero` then it must be `One`, hence `OneNonZero` is
     /// a subtype if `One`. Returns `true` for `a.is_subtype(a)`.
-    fn is_subtype(&self, other: Self) -> bool {
-        match (*self, other) {
+    fn is_subtype(self, other: Self) -> bool {
+        match (self, other) {
             (x, y) if x == y => true,
             (Input::OneNonZero, Input::One)
             | (Input::OneNonZero, Input::AnyNonZero)

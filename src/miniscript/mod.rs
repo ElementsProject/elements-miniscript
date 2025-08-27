@@ -67,7 +67,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> PartialOrd
     for Miniscript<Pk, Ctx, Ext>
 {
     fn partial_cmp(&self, other: &Miniscript<Pk, Ctx, Ext>) -> Option<cmp::Ordering> {
-        Some(self.node.cmp(&other.node))
+        Some(self.cmp(other))
     }
 }
 

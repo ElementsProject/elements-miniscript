@@ -534,7 +534,7 @@ impl fmt::Display for Error {
             Error::BareDescriptorAddr => write!(f, "Bare descriptors don't have address"),
             Error::BtcError(ref e) => write!(f, " Bitcoin Miniscript Error {}", e),
             Error::CovError(ref e) => write!(f, "Covenant Error: {}", e),
-            Error::PubKeyCtxError(ref pk, ref ctx) => {
+            Error::PubKeyCtxError(ref pk, ctx) => {
                 write!(f, "Pubkey error: {} under {} scriptcontext", pk, ctx)
             }
             Error::MultiATooManyKeys(k) => write!(f, "MultiA too many keys {}", k),
