@@ -165,7 +165,9 @@ impl<Pk: MiniscriptKey, Ext: Extension> TapTree<Pk, Ext> {
             ),
             TapTree::Leaf(ms) => TapTree::Leaf(Arc::new(ms.translate_pk(t)?)),
             #[cfg(feature = "simplicity")]
-            TapTree::SimplicityLeaf(sim) => TapTree::SimplicityLeaf(Arc::new(sim.translate(&mut SimTranslator(t))?))
+            TapTree::SimplicityLeaf(sim) => {
+                TapTree::SimplicityLeaf(Arc::new(sim.translate(&mut SimTranslator(t))?))
+            }
         };
         Ok(frag)
     }
@@ -296,7 +298,7 @@ impl<Pk: MiniscriptKey, Ext: Extension> Tr<Pk, Ext> {
                 TapLeafScript::Miniscript(ms) => ms.sanity_check()?,
                 // TODO: Add sanity check for Simplicity policies
                 #[cfg(feature = "simplicity")]
-                TapLeafScript::Simplicity(..) => {},
+                TapLeafScript::Simplicity(..) => {}
             }
         }
         Ok(())
@@ -446,7 +448,7 @@ pub enum TapLeafScript<'a, Pk: MiniscriptKey, Ext: Extension> {
     Miniscript(&'a Miniscript<Pk, Tap, Ext>),
     /// Simplicity leaf
     #[cfg(feature = "simplicity")]
-    Simplicity(&'a simplicity::Policy<Pk>)
+    Simplicity(&'a simplicity::Policy<Pk>),
 }
 
 impl<'a, Pk: MiniscriptKey, Ext: Extension> TapLeafScript<'a, Pk, Ext> {
@@ -509,12 +511,14 @@ impl<'a, Pk: MiniscriptKey, Ext: Extension> TapLeafScript<'a, Pk, Ext> {
             // We mark the witness size as malleable since it depends on the chosen spending path
             // TODO: Add method to simplicity::Policy and use it here
             #[cfg(feature = "simplicity")]
-            TapLeafScript::Simplicity(..) => Err(Error::AnalysisError(crate::AnalysisError::Malleable))
+            TapLeafScript::Simplicity(..) => {
+                Err(Error::AnalysisError(crate::AnalysisError::Malleable))
+            }
         }
     }
 
     /// Return an iterator over the plain public keys (and not key hash values) of the leaf script.
-    pub fn iter_pk(&self) -> Box<dyn Iterator<Item=Pk> + 'a> {
+    pub fn iter_pk(&self) -> Box<dyn Iterator<Item = Pk> + 'a> {
         match self {
             TapLeafScript::Miniscript(ms) => Box::new(ms.iter_pk()),
             #[cfg(feature = "simplicity")]
@@ -529,9 +533,7 @@ impl<'a, Pk: ToPublicKey, Ext: ParseableExt> TapLeafScript<'a, Pk, Ext> {
         match self {
             TapLeafScript::Miniscript(ms) => ms.encode(),
             #[cfg(feature = "simplicity")]
-            TapLeafScript::Simplicity(sim) => {
-                Script::from(sim.cmr().as_ref().to_vec())
-            }
+            TapLeafScript::Simplicity(sim) => Script::from(sim.cmr().as_ref().to_vec()),
         }
     }
 
@@ -551,13 +553,42 @@ impl<'a, Pk: ToPublicKey, Ext: ParseableExt> TapLeafScript<'a, Pk, Ext> {
             TapLeafScript::Miniscript(ms) => ms.satisfy(satisfier),
             #[cfg(feature = "simplicity")]
             TapLeafScript::Simplicity(sim) => {
+                let env = dummy_env();
                 let satisfier = crate::simplicity::SatisfierWrapper::new(satisfier);
-                let program = sim.satisfy(&satisfier).map_err(|_| Error::CouldNotSatisfy)?;
-                let (program_bytes, witness_bytes) = program.encode_to_vec();
+                let program = sim
+                    .satisfy(&satisfier, &env)
+                    .map_err(|_| Error::CouldNotSatisfy)?;
+                let (program_bytes, witness_bytes) = program.to_vec_with_witness();
                 Ok(vec![witness_bytes, program_bytes])
             }
         }
     }
+}
+
+#[cfg(feature = "simplicity")]
+fn dummy_env() -> simplicity::jet::elements::ElementsEnv<std::sync::Arc<elements::Transaction>> {
+    use elements::hashes::Hash;
+
+    let ctrl_blk: [u8; 33] = [
+        0xc0, 0xeb, 0x04, 0xb6, 0x8e, 0x9a, 0x26, 0xd1, 0x16, 0x04, 0x6c, 0x76, 0xe8, 0xff, 0x47,
+        0x33, 0x2f, 0xb7, 0x1d, 0xda, 0x90, 0xff, 0x4b, 0xef, 0x53, 0x70, 0xf2, 0x52, 0x26, 0xd3,
+        0xbc, 0x09, 0xfc,
+    ];
+    let env = simplicity::jet::elements::ElementsEnv::new(
+        Arc::new(simplicity::elements::Transaction {
+            version: 0,
+            lock_time: simplicity::elements::LockTime::ZERO,
+            input: vec![],
+            output: vec![],
+        }),
+        vec![],
+        0,
+        simplicity::Cmr::unit(),
+        simplicity::elements::taproot::ControlBlock::from_slice(&ctrl_blk).unwrap(),
+        None,
+        simplicity::elements::BlockHash::all_zeros(),
+    );
+    env
 }
 
 /// Iterator over the leaves of a tap tree.
@@ -594,9 +625,7 @@ where
                     self.stack.push((depth + 1, r));
                     self.stack.push((depth + 1, l));
                 }
-                TapTree::Leaf(ref ms) => {
-                    return Some((depth, TapLeafScript::Miniscript(ms)))
-                },
+                TapTree::Leaf(ref ms) => return Some((depth, TapLeafScript::Miniscript(ms))),
                 #[cfg(feature = "simplicity")]
                 TapTree::SimplicityLeaf(ref sim) => {
                     return Some((depth, TapLeafScript::Simplicity(sim)))
@@ -790,7 +819,9 @@ impl<Pk: MiniscriptKey, Ext: Extension> Liftable<Pk> for TapTree<Pk, Ext> {
                 }
                 TapTree::Leaf(ref leaf) => leaf.lift(),
                 #[cfg(feature = "simplicity")]
-                TapTree::SimplicityLeaf(..) => panic!("FIXME: Cannot lift Simplicity policy to Miniscript semantic policy"),
+                TapTree::SimplicityLeaf(..) => {
+                    panic!("FIXME: Cannot lift Simplicity policy to Miniscript semantic policy")
+                }
             }
         }
 
@@ -816,15 +847,11 @@ impl<Pk: MiniscriptKey, Ext: Extension> ForEachKey<Pk> for Tr<Pk, Ext> {
     where
         Pk: 'a,
     {
-        let script_keys_res = self
-            .iter_scripts()
-            .all(|(_d, script)| {
-                match script {
-                    TapLeafScript::Miniscript(ms) => ms.for_each_key(&mut pred),
-                    #[cfg(feature = "simplicity")]
-                    TapLeafScript::Simplicity(sim) => crate::simplicity::for_each_key(sim, &mut pred),
-                }
-            });
+        let script_keys_res = self.iter_scripts().all(|(_d, script)| match script {
+            TapLeafScript::Miniscript(ms) => ms.for_each_key(&mut pred),
+            #[cfg(feature = "simplicity")]
+            TapLeafScript::Simplicity(sim) => crate::simplicity::for_each_key(sim, &mut pred),
+        });
         script_keys_res && pred(&self.internal_key)
     }
 }
@@ -970,7 +997,11 @@ mod tests {
         assert!(!tr.for_each_key(|k| k.starts_with("acc")));
     }
 
-    fn verify_from_str(desc_str: &str, internal_key: &str, scripts: &[TapLeafScript<String, NoExt>]) {
+    fn verify_from_str(
+        desc_str: &str,
+        internal_key: &str,
+        scripts: &[TapLeafScript<String, NoExt>],
+    ) {
         let desc = Tr::<String, NoExt>::from_str(desc_str).unwrap();
         assert_eq!(desc_str, &desc.to_string());
         assert_eq!(internal_key, &desc.internal_key);
@@ -992,8 +1023,9 @@ mod tests {
         // Miniscript key spend
         let ms = Miniscript::<String, Tap>::from_str("pk(a)").unwrap();
         verify_from_str(
-            "eltr(internal,pk(a))#vadmk9gd", "internal",
-            &[TapLeafScript::Miniscript(&ms)]
+            "eltr(internal,pk(a))#vadmk9gd",
+            "internal",
+            &[TapLeafScript::Miniscript(&ms)],
         );
 
         #[cfg(feature = "simplicity")]
@@ -1001,14 +1033,19 @@ mod tests {
             // Simplicity key spend
             let sim = simplicity::Policy::Key("a".to_string());
             verify_from_str(
-                "eltr(internal,sim{pk(a)})#duhmnzmm", "internal",
-                &[TapLeafScript::Simplicity(&sim)]
+                "eltr(internal,sim{pk(a)})#duhmnzmm",
+                "internal",
+                &[TapLeafScript::Simplicity(&sim)],
             );
 
             // Mixed Miniscript and Simplicity
             verify_from_str(
-                "eltr(internal,{pk(a),sim{pk(a)}})#7vmfhpaj", "internal",
-                &[TapLeafScript::Miniscript(&ms), TapLeafScript::Simplicity(&sim)]
+                "eltr(internal,{pk(a),sim{pk(a)}})#7vmfhpaj",
+                "internal",
+                &[
+                    TapLeafScript::Miniscript(&ms),
+                    TapLeafScript::Simplicity(&sim),
+                ],
             );
         }
     }
