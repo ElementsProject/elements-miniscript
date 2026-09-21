@@ -29,7 +29,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use miniscript::elements::hex::FromHex;
+    use miniscript::bitcoin::hex::FromHex;
 
     #[test]
     fn duplicate_crash() {

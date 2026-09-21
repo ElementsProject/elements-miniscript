@@ -202,7 +202,7 @@ where
     /// use elements_miniscript::bitcoin::secp256k1::XOnlyPublicKey;
     /// type Segwitv0Script = Miniscript<bitcoin::PublicKey, Segwitv0>;
     /// type TapScript = Miniscript<XOnlyPublicKey, Tap>;
-    /// use elements::hex::FromHex;
+    /// use bitcoin::hex::FromHex;
     ///
     /// // parse x-only miniscript in Taproot context
     /// let tapscript_ms = TapScript::parse(&elements::Script::from(Vec::<u8>::from_hex(
@@ -534,9 +534,9 @@ mod tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
+    use bitcoin::hashes::{hash160, sha256, Hash};
     use bitcoin::key::XOnlyPublicKey;
     use bitcoin::{self};
-    use elements::hashes::{hash160, sha256, Hash};
     use elements::taproot::TapLeafHash;
     use elements::{self, secp256k1_zkp, Sequence};
 

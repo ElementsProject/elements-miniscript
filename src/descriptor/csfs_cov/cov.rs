@@ -43,8 +43,8 @@
 use std::fmt;
 
 use bitcoin;
+use bitcoin::hashes::{sha256d, Hash};
 use elements::encode::{serialize, Encodable};
-use elements::hashes::{sha256d, Hash};
 use elements::{self, script, secp256k1_zkp, Script};
 
 use super::super::ELMTS_STR;
@@ -170,14 +170,14 @@ impl<Pk: MiniscriptKey, Ext: Extension> LegacyCSFSCov<Pk, Ext> {
                 Vec::from(sig.serialize_der().as_ref()), // The covenant sig
                 serialize(&sighash_ty),                  // item 10(11)
                 serialize(&n_locktime),                  // item 9(10)
-                serialize(&hash_outputs),                // item 8(9)
+                hash_outputs.to_byte_array().to_vec(),   // item 8(9)
                 serialize(&n_sequence),                  // item 7(8)
                 serialize(&value),                       // item 6(7)
                 serialize(script_code),                  // item 5(6)
                 serialize(&outpoint),                    // item 4(5)
-                serialize(&hash_issuances),              // ELEMENTS EXTRA: item 3b(4)
-                serialize(&hash_sequence),               // item 3
-                serialize(&hash_prevouts),               // item 2
+                hash_issuances.to_byte_array().to_vec(), // ELEMENTS EXTRA: item 3b(4)
+                hash_sequence.to_byte_array().to_vec(),  // item 3
+                hash_prevouts.to_byte_array().to_vec(),  // item 2
                 serialize(&n_version),                   // item 1
             ]
         };

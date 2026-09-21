@@ -4,9 +4,9 @@
 
 use std::fmt;
 
+use bitcoin::hashes::{sha256d, Hash};
+use bitcoin::hex::{DisplayHex, FromHex};
 use elements::encode::serialize;
-use elements::hashes::{sha256d, Hash};
-use elements::hex::{FromHex, ToHex};
 
 use super::{FromTokenIterError, ParseableExt, TxEnv};
 use crate::descriptor::CovError;
@@ -41,7 +41,7 @@ pub struct LegacyOutputsPref {
 
 impl fmt::Display for LegacyOutputsPref {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "outputs_pref({})", self.pref.to_hex())
+        write!(f, "outputs_pref({})", self.pref.as_hex())
     }
 }
 

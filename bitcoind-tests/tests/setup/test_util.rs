@@ -20,8 +20,8 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use elements::hashes::{hash160, ripemd160, sha256, Hash};
-use elements::hex::{FromHex, ToHex};
+use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
+use bitcoin::hex::{DisplayHex, FromHex};
 use elements::{confidential, encode, secp256k1_zkp as secp256k1, AddressParams, BlockHash};
 use miniscript::descriptor::{SinglePub, SinglePubKey};
 use miniscript::extensions::param::ExtParamTranslator;
@@ -195,7 +195,7 @@ impl<'a> ExtParamTranslator<String, CovExtArgs, ()> for StrExtTranslator<'a> {
             self.0 += 1;
             Ok(csfs_pk)
         } else if e.starts_with("spk") {
-            let default = elements::Script::from_str(
+            let default = elements::Script::from_hex_no_prefix(
                 "5120c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0",
             )
             .unwrap();
@@ -350,33 +350,24 @@ pub fn parse_test_desc(
 
 // substitute hash fragments in the string as the per rules
 fn subs_hash_frag(ms: &str, pubdata: &PubData) -> String {
-    let ms = ms.replace(
-        "sha256(H)",
-        &format!("sha256({})", &pubdata.sha256.to_hex()),
-    );
-    let ms = ms.replace(
-        "hash256(H)",
-        &format!("hash256({})", &pubdata.hash256.to_hex()),
-    );
+    let ms = ms.replace("sha256(H)", &format!("sha256({})", &pubdata.sha256));
+    let ms = ms.replace("hash256(H)", &format!("hash256({})", &pubdata.hash256));
     let ms = ms.replace(
         "ripemd160(H)",
-        &format!("ripemd160({})", &pubdata.ripemd160.to_hex()),
+        &format!("ripemd160({})", &pubdata.ripemd160),
     );
-    let ms = ms.replace(
-        "hash160(H)",
-        &format!("hash160({})", &pubdata.hash160.to_hex()),
-    );
+    let ms = ms.replace("hash160(H)", &format!("hash160({})", &pubdata.hash160));
 
     let mut rand_hash32 = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut rand_hash32);
 
     let mut rand_hash20 = [0u8; 20];
     rand::thread_rng().fill_bytes(&mut rand_hash20);
-    let ms = ms.replace("sha256(H!)", &format!("sha256({})", rand_hash32.to_hex()));
-    let ms = ms.replace("hash256(H!)", &format!("hash256({})", rand_hash32.to_hex()));
+    let ms = ms.replace("sha256(H!)", &format!("sha256({})", rand_hash32.as_hex()));
+    let ms = ms.replace("hash256(H!)", &format!("hash256({})", rand_hash32.as_hex()));
     let ms = ms.replace(
         "ripemd160(H!)",
-        &format!("ripemd160({})", rand_hash20.to_hex()),
+        &format!("ripemd160({})", rand_hash20.as_hex()),
     );
-    ms.replace("hash160(H!)", &format!("hash160({})", rand_hash20.to_hex()))
+    ms.replace("hash160(H!)", &format!("hash160({})", rand_hash20.as_hex()))
 }

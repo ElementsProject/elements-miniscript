@@ -58,14 +58,14 @@ mod tests {
     use std::str::FromStr;
 
     use bitcoin;
-    use elements::encode::serialize;
-    use elements::hex::ToHex;
+    use elements::encoding::encode_to_hex;
+    use elements::hex::Case;
     use elements::opcodes::all::OP_PUSHNUM_1;
     use elements::secp256k1_zkp::ZERO_TWEAK;
     use elements::{
-        self, confidential, opcodes, script, secp256k1_zkp, AssetId, AssetIssuance,
-        EcdsaSighashType, LockTime, OutPoint, Script, Sequence, Transaction, TxIn, TxInWitness,
-        TxOut, Txid,
+        self, confidential, opcodes, script, secp256k1_zkp, AssetBlindingNonce, AssetEntropy,
+        AssetId, AssetIssuance, EcdsaSighashType, LockTime, OutPoint, Script, Sequence,
+        Transaction, TxIn, TxInWitness, TxOut, Txid,
     };
 
     use super::cov::*;
@@ -206,7 +206,7 @@ mod tests {
             .to_v0_p2wsh();
         spend_tx.output[0].value = confidential::Value::Explicit(99_000);
         spend_tx.output[0].asset =
-            confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+            confidential::Asset::Explicit(AssetId::from_byte_array(BTC_ASSET));
 
         // same second output
         let second_out = spend_tx.output[0].clone();
@@ -215,7 +215,7 @@ mod tests {
         // Add a fee output
         spend_tx.output.push(TxOut::default());
         spend_tx.output[2].asset =
-            confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+            confidential::Asset::Explicit(AssetId::from_byte_array(BTC_ASSET));
         spend_tx.output[2].value = confidential::Value::Explicit(2_000);
 
         // Try to satisfy the covenant part
@@ -233,7 +233,7 @@ mod tests {
         let sighash_u256 = cov_sat.segwit_sighash().unwrap();
         let secp = secp256k1_zkp::Secp256k1::signing_only();
         let sig = secp.sign_ecdsa(
-            &secp256k1_zkp::Message::from_digest_slice(&sighash_u256[..]).unwrap(),
+            &secp256k1_zkp::Message::from_digest(sighash_u256.to_byte_array()),
             &cov_sk,
         );
         let el_sig = (sig, EcdsaSighashType::All);
@@ -320,13 +320,13 @@ mod tests {
                 .into_script()
                 .to_v0_p2wsh(),
             value: confidential::Value::Explicit(99_000),
-            asset: confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap()),
+            asset: confidential::Asset::Explicit(AssetId::from_byte_array(BTC_ASSET)),
             ..Default::default()
         };
         let desc = Descriptor::<bitcoin::PublicKey>::from_str(&format!(
             "elcovwsh({},outputs_pref({}))",
             pks[0],
-            serialize(&out).to_hex(),
+            encode_to_hex(&out, Case::Lower),
         ))
         .unwrap();
         _satisfy_and_interpret(desc, sks[0]).unwrap();
@@ -338,13 +338,13 @@ mod tests {
                 .into_script()
                 .to_v0_p2wsh(),
             value: confidential::Value::Explicit(99_001), // Changed to +1
-            asset: confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap()),
+            asset: confidential::Asset::Explicit(AssetId::from_byte_array(BTC_ASSET)),
             ..Default::default()
         };
         let desc = Descriptor::<bitcoin::PublicKey>::from_str(&format!(
             "elcovwsh({},outputs_pref({}))",
             pks[0],
-            serialize(&out).to_hex(),
+            encode_to_hex(&out, Case::Lower),
         ))
         .unwrap();
         _satisfy_and_interpret(desc, sks[0]).unwrap_err();
@@ -402,7 +402,7 @@ mod tests {
         spend_tx.output[0].script_pubkey = desc.script_pubkey(); // send back to self
         spend_tx.output[0].value = confidential::Value::Explicit(99_000);
         spend_tx.output[0].asset =
-            confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+            confidential::Asset::Explicit(AssetId::from_byte_array(BTC_ASSET));
 
         // same second output
         let second_out = spend_tx.output[0].clone();
@@ -411,7 +411,7 @@ mod tests {
         // Add a fee output
         spend_tx.output.push(TxOut::default());
         spend_tx.output[2].asset =
-            confidential::Asset::Explicit(AssetId::from_slice(&BTC_ASSET).unwrap());
+            confidential::Asset::Explicit(AssetId::from_byte_array(BTC_ASSET));
         spend_tx.output[2].value = confidential::Value::Explicit(2_000);
 
         // Try to satisfy the covenant part
@@ -430,7 +430,7 @@ mod tests {
         let sighash_u256 = cov_sat.segwit_sighash().unwrap();
         let secp = secp256k1_zkp::Secp256k1::signing_only();
         let sig = secp.sign_ecdsa(
-            &secp256k1_zkp::Message::from_digest_slice(&sighash_u256[..]).unwrap(),
+            &secp256k1_zkp::Message::from_digest(sighash_u256.to_byte_array()),
             &sks[0],
         );
         let sig = (sig, EcdsaSighashType::All);
@@ -488,8 +488,8 @@ mod tests {
             is_pegin: false,
             // perhaps make this an option in elements upstream?
             asset_issuance: AssetIssuance {
-                asset_blinding_nonce: secp256k1_zkp::ZERO_TWEAK,
-                asset_entropy: [0; 32],
+                asset_blinding_nonce: AssetBlindingNonce::NEW_ISSUANCE,
+                asset_entropy: AssetEntropy::NEW_ISSUANCE,
                 amount: confidential::Value::Null,
                 inflation_keys: confidential::Value::Null,
             },

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: CC0-1.0
 
 use bitcoin;
+use bitcoin::hashes::{hash160, sha256, Hash};
 use bitcoin::taproot::TAPROOT_ANNEX_PREFIX;
-use elements::hashes::{hash160, sha256, Hash};
 use elements::schnorr::TweakedPublicKey;
 use elements::taproot::ControlBlock;
 use elements::{self, script};
@@ -224,7 +224,11 @@ pub fn from_txdata<'txin, Ext: ParseableExt>(
                     let miniscript =
                         <Miniscript<_, _, _> as ToNoChecks<_>>::to_no_checks_ms(&miniscript);
                     let scripthash = sha256::Hash::hash(&script[..]);
-                    if *spk == elements::Script::new_v0_wsh(&scripthash.into()) {
+                    if *spk
+                        == elements::Script::new_v0_wsh(&elements::WScriptHash::from_byte_array(
+                            scripthash.to_byte_array(),
+                        ))
+                    {
                         Ok((
                             Inner::Script(miniscript, ScriptType::Wsh),
                             wit_stack,
@@ -306,7 +310,11 @@ pub fn from_txdata<'txin, Ext: ParseableExt>(
             Some(elem) => {
                 if let stack::Element::Push(slice) = elem {
                     let scripthash = hash160::Hash::hash(slice);
-                    if *spk != elements::Script::new_p2sh(&scripthash.into()) {
+                    if *spk
+                        != elements::Script::new_p2sh(&elements::ScriptHash::from_byte_array(
+                            scripthash.to_byte_array(),
+                        ))
+                    {
                         return Err(Error::IncorrectScriptHash);
                     }
                     // ** p2sh-wrapped wpkh **
@@ -346,7 +354,11 @@ pub fn from_txdata<'txin, Ext: ParseableExt>(
                                     let miniscript = miniscript.to_no_checks_ms();
                                     let scripthash = sha256::Hash::hash(&script[..]);
                                     if slice
-                                        == &elements::Script::new_v0_wsh(&scripthash.into())[..]
+                                        == &elements::Script::new_v0_wsh(
+                                            &elements::WScriptHash::from_byte_array(
+                                                scripthash.to_byte_array(),
+                                            ),
+                                        )[..]
                                     {
                                         Ok((
                                             Inner::Script(miniscript, ScriptType::ShWsh),
@@ -368,7 +380,11 @@ pub fn from_txdata<'txin, Ext: ParseableExt>(
                 let miniscript = miniscript.to_no_checks_ms();
                 if wit_stack.is_empty() {
                     let scripthash = hash160::Hash::hash(&script[..]);
-                    if *spk == elements::Script::new_p2sh(&scripthash.into()) {
+                    if *spk
+                        == elements::Script::new_p2sh(&elements::ScriptHash::from_byte_array(
+                            scripthash.to_byte_array(),
+                        ))
+                    {
                         Ok((
                             Inner::Script(miniscript, ScriptType::Sh),
                             ssig_stack,
@@ -457,8 +473,8 @@ mod tests {
 
     use std::str::FromStr;
 
-    use elements::hashes::{hash160, sha256, Hash};
-    use elements::hex::FromHex;
+    use bitcoin::hashes::{hash160, Hash};
+    use bitcoin::hex::FromHex;
     use elements::{self, script, Script};
 
     use super::*;
@@ -494,7 +510,7 @@ mod tests {
             let pkhash = key.to_pubkeyhash(SigType::Ecdsa).into();
             let wpkhash = key.to_pubkeyhash(SigType::Ecdsa).into();
             let wpkh_spk = elements::Script::new_v0_wpkh(&wpkhash);
-            let wpkh_scripthash = hash160::Hash::hash(&wpkh_spk[..]).into();
+            let wpkh_scripthash = wpkh_spk.script_hash();
 
             KeyTestData {
                 pk_spk: elements::Script::new_p2pk(&key),
@@ -847,7 +863,7 @@ mod tests {
         let preimage = b"12345678----____12345678----____";
         let hash = hash160::Hash::hash(&preimage[..]);
         let (miniscript, redeem_script) = ms_inner_script(&format!("hash160({})", hash));
-        let rs_hash = hash160::Hash::hash(&redeem_script[..]).into();
+        let rs_hash = redeem_script.script_hash();
 
         let spk = Script::new_p2sh(&rs_hash);
         let script_sig = script::Builder::new()
@@ -883,7 +899,7 @@ mod tests {
 
         let (miniscript, witness_script) = ms_inner_script(&format!("hash160({})", hash));
 
-        let wit_hash = sha256::Hash::hash(&witness_script[..]).into();
+        let wit_hash = witness_script.wscript_hash();
         let wit_stack = vec![witness_script.to_bytes()];
 
         let spk = Script::new_v0_wsh(&wit_hash);
@@ -919,7 +935,7 @@ mod tests {
 
         let (miniscript, witness_script) = ms_inner_script(&format!("hash160({})", hash));
 
-        let wit_hash = sha256::Hash::hash(&witness_script[..]).into();
+        let wit_hash = witness_script.wscript_hash();
         let wit_stack = vec![witness_script.to_bytes()];
 
         let redeem_script = Script::new_v0_wsh(&wit_hash);
@@ -928,7 +944,7 @@ mod tests {
             .into_script();
         let blank_script = elements::Script::new();
 
-        let rs_hash = hash160::Hash::hash(&redeem_script[..]).into();
+        let rs_hash = redeem_script.script_hash();
         let spk = Script::new_p2sh(&rs_hash);
 
         // shwsh without witness or scriptsig

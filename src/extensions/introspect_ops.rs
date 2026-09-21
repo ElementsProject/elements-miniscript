@@ -5,9 +5,9 @@ use std::fmt;
 use std::str::FromStr;
 
 use bitcoin::hashes::{sha256, Hash};
+use bitcoin::hex::{DisplayHex, FromHex};
 use elements::address::Payload;
 use elements::confidential::Asset;
-use elements::hex::{FromHex, ToHex};
 use elements::opcodes::all::*;
 use elements::{confidential, encode, script, Address, AddressParams};
 
@@ -541,7 +541,7 @@ pub enum SpkInner {
 impl fmt::Display for Spk {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.0 {
-            SpkInner::Script(s) => write!(f, "{}", s.to_hex()),
+            SpkInner::Script(s) => write!(f, "{}", s.as_bytes().as_hex()),
             SpkInner::Hashed(_h) => write!(f, "hashed_spk"), // This should never be used
         }
     }
@@ -554,7 +554,8 @@ impl ArgFromStr for Spk {
                 "spk expressions can only used in spk_eq".to_string(),
             ));
         }
-        let inner = elements::Script::from_hex(s).map_err(|e| Error::Unexpected(e.to_string()))?;
+        let inner = elements::Script::from_hex_no_prefix(s)
+            .map_err(|e| Error::Unexpected(e.to_string()))?;
         Ok(Spk::new(inner))
     }
 }
@@ -661,7 +662,7 @@ impl AssetExpr<CovExtArgs> {
             AssetExpr::Const(CovExtArgs::Asset(a)) => {
                 match a {
                     Asset::Null => unreachable!("Attempt to push Null asset"),
-                    Asset::Explicit(a) => builder.push_slice(a.into_inner().as_ref()).push_int(1), // explicit prefix
+                    Asset::Explicit(a) => builder.push_slice(a.as_byte_array()).push_int(1), // explicit prefix
                     Asset::Confidential(c) => {
                         let ser = c.serialize();
                         builder.push_slice(&ser[1..]).push_int(i64::from(ser[0]))
@@ -1307,8 +1308,8 @@ mod tests {
         let mut t = StrXOnlyKeyTranslator::default();
         let mut ext_t = StrExtTranslator::default();
         {
-            ext_t.ext_map.insert("V1Spk".to_string(),CovExtArgs::spk(elements::Script::from_str("5120c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0").unwrap()));
-            ext_t.ext_map.insert("V0Spk".to_string(),CovExtArgs::spk(elements::Script::from_str("0020c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0").unwrap()));
+            ext_t.ext_map.insert("V1Spk".to_string(),CovExtArgs::spk(elements::Script::from_hex_no_prefix("5120c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0").unwrap()));
+            ext_t.ext_map.insert("V0Spk".to_string(),CovExtArgs::spk(elements::Script::from_hex_no_prefix("0020c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0").unwrap()));
             ext_t.ext_map.insert("ConfAst".to_string(),CovExtArgs::asset(encode::deserialize(&Vec::<u8>::from_hex("0adef814ab021498562ab4717287305d3f7abb5686832fe6183e1db495abef7cc7").unwrap()).unwrap()));
             ext_t.ext_map.insert("ExpAst".to_string(),CovExtArgs::asset(encode::deserialize(&Vec::<u8>::from_hex("01c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0").unwrap()).unwrap()));
             ext_t.ext_map.insert("ConfVal".to_string(),CovExtArgs::value(encode::deserialize(&Vec::<u8>::from_hex("09def814ab021498562ab4717287305d3f7abb5686832fe6183e1db495abef7cc7").unwrap()).unwrap()));

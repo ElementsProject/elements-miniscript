@@ -2,9 +2,8 @@ use std::str::FromStr;
 
 use elements::bitcoin::PrivateKey;
 use elements::encode::{serialize, serialize_hex};
-use elements::hashes::Hash;
 use elements::sighash::SighashCache;
-use elements::{confidential, AssetId, LockTime, TxOutWitness};
+use elements::{confidential, AssetId, BlockHash, LockTime, TxOutWitness};
 use miniscript::elements::pset::PartiallySignedTransaction as Psbt;
 use miniscript::elements::{
     self, pset, secp256k1_zkp as secp256k1, Address, AddressParams, OutPoint, Script, Sequence,
@@ -138,7 +137,7 @@ fn main() {
     let mut sighash_cache = SighashCache::new(tx);
 
     // genesis hash is not used at all for sighash calculation
-    let genesis_hash = elements::BlockHash::all_zeros();
+    let genesis_hash = BlockHash::GENESIS_PREVIOUS_BLOCK_HASH;
     let msg = psbt
         .sighash_msg(0, &mut sighash_cache, None, genesis_hash)
         .unwrap()

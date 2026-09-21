@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::{error, fmt};
 
-use elements::hashes::{hash160, ripemd160, sha256, Hash};
+use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
 
 use crate::elements::Sequence;
 use crate::extensions::ParseableExt;

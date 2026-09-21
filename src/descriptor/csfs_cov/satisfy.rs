@@ -14,8 +14,8 @@
 //
 //! Covenant Descriptor Satisfaction
 
+use bitcoin::hashes::{sha256d, Hash};
 use elements::encode::Encodable;
-use elements::hashes::{sha256d, Hash};
 use elements::sighash::SighashCache;
 use elements::{self, confidential, EcdsaSighashType, OutPoint, Script, Sighash, Transaction};
 

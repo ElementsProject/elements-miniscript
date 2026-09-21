@@ -536,6 +536,9 @@ impl<'a, Pk: ToPublicKey, Ext: ParseableExt> TapLeafScript<'a, Pk, Ext> {
     }
 
     /// Attempt to produce a malleable satisfying witness for the leaf script.
+    ///
+    /// Returns [`Error::CouldNotSatisfy`] for Simplicity leaves until their descriptor
+    /// integration is rewritten.
     pub fn satisfy_malleable<S: Satisfier<Pk>>(&self, satisfier: S) -> Result<Vec<Vec<u8>>, Error> {
         match self {
             TapLeafScript::Miniscript(ms) => ms.satisfy_malleable(satisfier),
@@ -546,15 +549,17 @@ impl<'a, Pk: ToPublicKey, Ext: ParseableExt> TapLeafScript<'a, Pk, Ext> {
     }
 
     /// Attempt to produce a non-malleable satisfying witness for the leaf script.
+    ///
+    /// Returns [`Error::CouldNotSatisfy`] for Simplicity leaves until their descriptor
+    /// integration is rewritten.
     pub fn satisfy<S: Satisfier<Pk>>(&self, satisfier: S) -> Result<Vec<Vec<u8>>, Error> {
         match self {
             TapLeafScript::Miniscript(ms) => ms.satisfy(satisfier),
             #[cfg(feature = "simplicity")]
-            TapLeafScript::Simplicity(sim) => {
-                let satisfier = crate::simplicity::SatisfierWrapper::new(satisfier);
-                let program = sim.satisfy(&satisfier).map_err(|_| Error::CouldNotSatisfy)?;
-                let (program_bytes, witness_bytes) = program.encode_to_vec();
-                Ok(vec![witness_bytes, program_bytes])
+            TapLeafScript::Simplicity(..) => {
+                // TODO: The descriptor rewrite must supply a real ElementsEnv and
+                // branded inference context for Simplicity 0.9 satisfaction.
+                Err(Error::CouldNotSatisfy)
             }
         }
     }
@@ -949,6 +954,52 @@ where
 mod tests {
     use super::*;
     use crate::{ForEachKey, NoExt};
+
+    #[cfg(feature = "simplicity")]
+    #[test]
+    fn mixed_tree_satisfaction_skips_simplicity() {
+        let key = bitcoin::XOnlyPublicKey::from_str(
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        )
+        .unwrap();
+        let ms =
+            Miniscript::<bitcoin::XOnlyPublicKey, Tap>::from_str(&format!("pk({})", key)).unwrap();
+        let script = ms.encode();
+        let leaf_hash =
+            elements::taproot::TapLeafHash::from_script(&script, LeafVersion::default());
+        let sig = elements::SchnorrSig {
+            sig: secp256k1_zkp::schnorr::Signature::from_slice(&[1; 64]).unwrap(),
+            hash_ty: elements::SchnorrSighashType::Default,
+        };
+        let mut satisfier = std::collections::HashMap::new();
+        satisfier.insert((key, leaf_hash), sig);
+
+        for tree in [
+            format!("{{pk({0}),sim{{pk({0})}}}}", key),
+            format!("{{sim{{pk({0})}},pk({0})}}", key),
+        ] {
+            let desc = Tr::<bitcoin::XOnlyPublicKey>::from_str(&format!("eltr({},{})", key, tree))
+                .unwrap();
+            let control_block = desc
+                .spend_info()
+                .control_block(&(script.clone(), LeafVersion::default()))
+                .unwrap();
+            let expected = (
+                vec![sig.to_vec(), script.to_bytes(), control_block.serialize()],
+                Script::new(),
+            );
+            assert_eq!(desc.get_satisfaction(&satisfier).unwrap(), expected);
+            assert_eq!(desc.get_satisfaction_mall(&satisfier).unwrap(), expected);
+            assert!(matches!(
+                desc.get_satisfaction(()),
+                Err(Error::CouldNotSatisfy)
+            ));
+            assert!(matches!(
+                desc.get_satisfaction_mall(()),
+                Err(Error::CouldNotSatisfy)
+            ));
+        }
+    }
 
     #[test]
     fn test_for_each() {

@@ -6,7 +6,11 @@
 
 use std::{error, fmt};
 
-use elements::hashes::{sha256d, Hash};
+use bitcoin::hashes::Hash;
+use elements::hashes::hash160::Hash as ElementsHash160;
+use elements::hashes::ripemd160::Hash as ElementsRipemd160;
+use elements::hashes::sha256::Hash as ElementsSha256;
+use elements::hashes::sha256d::Hash as ElementsSha256d;
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SighashCache;
 use elements::taproot::TapLeafHash;
@@ -163,7 +167,7 @@ pub fn test_desc_satisfy(
                         testdata.pubdata.genesis_hash,
                     )
                     .unwrap();
-                let msg = secp256k1::Message::from_digest_slice(&sighash_msg[..]).unwrap();
+                let msg = secp256k1::Message::from_digest_slice(sighash_msg.as_ref()).unwrap();
                 let mut aux_rand = [0u8; 32];
                 rand::thread_rng().fill_bytes(&mut aux_rand);
                 let schnorr_sig =
@@ -196,7 +200,7 @@ pub fn test_desc_satisfy(
                         testdata.pubdata.genesis_hash,
                     )
                     .unwrap();
-                let msg = secp256k1::Message::from_digest_slice(&sighash_msg[..]).unwrap();
+                let msg = secp256k1::Message::from_digest_slice(sighash_msg.as_ref()).unwrap();
                 let mut aux_rand = [0u8; 32];
                 rand::thread_rng().fill_bytes(&mut aux_rand);
                 let sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &aux_rand);
@@ -266,19 +270,19 @@ pub fn test_desc_satisfy(
     }
     // Add the hash preimages to the psbt
     psbt.inputs_mut()[0].sha256_preimages.insert(
-        testdata.pubdata.sha256,
+        ElementsSha256::from_byte_array(testdata.pubdata.sha256.to_byte_array()),
         testdata.secretdata.sha256_pre.to_vec(),
     );
     psbt.inputs_mut()[0].hash256_preimages.insert(
-        sha256d::Hash::from_byte_array(testdata.pubdata.hash256.to_byte_array()),
+        ElementsSha256d::from_byte_array(testdata.pubdata.hash256.to_byte_array()),
         testdata.secretdata.hash256_pre.to_vec(),
     );
     psbt.inputs_mut()[0].hash160_preimages.insert(
-        testdata.pubdata.hash160,
+        ElementsHash160::from_byte_array(testdata.pubdata.hash160.to_byte_array()),
         testdata.secretdata.hash160_pre.to_vec(),
     );
     psbt.inputs_mut()[0].ripemd160_preimages.insert(
-        testdata.pubdata.ripemd160,
+        ElementsRipemd160::from_byte_array(testdata.pubdata.ripemd160.to_byte_array()),
         testdata.secretdata.ripemd160_pre.to_vec(),
     );
     println!("Testing descriptor: {}", definite_desc);
@@ -308,7 +312,7 @@ pub fn test_desc_satisfy(
         .as_u64()
         .unwrap();
     assert!(num_conf > 0);
-    Ok(tx.input[0].witness.script_witness.clone())
+    Ok(tx.input[0].witness.script_witness.to_vec())
 }
 
 // Find all secret corresponding to the known public keys in ms

@@ -5,9 +5,9 @@ use std::str::FromStr;
 use std::{error, fmt, hash};
 
 use bitcoin::bip32::XKeyIdentifier;
+use bitcoin::hashes::{hash160, ripemd160, sha256, Hash, HashEngine};
+use bitcoin::hex::FromHex;
 use bitcoin::{self, bip32};
-use elements::hashes::{hash160, ripemd160, sha256, Hash, HashEngine};
-use elements::hex::FromHex;
 use elements::secp256k1_zkp::{Secp256k1, Signing, Verification};
 
 #[cfg(feature = "serde")]

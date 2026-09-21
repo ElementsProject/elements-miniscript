@@ -4,7 +4,7 @@
 
 use std::{fmt, hash};
 
-use bitcoin::hashes::Hash;
+use bitcoin::hashes::{sha256, Hash};
 use elements::script::Builder;
 use elements::{secp256k1_zkp, Transaction, TxOut};
 
@@ -422,7 +422,7 @@ pub fn check_sig_price_oracle_1<C: secp256k1_zkp::Verification>(
     let mut buf = Vec::with_capacity(16);
     buf.extend(&timestamp.to_le_bytes());
     buf.extend(&price.to_le_bytes());
-    let sha_msg = elements::hashes::sha256::Hash::hash(&buf);
+    let sha_msg = sha256::Hash::hash(&buf);
 
     let msg = elements::secp256k1_zkp::Message::from_digest_slice(&sha_msg[..]).unwrap();
     secp.verify_schnorr(sig, &msg, pk).is_ok()
@@ -434,7 +434,7 @@ pub fn sighash_msg_price_oracle_1(timestamp: u64, price: u64) -> secp256k1_zkp::
     let mut buf = Vec::with_capacity(16);
     buf.extend(&timestamp.to_le_bytes());
     buf.extend(&price.to_le_bytes());
-    let sha_msg = elements::hashes::sha256::Hash::hash(&buf);
+    let sha_msg = sha256::Hash::hash(&buf);
 
     elements::secp256k1_zkp::Message::from_digest_slice(&sha_msg[..]).unwrap()
 }

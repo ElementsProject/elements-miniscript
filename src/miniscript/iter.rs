@@ -219,7 +219,7 @@ impl<'a, Pk: MiniscriptKey, Ctx: ScriptContext, Ext: Extension> Iterator
 #[cfg(test)]
 pub mod test {
     use bitcoin;
-    use elements::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
+    use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
     use elements::secp256k1_zkp;
 
     use super::Miniscript;

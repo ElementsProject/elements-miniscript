@@ -3,8 +3,8 @@
 
 use std::{error, fmt};
 
-use elements::hashes::hash160;
-use elements::hex::ToHex;
+use bitcoin::hashes::hash160;
+use bitcoin::hex::DisplayHex;
 use elements::{secp256k1_zkp, taproot};
 use {bitcoin, elements};
 
@@ -157,14 +157,14 @@ impl fmt::Display for Error {
             Error::InvalidSchnorrSighashType(ref sig) => write!(
                 f,
                 "Invalid sighash type for schnorr signature '{}'",
-                sig.to_hex()
+                sig.as_hex()
             ),
             Error::InvalidEcdsaSignature(pk) => write!(f, "bad ecdsa signature with pk {}", pk),
             Error::InvalidSchnorrSignature(pk) => write!(f, "bad schnorr signature with pk {}", pk),
             Error::NonStandardSighash(ref sig) => write!(
                 f,
                 "Non standard sighash type for signature '{}'",
-                sig.to_hex()
+                sig.as_hex()
             ),
             Error::NonEmptyWitness => f.write_str("legacy spend had nonempty witness"),
             Error::NonEmptyScriptSig => f.write_str("segwit spend had nonempty scriptsig"),

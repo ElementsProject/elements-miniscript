@@ -287,7 +287,7 @@ pub fn _interpreter_inp_check<C: secp256k1_zkp::Verification>(
 
     let spk = get_scriptpubkey(psbt, index).map_err(|e| Error::InputError(e, index))?;
     let empty_script_sig = Script::new();
-    let empty_witness = Vec::new();
+    let empty_witness = elements::Witness::new();
     let script_sig = input.final_script_sig.as_ref().unwrap_or(&empty_script_sig);
     let witness = input
         .final_script_witness
@@ -300,7 +300,8 @@ pub fn _interpreter_inp_check<C: secp256k1_zkp::Verification>(
     let csv = psbt.inputs()[index].sequence.unwrap_or(Sequence::MAX);
     let _amt = get_amt(psbt, index).map_err(|e| Error::InputError(e, index))?;
 
-    let interpreter = interpreter::Interpreter::from_txdata(spk, script_sig, witness, csv, cltv)
+    let witness = witness.to_vec();
+    let interpreter = interpreter::Interpreter::from_txdata(spk, script_sig, &witness, csv, cltv)
         .map_err(|e| Error::InputError(InputError::Interpreter(e), index))?;
 
     let prevouts = prevouts(psbt)?;
@@ -459,7 +460,7 @@ fn _finalize_inp(
     input.final_script_witness = if witness.is_empty() {
         None
     } else {
-        Some(witness)
+        Some(witness.into())
     };
     //reset everything
     input.redeem_script = None;
@@ -535,7 +536,7 @@ pub fn finalize<C: secp256k1_zkp::Verification>(
 // mod tests {
 //     use super::*;
 //     use elements::encode::{deserialize, serialize};
-//     use elements::hex::FromHex;
+//     use bitcoin::hex::FromHex;
 
 //     #[test]
 //     fn test_inp_finalize_520bytes() {

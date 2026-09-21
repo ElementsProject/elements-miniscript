@@ -13,8 +13,8 @@ use std::fmt;
 use std::str::FromStr;
 
 use bitcoin;
-use elements::hashes::{hash160, ripemd160, sha256, Hash, HashEngine};
-use elements::{self, secp256k1_zkp, sighash, EcdsaSighashType, LockTime, Sequence, Sighash};
+use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash, HashEngine};
+use elements::{self, secp256k1_zkp, sighash, EcdsaSighashType, LockTime, Sequence};
 
 use crate::extensions::{CovExtArgs, ParseableExt, TxEnv};
 use crate::miniscript::context::{NoChecks, SigType};
@@ -1110,11 +1110,12 @@ where
                     .rev()
                     .flat_map(|x| Vec::from(x.as_push().expect("Push checked above")))
                     .collect();
-                let mut eng = Sighash::engine();
+                let mut eng = sha256d::Hash::engine();
                 eng.input(&sighash_msg);
-                let sighash_u256 = Sighash::from_engine(eng);
+                let sighash_u256 = sha256d::Hash::from_engine(eng);
                 let msg =
-                    elements::secp256k1_zkp::Message::from_digest_slice(&sighash_u256[..]).unwrap();
+                    elements::secp256k1_zkp::Message::from_digest_slice(sighash_u256.as_ref())
+                        .unwrap();
 
                 // Legacy Cov scripts only operate on Ecdsa key sig pairs
                 let (ec_pk, ecdsa_sig) = match sig {

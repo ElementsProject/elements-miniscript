@@ -4,8 +4,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+use bitcoin::hex::{DisplayHex, FromHex};
 use bitcoin::key::XOnlyPublicKey;
-use elements::hex::{self, FromHex, ToHex};
 use elements::{self, opcodes, secp256k1_zkp};
 
 use super::param::{ExtParamTranslator, TranslateExtParam};
@@ -181,7 +181,7 @@ impl CsfsMsg {
 
 impl fmt::Display for CsfsMsg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0.to_hex())
+        write!(f, "{}", self.0.as_hex())
     }
 }
 
@@ -194,9 +194,9 @@ impl ArgFromStr for CsfsMsg {
         }
         let inner = Vec::<u8>::from_hex(s).map_err(|e| Error::Unexpected(e.to_string()))?;
         let inner_len = inner.len();
-        let x = Self::new(inner)
-            .ok_or(hex::Error::InvalidLength(32, inner_len))
-            .map_err(|e| Error::Unexpected(e.to_string()))?;
+        let x = Self::new(inner).ok_or_else(|| {
+            Error::Unexpected(format!("Expected 32-byte message, got {} bytes", inner_len))
+        })?;
         Ok(x)
     }
 }

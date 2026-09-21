@@ -142,7 +142,7 @@ mod util;
 
 use std::{cmp, error, fmt, str};
 
-use elements::hashes::sha256;
+use bitcoin::hashes::sha256;
 use elements::secp256k1_zkp::Secp256k1;
 use elements::{locktime, opcodes, script, secp256k1_zkp};
 
@@ -160,9 +160,9 @@ pub use crate::miniscript::satisfy::{
 pub use crate::miniscript::Miniscript;
 // minimal implementation of contract hash module
 mod contracthash {
+    use bitcoin::hashes::{sha256, Hash, HashEngine, Hmac, HmacEngine};
     use bitcoin::secp256k1::Scalar;
     use bitcoin::PublicKey;
-    use elements::hashes::{sha256, Hash, HashEngine, Hmac, HmacEngine};
     use elements::secp256k1_zkp::{self, Secp256k1};
 
     /// Tweak a single key using some arbitrary data
@@ -477,7 +477,7 @@ impl fmt::Display for Error {
             Error::NonMinimalVerify(ref tok) => write!(f, "{} VERIFY", tok),
             Error::InvalidPush(ref push) => {
                 write!(f, "invalid push ")?;
-                elements::hex::format_hex(push, f)
+                fmt::LowerHex::fmt(&bitcoin::hex::DisplayHex::as_hex(push), f)
             },
             Error::Script(ref e) => fmt::Display::fmt(e, f),
             Error::AddrError(ref e) => fmt::Display::fmt(e, f),
@@ -711,7 +711,7 @@ impl fmt::Display for AbsLockTime {
 /// Helper function used by tests
 #[cfg(test)]
 fn hex_script(s: &str) -> elements::Script {
-    let v: Vec<u8> = elements::hex::FromHex::from_hex(s).unwrap();
+    let v: Vec<u8> = bitcoin::hex::FromHex::from_hex(s).unwrap();
     elements::Script::from(v)
 }
 

@@ -5,7 +5,7 @@
 
 use std::ops::Index;
 
-use elements::hashes::{hash160, ripemd160, sha256, Hash};
+use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
 use elements::{self, opcodes, script, LockTime, Sequence};
 
 use super::error::PkEvalErrInner;

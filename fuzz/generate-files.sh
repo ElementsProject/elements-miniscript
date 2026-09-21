@@ -71,7 +71,7 @@ $(for name in $(listTargetNames); do echo "$name,"; done)
           key: cache-\${{ matrix.target }}-\${{ hashFiles('**/Cargo.toml','**/Cargo.lock') }}
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.63
+          toolchain: 1.74.0
           override: true
           profile: minimal
       - name: fuzz
@@ -93,10 +93,9 @@ $(for name in $(listTargetNames); do echo "$name,"; done)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v4
       - name: Display structure of downloaded files
         run: ls -R
       - run: find executed_* -type f -exec cat {} + | sort > executed
       - run: source ./fuzz/fuzz-util.sh && listTargetNames | sort | diff - executed
 EOF
-

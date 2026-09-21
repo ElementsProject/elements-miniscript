@@ -20,7 +20,8 @@
 
 use std::{borrow, fmt};
 
-use elements::hashes::{hex, sha256, sha512, Hash, HashEngine, Hmac, HmacEngine};
+use bitcoin::hashes::{sha256, sha512, Hash, HashEngine, Hmac, HmacEngine};
+use bitcoin::hex::{self, DisplayHex};
 use elements::secp256k1_zkp;
 
 /// A master blinding key, used for SLIP77-derived confidential addresses
@@ -29,7 +30,7 @@ pub struct MasterBlindingKey([u8; 32]);
 
 impl fmt::Display for MasterBlindingKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        elements::hex::format_hex(&self.0, f)
+        fmt::LowerHex::fmt(&self.0.as_hex(), f)
     }
 }
 
@@ -110,12 +111,12 @@ impl std::str::FromStr for MasterBlindingKey {
 mod tests {
     use std::str::FromStr;
 
-    use elements::hashes::hex::FromHex;
+    use bitcoin::hashes::hex::FromHex;
 
     use super::*;
 
     fn unhex(s: &str) -> Vec<u8> {
-        elements::hex::FromHex::from_hex(s).unwrap()
+        bitcoin::hex::FromHex::from_hex(s).unwrap()
     }
 
     #[test]
@@ -128,8 +129,10 @@ mod tests {
         );
 
         let secp = secp256k1_zkp::Secp256k1::new();
-        let spk = elements::Script::from_str("76a914a579388225827d9f2fe9014add644487808c695d88ac")
-            .unwrap();
+        let spk = elements::Script::from_hex_no_prefix(
+            "76a914a579388225827d9f2fe9014add644487808c695d88ac",
+        )
+        .unwrap();
         let mut addr = elements::Address::from_str("2dpWh6jbhAowNsQ5agtFzi7j6nKscj6UnEr").unwrap();
         addr.blinding_pubkey = Some(mbk.blinding_key(&secp, &spk));
         assert_eq!(
@@ -150,7 +153,8 @@ mod tests {
         );
 
         let spk =
-            elements::Script::from_str("a914afa92d77cd3541b443771649572db096cf49bf8c87").unwrap();
+            elements::Script::from_hex_no_prefix("a914afa92d77cd3541b443771649572db096cf49bf8c87")
+                .unwrap();
         let expected = secp256k1_zkp::SecretKey::from_slice(&unhex(
             "02b067c374bb56c54c016fae29218c000ada60f81ef45b4aeebbeb24931bb8bc",
         ))

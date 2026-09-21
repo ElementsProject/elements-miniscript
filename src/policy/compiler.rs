@@ -1369,7 +1369,8 @@ mod tests {
     use std::string::String;
 
     use bitcoin;
-    use elements::{self, hashes, opcodes, script, secp256k1_zkp, Sequence};
+    use bitcoin::hashes::hash160;
+    use elements::{self, opcodes, script, secp256k1_zkp, Sequence};
 
     use super::*;
     use crate::miniscript::{Legacy, Segwitv0, Tap};
@@ -1575,8 +1576,7 @@ mod tests {
 
         let no_sat = HashMap::<bitcoin::PublicKey, ElementsSig>::new();
         let mut left_sat = HashMap::<bitcoin::PublicKey, ElementsSig>::new();
-        let mut right_sat =
-            HashMap::<hashes::hash160::Hash, (bitcoin::PublicKey, ElementsSig)>::new();
+        let mut right_sat = HashMap::<hash160::Hash, (bitcoin::PublicKey, ElementsSig)>::new();
 
         for key in keys.iter().take(5) {
             left_sat.insert(*key, elements_sig);

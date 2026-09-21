@@ -20,8 +20,8 @@ use std::sync::Arc;
 
 pub mod pegin;
 
+use bitcoin::hashes::{hash160, ripemd160, sha256};
 use bitcoin::WitnessVersion;
-use elements::hashes::{hash160, ripemd160, sha256};
 use elements::{secp256k1_zkp as secp256k1, secp256k1_zkp, Script, TxIn};
 use {bitcoin, elements};
 
@@ -722,7 +722,7 @@ impl<Pk: MiniscriptKey + ToPublicKey, Ext: Extension + ParseableExt> Descriptor<
         S: Satisfier<Pk>,
     {
         let (witness, script_sig) = self.get_satisfaction(satisfier)?;
-        txin.witness.script_witness = witness;
+        txin.witness.script_witness = witness.into();
         txin.script_sig = script_sig;
         Ok(())
     }
@@ -1269,9 +1269,9 @@ mod tests {
     use std::str::FromStr;
 
     use bitcoin;
+    use bitcoin::hashes::{hash160, sha256};
+    use bitcoin::hex::{DisplayHex, FromHex};
     use bitcoin::{bip32, PublicKey};
-    use elements::hashes::{hash160, sha256};
-    use elements::hex::{FromHex, ToHex};
     use elements::opcodes::all::{OP_CLTV, OP_CSV};
     use elements::script::Instruction;
     use elements::{opcodes, script, Sequence};
@@ -1307,7 +1307,7 @@ mod tests {
     // helper function to create elements txin from scriptsig and witness
     fn elements_txin(script_sig: Script, witness: Vec<Vec<u8>>) -> elements::TxIn {
         let txin_witness = elements::TxInWitness {
-            script_witness: witness,
+            script_witness: witness.into(),
             ..Default::default()
         };
         elements::TxIn {
@@ -1755,7 +1755,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            key.script_pubkey().to_hex(),
+            key.script_pubkey().as_bytes().to_lower_hex_string(),
             "51203f48e7c6203a75722733e3d9d06638da38d946066159c64684caf1622b2b0e33"
         )
     }
@@ -2141,7 +2141,7 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
     fn test_find_derivation_index_for_spk() {
         let secp = secp256k1_zkp::Secp256k1::verification_only();
         let descriptor = Descriptor::<_, NoExt>::from_str("eltr([73c5da0a/86'/0'/0']xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*)").unwrap();
-        let script_at_0_1 = Script::from_str(
+        let script_at_0_1 = Script::from_hex_no_prefix(
             "5120c73ac1b7a518499b9642aed8cfa15d5401e5bd85ad760b937b69521c297722f0",
         )
         .unwrap();

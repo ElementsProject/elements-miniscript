@@ -1,3 +1,10 @@
+# 0.5.0 - Sep 20, 2026
+
+- Update rust-elements to 0.27.0 and simplicity-lang to 0.9.0.
+- Raise MSRV to Rust 1.74.0.
+- Adapt hash, hex, witness, asset and PSET handling to the updated Elements APIs.
+- Report Simplicity leaves as unsatisfiable until their descriptor integration is rewritten.
+
 # 0.4.0 - Oct 8, 2024
 
 - Use rust-bitcoin 0.32.0 and rust-elements 0.25.0 [#90](https://github.com/ElementsProject/elements-miniscript/pull/90)
@@ -22,4 +29,3 @@
 # 0.2.0 - June 15, 2023
 
 - Still rapid iteration, very unstable.
-

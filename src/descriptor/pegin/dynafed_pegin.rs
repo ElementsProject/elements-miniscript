@@ -330,8 +330,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::hex::FromHex;
     use bitcoin::PublicKey;
-    use elements::hex::FromHex;
 
     use crate::descriptor::pegin::Pegin;
     use crate::{BtcDescriptor, ConfidentialDescriptor, DescriptorPublicKey};

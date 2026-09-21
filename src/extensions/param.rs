@@ -2,9 +2,9 @@
 
 use std::{fmt, hash};
 
+use bitcoin::hex::DisplayHex;
 use elements::confidential;
 use elements::encode::serialize;
-use elements::hex::ToHex;
 
 use super::csfs::{CsfsKey, CsfsMsg};
 use super::introspect_ops::Spk;
@@ -149,8 +149,8 @@ impl fmt::Display for CovExtArgs {
         match self {
             CovExtArgs::XOnlyKey(x) => write!(f, "{}", x),
             CovExtArgs::CsfsMsg(m) => write!(f, "{}", m),
-            CovExtArgs::Asset(a) => write!(f, "{}", serialize(a).to_hex()),
-            CovExtArgs::Value(v) => write!(f, "{}", serialize(v).to_hex()),
+            CovExtArgs::Asset(a) => write!(f, "{}", serialize(a).as_hex()),
+            CovExtArgs::Value(v) => write!(f, "{}", serialize(v).as_hex()),
             CovExtArgs::Script(s) => write!(f, "{}", s),
         }
     }

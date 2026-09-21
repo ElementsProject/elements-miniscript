@@ -8,12 +8,13 @@ use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
 
-use bitcoin::hashes::{sha256d, Hash};
+use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::secp256k1::{self, Secp256k1};
+use elements::hashes::{hash160, ripemd160, sha256, sha256d};
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::{
-    confidential, pset as psbt, secp256k1_zkp, AssetIssuance, LockTime, OutPoint, Script, Sequence,
-    TxIn, TxInWitness, TxOut, TxOutWitness, Txid,
+    confidential, pset as psbt, secp256k1_zkp, AssetIssuance, BlockHash, LockTime, OutPoint,
+    Script, Sequence, TxIn, TxInWitness, TxOut, TxOutWitness, Txid,
 };
 use elements_miniscript as miniscript;
 use elementsd::ElementsD;
@@ -148,7 +149,7 @@ pub fn test_from_cpp_ms(cl: &ElementsD, testdata: &TestData) {
 
         // requires both signing and verification because we check the tx
         // after we psbt extract it
-        let msg = secp256k1_zkp::Message::from_digest_slice(&sighash[..]).unwrap();
+        let msg = secp256k1_zkp::Message::from_digest_slice(sighash.as_ref()).unwrap();
 
         // Finally construct the signature and add to psbt
         for sk in sks_reqd {
@@ -159,7 +160,7 @@ pub fn test_from_cpp_ms(cl: &ElementsD, testdata: &TestData) {
         }
         // Add the hash preimages to the psbt
         psbts[i].inputs_mut()[0].sha256_preimages.insert(
-            testdata.pubdata.sha256,
+            sha256::Hash::from_byte_array(testdata.pubdata.sha256.to_byte_array()),
             testdata.secretdata.sha256_pre.to_vec(),
         );
         psbts[i].inputs_mut()[0].hash256_preimages.insert(
@@ -168,22 +169,22 @@ pub fn test_from_cpp_ms(cl: &ElementsD, testdata: &TestData) {
         );
         println!("{}", ms);
         psbts[i].inputs_mut()[0].hash160_preimages.insert(
-            testdata.pubdata.hash160,
+            hash160::Hash::from_byte_array(testdata.pubdata.hash160.to_byte_array()),
             testdata.secretdata.hash160_pre.to_vec(),
         );
         psbts[i].inputs_mut()[0].ripemd160_preimages.insert(
-            testdata.pubdata.ripemd160,
+            ripemd160::Hash::from_byte_array(testdata.pubdata.ripemd160.to_byte_array()),
             testdata.secretdata.ripemd160_pre.to_vec(),
         );
         // Finalize the transaction using psbt
         // Let miniscript do it's magic!
-        if let Err(e) = psbts[i].finalize_mall_mut(&secp, elements::BlockHash::all_zeros()) {
+        if let Err(e) = psbts[i].finalize_mall_mut(&secp, BlockHash::GENESIS_PREVIOUS_BLOCK_HASH) {
             // All miniscripts should satisfy
             panic!("Could not satisfy: error{} ms:{} at ind:{}", e[0], ms, i);
         } else {
             // default genesis hash
             let tx = psbts[i]
-                .extract(&secp, elements::BlockHash::all_zeros())
+                .extract(&secp, BlockHash::GENESIS_PREVIOUS_BLOCK_HASH)
                 .unwrap();
 
             // Send the transactions to bitcoin node for mining.

@@ -11,9 +11,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::{cmp, mem};
 
-use bitcoin::hashes::hash160;
+use bitcoin::hashes::{hash160, sha256d};
 use bitcoin::secp256k1::XOnlyPublicKey;
-use elements::hashes::sha256d;
 use elements::secp256k1_zkp::schnorr;
 use elements::taproot::{ControlBlock, LeafVersion, TapLeafHash};
 use elements::{self, confidential, secp256k1_zkp, LockTime, OutPoint, Script, Sequence};

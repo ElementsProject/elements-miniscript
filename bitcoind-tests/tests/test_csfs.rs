@@ -3,6 +3,7 @@
 //! CheckSigFromStack integration tests
 //!
 
+use elements::hashes::sha256::Hash as ElementsSha256;
 use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::sighash::SighashCache;
 use elements::taproot::TapLeafHash;
@@ -11,6 +12,7 @@ use elements::{
     TxIn, TxOut, Txid,
 };
 use elementsd::ElementsD;
+use miniscript::bitcoin::hashes::Hash;
 use miniscript::extensions::{check_sig_price_oracle_1, sighash_msg_price_oracle_1};
 use miniscript::psbt::{PsbtInputExt, PsbtInputSatisfier};
 use miniscript::{bitcoin, elements, Descriptor, Satisfier, ToPublicKey, TxEnv};
@@ -126,7 +128,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
                         testdata.pubdata.genesis_hash,
                     )
                     .unwrap();
-                let msg = secp256k1::Message::from_digest_slice(&sighash_msg[..]).unwrap();
+                let msg = secp256k1::Message::from_digest_slice(sighash_msg.as_ref()).unwrap();
                 let mut aux_rand = [0u8; 32];
                 rand::thread_rng().fill_bytes(&mut aux_rand);
                 let sig = secp.sign_schnorr_with_aux_rand(&msg, &keypair, &aux_rand);
@@ -147,7 +149,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
     }
     // Add the hash preimages to the psbt
     psbt.inputs_mut()[0].sha256_preimages.insert(
-        testdata.pubdata.sha256,
+        ElementsSha256::from_byte_array(testdata.pubdata.sha256.to_byte_array()),
         testdata.secretdata.sha256_pre.to_vec(),
     );
     println!("Testing descriptor: {}", desc);
@@ -236,7 +238,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
         .as_u64()
         .unwrap();
     assert!(num_conf > 0);
-    tx.input[0].witness.script_witness.clone()
+    tx.input[0].witness.script_witness.to_vec()
 }
 
 fn test_descs(cl: &ElementsD, testdata: &TestData) {
