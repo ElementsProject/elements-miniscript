@@ -1188,7 +1188,15 @@ impl_from_tree!(
             ("elsh", 1) => Descriptor::Sh(Sh::from_tree(top)?),
             ("elcovwsh", 2) => Descriptor::LegacyCSFSCov(LegacyCSFSCov::from_tree(top)?),
             ("elwsh", 1) => Descriptor::Wsh(Wsh::from_tree(top)?),
-            ("eltr", _) => Descriptor::Tr(Tr::from_tree(top)?),
+            ("eltr", _) => {
+                // A tree without extension fragments parses as `Descriptor::Tr`.
+                // Otherwise parse it again with the extension type `T`, and report
+                // the error from that attempt if it also fails.
+                match Tr::<Pk, NoExt>::from_tree(top) {
+                    Ok(tr) => Descriptor::Tr(tr),
+                    Err(_) => Descriptor::TrExt(Tr::<Pk, T>::from_tree(top)?),
+                }
+            }
             _ => Descriptor::Bare(Bare::from_tree(top)?),
         })
     }
@@ -1204,24 +1212,9 @@ impl_from_str!(
                 "Not an Elements Descriptor",
             )));
         }
-        // tr tree parsing has special code
-        // Tr::from_str will check the checksum
-        // match "tr(" to handle more extensibly
-        let desc = if s.starts_with(&format!("{}tr", ELMTS_STR)) {
-            // First try parsing without extensions
-            match Tr::<Pk, NoExt>::from_str(s) {
-                Ok(tr) => Descriptor::Tr(tr),
-                Err(_) => {
-                    // Try parsing with extensions
-                    let tr = Tr::<Pk, T>::from_str(s)?;
-                    Descriptor::TrExt(tr)
-                }
-            }
-        } else {
-            let desc_str = verify_checksum(s)?;
-            let top = expression::Tree::from_str(desc_str)?;
-            expression::FromTree::from_tree(&top)?
-        };
+        let desc_str = verify_checksum(s)?;
+        let top = expression::Tree::from_str(desc_str)?;
+        let desc: Descriptor<Pk, T> = expression::FromTree::from_tree(&top)?;
 
         if desc.multipath_length_mismatch() {
             return Err(Error::MultipathDescLenMismatch);

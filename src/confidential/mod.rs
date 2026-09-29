@@ -702,6 +702,30 @@ mod tests {
     }
 
     #[test]
+    fn confidential_descriptor_tr_extension_leaf() {
+        let secp = secp256k1_zkp::Secp256k1::new();
+        let params = &elements::AddressParams::LIQUID;
+
+        let nums = "0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+        let key = "03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4";
+        let mbk = slip77::MasterBlindingKey::from_seed(b"abcd");
+        let tr = format!("eltr({nums},and_v(v:pk({key}),is_exp_asset(out_asset(0))))");
+
+        let desc = Descriptor::<DefiniteDescriptorKey>::from_str(&format!("ct(slip77({mbk}),{tr})")).unwrap();
+        assert!(matches!(desc.descriptor, crate::Descriptor::TrExt(_)));
+        assert_eq!(desc.descriptor, crate::Descriptor::from_str(&tr).unwrap());
+        assert_eq!(desc.to_string(), format!("ct(slip77({mbk}),{tr})#plnzm78w"));
+        assert_eq!(
+            desc.address(&secp, params).unwrap().to_string(),
+            "lq1pqfwyv29crkpngrt59ks2xhn8hjjrf48hsmyxh0nqz0y0k2d8hvxtfwfh2j8wk6jd9vg50jpg9hupjyvc9wef38x4rh9hslvagxa99x8wj3ssh4wjccnd",
+        );
+        assert_eq!(
+            desc.unconfidential_address(params).unwrap().to_string(),
+            "ex1phym4frhtdfxjky28eq5zm7qezxvzhv5cnn23mjmc0kw5rwjjnrhq2rfk85",
+        );
+    }
+
+    #[test]
     fn elip151_tr_script_tree() {
         let secp = secp256k1_zkp::Secp256k1::new();
         let params = &elements::AddressParams::LIQUID;
