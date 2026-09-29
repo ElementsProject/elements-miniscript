@@ -11,6 +11,9 @@ use bitcoin_miniscript::expression::check_valid_chars;
 
 use crate::{errstr, Error, MAX_RECURSION_DEPTH};
 
+/// Name of the taproot descriptor, whose second argument is a script tree.
+const SCRIPT_TREE_DESCRIPTOR: &str = "eltr";
+
 #[derive(Debug, Clone)]
 /// A token of the form `x(...)` or `x`
 pub struct Tree<'a> {
@@ -111,6 +114,11 @@ fn next_expr(sl: &str, delim: char) -> Found {
                     }
                 }
                 ')' => {
+                    if new_count == 0 {
+                        // Reached the parenthesis after the script tree, as in `eltr(KEY,TREE)`.
+                        found = Found::RBracket(n);
+                        break;
+                    }
                     new_count -= 1;
                 }
                 '}' => {
@@ -177,7 +185,17 @@ impl<'a> Tree<'a> {
 
                 sl = &sl[n + 1..];
                 loop {
-                    let (arg, new_sl) = Tree::from_slice_delim(sl, depth + 1, delim)?;
+                    // The script tree of a taproot descriptor is written with curly
+                    // braces, and its leaves are parsed later by the descriptor.
+                    let arg_delim = if delim == '('
+                        && ret.name == SCRIPT_TREE_DESCRIPTOR
+                        && ret.args.len() == 1
+                    {
+                        '{'
+                    } else {
+                        delim
+                    };
+                    let (arg, new_sl) = Tree::from_slice_delim(sl, depth + 1, arg_delim)?;
                     ret.args.push(arg);
 
                     if new_sl.is_empty() {

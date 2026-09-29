@@ -1749,6 +1749,27 @@ mod tests {
     }
 
     #[test]
+    fn tr_malformed_script_tree() {
+        for s in [
+            "eltr(A,)",
+            "eltr({pk(A),pk(B)})",
+            "eltr(A,{})",
+            "eltr(A,{pk(B)})",
+            "eltr(A,{pk(B),pk(C),pk(D)})",
+            "eltr(A,{pk(B)),pk(C)}",
+            "eltr(A,{pk(B),pk(C)}",
+            "eltr(A,{pk(B),pk(C)}))",
+            "eltr(A,{pk(B),pk(C)},pk(D))",
+            "eltr(A,and_v(v:pk(B),{pk(C),pk(D)}))",
+            "elwsh({pk(A),pk(B)})",
+            "elwsh(or_d(pk(A),{pk(B),pk(C)}))",
+        ] {
+            assert!(Descriptor::<String>::from_str(s).is_err(), "{}", s);
+            assert!(Tr::<String>::from_str(s).is_err(), "{}", s);
+        }
+    }
+
+    #[test]
     fn tr_script_pubkey() {
         let key = Descriptor::<bitcoin::PublicKey>::from_str(
             "eltr(02e20e746af365e86647826397ba1c0e0d5cb685752976fe2f326ab76bdc4d6ee9)",
