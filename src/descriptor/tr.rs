@@ -13,14 +13,14 @@ use elements::{self, opcodes, secp256k1_zkp, Script};
 use super::checksum::verify_checksum;
 use super::ELMTS_STR;
 use crate::descriptor::checksum;
-use crate::expression::{self, check_valid_chars, FromTree};
+use crate::expression::{self, FromTree};
 use crate::extensions::ParseableExt;
 use crate::miniscript::Miniscript;
 use crate::policy::semantic::Policy;
 use crate::policy::Liftable;
 use crate::util::{varint_len, witness_size};
 use crate::{
-    errstr, Error, Extension, ForEachKey, MiniscriptKey, NoExt, Satisfier, Tap, ToPublicKey,
+    Error, Extension, ForEachKey, MiniscriptKey, NoExt, Satisfier, Tap, ToPublicKey,
     TranslateExt, TranslatePk, Translator,
 };
 
@@ -597,7 +597,7 @@ impl_from_str!(
     type Err = Error;,
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
-        let top = parse_tr_tree(desc_str)?;
+        let top = expression::Tree::from_str(desc_str)?;
         Self::from_tree(&top)
     }
 );
@@ -621,70 +621,6 @@ impl<Pk: MiniscriptKey, Ext: Extension> fmt::Display for Tr<Pk, Ext> {
             None => write!(wrapped_f, "{}tr({})", ELMTS_STR, key)?,
         }
         wrapped_f.write_checksum_if_not_alt()
-    }
-}
-
-// Helper function to parse string into miniscript tree form
-fn parse_tr_tree(s: &str) -> Result<expression::Tree<'_>, Error> {
-    check_valid_chars(s)?;
-
-    if s.len() > 5 && &s[..5] == "eltr(" && s.as_bytes()[s.len() - 1] == b')' {
-        let rest = &s[5..s.len() - 1];
-        if !rest.contains(',') {
-            let internal_key = expression::Tree {
-                name: rest,
-                args: vec![],
-            };
-            return Ok(expression::Tree {
-                name: "eltr",
-                args: vec![internal_key],
-            });
-        }
-        // use str::split_once() method to refactor this when compiler version bumps up
-        let (key, script) = split_once(rest, ',')
-            .ok_or_else(|| Error::BadDescriptor("invalid taproot descriptor".to_string()))?;
-
-        let internal_key = expression::Tree {
-            name: key,
-            args: vec![],
-        };
-        if script.is_empty() {
-            return Ok(expression::Tree {
-                name: "eltr",
-                args: vec![internal_key],
-            });
-        }
-        let (tree, rest) = expression::Tree::from_slice_delim(script, 1, '{')?;
-        if rest.is_empty() {
-            Ok(expression::Tree {
-                name: "eltr",
-                args: vec![internal_key, tree],
-            })
-        } else {
-            Err(errstr(rest))
-        }
-    } else {
-        Err(Error::Unexpected("invalid taproot descriptor".to_string()))
-    }
-}
-
-fn split_once(inp: &str, delim: char) -> Option<(&str, &str)> {
-    if inp.is_empty() {
-        None
-    } else {
-        let mut found = inp.len();
-        for (idx, ch) in inp.chars().enumerate() {
-            if ch == delim {
-                found = idx;
-                break;
-            }
-        }
-        // No comma or trailing comma found
-        if found >= inp.len() - 1 {
-            Some((inp, ""))
-        } else {
-            Some((&inp[..found], &inp[found + 1..]))
-        }
     }
 }
 

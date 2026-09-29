@@ -12,6 +12,9 @@ use bitcoin_miniscript::{ParseError, ParseTreeError};
 
 use crate::{errstr, Error, MAX_RECURSION_DEPTH};
 
+/// Name of the taproot descriptor, whose second argument is a script tree.
+const SCRIPT_TREE_DESCRIPTOR: &str = "eltr";
+
 #[derive(Debug, Clone)]
 /// A token of the form `x(...)` or `x`
 pub struct Tree<'a> {
@@ -112,6 +115,12 @@ fn next_expr(sl: &str, delim: char) -> Found {
                     }
                 }
                 ')' => {
+                    if new_count == 0 {
+                        // An unmatched `)` closes the `eltr(...)` around a script tree
+                        // that is a single leaf, as in `eltr(KEY,pk(A))`.
+                        found = Found::RBracket(n);
+                        break;
+                    }
                     new_count -= 1;
                 }
                 '}' => {
@@ -178,7 +187,18 @@ impl<'a> Tree<'a> {
 
                 sl = &sl[n + 1..];
                 loop {
-                    let (arg, new_sl) = Tree::from_slice_delim(sl, depth + 1, delim)?;
+                    // The second argument of `eltr` is a script tree. Parse it with
+                    // curly brace delimiters, so each leaf stays a single terminal
+                    // that `Tr::from_tree` parses as Miniscript.
+                    let arg_delim = if delim == '('
+                        && ret.name == SCRIPT_TREE_DESCRIPTOR
+                        && ret.args.len() == 1
+                    {
+                        '{'
+                    } else {
+                        delim
+                    };
+                    let (arg, new_sl) = Tree::from_slice_delim(sl, depth + 1, arg_delim)?;
                     ret.args.push(arg);
 
                     if new_sl.is_empty() {

@@ -644,4 +644,86 @@ mod tests {
         let desc_bare = Descriptor::<DefiniteDescriptorKey>::from_str(&desc_bare_str).unwrap();
         assert!(matches!(desc_bare.address(&secp, params).unwrap_err(), Error::Unexpected(e) if e == "wildcard blinding key"));
     }
+
+    #[test]
+    fn confidential_descriptor_tr_script_tree() {
+        let secp = secp256k1_zkp::Secp256k1::new();
+
+        let nums = "0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+        let key = "03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4";
+        let ct_key = DescriptorPublicKey::from_str(
+            "02dce16018bbbb8e36de7b394df5b5166e9adb7498be7d881a85a09aeecf76b623",
+        )
+        .unwrap();
+        let mbk = slip77::MasterBlindingKey::from_seed(b"abcd");
+
+        let leaf = crate::Descriptor::from_str(&format!("eltr({nums},pk({key}))")).unwrap();
+        let tree = crate::Descriptor::from_str(&format!("eltr({nums},{{pk({key}),pk({nums})}})"))
+            .unwrap();
+
+        let tests = vec![
+            // SLIP77, P2TR with one leaf
+            ConfidentialTest {
+                key: Key::Slip77(mbk),
+                descriptor: leaf.clone(),
+                descriptor_str: format!("ct(slip77({mbk}),eltr({nums},pk({key})))#0rh5eggz"),
+                conf_addr: "lq1pqv6pc3c9nlsr6my3tqxl8plf3t7hl73nlxgcuswhkxy8llz32z3p4940lgxlw8ksnmsl0x7kmazr648t5y2js6cl9nchna5s9jdpd0azfc2t8prf77qg",
+                unconf_addr: "ex1pj6hl5r0hrmgfac0hn0td73pa2n46z9fgdv0jeute76gzexskh73qzgwgq9",
+            },
+            // SLIP77, P2TR with a script tree
+            ConfidentialTest {
+                key: Key::Slip77(mbk),
+                descriptor: tree.clone(),
+                descriptor_str: format!("ct(slip77({mbk}),eltr({nums},{{pk({key}),pk({nums})}}))#jvtacgy4"),
+                conf_addr: "lq1pqf82jgz44dws8fh9jk759fuwkp72c2f7la0m88pfj4uz0uwgs5qhcyrdxthp89fwnguhrtkp0tlt8sjcen0lxtls357d9mv0rdy79xmufmvnf2d3e42s",
+                unconf_addr: "ex1pzpkn9msnj5hf5wt34mqh4l4ncfvvehln9lcg60xjak83kj0znd7qmfnsc7",
+            },
+            // Bare key, P2TR with one leaf
+            ConfidentialTest {
+                key: Key::Bare(ct_key.clone()),
+                descriptor: leaf,
+                descriptor_str: format!("ct({ct_key},eltr({nums},pk({key})))#ug7ku7uy"),
+                conf_addr: "lq1pq2nd3l90apnsrrssxkvzvpj8hrkjvqpm74aualy62d0akacxatm9l940lgxlw8ksnmsl0x7kmazr648t5y2js6cl9nchna5s9jdpd0azl2lt57872fd8",
+                unconf_addr: "ex1pj6hl5r0hrmgfac0hn0td73pa2n46z9fgdv0jeute76gzexskh73qzgwgq9",
+            },
+            // Bare key, P2TR with a script tree
+            ConfidentialTest {
+                key: Key::Bare(ct_key.clone()),
+                descriptor: tree,
+                descriptor_str: format!("ct({ct_key},eltr({nums},{{pk({key}),pk({nums})}}))#9h54dumz"),
+                conf_addr: "lq1pqtsl8ku9df0yrd7kh2ulz9wfrf7pdcfzh68sr9ge4dpxaphgjdxhuyrdxthp89fwnguhrtkp0tlt8sjcen0lxtls357d9mv0rdy79xmul76rz04xhhyn",
+                unconf_addr: "ex1pzpkn9msnj5hf5wt34mqh4l4ncfvvehln9lcg60xjak83kj0znd7qmfnsc7",
+            },
+        ];
+
+        for test in &tests {
+            test.check(&secp);
+        }
+    }
+
+    #[test]
+    fn elip151_tr_script_tree() {
+        let secp = secp256k1_zkp::Secp256k1::new();
+        let params = &elements::AddressParams::LIQUID;
+
+        let nums = "0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+        let key = "03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4";
+        let xpub = "xpub661MyMwAqRbcFkPHucMnrGNzDwb6teAX1RbKQmqtEF8kK3Z7LZ59qafCjB9eCRLiTVG3uxBxgKvRgbubRhqSKXnGGb1aoaqLrpMBDrVxga8";
+        let view_key = "8a378c768713d53492f27f16c8b0b7cc45af4ec27a9bae002c645cdec5b8208b";
+
+        let tree = format!("{{pk({xpub}/0/*),pk({key})}}");
+        let desc = Descriptor::<DescriptorPublicKey>::from_str(&format!("ct(elip151,eltr({nums},{tree}))")).unwrap();
+        assert_eq!(desc.key.to_string(), view_key);
+        assert_eq!(desc.to_string(), format!("ct({view_key},eltr({nums},{tree}))#u3auuy5d"));
+
+        let desc = desc.at_derivation_index(0).unwrap();
+        assert_eq!(
+            desc.address(&secp, params).unwrap().to_string(),
+            "lq1pq2r4jza4g5p0x9xxunnx745ysh8a6ec5guvg5sh8eastahc55ud5n5y0s9psnfuvqqtl4fce5j92z6k6ttpufwth93djx7465tr5fsnjhwgt8yrzraqc",
+        );
+        assert_eq!(
+            desc.unconfidential_address(params).unwrap().to_string(),
+            "ex1p6z8czscf57xqq9l65uv6fz4pdtd94s7yh9mjcker02a2936ycfeq07d7qw",
+        );
+    }
 }
