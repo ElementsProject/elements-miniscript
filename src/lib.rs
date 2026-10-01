@@ -134,8 +134,6 @@ pub mod miniscript;
 pub mod policy;
 pub mod psbt;
 
-#[cfg(feature = "simplicity")]
-mod simplicity;
 #[cfg(test)]
 mod test_utils;
 mod util;
