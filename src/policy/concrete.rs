@@ -9,7 +9,6 @@
 use std::collections::HashSet;
 use std::{error, fmt, str};
 
-use bitcoin_miniscript::expression::check_valid_chars;
 use elements::{LockTime, Sequence};
 #[cfg(feature = "compiler")]
 use {
@@ -28,7 +27,7 @@ use {
 };
 
 use super::ENTAILMENT_MAX_TERMINALS;
-use crate::expression::{self, FromTree};
+use crate::expression::{self, check_valid_chars, FromTree};
 use crate::miniscript::types::extra_props::TimelockInfo;
 #[cfg(all(doc, not(feature = "compiler")))]
 use crate::Descriptor;

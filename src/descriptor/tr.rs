@@ -4,7 +4,6 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::{fmt, hash};
 
-use bitcoin_miniscript::expression::check_valid_chars;
 use elements::taproot::{
     LeafVersion, TaprootBuilder, TaprootSpendInfo, TAPROOT_CONTROL_BASE_SIZE,
     TAPROOT_CONTROL_MAX_NODE_COUNT, TAPROOT_CONTROL_NODE_SIZE,
@@ -14,7 +13,7 @@ use elements::{self, opcodes, secp256k1_zkp, Script};
 use super::checksum::verify_checksum;
 use super::ELMTS_STR;
 use crate::descriptor::checksum;
-use crate::expression::{self, FromTree};
+use crate::expression::{self, check_valid_chars, FromTree};
 use crate::extensions::ParseableExt;
 use crate::miniscript::Miniscript;
 use crate::policy::semantic::Policy;

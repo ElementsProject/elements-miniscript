@@ -586,10 +586,10 @@ mod tests {
             .unwrap(),
         };
 
-        assert_eq!(
+        assert!(matches!(
             desc.address(&secp, params).unwrap_err(),
             Error::Conversion(ConversionError::HardenedChild)
-        );
+        ));
     }
 
     // Same case, reached through `at_derivation_index` on a hardened wildcard blinding
@@ -605,10 +605,10 @@ mod tests {
         let desc = Descriptor::<DescriptorPublicKey, NoExt>::from_str(&desc_str).unwrap();
         let definite_desc = desc.at_derivation_index(1).unwrap();
 
-        assert_eq!(
+        assert!(matches!(
             definite_desc.address(&secp, params).unwrap_err(),
             Error::Conversion(ConversionError::HardenedChild)
-        );
+        ));
     }
 
     #[test]
@@ -638,10 +638,10 @@ mod tests {
         // but we can't enforce this with the Descriptor generic.
         let desc_view_str = format!("ct({}/*,elwpkh({}))#ls6mx2ac", xprv, xpub);
         let desc_view = Descriptor::<DefiniteDescriptorKey>::from_str(&desc_view_str).unwrap();
-        assert_eq!(desc_view.address(&secp, params).unwrap_err(), Error::Unexpected("wildcard blinding key".into()));
+        assert!(matches!(desc_view.address(&secp, params).unwrap_err(), Error::Unexpected(e) if e == "wildcard blinding key"));
 
         let desc_bare_str = format!("ct({}/*,elwpkh({}))#czkz0hwn", xpub, xpub);
         let desc_bare = Descriptor::<DefiniteDescriptorKey>::from_str(&desc_bare_str).unwrap();
-        assert_eq!(desc_bare.address(&secp, params).unwrap_err(), Error::Unexpected("wildcard blinding key".into()));
+        assert!(matches!(desc_bare.address(&secp, params).unwrap_err(), Error::Unexpected(e) if e == "wildcard blinding key"));
     }
 }
