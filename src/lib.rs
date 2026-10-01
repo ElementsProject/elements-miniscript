@@ -277,7 +277,7 @@ where
 }
 
 /// Miniscript Error
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Error {
     /// Opcode appeared which is not part of the script subset
     InvalidOpcode(opcodes::All),

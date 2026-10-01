@@ -1077,7 +1077,7 @@ mod tests {
         assert!(Segwitv0Script::from_str_insane("🌏")
             .unwrap_err()
             .to_string()
-            .contains("unprintable character"));
+            .contains("invalid character"));
     }
 
     #[test]
