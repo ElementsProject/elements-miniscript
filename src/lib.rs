@@ -108,7 +108,7 @@ extern crate test;
 // It can be confusing to code when we have two miniscript libraries
 // As a rule, only import the library here and pub use all the required
 // items. Should help in faster code development in the long run
-use bitcoin_miniscript::expression::{FromTree as BtcFromTree, Tree as BtcTree};
+use bitcoin_miniscript::expression::FromTree as BtcFromTree;
 use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
 use bitcoin_miniscript::policy::Liftable as BtcLiftable;
 // re-export imports
@@ -293,8 +293,6 @@ pub enum Error {
     CmsTooManyKeys(u32),
     /// A tapscript multi_a cannot support more than MAX_BLOCK_WEIGHT/32 keys
     MultiATooManyKeys(u32),
-    /// expected character while parsing descriptor; didn't find one
-    ExpectedChar(char),
     /// While parsing backward, hit beginning of script
     UnexpectedStart,
     /// Got something we were not expecting
@@ -338,7 +336,10 @@ pub enum Error {
     LiftError(policy::LiftError),
     /// Forward script context related errors
     ContextError(miniscript::context::ScriptContextError),
-    /// Recursion depth exceeded when parsing policy/miniscript from string
+    /// A Taproot script tree is deeper than the 128 levels a Taproot control
+    /// block allows. [`descriptor::Tr::new`] returns it, including when parsing
+    /// `eltr` descriptors. Expressions nested too deeply for the expression
+    /// parser are reported as rust-miniscript parse errors in [`Error::BtcError`].
     MaxRecursiveDepthExceeded,
     /// Script size too large
     ScriptSizeTooLarge,
@@ -386,6 +387,14 @@ where
 impl From<bitcoin_miniscript::Error> for Error {
     fn from(e: bitcoin_miniscript::Error) -> Error {
         Error::BtcError(e)
+    }
+}
+
+#[doc(hidden)]
+impl From<bitcoin_miniscript::ParseTreeError> for Error {
+    fn from(e: bitcoin_miniscript::ParseTreeError) -> Error {
+        let e = bitcoin_miniscript::ParseError::Tree(e);
+        Error::BtcError(bitcoin_miniscript::Error::Parse(e))
     }
 }
 
@@ -454,8 +463,6 @@ fn errstr(s: &str) -> Error {
     Error::Unexpected(s.to_owned())
 }
 
-// https://github.com/sipa/miniscript/pull/5 for discussion on this number
-const MAX_RECURSION_DEPTH: u32 = 402;
 // https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki
 const MAX_SCRIPT_SIZE: u32 = 10000;
 
@@ -471,7 +478,6 @@ impl fmt::Display for Error {
             Error::Script(ref e) => fmt::Display::fmt(e, f),
             Error::AddrError(ref e) => fmt::Display::fmt(e, f),
             Error::CmsTooManyKeys(n) => write!(f, "checkmultisig with {} keys", n),
-            Error::ExpectedChar(c) => write!(f, "expected {}", c),
             Error::UnexpectedStart => f.write_str("unexpected start of script"),
             Error::Unexpected(ref s) => write!(f, "unexpected «{}»", s),
             Error::MultiColon(ref s) => write!(f, "«{}» has multiple instances of «:»", s),
@@ -502,8 +508,8 @@ impl fmt::Display for Error {
             Error::LiftError(ref e) => fmt::Display::fmt(e, f),
             Error::MaxRecursiveDepthExceeded => write!(
                 f,
-                "Recursive depth over {} not permitted",
-                MAX_RECURSION_DEPTH
+                "Taproot script tree depth over {} not permitted",
+                elements::taproot::TAPROOT_CONTROL_MAX_NODE_COUNT
             ),
             Error::ScriptSizeTooLarge => write!(
                 f,
@@ -544,7 +550,6 @@ impl error::Error for Error {
             | InvalidPush(_)
             | CmsTooManyKeys(_)
             | MultiATooManyKeys(_)
-            | ExpectedChar(_)
             | UnexpectedStart
             | Unexpected(_)
             | MultiColon(_)

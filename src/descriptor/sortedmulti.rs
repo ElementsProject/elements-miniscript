@@ -60,25 +60,26 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         })
     }
     /// Parse an expression tree into a SortedMultiVec
-    pub fn from_tree(tree: &expression::Tree<'_>) -> Result<Self, Error>
+    pub fn from_tree(tree: expression::TreeIterItem<'_>) -> Result<Self, Error>
     where
         Pk: FromStr,
         <Pk as FromStr>::Err: ToString,
     {
-        if tree.args.is_empty() {
-            return Err(errstr("no arguments given for sortedmulti"));
+        expression::verify_round_parens(tree)?;
+        let mut args = tree.children();
+        let k = args
+            .next()
+            .ok_or_else(|| errstr("no arguments given for sortedmulti"))?;
+        if k.n_children() > 0 {
+            return Err(errstr(k.name()));
         }
-        if !tree.args[0].args.is_empty() {
-            return Err(errstr(tree.args[0].name));
-        }
-        let k = expression::parse_num::<u32>(tree.args[0].name)?;
-        if k > (tree.args.len() - 1) as u32 {
+        let k = expression::parse_num::<u32>(k.name())?;
+        if k > (tree.n_children() - 1) as u32 {
             return Err(errstr(
                 "higher threshold than there were keys in sortedmulti",
             ));
         }
-        let pks: Result<Vec<Pk>, _> = tree.args[1..]
-            .iter()
+        let pks: Result<Vec<Pk>, _> = args
             .map(|sub| expression::terminal(sub, Pk::from_str))
             .collect();
 

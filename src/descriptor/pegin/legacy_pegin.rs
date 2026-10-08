@@ -41,7 +41,7 @@ use crate::policy::{semantic, Liftable};
 use crate::util::varint_len;
 use crate::{
     hash256, tweak_key, BtcError, BtcFromTree, BtcLiftable, BtcMiniscript, BtcPolicy, BtcSatisfier,
-    BtcSegwitv0, BtcTerminal, BtcTree, Descriptor, Error, MiniscriptKey, ToPublicKey,
+    BtcSegwitv0, BtcTerminal, Descriptor, Error, MiniscriptKey, ToPublicKey,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -349,21 +349,20 @@ impl<Pk: MiniscriptKey> BtcLiftable<LegacyPeginKey> for LegacyPegin<Pk> {
 
 impl_from_tree!(
     LegacyPegin<Pk>,
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
-        if top.name == "legacy_pegin" && top.args.len() == 2 {
-            // a roundtrip hack to use FromTree from bitcoin::Miniscript from
-            // expression::Tree in elements.
-            let ms_str = top.args[0].to_string();
-            let ms_expr = BtcTree::from_str(&ms_str)?;
-            //
-            let ms = BtcMiniscript::<LegacyPeginKey, BtcSegwitv0>::from_tree(ms_expr.root());
-            let desc = Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(&top.args[1]);
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
+        if let ("legacy_pegin", Some(btc), Some(elem), None) =
+            (top.name(), args.next(), args.next(), args.next())
+        {
+            let ms = BtcMiniscript::<LegacyPeginKey, BtcSegwitv0>::from_tree(btc);
+            let desc = Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(elem);
             LegacyPegin::from_ms_and_desc(desc?, ms?)
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing legacy_pegin descriptor",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             )))
         }
     }
@@ -375,7 +374,7 @@ impl_from_str!(
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
-        Self::from_tree(&top)
+        Self::from_tree(top.root())
     }
 );
 
@@ -545,6 +544,33 @@ mod tests {
     use std::str::FromStr;
 
     use super::*;
+
+    #[test]
+    fn legacy_pegin_from_str() {
+        let fed_key = "03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4";
+        let emer_key = "0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+        let user = "0321da398ca2ddc09be89caa26e6730ae84751b6ea3a1ca46aa365bb5e1c3d9620";
+
+        let pegin = LegacyPegin::<bitcoin::PublicKey>::from_str(&format!(
+            "legacy_pegin(or_d(multi(1,f{fed_key}),and_v(v:older(4032),multi(1,u{emer_key}))),elwpkh({user}))"
+        ))
+        .unwrap();
+        let fed = LegacyPeginKey::Functionary(bitcoin::PublicKey::from_str(fed_key).unwrap());
+        let emer = LegacyPeginKey::NonFunctionary(bitcoin::PublicKey::from_str(emer_key).unwrap());
+        let expected = LegacyPegin::new(
+            bitcoin_miniscript::Threshold::new(1, vec![fed]).unwrap(),
+            bitcoin_miniscript::Threshold::new(1, vec![emer]).unwrap(),
+            bitcoin_miniscript::RelLockTime::from_consensus(4032).unwrap(),
+            Descriptor::from_str(&format!("elwpkh({user})")).unwrap(),
+        );
+        assert_eq!(pegin, expected);
+
+        let invalid = format!("legacy_pegin(multi(1,f{fed_key}),elwpkh({user}))");
+        assert!(matches!(
+            LegacyPegin::<bitcoin::PublicKey>::from_str(&invalid),
+            Err(Error::BadDescriptor(_))
+        ));
+    }
 
     #[test]
     fn legacy_pegin_miniscript_shape() {

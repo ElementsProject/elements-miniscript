@@ -1181,8 +1181,8 @@ impl_from_tree!(
     ;T; Extension,
     Descriptor<Pk, T>,
     /// Parse an expression tree into a descriptor.
-    fn from_tree(top: &expression::Tree) -> Result<Descriptor<Pk, T>, Error> {
-        Ok(match (top.name, top.args.len() as u32) {
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Descriptor<Pk, T>, Error> {
+        Ok(match (top.name(), top.n_children()) {
             ("elpkh", 1) => Descriptor::Pkh(Pkh::from_tree(top)?),
             ("elwpkh", 1) => Descriptor::Wpkh(Wpkh::from_tree(top)?),
             ("elsh", 1) => Descriptor::Sh(Sh::from_tree(top)?),
@@ -1204,8 +1204,8 @@ impl_from_str!(
                 "Not an Elements Descriptor",
             )));
         }
-        // tr tree parsing has special code
-        // Tr::from_str will check the checksum
+        // eltr is parsed without extensions first, and then with the extension
+        // type T. Tr::from_str will check the checksum
         // match "tr(" to handle more extensibly
         let desc = if s.starts_with(&format!("{}tr", ELMTS_STR)) {
             // First try parsing without extensions
@@ -1220,7 +1220,7 @@ impl_from_str!(
         } else {
             let desc_str = verify_checksum(s)?;
             let top = expression::Tree::from_str(desc_str)?;
-            expression::FromTree::from_tree(&top)?
+            expression::FromTree::from_tree(top.root())?
         };
 
         if desc.multipath_length_mismatch() {

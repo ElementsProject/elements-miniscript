@@ -86,10 +86,10 @@ impl Extension for LegacyVerEq {
 
     fn from_name_tree(
         name: &str,
-        children: &[expression::Tree<'_>],
+        children: &[expression::TreeIterItem<'_>],
     ) -> Result<Self, FromTokenIterError> {
         if children.len() == 1 && name == "ver_eq" {
-            let n = expression::terminal(&children[0], expression::parse_num)
+            let n = expression::terminal(children[0], expression::parse_num)
                 .map_err(|_| FromTokenIterError)?;
             Ok(Self { n })
         } else {

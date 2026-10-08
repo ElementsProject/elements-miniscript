@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: CC0-1.0
 use std::cmp::{self, max};
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::{fmt, hash};
 
@@ -13,15 +12,16 @@ use elements::{self, opcodes, secp256k1_zkp, Script};
 use super::checksum::verify_checksum;
 use super::ELMTS_STR;
 use crate::descriptor::checksum;
-use crate::expression::{self, check_valid_chars, FromTree};
+use crate::expression::{self, FromTree, Parens};
 use crate::extensions::ParseableExt;
+use crate::miniscript::analyzable::ExtParams;
 use crate::miniscript::Miniscript;
 use crate::policy::semantic::Policy;
 use crate::policy::Liftable;
 use crate::util::{varint_len, witness_size};
 use crate::{
-    errstr, Error, Extension, ForEachKey, MiniscriptKey, NoExt, Satisfier, Tap, ToPublicKey,
-    TranslateExt, TranslatePk, Translator,
+    Error, Extension, ForEachKey, MiniscriptKey, NoExt, Satisfier, Tap, ToPublicKey, TranslateExt,
+    TranslatePk, Translator,
 };
 
 /// A Taproot Tree representation.
@@ -526,15 +526,16 @@ impl_block_str!(
     Tr<Pk, Ext>,
     => Ext; Extension,
     // Helper function to parse taproot script path
-    fn parse_tr_script_spend(tree: &expression::Tree,) -> Result<TapTree<Pk, Ext>, Error> {
-        match tree {
-            expression::Tree { name, args } if !name.is_empty() && args.is_empty() => {
-                let script = Miniscript::<Pk, Tap, Ext>::from_str(name)?;
-                Ok(TapTree::Leaf(Arc::new(script)))
-            }
-            expression::Tree { name, args } if name.is_empty() && args.len() == 2 => {
-                let left = Self::parse_tr_script_spend(&args[0])?;
-                let right = Self::parse_tr_script_spend(&args[1])?;
+    fn parse_tr_script_spend(tree: expression::TreeIterItem<'_>,) -> Result<TapTree<Pk, Ext>, Error> {
+        if tree.parens() != Parens::Curly {
+            let script = Miniscript::<Pk, Tap, Ext>::from_tree_ext(tree, &ExtParams::sane())?;
+            return Ok(TapTree::Leaf(Arc::new(script)));
+        }
+        let mut children = tree.children();
+        match (tree.name(), children.next(), children.next(), children.next()) {
+            ("", Some(left), Some(right), None) => {
+                let left = Self::parse_tr_script_spend(left)?;
+                let right = Self::parse_tr_script_spend(right)?;
                 Ok(TapTree::Tree(Arc::new(left), Arc::new(right)))
             }
             _ => Err(Error::Unexpected(
@@ -548,44 +549,31 @@ impl_block_str!(
 impl_from_tree!(
     Tr<Pk, Ext>,
     => Ext; Extension,
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        if top.name == "eltr" {
-            match top.args.len() {
-                1 => {
-                    let key = &top.args[0];
-                    if !key.args.is_empty() {
-                        return Err(Error::Unexpected(format!(
-                            "#{} script associated with `key-path` while parsing taproot descriptor",
-                            key.args.len()
-                        )));
-                    }
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Self, Error> {
+        if top.name() == "eltr" {
+            expression::verify_round_parens(top)?;
+            let mut args = top.children();
+            match (args.next(), args.next(), args.next()) {
+                (Some(key), None, None) => {
                     Tr::new(expression::terminal(key, Pk::from_str)?, None)
                 }
-                2 => {
-                    let key = &top.args[0];
-                    if !key.args.is_empty() {
-                        return Err(Error::Unexpected(format!(
-                            "#{} script associated with `key-path` while parsing taproot descriptor",
-                            key.args.len()
-                        )));
-                    }
-                    let tree = &top.args[1];
+                (Some(key), Some(tree), None) => {
                     let ret = Self::parse_tr_script_spend(tree)?;
                     Tr::new(expression::terminal(key, Pk::from_str)?, Some(ret))
                 }
                 _ => {
                     Err(Error::Unexpected(format!(
                         "{}[#{} args] while parsing taproot descriptor",
-                        top.name,
-                        top.args.len()
+                        top.name(),
+                        top.n_children()
                     )))
                 }
             }
         } else {
             Err(Error::Unexpected(format!(
                 "{}[#{} args] while parsing taproot descriptor",
-                top.name,
-                top.args.len()
+                top.name(),
+                top.n_children()
             )))
         }
     }
@@ -597,8 +585,8 @@ impl_from_str!(
     type Err = Error;,
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
-        let top = parse_tr_tree(desc_str)?;
-        Self::from_tree(&top)
+        let top = expression::Tree::from_str(desc_str)?;
+        Self::from_tree(top.root())
     }
 );
 
@@ -621,70 +609,6 @@ impl<Pk: MiniscriptKey, Ext: Extension> fmt::Display for Tr<Pk, Ext> {
             None => write!(wrapped_f, "{}tr({})", ELMTS_STR, key)?,
         }
         wrapped_f.write_checksum_if_not_alt()
-    }
-}
-
-// Helper function to parse string into miniscript tree form
-fn parse_tr_tree(s: &str) -> Result<expression::Tree<'_>, Error> {
-    check_valid_chars(s)?;
-
-    if s.len() > 5 && &s[..5] == "eltr(" && s.as_bytes()[s.len() - 1] == b')' {
-        let rest = &s[5..s.len() - 1];
-        if !rest.contains(',') {
-            let internal_key = expression::Tree {
-                name: rest,
-                args: vec![],
-            };
-            return Ok(expression::Tree {
-                name: "eltr",
-                args: vec![internal_key],
-            });
-        }
-        // use str::split_once() method to refactor this when compiler version bumps up
-        let (key, script) = split_once(rest, ',')
-            .ok_or_else(|| Error::BadDescriptor("invalid taproot descriptor".to_string()))?;
-
-        let internal_key = expression::Tree {
-            name: key,
-            args: vec![],
-        };
-        if script.is_empty() {
-            return Ok(expression::Tree {
-                name: "eltr",
-                args: vec![internal_key],
-            });
-        }
-        let (tree, rest) = expression::Tree::from_slice_delim(script, 1, '{')?;
-        if rest.is_empty() {
-            Ok(expression::Tree {
-                name: "eltr",
-                args: vec![internal_key, tree],
-            })
-        } else {
-            Err(errstr(rest))
-        }
-    } else {
-        Err(Error::Unexpected("invalid taproot descriptor".to_string()))
-    }
-}
-
-fn split_once(inp: &str, delim: char) -> Option<(&str, &str)> {
-    if inp.is_empty() {
-        None
-    } else {
-        let mut found = inp.len();
-        for (idx, ch) in inp.chars().enumerate() {
-            if ch == delim {
-                found = idx;
-                break;
-            }
-        }
-        // No comma or trailing comma found
-        if found >= inp.len() - 1 {
-            Some((inp, ""))
-        } else {
-            Some((&inp[..found], &inp[found + 1..]))
-        }
     }
 }
 
@@ -852,6 +776,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
     use crate::{ForEachKey, NoExt};
 
@@ -900,5 +826,35 @@ mod tests {
             "eltr(internal,pk(a))#vadmk9gd", "internal",
             &[TapLeafScript::Miniscript(&ms)]
         );
+    }
+
+    #[test]
+    fn tr_script_tree_branches() {
+        for s in [
+            "eltr(A,pk(B))",
+            "eltr(A,{pk(B),pk(C)})",
+            "eltr(A,{pk(B),{pk(C),pk(D)}})",
+            "eltr(musig(A,B),{pk(C),pk(D)})",
+        ] {
+            assert!(Tr::<String>::from_str(s).is_ok(), "{}", s);
+        }
+        // The script tree cannot be empty. Branches are nameless, use curly braces
+        // and have exactly two children. Curly braces are not allowed anywhere else.
+        for s in [
+            "eltr",
+            "eltr(A,pk(B),pk(C))",
+            "eltr(A,)",
+            "eltr(A,{})",
+            "eltr(A,{pk(B)})",
+            "eltr(A,{pk(B),pk(C),pk(D)})",
+            "eltr(A,x{pk(B),pk(C)})",
+            "eltr(A,(pk(B),pk(C)))",
+            "eltr(A,and_v(v:pk(B),{pk(C),pk(D)}))",
+            "eltr(A,{pk(B),pk{C}})",
+            "eltr({A,B},pk(C))",
+            "eltr{A,pk(B)}",
+        ] {
+            assert!(Tr::<String>::from_str(s).is_err(), "{}", s);
+        }
     }
 }
