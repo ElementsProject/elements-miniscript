@@ -1,5 +1,6 @@
 # Unreleased
 
+- Reject a legacy-pegin miniscript outside `or_d(multi,and_v(v:older,multi))` with `Error::BadDescriptor`.
 - Remove the unused `Error::MultiAt`, `Error::MissingHash`, `Error::TaprootSpendInfoUnavialable` and `Error::TrNoExplicitScript` variants.
 - A `sortedmulti` threshold must be a number without arguments.
 

@@ -166,7 +166,12 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
     fn from_ms_and_desc(
         desc: Descriptor<Pk, CovenantExt<CovExtArgs>>,
         ms: BtcMiniscript<LegacyPeginKey, BtcSegwitv0>,
-    ) -> Self {
+    ) -> Result<Self, Error> {
+        let invalid = || {
+            Error::BadDescriptor(
+                "legacy_pegin miniscript must be or_d(multi,and_v(v:older,multi))".to_string(),
+            )
+        };
         // Miniscript is a bunch of Arc's. So, cloning is not as bad.
         // Can we avoid this without NLL?
         let ms_clone = ms.clone();
@@ -174,31 +179,31 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
             if let (BtcTerminal::Multi(t), right) = (&a.node, &b.node) {
                 (t.clone(), right)
             } else {
-                unreachable!("Only valid pegin miniscripts");
+                return Err(invalid());
             }
         } else {
-            unreachable!("Only valid pegin miniscripts");
+            return Err(invalid());
         };
         let (timelock, emer) = if let BtcTerminal::AndV(l, r) = right {
             if let (BtcTerminal::Verify(csv), BtcTerminal::Multi(t)) = (&l.node, &r.node) {
                 if let BtcTerminal::Older(timelock) = csv.node {
                     (timelock, t.clone())
                 } else {
-                    unreachable!("Only valid pegin miniscripts");
+                    return Err(invalid());
                 }
             } else {
-                unreachable!("Only valid pegin miniscripts");
+                return Err(invalid());
             }
         } else {
-            unreachable!("Only valid pegin miniscripts");
+            return Err(invalid());
         };
-        Self {
+        Ok(Self {
             fed,
             emer,
             timelock,
             desc,
             ms,
-        }
+        })
     }
 
     fn explicit_script<C: secp256k1_zkp::Verification>(
@@ -353,7 +358,7 @@ impl_from_tree!(
             //
             let ms = BtcMiniscript::<LegacyPeginKey, BtcSegwitv0>::from_tree(ms_expr.root());
             let desc = Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(&top.args[1]);
-            Ok(LegacyPegin::from_ms_and_desc(desc?, ms?))
+            LegacyPegin::from_ms_and_desc(desc?, ms?)
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing legacy_pegin descriptor",
@@ -532,5 +537,39 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
     /// to obtain the characteristics of the elements descriptor.
     pub fn into_user_descriptor(self) -> Descriptor<Pk, CovenantExt<CovExtArgs>> {
         self.desc
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::*;
+
+    #[test]
+    fn legacy_pegin_miniscript_shape() {
+        let fed = "f03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4";
+        let emer = "u0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+        let desc = Descriptor::<bitcoin::PublicKey, CovenantExt<CovExtArgs>>::from_str(
+            "elwpkh(0321da398ca2ddc09be89caa26e6730ae84751b6ea3a1ca46aa365bb5e1c3d9620)",
+        )
+        .unwrap();
+        let valid = format!("or_d(multi(1,{fed}),and_v(v:older(4032),multi(1,{emer})))");
+        let ms = BtcMiniscript::<LegacyPeginKey, BtcSegwitv0>::from_str(&valid).unwrap();
+        assert!(LegacyPegin::from_ms_and_desc(desc.clone(), ms).is_ok());
+
+        for text in [
+            format!("multi(1,{fed})"),
+            format!("or_d(pk({fed}),and_v(v:older(4032),multi(1,{emer})))"),
+            format!("or_d(multi(1,{fed}),and_v(v:after(4032),multi(1,{emer})))"),
+            format!("or_d(multi(1,{fed}),and_v(v:older(4032),pk({emer})))"),
+            format!("or_d(multi(1,{fed}),pk({emer}))"),
+        ] {
+            let ms = BtcMiniscript::<LegacyPeginKey, BtcSegwitv0>::from_str(&text).unwrap();
+            assert!(matches!(
+                LegacyPegin::from_ms_and_desc(desc.clone(), ms),
+                Err(Error::BadDescriptor(_))
+            ));
+        }
     }
 }
