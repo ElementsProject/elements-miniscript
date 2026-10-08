@@ -8,8 +8,7 @@
 use core::fmt;
 use core::iter::FromIterator;
 
-use bitcoin_miniscript::expression::check_valid_chars;
-
+use crate::expression::check_valid_chars;
 use crate::Error;
 
 const INPUT_CHARSET: &str =  "0123456789()[],'/*abcdefgh@:$%{}IJKLMNOPQRSTUVWXYZ&+-.;<=>?!^_|~ijklmnopqrstuvwxyzABCDEFGH`#\"\\ ";

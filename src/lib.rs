@@ -134,8 +134,6 @@ pub mod miniscript;
 pub mod policy;
 pub mod psbt;
 
-#[cfg(feature = "simplicity")]
-mod simplicity;
 #[cfg(test)]
 mod test_utils;
 mod util;
@@ -279,7 +277,7 @@ where
 }
 
 /// Miniscript Error
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Error {
     /// Opcode appeared which is not part of the script subset
     InvalidOpcode(opcodes::All),

@@ -6,11 +6,11 @@
 use std::str::FromStr;
 use std::{fmt, str};
 
-use bitcoin_miniscript::expression::check_valid_chars;
 use elements::{LockTime, Sequence};
 
 use super::concrete::PolicyError;
 use super::ENTAILMENT_MAX_TERMINALS;
+use crate::expression::check_valid_chars;
 use crate::{errstr, expression, AbsLockTime, Error, MiniscriptKey, Translator};
 
 /// Abstract policy which corresponds to the semantics of a Miniscript
