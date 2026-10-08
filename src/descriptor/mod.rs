@@ -1749,6 +1749,18 @@ mod tests {
     }
 
     #[test]
+    fn sortedmulti_threshold_is_terminal() {
+        for (prefix, suffix) in [("elwsh(", ")"), ("elsh(", ")"), ("elsh(wsh(", "))")] {
+            let valid = format!("{}sortedmulti(1,A,B){}", prefix, suffix);
+            assert!(Descriptor::<String>::from_str(&valid).is_ok(), "{}", valid);
+            for k in ["1(X)", "1{X}", "1()", "1{}"] {
+                let s = format!("{}sortedmulti({},A,B){}", prefix, k, suffix);
+                assert!(Descriptor::<String>::from_str(&s).is_err(), "{}", s);
+            }
+        }
+    }
+
+    #[test]
     fn tr_script_pubkey() {
         let key = Descriptor::<bitcoin::PublicKey>::from_str(
             "eltr(02e20e746af365e86647826397ba1c0e0d5cb685752976fe2f326ab76bdc4d6ee9)",

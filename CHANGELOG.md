@@ -1,6 +1,7 @@
 # Unreleased
 
 - Remove the unused `Error::MultiAt`, `Error::MissingHash`, `Error::TaprootSpendInfoUnavialable` and `Error::TrNoExplicitScript` variants.
+- A `sortedmulti` threshold must be a number without arguments.
 
 # 0.5.0 - Sep 20, 2026
 
