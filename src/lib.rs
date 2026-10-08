@@ -140,7 +140,6 @@ mod util;
 
 use std::{cmp, error, fmt, str};
 
-use bitcoin::hashes::sha256;
 use elements::secp256k1_zkp::Secp256k1;
 use elements::{locktime, opcodes, script, secp256k1_zkp};
 
@@ -302,8 +301,6 @@ pub enum Error {
     Unexpected(String),
     /// Name of a fragment contained `:` multiple times
     MultiColon(String),
-    /// Name of a fragment contained `@` multiple times
-    MultiAt(String),
     /// Name of a fragment contained `@` but we were not parsing an OR
     AtOutsideOr(String),
     /// Encountered a `l:0` which is syntactically equal to `u:0` except stupid
@@ -318,8 +315,6 @@ pub enum Error {
     BadPubkey(bitcoin::key::ParsePublicKeyError),
     /// Failed to parse a slice as public key
     BadPubkeySlice(bitcoin::key::FromSliceError),
-    /// Could not satisfy a script (fragment) because of a missing hash preimage
-    MissingHash(sha256::Hash),
     /// Could not satisfy a script (fragment) because of a missing signature
     MissingSig(bitcoin::PublicKey),
     /// Could not satisfy, relative locktime not met
@@ -362,12 +357,8 @@ pub enum Error {
     CovError(descriptor::CovError),
     /// PubKey invalid under current context
     PubKeyCtxError(miniscript::decode::KeyParseError, &'static str),
-    /// Attempted to call function that requires PreComputed taproot info
-    TaprootSpendInfoUnavialable,
     /// No script code for Tr descriptors
     TrNoScriptCode,
-    /// No explicit script for Tr descriptors
-    TrNoExplicitScript,
     /// At least two BIP389 key expressions in the descriptor contain tuples of
     /// derivation indexes of different lengths.
     MultipathDescLenMismatch,
@@ -484,13 +475,11 @@ impl fmt::Display for Error {
             Error::UnexpectedStart => f.write_str("unexpected start of script"),
             Error::Unexpected(ref s) => write!(f, "unexpected «{}»", s),
             Error::MultiColon(ref s) => write!(f, "«{}» has multiple instances of «:»", s),
-            Error::MultiAt(ref s) => write!(f, "«{}» has multiple instances of «@»", s),
             Error::AtOutsideOr(ref s) => write!(f, "«{}» contains «@» in non-or() context", s),
             Error::LikelyFalse => write!(f, "0 is not very likely (use «u:0»)"),
             Error::UnknownWrapper(ch) => write!(f, "unknown wrapper «{}:»", ch),
             Error::NonTopLevel(ref s) => write!(f, "non-T miniscript: {}", s),
             Error::Trailing(ref s) => write!(f, "trailing tokens: {}", s),
-            Error::MissingHash(ref h) => write!(f, "missing preimage of hash {}", h),
             Error::MissingSig(ref pk) => write!(f, "missing signature for key {:?}", pk),
             Error::RelativeLocktimeNotMet(n) => {
                 write!(f, "required relative locktime CSV of {} blocks, not met", n)
@@ -536,9 +525,7 @@ impl fmt::Display for Error {
                 write!(f, "Pubkey error: {} under {} scriptcontext", pk, ctx)
             }
             Error::MultiATooManyKeys(k) => write!(f, "MultiA too many keys {}", k),
-            Error::TaprootSpendInfoUnavialable => write!(f, "Taproot Spend Info not computed."),
             Error::TrNoScriptCode => write!(f, "No script code for Tr descriptors"),
-            Error::TrNoExplicitScript => write!(f, "No script code for Tr descriptors"),
             Error::MultipathDescLenMismatch => write!(f, "At least two BIP389 key expressions in the descriptor contain tuples of derivation indexes of different lengths"),
             Error::Conversion(ref e) => e.fmt(f),
             Error::UnsupportedAddressForPegin => write!(f, "Cannot create the address from the pegin descriptor, the federation descriptor is of an unsuppported type"),
@@ -561,13 +548,11 @@ impl error::Error for Error {
             | UnexpectedStart
             | Unexpected(_)
             | MultiColon(_)
-            | MultiAt(_)
             | AtOutsideOr(_)
             | LikelyFalse
             | UnknownWrapper(_)
             | NonTopLevel(_)
             | Trailing(_)
-            | MissingHash(_)
             | MissingSig(_)
             | RelativeLocktimeNotMet(_)
             | AbsoluteLocktimeNotMet(_)
@@ -579,10 +564,8 @@ impl error::Error for Error {
             | NonStandardBareScript
             | ImpossibleSatisfaction
             | BareDescriptorAddr
-            | TaprootSpendInfoUnavialable
             | TrNoScriptCode
-            | UnsupportedAddressForPegin
-            | TrNoExplicitScript => None,
+            | UnsupportedAddressForPegin => None,
             MultipathDescLenMismatch => None,
             BtcError(e) => Some(e),
             CovError(e) => Some(e),

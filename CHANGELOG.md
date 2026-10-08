@@ -1,3 +1,7 @@
+# Unreleased
+
+- Remove the unused `Error::MultiAt`, `Error::MissingHash`, `Error::TaprootSpendInfoUnavialable` and `Error::TrNoExplicitScript` variants.
+
 # 0.5.0 - Sep 20, 2026
 
 - Update rust-elements to 0.27.0 and simplicity-lang to 0.9.0.
