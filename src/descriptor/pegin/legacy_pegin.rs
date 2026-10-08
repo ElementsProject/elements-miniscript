@@ -329,7 +329,7 @@ impl<Pk: MiniscriptKey> fmt::Display for LegacyPegin<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use fmt::Write;
         let mut wrapped_f = checksum::Formatter::new(f);
-        write!(wrapped_f, "legacy_pegin({},{})", self.ms, self.desc)?;
+        write!(wrapped_f, "legacy_pegin({},{:#})", self.ms, self.desc)?;
         wrapped_f.write_checksum_if_not_alt()
     }
 }
@@ -564,6 +564,13 @@ mod tests {
             Descriptor::from_str(&format!("elwpkh({user})")).unwrap(),
         );
         assert_eq!(pegin, expected);
+
+        let s = pegin.to_string();
+        assert_eq!(s.matches('#').count(), 1, "{}", s);
+        assert_eq!(
+            LegacyPegin::<bitcoin::PublicKey>::from_str(&s).unwrap(),
+            pegin
+        );
 
         let invalid = format!("legacy_pegin(multi(1,f{fed_key}),elwpkh({user}))");
         assert!(matches!(

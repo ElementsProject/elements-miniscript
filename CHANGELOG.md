@@ -12,7 +12,7 @@
 - `eltr` accepts a `musig(...)` internal key for key types that parse `musig(...)` text, such as `String`.
 - `ct()` descriptors accept `eltr` with script leaves that contain no extension fragments.
 - Miniscript and policy strings accept a trailing descriptor checksum, which is verified. The text after the last `#` is read as the checksum, so a key containing `#` is only accepted when a valid checksum follows.
-- `pegin()` and `legacy_pegin()` descriptors can be parsed from strings. A successful parse does not check the restrictions that pegin spending places on the descriptor. Unsupported forms, such as an `eltr` Elements descriptor, still parse and can panic in the unchanged Bitcoin-side methods, including `bitcoin_address`, `bitcoin_witness_script` and `get_bitcoin_satisfaction`.
+- `pegin()` and `legacy_pegin()` descriptors can be parsed from strings. `LegacyPegin` displays its inner descriptor without the inner checksum. A successful parse does not check the restrictions that pegin spending places on the descriptor. Unsupported forms, such as an `eltr` Elements descriptor, still parse and can panic in the unchanged Bitcoin-side methods, including `bitcoin_address`, `bitcoin_witness_script` and `get_bitcoin_satisfaction`.
 
 # 0.5.0 - Sep 20, 2026
 
