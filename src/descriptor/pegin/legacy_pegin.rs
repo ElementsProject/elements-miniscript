@@ -32,7 +32,6 @@ use bitcoin::blockdata::{opcodes, script};
 use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
 use bitcoin::{self, hashes, ScriptBuf as BtcScript};
 use bitcoin_miniscript::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
-use bitcoin_miniscript::TranslatePk as BtcTranslatePk;
 use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{self, verify_checksum};
@@ -42,7 +41,7 @@ use crate::policy::{semantic, Liftable};
 use crate::util::varint_len;
 use crate::{
     hash256, tweak_key, BtcError, BtcFromTree, BtcLiftable, BtcMiniscript, BtcPolicy, BtcSatisfier,
-    BtcSegwitv0, BtcTerminal, BtcTree, Descriptor, Error, MiniscriptKey, ToPublicKey,
+    BtcSegwitv0, BtcTerminal, Descriptor, Error, MiniscriptKey, ToPublicKey,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -167,7 +166,12 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
     fn from_ms_and_desc(
         desc: Descriptor<Pk, CovenantExt<CovExtArgs>>,
         ms: BtcMiniscript<LegacyPeginKey, BtcSegwitv0>,
-    ) -> Self {
+    ) -> Result<Self, Error> {
+        let invalid = || {
+            Error::BadDescriptor(
+                "legacy_pegin miniscript must be or_d(multi,and_v(v:older,multi))".to_string(),
+            )
+        };
         // Miniscript is a bunch of Arc's. So, cloning is not as bad.
         // Can we avoid this without NLL?
         let ms_clone = ms.clone();
@@ -175,31 +179,31 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
             if let (BtcTerminal::Multi(t), right) = (&a.node, &b.node) {
                 (t.clone(), right)
             } else {
-                unreachable!("Only valid pegin miniscripts");
+                return Err(invalid());
             }
         } else {
-            unreachable!("Only valid pegin miniscripts");
+            return Err(invalid());
         };
         let (timelock, emer) = if let BtcTerminal::AndV(l, r) = right {
             if let (BtcTerminal::Verify(csv), BtcTerminal::Multi(t)) = (&l.node, &r.node) {
                 if let BtcTerminal::Older(timelock) = csv.node {
                     (timelock, t.clone())
                 } else {
-                    unreachable!("Only valid pegin miniscripts");
+                    return Err(invalid());
                 }
             } else {
-                unreachable!("Only valid pegin miniscripts");
+                return Err(invalid());
             }
         } else {
-            unreachable!("Only valid pegin miniscripts");
+            return Err(invalid());
         };
-        Self {
+        Ok(Self {
             fed,
             emer,
             timelock,
             desc,
             ms,
-        }
+        })
     }
 
     fn explicit_script<C: secp256k1_zkp::Verification>(
@@ -237,7 +241,10 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         };
         struct TranslateUnTweak;
 
-        impl bitcoin_miniscript::Translator<LegacyPeginKey, bitcoin::PublicKey, ()> for TranslateUnTweak {
+        impl bitcoin_miniscript::Translator<LegacyPeginKey> for TranslateUnTweak {
+            type TargetPk = bitcoin::PublicKey;
+            type Error = ();
+
             fn pk(&mut self, pk: &LegacyPeginKey) -> Result<bitcoin::PublicKey, ()> {
                 Ok(*pk.as_untweaked())
             }
@@ -322,7 +329,7 @@ impl<Pk: MiniscriptKey> fmt::Display for LegacyPegin<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use fmt::Write;
         let mut wrapped_f = checksum::Formatter::new(f);
-        write!(wrapped_f, "legacy_pegin({},{})", self.ms, self.desc)?;
+        write!(wrapped_f, "legacy_pegin({},{:#})", self.ms, self.desc)?;
         wrapped_f.write_checksum_if_not_alt()
     }
 }
@@ -342,21 +349,20 @@ impl<Pk: MiniscriptKey> BtcLiftable<LegacyPeginKey> for LegacyPegin<Pk> {
 
 impl_from_tree!(
     LegacyPegin<Pk>,
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
-        if top.name == "legacy_pegin" && top.args.len() == 2 {
-            // a roundtrip hack to use FromTree from bitcoin::Miniscript from
-            // expression::Tree in elements.
-            let ms_str = top.args[0].to_string();
-            let ms_expr = BtcTree::from_str(&ms_str)?;
-            //
-            let ms = BtcMiniscript::<LegacyPeginKey, BtcSegwitv0>::from_tree(&ms_expr);
-            let desc = Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(&top.args[1]);
-            Ok(LegacyPegin::from_ms_and_desc(desc?, ms?))
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
+        if let ("legacy_pegin", Some(btc), Some(elem), None) =
+            (top.name(), args.next(), args.next(), args.next())
+        {
+            let ms = BtcMiniscript::<LegacyPeginKey, BtcSegwitv0>::from_tree(btc);
+            let desc = Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(elem);
+            LegacyPegin::from_ms_and_desc(desc?, ms?)
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing legacy_pegin descriptor",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             )))
         }
     }
@@ -368,7 +374,7 @@ impl_from_str!(
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
-        Self::from_tree(&top)
+        Self::from_tree(top.root())
     }
 );
 
@@ -530,5 +536,73 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
     /// to obtain the characteristics of the elements descriptor.
     pub fn into_user_descriptor(self) -> Descriptor<Pk, CovenantExt<CovExtArgs>> {
         self.desc
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::*;
+
+    #[test]
+    fn legacy_pegin_from_str() {
+        let fed_key = "03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4";
+        let emer_key = "0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+        let user = "0321da398ca2ddc09be89caa26e6730ae84751b6ea3a1ca46aa365bb5e1c3d9620";
+
+        let pegin = LegacyPegin::<bitcoin::PublicKey>::from_str(&format!(
+            "legacy_pegin(or_d(multi(1,f{fed_key}),and_v(v:older(4032),multi(1,u{emer_key}))),elwpkh({user}))"
+        ))
+        .unwrap();
+        let fed = LegacyPeginKey::Functionary(bitcoin::PublicKey::from_str(fed_key).unwrap());
+        let emer = LegacyPeginKey::NonFunctionary(bitcoin::PublicKey::from_str(emer_key).unwrap());
+        let expected = LegacyPegin::new(
+            bitcoin_miniscript::Threshold::new(1, vec![fed]).unwrap(),
+            bitcoin_miniscript::Threshold::new(1, vec![emer]).unwrap(),
+            bitcoin_miniscript::RelLockTime::from_consensus(4032).unwrap(),
+            Descriptor::from_str(&format!("elwpkh({user})")).unwrap(),
+        );
+        assert_eq!(pegin, expected);
+
+        let s = pegin.to_string();
+        assert_eq!(s.matches('#').count(), 1, "{}", s);
+        assert_eq!(
+            LegacyPegin::<bitcoin::PublicKey>::from_str(&s).unwrap(),
+            pegin
+        );
+
+        let invalid = format!("legacy_pegin(multi(1,f{fed_key}),elwpkh({user}))");
+        assert!(matches!(
+            LegacyPegin::<bitcoin::PublicKey>::from_str(&invalid),
+            Err(Error::BadDescriptor(_))
+        ));
+    }
+
+    #[test]
+    fn legacy_pegin_miniscript_shape() {
+        let fed = "f03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4";
+        let emer = "u0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
+        let desc = Descriptor::<bitcoin::PublicKey, CovenantExt<CovExtArgs>>::from_str(
+            "elwpkh(0321da398ca2ddc09be89caa26e6730ae84751b6ea3a1ca46aa365bb5e1c3d9620)",
+        )
+        .unwrap();
+        let valid = format!("or_d(multi(1,{fed}),and_v(v:older(4032),multi(1,{emer})))");
+        let ms = BtcMiniscript::<LegacyPeginKey, BtcSegwitv0>::from_str(&valid).unwrap();
+        assert!(LegacyPegin::from_ms_and_desc(desc.clone(), ms).is_ok());
+
+        for text in [
+            format!("multi(1,{fed})"),
+            format!("or_d(pk({fed}),and_v(v:older(4032),multi(1,{emer})))"),
+            format!("or_d(multi(1,{fed}),and_v(v:after(4032),multi(1,{emer})))"),
+            format!("or_d(multi(1,{fed}),and_v(v:older(4032),pk({emer})))"),
+            format!("or_d(multi(1,{fed}),pk({emer}))"),
+        ] {
+            let ms = BtcMiniscript::<LegacyPeginKey, BtcSegwitv0>::from_str(&text).unwrap();
+            assert!(matches!(
+                LegacyPegin::from_ms_and_desc(desc.clone(), ms),
+                Err(Error::BadDescriptor(_))
+            ));
+        }
     }
 }

@@ -33,7 +33,7 @@ use crate::expression::{self, FromTree};
 use crate::extensions::{CovExtArgs, CovenantExt};
 use crate::policy::{semantic, Liftable};
 use crate::{
-    tweak_key, BtcDescriptor, BtcError, BtcFromTree, BtcLiftable, BtcPolicy, BtcSatisfier, BtcTree,
+    tweak_key, BtcDescriptor, BtcError, BtcFromTree, BtcLiftable, BtcPolicy, BtcSatisfier,
     Descriptor, DescriptorPublicKey, Error, MiniscriptKey, ToPublicKey,
 };
 
@@ -104,24 +104,24 @@ impl<Pk: MiniscriptKey> BtcLiftable<PublicKey> for Pegin<Pk> {
 
 impl_from_tree!(
     Pegin<Pk>,
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
-        if top.name == "pegin" && top.args.len() == 2 {
-            // a roundtrip hack to use FromTree from bitcoin::Miniscript from
-            // expression::Tree in elements.
-            let ms_str = top.args[0].to_string();
-            let ms_expr = BtcTree::from_str(&ms_str)?;
-            //
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
+        if let ("pegin", Some(fed), Some(elem), None) =
+            (top.name(), args.next(), args.next(), args.next())
+        {
             // TODO: Confirm with Andrew about the descriptor type for dynafed
             // Assuming sh(wsh) for now.
 
-            let fed_desc = BtcDescriptor::<PublicKey>::from_tree(&ms_expr)?;
-            let elem_desc = Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(&top.args[1])?;
+            let fed_desc = BtcDescriptor::<PublicKey>::from_tree(fed)?;
+            let elem_desc =
+                Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(elem)?;
             Ok(Pegin::new(fed_desc, elem_desc))
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing legacy_pegin descriptor",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             )))
         }
     }
@@ -133,7 +133,7 @@ impl_from_str!(
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
-        Self::from_tree(&top)
+        Self::from_tree(top.root())
     }
 );
 
@@ -252,7 +252,9 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
             .into_bytes();
         let mut t = TranslateTweak(&claim_script[..], secp);
 
-        let tweaked_desc = bitcoin_miniscript::TranslatePk::translate_pk(&self.fed_desc, &mut t)
+        let tweaked_desc = self
+            .fed_desc
+            .translate_pk(&mut t)
             .expect("Tweaking must succeed");
 
         let res = tweaked_desc.get_satisfaction(satisfier)?;
@@ -303,7 +305,8 @@ fn bitcoin_witness_script<C: secp256k1_zkp::Verification, Pk: ToPublicKey>(
 ) -> Result<BtcScript, Error> {
     let mut t = TranslateTweak(claim_script, secp);
 
-    let tweaked_desc = bitcoin_miniscript::TranslatePk::translate_pk(fed_desc, &mut t)
+    let tweaked_desc = fed_desc
+        .translate_pk(&mut t)
         .expect("Tweaking must succeed");
     Ok(tweaked_desc.explicit_script()?)
 }
@@ -313,12 +316,14 @@ struct TranslateTweak<'a, 'b, C: secp256k1_zkp::Verification>(
     &'b secp256k1_zkp::Secp256k1<C>,
 );
 
-impl<'a, 'b, Pk, C> bitcoin_miniscript::Translator<Pk, bitcoin::PublicKey, ()>
-    for TranslateTweak<'a, 'b, C>
+impl<'a, 'b, Pk, C> bitcoin_miniscript::Translator<Pk> for TranslateTweak<'a, 'b, C>
 where
     Pk: MiniscriptKey + ToPublicKey,
     C: secp256k1_zkp::Verification,
 {
+    type TargetPk = bitcoin::PublicKey;
+    type Error = ();
+
     fn pk(&mut self, pk: &Pk) -> Result<bitcoin::PublicKey, ()> {
         Ok(tweak_key(&pk.to_public_key(), self.1, self.0))
     }
@@ -342,7 +347,7 @@ mod tests {
         type Segwitv0Script =
             bitcoin_miniscript::Miniscript<bitcoin::PublicKey, bitcoin_miniscript::Segwitv0>;
 
-        let m = Segwitv0Script::parse(&s).unwrap();
+        let m = Segwitv0Script::decode(&s).unwrap();
         assert_eq!(m.encode(), s);
         BtcDescriptor::<_>::new_wsh(m).unwrap()
     }
@@ -385,6 +390,10 @@ mod tests {
         let pegin = Pegin::new(d.clone(), elem_desc);
 
         assert_eq!(pegin.to_string(), "pegin(wsh(or_d(multi(11,020e0338c96a8870479f2396c373cc7696ba124e8635d41b0ea581112b67817261,02675333a4e4b8fb51d9d4e22fa5a8eaced3fdac8a8cbf9be8c030f75712e6af99,02896807d54bc55c24981f24a453c60ad3e8993d693732288068a23df3d9f50d48,029e51a5ef5db3137051de8323b001749932f2ff0d34c82e96a2c2461de96ae56c,02a4e1a9638d46923272c266631d94d36bdb03a64ee0e14c7518e49d2f29bc4010,031c41fdbcebe17bec8d49816e00ca1b5ac34766b91c9f2ac37d39c63e5e008afb,03079e252e85abffd3c401a69b087e590a9b86f33f574f08129ccbd3521ecf516b,03111cf405b627e22135b3b3733a4a34aa5723fb0f58379a16d32861bf576b0ec2,0318f331b3e5d38156da6633b31929c5b220349859cc9ca3d33fb4e68aa0840174,03230dae6b4ac93480aeab26d000841298e3b8f6157028e47b0897c1e025165de1,035abff4281ff00660f99ab27bb53e6b33689c2cd8dcd364bc3c90ca5aea0d71a6,03bd45cddfacf2083b14310ae4a84e25de61e451637346325222747b157446614c,03cc297026b06c71cbfa52089149157b5ff23de027ac5ab781800a578192d17546,03d3bde5d63bdb3a6379b461be64dad45eabff42f758543a9645afd42f6d424828,03ed1e8d5109c9ed66f7941bc53cc71137baa76d50d274bda8d5e8ffbd6e61fe9a),and_v(v:older(4032),multi(2,03aab896d53a8e7d6433137bbba940f9c521e085dd07e60994579b64a6d992cf79,0291b7d0b1b692f8f524516ed950872e5da10fb1b808b5a526dedc6fed1cf29807,0386aa9372fbab374593466bc5451dc59954e90787f08060964d95c87ef34ca5bb)))),elwpkh(0321da398ca2ddc09be89caa26e6730ae84751b6ea3a1ca46aa365bb5e1c3d9620))#qp4fan9q");
+        assert_eq!(
+            pegin.to_string().parse::<Pegin<PublicKey>>().unwrap(),
+            pegin
+        );
     }
 
     #[test]

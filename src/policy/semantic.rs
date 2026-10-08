@@ -6,7 +6,6 @@
 use std::str::FromStr;
 use std::{fmt, str};
 
-use bitcoin_miniscript::expression::check_valid_chars;
 use elements::{LockTime, Sequence};
 
 use super::concrete::PolicyError;
@@ -287,10 +286,8 @@ impl_from_str!(
     Policy<Pk>,
     type Err = Error;,
     fn from_str(s: &str) -> Result<Policy<Pk>, Error> {
-        check_valid_chars(s)?;
-
         let tree = expression::Tree::from_str(s)?;
-        expression::FromTree::from_tree(&tree)
+        expression::FromTree::from_tree(tree.root())
     }
 );
 
@@ -298,59 +295,63 @@ serde_string_impl_pk!(Policy, "a miniscript semantic policy");
 
 impl_from_tree!(
     Policy<Pk>,
-    fn from_tree(top: &expression::Tree) -> Result<Policy<Pk>, Error> {
-        match (top.name, top.args.len()) {
-            ("UNSATISFIABLE", 0) => Ok(Policy::Unsatisfiable),
-            ("TRIVIAL", 0) => Ok(Policy::Trivial),
-            ("pk", 1) => expression::terminal(&top.args[0], |pk| Pk::from_str(pk).map(Policy::Key)),
-            ("after", 1) => expression::terminal(&top.args[0], |x| {
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Policy<Pk>, Error> {
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
+        match (top.name(), top.n_children(), top.first_child()) {
+            ("UNSATISFIABLE", 0, _) => Ok(Policy::Unsatisfiable),
+            ("TRIVIAL", 0, _) => Ok(Policy::Trivial),
+            ("pk", 1, Some(child)) => {
+                expression::terminal(child, |pk| Pk::from_str(pk).map(Policy::Key))
+            }
+            ("after", 1, Some(child)) => expression::terminal(child, |x| {
                 expression::parse_num::<u32>(x).map(|x| Policy::after(x))
             }),
-            ("older", 1) => expression::terminal(&top.args[0], |x| {
+            ("older", 1, Some(child)) => expression::terminal(child, |x| {
                 expression::parse_num::<u32>(x).map(|x| Policy::older(x))
             }),
-            ("sha256", 1) => expression::terminal(&top.args[0], |x| {
-                Pk::Sha256::from_str(x).map(Policy::Sha256)
-            }),
-            ("hash256", 1) => expression::terminal(&top.args[0], |x| {
-                Pk::Hash256::from_str(x).map(Policy::Hash256)
-            }),
-            ("ripemd160", 1) => expression::terminal(&top.args[0], |x| {
-                Pk::Ripemd160::from_str(x).map(Policy::Ripemd160)
-            }),
-            ("hash160", 1) => expression::terminal(&top.args[0], |x| {
-                Pk::Hash160::from_str(x).map(Policy::Hash160)
-            }),
-            ("and", nsubs) => {
+            ("sha256", 1, Some(child)) => {
+                expression::terminal(child, |x| Pk::Sha256::from_str(x).map(Policy::Sha256))
+            }
+            ("hash256", 1, Some(child)) => {
+                expression::terminal(child, |x| Pk::Hash256::from_str(x).map(Policy::Hash256))
+            }
+            ("ripemd160", 1, Some(child)) => {
+                expression::terminal(child, |x| Pk::Ripemd160::from_str(x).map(Policy::Ripemd160))
+            }
+            ("hash160", 1, Some(child)) => {
+                expression::terminal(child, |x| Pk::Hash160::from_str(x).map(Policy::Hash160))
+            }
+            ("and", nsubs, _) => {
                 if nsubs < 2 {
                     return Err(Error::PolicyError(PolicyError::InsufficientArgsforAnd));
                 }
                 let mut subs = Vec::with_capacity(nsubs);
-                for arg in &top.args {
+                for arg in args {
                     subs.push(Policy::from_tree(arg)?);
                 }
                 Ok(Policy::Threshold(nsubs, subs))
             }
-            ("or", nsubs) => {
+            ("or", nsubs, _) => {
                 if nsubs < 2 {
                     return Err(Error::PolicyError(PolicyError::InsufficientArgsforOr));
                 }
                 let mut subs = Vec::with_capacity(nsubs);
-                for arg in &top.args {
+                for arg in args {
                     subs.push(Policy::from_tree(arg)?);
                 }
                 Ok(Policy::Threshold(1, subs))
             }
-            ("thresh", nsubs) => {
-                if nsubs == 0 || nsubs == 1 {
-                    // thresh() and thresh(k) are err
-                    return Err(errstr("thresh without args"));
-                }
-                if !top.args[0].args.is_empty() {
-                    return Err(errstr(top.args[0].args[0].name));
+            ("thresh", nsubs, _) => {
+                let k = match (nsubs, args.next()) {
+                    (2.., Some(k)) => k,
+                    _ => return Err(errstr("thresh without args")),
+                };
+                if let Some(arg) = k.first_child() {
+                    return Err(errstr(arg.name()));
                 }
 
-                let thresh = expression::parse_num::<u32>(top.args[0].name)?;
+                let thresh = expression::parse_num::<u32>(k.name())?;
 
                 // thresh(1) and thresh(n) are disallowed in semantic policies
                 if thresh <= 1 || thresh >= (nsubs as u32 - 1) {
@@ -359,16 +360,16 @@ impl_from_tree!(
                     ));
                 }
                 if thresh >= (nsubs as u32) {
-                    return Err(errstr(top.args[0].name));
+                    return Err(errstr(k.name()));
                 }
 
-                let mut subs = Vec::with_capacity(top.args.len() - 1);
-                for arg in &top.args[1..] {
+                let mut subs = Vec::with_capacity(nsubs - 1);
+                for arg in args {
                     subs.push(Policy::from_tree(arg)?);
                 }
                 Ok(Policy::Threshold(thresh as usize, subs))
             }
-            _ => Err(errstr(top.name)),
+            _ => Err(errstr(top.name())),
         }
     }
 );

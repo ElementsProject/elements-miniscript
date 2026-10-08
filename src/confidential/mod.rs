@@ -222,34 +222,38 @@ impl_from_str!(
     type Err = Error;,
     fn from_str(s: &str) -> Result<Descriptor<Pk, T>, Error> {
         let desc_str = verify_checksum(s)?;
-        let top = expression::Tree::from_str(desc_str)?;
+        let tree = expression::Tree::from_str(desc_str)?;
+        let top = tree.root();
 
-        if top.name != "ct" {
+        if top.name() != "ct" {
             return Err(Error::BadDescriptor(String::from(
                 "Not a CT Descriptor",
             )));
         }
-        if top.args.len() != 2 {
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
+        let (Some(keyexpr), Some(desc), None) = (args.next(), args.next(), args.next()) else {
             return Err(Error::BadDescriptor(
-                format!("CT descriptor had {} arguments rather than 2", top.args.len())
+                format!("CT descriptor had {} arguments rather than 2", top.n_children())
             ));
-        }
+        };
 
-        let keyexpr = &top.args[0];
+        expression::verify_round_parens(keyexpr)?;
+        let mut keyargs = keyexpr.children();
         Ok(Descriptor {
-            key: match (keyexpr.name, keyexpr.args.len()) {
-                ("elip151", 0) => {
-                    let d = crate::Descriptor::<DescriptorPublicKey>::from_tree(&top.args[1])?;
+            key: match (keyexpr.name(), keyargs.next(), keyargs.next()) {
+                ("elip151", None, None) => {
+                    let d = crate::Descriptor::<DescriptorPublicKey>::from_tree(desc)?;
                     Key::from_elip151(&d)?
                 }
-                ("slip77", 1) => Key::Slip77(expression::terminal(&keyexpr.args[0], slip77::MasterBlindingKey::from_str)?),
-                ("slip77", _) => return Err(Error::BadDescriptor(
+                ("slip77", Some(key), None) => Key::Slip77(expression::terminal(key, slip77::MasterBlindingKey::from_str)?),
+                ("slip77", _, _) => return Err(Error::BadDescriptor(
                     "slip77() must have exactly one argument".to_owned()
                 )),
                 _ => expression::terminal(keyexpr, |s: &str| DescriptorSecretKey::from_str_inner(s, true)).map(Key::View)
                 .or_else(|_| expression::terminal(keyexpr, DescriptorPublicKey::from_str).map(Key::Bare))?,
             },
-            descriptor: crate::Descriptor::from_tree(&top.args[1])?,
+            descriptor: crate::Descriptor::from_tree(desc)?,
         })
     }
 );
@@ -586,10 +590,10 @@ mod tests {
             .unwrap(),
         };
 
-        assert_eq!(
+        assert!(matches!(
             desc.address(&secp, params).unwrap_err(),
             Error::Conversion(ConversionError::HardenedChild)
-        );
+        ));
     }
 
     // Same case, reached through `at_derivation_index` on a hardened wildcard blinding
@@ -605,10 +609,10 @@ mod tests {
         let desc = Descriptor::<DescriptorPublicKey, NoExt>::from_str(&desc_str).unwrap();
         let definite_desc = desc.at_derivation_index(1).unwrap();
 
-        assert_eq!(
+        assert!(matches!(
             definite_desc.address(&secp, params).unwrap_err(),
             Error::Conversion(ConversionError::HardenedChild)
-        );
+        ));
     }
 
     #[test]
@@ -638,10 +642,10 @@ mod tests {
         // but we can't enforce this with the Descriptor generic.
         let desc_view_str = format!("ct({}/*,elwpkh({}))#ls6mx2ac", xprv, xpub);
         let desc_view = Descriptor::<DefiniteDescriptorKey>::from_str(&desc_view_str).unwrap();
-        assert_eq!(desc_view.address(&secp, params).unwrap_err(), Error::Unexpected("wildcard blinding key".into()));
+        assert!(matches!(desc_view.address(&secp, params).unwrap_err(), Error::Unexpected(e) if e == "wildcard blinding key"));
 
         let desc_bare_str = format!("ct({}/*,elwpkh({}))#czkz0hwn", xpub, xpub);
         let desc_bare = Descriptor::<DefiniteDescriptorKey>::from_str(&desc_bare_str).unwrap();
-        assert_eq!(desc_bare.address(&secp, params).unwrap_err(), Error::Unexpected("wildcard blinding key".into()));
+        assert!(matches!(desc_bare.address(&secp, params).unwrap_err(), Error::Unexpected(e) if e == "wildcard blinding key"));
     }
 }

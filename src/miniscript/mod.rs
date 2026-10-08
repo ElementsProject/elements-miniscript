@@ -416,7 +416,19 @@ impl_block_str!(
     {
         // This checks for invalid ASCII chars
         let top = expression::Tree::from_str(s)?;
-        let ms: Miniscript<Pk, Ctx, Ext> = expression::FromTree::from_tree(&top)?;
+        Miniscript::from_tree_ext(top.root(), ext)
+    }
+);
+
+impl_block_str!(
+    ;Ctx; ScriptContext,
+    Miniscript<Pk, Ctx, Ext>,
+    => Ext ; Extension,
+    /// Parse an expression tree node into a top-level Miniscript, applying the
+    /// same checks as [`Miniscript::from_str_ext`].
+    pub(crate) fn from_tree_ext(top: expression::TreeIterItem<'_>, ext: &ExtParams,) -> Result<Miniscript<Pk, Ctx, Ext>, Error>
+    {
+        let ms: Miniscript<Pk, Ctx, Ext> = expression::FromTree::from_tree(top)?;
         ms.ext_check(ext)?;
 
         if ms.ty.corr.base != types::Base::B {
@@ -476,7 +488,7 @@ impl_from_tree!(
     ;Ctx; ScriptContext,
     Arc<Miniscript<Pk, Ctx, Ext>>,
     => Ext ; Extension,
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Arc<Miniscript<Pk, Ctx, Ext>>, Error> {
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Arc<Miniscript<Pk, Ctx, Ext>>, Error> {
         Ok(Arc::new(expression::FromTree::from_tree(top)?))
     }
 );
@@ -487,14 +499,8 @@ impl_from_tree!(
     => Ext ; Extension,
     /// Parse an expression tree into a Miniscript. As a general rule, this
     /// should not be called directly; rather go through the descriptor API.
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Miniscript<Pk, Ctx, Ext>, Error> {
-        let inner: Terminal<Pk, Ctx, Ext> = expression::FromTree::from_tree(top)?;
-        Ok(Miniscript {
-            ty: Type::type_check(&inner)?,
-            ext: ExtData::type_check(&inner)?,
-            node: inner,
-            phantom: PhantomData,
-        })
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Miniscript<Pk, Ctx, Ext>, Error> {
+        Miniscript::from_ast(Terminal::from_tree_with_name(top.name(), top)?)
     }
 );
 
@@ -1077,7 +1083,7 @@ mod tests {
         assert!(Segwitv0Script::from_str_insane("🌏")
             .unwrap_err()
             .to_string()
-            .contains("unprintable character"));
+            .contains("invalid character"));
     }
 
     #[test]

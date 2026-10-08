@@ -508,7 +508,7 @@ impl_from_tree!(
     ;Ctx; ScriptContext,
     Arc<Terminal<Pk, Ctx, Ext>>,
     => Ext ; Extension,
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Arc<Terminal<Pk, Ctx, Ext>>, Error> {
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Arc<Terminal<Pk, Ctx, Ext>>, Error> {
         Ok(Arc::new(expression::FromTree::from_tree(top)?))
     }
 );
@@ -517,11 +517,24 @@ impl_from_tree!(
     ;Ctx; ScriptContext,
     Terminal<Pk, Ctx, Ext>,
     => Ext ; Extension,
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Terminal<Pk, Ctx, Ext>, Error> {
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Terminal<Pk, Ctx, Ext>, Error> {
+        Terminal::from_tree_with_name(top.name(), top)
+    }
+);
+
+impl_block_str!(
+    ;Ctx; ScriptContext,
+    Terminal<Pk, Ctx, Ext>,
+    => Ext ; Extension,
+    /// Parse an expression tree node into a fragment, using `node_name` in place
+    /// of the node's own name (e.g. with a descriptor prefix removed).
+    pub(crate) fn from_tree_with_name(node_name: &str, top: expression::TreeIterItem<'_>,) -> Result<Terminal<Pk, Ctx, Ext>, Error> {
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
         let mut aliased_wrap;
         let frag_name;
         let frag_wrap;
-        let mut name_split = top.name.split(':');
+        let mut name_split = node_name.split(':');
         match (name_split.next(), name_split.next(), name_split.next()) {
             (None, _, _) => {
                 frag_name = "";
@@ -541,7 +554,7 @@ impl_from_tree!(
             }
             (Some(wrap), Some(name), None) => {
                 if wrap.is_empty() {
-                    return Err(Error::Unexpected(top.name.to_owned()));
+                    return Err(Error::Unexpected(node_name.to_owned()));
                 }
                 if name == "pk" {
                     frag_name = "pk_k";
@@ -559,58 +572,64 @@ impl_from_tree!(
                 }
             }
             (Some(_), Some(_), Some(_)) => {
-                return Err(Error::MultiColon(top.name.to_owned()));
+                return Err(Error::MultiColon(node_name.to_owned()));
             }
         }
-        let mut unwrapped = match (frag_name, top.args.len()) {
-            ("expr_raw_pkh", 1) => expression::terminal(&top.args[0], |x| {
+        let mut unwrapped = match (frag_name, top.n_children(), top.first_child()) {
+            ("expr_raw_pkh", 1, Some(child)) => expression::terminal(child, |x| {
                 hash160::Hash::from_str(x).map(Terminal::RawPkH)
             }),
-            ("pk_k", 1) => {
-                expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkK))
+            ("pk_k", 1, Some(child)) => {
+                expression::terminal(child, |x| Pk::from_str(x).map(Terminal::PkK))
             }
-            ("pk_h", 1) => expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkH)),
-            ("after", 1) => expression::terminal(&top.args[0], |x| {
+            ("pk_h", 1, Some(child)) => expression::terminal(child, |x| Pk::from_str(x).map(Terminal::PkH)),
+            ("after", 1, Some(child)) => expression::terminal(child, |x| {
                 expression::parse_num::<u32>(x).map(|x| Terminal::After(AbsLockTime::from_consensus(x)))
             }),
-            ("older", 1) => expression::terminal(&top.args[0], |x| {
+            ("older", 1, Some(child)) => expression::terminal(child, |x| {
                 expression::parse_num::<u32>(x).map(|x| Terminal::Older(Sequence::from_consensus(x)))
             }),
-            ("sha256", 1) => expression::terminal(&top.args[0], |x| {
+            ("sha256", 1, Some(child)) => expression::terminal(child, |x| {
                 Pk::Sha256::from_str(x).map(Terminal::Sha256)
             }),
-            ("hash256", 1) => expression::terminal(&top.args[0], |x| {
+            ("hash256", 1, Some(child)) => expression::terminal(child, |x| {
                 Pk::Hash256::from_str(x).map(Terminal::Hash256)
             }),
-            ("ripemd160", 1) => expression::terminal(&top.args[0], |x| {
+            ("ripemd160", 1, Some(child)) => expression::terminal(child, |x| {
                 Pk::Ripemd160::from_str(x).map(Terminal::Ripemd160)
             }),
-            ("hash160", 1) => expression::terminal(&top.args[0], |x| {
+            ("hash160", 1, Some(child)) => expression::terminal(child, |x| {
                 Pk::Hash160::from_str(x).map(Terminal::Hash160)
             }),
-            ("1", 0) => Ok(Terminal::True),
-            ("0", 0) => Ok(Terminal::False),
-            ("and_v", 2) => expression::binary(top, Terminal::AndV),
-            ("and_b", 2) => expression::binary(top, Terminal::AndB),
-            ("and_n", 2) => Ok(Terminal::AndOr(
-                expression::FromTree::from_tree(&top.args[0])?,
-                expression::FromTree::from_tree(&top.args[1])?,
-                Arc::new(Miniscript::from_ast(Terminal::False)?),
-            )),
-            ("andor", 3) => Ok(Terminal::AndOr(
-                expression::FromTree::from_tree(&top.args[0])?,
-                expression::FromTree::from_tree(&top.args[1])?,
-                expression::FromTree::from_tree(&top.args[2])?,
-            )),
-            ("or_b", 2) => expression::binary(top, Terminal::OrB),
-            ("or_d", 2) => expression::binary(top, Terminal::OrD),
-            ("or_c", 2) => expression::binary(top, Terminal::OrC),
-            ("or_i", 2) => expression::binary(top, Terminal::OrI),
-            ("thresh", n) => {
-                if n == 0 {
-                    return Err(errstr("no arguments given"));
-                }
-                let k = expression::terminal(&top.args[0], expression::parse_num::<u32>)? as usize;
+            ("1", 0, _) => Ok(Terminal::True),
+            ("0", 0, _) => Ok(Terminal::False),
+            ("and_v", 2, _) => expression::binary(top, Terminal::AndV),
+            ("and_b", 2, _) => expression::binary(top, Terminal::AndB),
+            ("and_n", 2, _) => {
+                let (left, right) = top.verify_binary("and_n")?;
+                Ok(Terminal::AndOr(
+                    expression::FromTree::from_tree(left)?,
+                    expression::FromTree::from_tree(right)?,
+                    Arc::new(Miniscript::from_ast(Terminal::False)?),
+                ))
+            }
+            ("andor", 3, _) => {
+                let (Some(a), Some(b), Some(c)) = (args.next(), args.next(), args.next()) else {
+                    return Err(errstr(node_name));
+                };
+                Ok(Terminal::AndOr(
+                    expression::FromTree::from_tree(a)?,
+                    expression::FromTree::from_tree(b)?,
+                    expression::FromTree::from_tree(c)?,
+                ))
+            }
+            ("or_b", 2, _) => expression::binary(top, Terminal::OrB),
+            ("or_d", 2, _) => expression::binary(top, Terminal::OrD),
+            ("or_c", 2, _) => expression::binary(top, Terminal::OrC),
+            ("or_i", 2, _) => expression::binary(top, Terminal::OrI),
+            ("thresh", n, _) => {
+                let threshold = args.next().ok_or_else(|| errstr("no arguments given"))?;
+                let k = expression::terminal(threshold, expression::parse_num::<u32>)? as usize;
                 if k > n - 1 {
                     return Err(errstr("higher threshold than there are subexpressions"));
                 }
@@ -618,26 +637,20 @@ impl_from_tree!(
                     return Err(errstr("empty thresholds not allowed in descriptors"));
                 }
 
-                let subs: Result<Vec<Arc<Miniscript<Pk, Ctx, Ext>>>, _> = top.args[1..]
-                    .iter()
-                    .map(expression::FromTree::from_tree)
-                    .collect();
+                let subs: Result<Vec<Arc<Miniscript<Pk, Ctx, Ext>>>, _> =
+                    args.map(expression::FromTree::from_tree).collect();
 
                 Ok(Terminal::Thresh(k, subs?))
             }
-            ("multi", n) | ("multi_a", n) => {
-                if n == 0 {
-                    return Err(errstr("no arguments given"));
-                }
-                let k = expression::terminal(&top.args[0], expression::parse_num::<u32>)? as usize;
+            ("multi", n, _) | ("multi_a", n, _) => {
+                let threshold = args.next().ok_or_else(|| errstr("no arguments given"))?;
+                let k = expression::terminal(threshold, expression::parse_num::<u32>)? as usize;
                 if k > n - 1 {
                     return Err(errstr("higher threshold than there were keys in multi"));
                 }
 
-                let pks: Result<Vec<Pk>, _> = top.args[1..]
-                    .iter()
-                    .map(|sub| expression::terminal(sub, Pk::from_str))
-                    .collect();
+                let pks: Result<Vec<Pk>, _> =
+                    args.map(|sub| expression::terminal(sub, Pk::from_str)).collect();
 
                 if frag_name == "multi" {
                     pks.map(|pks| Terminal::Multi(k, pks))
@@ -646,14 +659,16 @@ impl_from_tree!(
                     pks.map(|pks| Terminal::MultiA(k, pks))
                 }
             }
-            (name, _num_child) => {
-                // If nothing matches try to parse as extension
-                match Ext::from_name_tree(name, &top.args) {
+            (name, _num_child, _) => {
+                // If nothing matches try to parse as extension. Extensions are
+                // leaves, so the brackets of their whole subtree are checked here.
+                top.verify_no_curly_braces()?;
+                match Ext::from_name_tree(name, &args.collect::<Vec<_>>()) {
                     Ok(e) => Ok(Terminal::Ext(e)),
                     Err(..) => Err(Error::Unexpected(format!(
                         "{}({} args) while parsing Miniscript",
-                        top.name,
-                        top.args.len(),
+                        node_name,
+                        top.n_children(),
                     ))),
                 }
             }

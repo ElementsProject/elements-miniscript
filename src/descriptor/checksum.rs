@@ -8,7 +8,8 @@
 use core::fmt;
 use core::iter::FromIterator;
 
-use bitcoin_miniscript::expression::check_valid_chars;
+use bitcoin_miniscript::descriptor::checksum::Error as ChecksumError;
+use bitcoin_miniscript::ParseTreeError;
 
 use crate::Error;
 
@@ -48,25 +49,24 @@ pub fn desc_checksum(desc: &str) -> Result<String, Error> {
     Ok(eng.checksum())
 }
 
-/// Helper function for FromStr for various
-/// descriptor types. Checks and verifies the checksum
-/// if it is present and returns the descriptor string
-/// without the checksum
+/// Validate descriptor characters and strip a valid optional checksum.
+///
+/// Preserve descriptor parsing's first-`#` split and `BadDescriptor` checksum errors.
+/// The upstream validator splits at the last `#`.
 pub(crate) fn verify_checksum(s: &str) -> Result<&str, Error> {
-    check_valid_chars(s)?;
-
-    let mut parts = s.splitn(2, '#');
-    let desc_str = parts.next().unwrap();
-    if let Some(checksum_str) = parts.next() {
-        let expected_sum = desc_checksum(desc_str)?;
-        if checksum_str != expected_sum {
-            return Err(Error::BadDescriptor(format!(
-                "Invalid checksum '{}', expected '{}'",
-                checksum_str, expected_sum
-            )));
-        }
+    let verified = bitcoin_miniscript::descriptor::checksum::verify_checksum(s);
+    if let Err(e @ ChecksumError::InvalidCharacter { .. }) = verified {
+        return Err(Error::from(ParseTreeError::Checksum(e)));
     }
-    Ok(desc_str)
+    match s.split_once('#') {
+        None => Ok(s),
+        Some((desc, checksum)) if verified.is_ok() && !checksum.contains('#') => Ok(desc),
+        Some((desc, checksum)) => Err(Error::BadDescriptor(format!(
+            "Invalid checksum '{}', expected '{}'",
+            checksum,
+            desc_checksum(desc)?
+        ))),
+    }
 }
 
 /// An engine to compute a checksum from a string
@@ -185,6 +185,55 @@ mod test {
         ($desc: expr, $checksum: expr) => {
             assert_eq!(desc_checksum($desc).unwrap(), $checksum);
         };
+    }
+
+    #[test]
+    fn descriptor_checksum_compatibility() {
+        let desc = "elpkh(A)";
+        let expected = desc_checksum(desc).unwrap();
+        assert_eq!(verify_checksum(desc).unwrap(), desc);
+        assert_eq!(verify_checksum(&format!("{desc}#{expected}")).unwrap(), desc);
+        let embedded = format!("{desc}#extra");
+        let last_checksum = desc_checksum(&embedded).unwrap();
+        let valid_last = format!("{embedded}#{last_checksum}");
+        assert_eq!(
+            bitcoin_miniscript::descriptor::checksum::verify_checksum(&valid_last).unwrap(),
+            embedded
+        );
+        for suffix in [
+            "",
+            "short",
+            "qqqqqqqq",
+            "extra#bad",
+            &format!("extra#{last_checksum}"),
+        ] {
+            let input = format!("{desc}#{suffix}");
+            match verify_checksum(&input) {
+                Err(Error::BadDescriptor(message)) => assert_eq!(
+                    message,
+                    format!("Invalid checksum '{suffix}', expected '{expected}'")
+                ),
+                result => panic!("unexpected checksum result for {}: {:?}", input, result),
+            }
+        }
+        assert_eq!(verify_checksum(" ~").unwrap(), " ~");
+        for ch in ['\0', '\x1f', '\x7f', 'é', '💖'] {
+            for prefix in ["", "el", "elpkh(A)#bad", "elpkh(A)#bad#"] {
+                let input = format!("{prefix}{ch}");
+                assert!(matches!(
+                    verify_checksum(&input),
+                    Err(Error::BtcError(bitcoin_miniscript::Error::Parse(
+                        bitcoin_miniscript::ParseError::Tree(ParseTreeError::Checksum(
+                            ChecksumError::InvalidCharacter { ch: actual, pos }
+                        ))
+                    ))) if actual == ch && pos == prefix.len()
+                ));
+            }
+        }
+        assert!(matches!(
+            "€".parse::<crate::descriptor::Bare<String>>(),
+            Err(Error::BtcError(_))
+        ));
     }
 
     #[test]

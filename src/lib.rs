@@ -108,7 +108,7 @@ extern crate test;
 // It can be confusing to code when we have two miniscript libraries
 // As a rule, only import the library here and pub use all the required
 // items. Should help in faster code development in the long run
-use bitcoin_miniscript::expression::{FromTree as BtcFromTree, Tree as BtcTree};
+use bitcoin_miniscript::expression::FromTree as BtcFromTree;
 use bitcoin_miniscript::policy::semantic::Policy as BtcPolicy;
 use bitcoin_miniscript::policy::Liftable as BtcLiftable;
 // re-export imports
@@ -134,15 +134,12 @@ pub mod miniscript;
 pub mod policy;
 pub mod psbt;
 
-#[cfg(feature = "simplicity")]
-mod simplicity;
 #[cfg(test)]
 mod test_utils;
 mod util;
 
 use std::{cmp, error, fmt, str};
 
-use bitcoin::hashes::sha256;
 use elements::secp256k1_zkp::Secp256k1;
 use elements::{locktime, opcodes, script, secp256k1_zkp};
 
@@ -279,7 +276,7 @@ where
 }
 
 /// Miniscript Error
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Error {
     /// Opcode appeared which is not part of the script subset
     InvalidOpcode(opcodes::All),
@@ -296,16 +293,12 @@ pub enum Error {
     CmsTooManyKeys(u32),
     /// A tapscript multi_a cannot support more than MAX_BLOCK_WEIGHT/32 keys
     MultiATooManyKeys(u32),
-    /// expected character while parsing descriptor; didn't find one
-    ExpectedChar(char),
     /// While parsing backward, hit beginning of script
     UnexpectedStart,
     /// Got something we were not expecting
     Unexpected(String),
     /// Name of a fragment contained `:` multiple times
     MultiColon(String),
-    /// Name of a fragment contained `@` multiple times
-    MultiAt(String),
     /// Name of a fragment contained `@` but we were not parsing an OR
     AtOutsideOr(String),
     /// Encountered a `l:0` which is syntactically equal to `u:0` except stupid
@@ -320,8 +313,6 @@ pub enum Error {
     BadPubkey(bitcoin::key::ParsePublicKeyError),
     /// Failed to parse a slice as public key
     BadPubkeySlice(bitcoin::key::FromSliceError),
-    /// Could not satisfy a script (fragment) because of a missing hash preimage
-    MissingHash(sha256::Hash),
     /// Could not satisfy a script (fragment) because of a missing signature
     MissingSig(bitcoin::PublicKey),
     /// Could not satisfy, relative locktime not met
@@ -345,7 +336,10 @@ pub enum Error {
     LiftError(policy::LiftError),
     /// Forward script context related errors
     ContextError(miniscript::context::ScriptContextError),
-    /// Recursion depth exceeded when parsing policy/miniscript from string
+    /// A Taproot script tree is deeper than the 128 levels a Taproot control
+    /// block allows. [`descriptor::Tr::new`] returns it, including when parsing
+    /// `eltr` descriptors. Expressions nested too deeply for the expression
+    /// parser are reported as rust-miniscript parse errors in [`Error::BtcError`].
     MaxRecursiveDepthExceeded,
     /// Script size too large
     ScriptSizeTooLarge,
@@ -364,12 +358,8 @@ pub enum Error {
     CovError(descriptor::CovError),
     /// PubKey invalid under current context
     PubKeyCtxError(miniscript::decode::KeyParseError, &'static str),
-    /// Attempted to call function that requires PreComputed taproot info
-    TaprootSpendInfoUnavialable,
     /// No script code for Tr descriptors
     TrNoScriptCode,
-    /// No explicit script for Tr descriptors
-    TrNoExplicitScript,
     /// At least two BIP389 key expressions in the descriptor contain tuples of
     /// derivation indexes of different lengths.
     MultipathDescLenMismatch,
@@ -397,6 +387,14 @@ where
 impl From<bitcoin_miniscript::Error> for Error {
     fn from(e: bitcoin_miniscript::Error) -> Error {
         Error::BtcError(e)
+    }
+}
+
+#[doc(hidden)]
+impl From<bitcoin_miniscript::ParseTreeError> for Error {
+    fn from(e: bitcoin_miniscript::ParseTreeError) -> Error {
+        let e = bitcoin_miniscript::ParseError::Tree(e);
+        Error::BtcError(bitcoin_miniscript::Error::Parse(e))
     }
 }
 
@@ -465,8 +463,6 @@ fn errstr(s: &str) -> Error {
     Error::Unexpected(s.to_owned())
 }
 
-// https://github.com/sipa/miniscript/pull/5 for discussion on this number
-const MAX_RECURSION_DEPTH: u32 = 402;
 // https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki
 const MAX_SCRIPT_SIZE: u32 = 10000;
 
@@ -482,17 +478,14 @@ impl fmt::Display for Error {
             Error::Script(ref e) => fmt::Display::fmt(e, f),
             Error::AddrError(ref e) => fmt::Display::fmt(e, f),
             Error::CmsTooManyKeys(n) => write!(f, "checkmultisig with {} keys", n),
-            Error::ExpectedChar(c) => write!(f, "expected {}", c),
             Error::UnexpectedStart => f.write_str("unexpected start of script"),
             Error::Unexpected(ref s) => write!(f, "unexpected «{}»", s),
             Error::MultiColon(ref s) => write!(f, "«{}» has multiple instances of «:»", s),
-            Error::MultiAt(ref s) => write!(f, "«{}» has multiple instances of «@»", s),
             Error::AtOutsideOr(ref s) => write!(f, "«{}» contains «@» in non-or() context", s),
             Error::LikelyFalse => write!(f, "0 is not very likely (use «u:0»)"),
             Error::UnknownWrapper(ch) => write!(f, "unknown wrapper «{}:»", ch),
             Error::NonTopLevel(ref s) => write!(f, "non-T miniscript: {}", s),
             Error::Trailing(ref s) => write!(f, "trailing tokens: {}", s),
-            Error::MissingHash(ref h) => write!(f, "missing preimage of hash {}", h),
             Error::MissingSig(ref pk) => write!(f, "missing signature for key {:?}", pk),
             Error::RelativeLocktimeNotMet(n) => {
                 write!(f, "required relative locktime CSV of {} blocks, not met", n)
@@ -515,8 +508,8 @@ impl fmt::Display for Error {
             Error::LiftError(ref e) => fmt::Display::fmt(e, f),
             Error::MaxRecursiveDepthExceeded => write!(
                 f,
-                "Recursive depth over {} not permitted",
-                MAX_RECURSION_DEPTH
+                "Taproot script tree depth over {} not permitted",
+                elements::taproot::TAPROOT_CONTROL_MAX_NODE_COUNT
             ),
             Error::ScriptSizeTooLarge => write!(
                 f,
@@ -538,9 +531,7 @@ impl fmt::Display for Error {
                 write!(f, "Pubkey error: {} under {} scriptcontext", pk, ctx)
             }
             Error::MultiATooManyKeys(k) => write!(f, "MultiA too many keys {}", k),
-            Error::TaprootSpendInfoUnavialable => write!(f, "Taproot Spend Info not computed."),
             Error::TrNoScriptCode => write!(f, "No script code for Tr descriptors"),
-            Error::TrNoExplicitScript => write!(f, "No script code for Tr descriptors"),
             Error::MultipathDescLenMismatch => write!(f, "At least two BIP389 key expressions in the descriptor contain tuples of derivation indexes of different lengths"),
             Error::Conversion(ref e) => e.fmt(f),
             Error::UnsupportedAddressForPegin => write!(f, "Cannot create the address from the pegin descriptor, the federation descriptor is of an unsuppported type"),
@@ -559,17 +550,14 @@ impl error::Error for Error {
             | InvalidPush(_)
             | CmsTooManyKeys(_)
             | MultiATooManyKeys(_)
-            | ExpectedChar(_)
             | UnexpectedStart
             | Unexpected(_)
             | MultiColon(_)
-            | MultiAt(_)
             | AtOutsideOr(_)
             | LikelyFalse
             | UnknownWrapper(_)
             | NonTopLevel(_)
             | Trailing(_)
-            | MissingHash(_)
             | MissingSig(_)
             | RelativeLocktimeNotMet(_)
             | AbsoluteLocktimeNotMet(_)
@@ -581,10 +569,8 @@ impl error::Error for Error {
             | NonStandardBareScript
             | ImpossibleSatisfaction
             | BareDescriptorAddr
-            | TaprootSpendInfoUnavialable
             | TrNoScriptCode
-            | UnsupportedAddressForPegin
-            | TrNoExplicitScript => None,
+            | UnsupportedAddressForPegin => None,
             MultipathDescLenMismatch => None,
             BtcError(e) => Some(e),
             CovError(e) => Some(e),
