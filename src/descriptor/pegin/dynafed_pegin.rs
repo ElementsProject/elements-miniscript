@@ -114,7 +114,7 @@ impl_from_tree!(
             // TODO: Confirm with Andrew about the descriptor type for dynafed
             // Assuming sh(wsh) for now.
 
-            let fed_desc = BtcDescriptor::<PublicKey>::from_tree(&ms_expr)?;
+            let fed_desc = BtcDescriptor::<PublicKey>::from_tree(ms_expr.root())?;
             let elem_desc = Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(&top.args[1])?;
             Ok(Pegin::new(fed_desc, elem_desc))
         } else {
@@ -252,7 +252,9 @@ impl<Pk: MiniscriptKey> Pegin<Pk> {
             .into_bytes();
         let mut t = TranslateTweak(&claim_script[..], secp);
 
-        let tweaked_desc = bitcoin_miniscript::TranslatePk::translate_pk(&self.fed_desc, &mut t)
+        let tweaked_desc = self
+            .fed_desc
+            .translate_pk(&mut t)
             .expect("Tweaking must succeed");
 
         let res = tweaked_desc.get_satisfaction(satisfier)?;
@@ -303,7 +305,8 @@ fn bitcoin_witness_script<C: secp256k1_zkp::Verification, Pk: ToPublicKey>(
 ) -> Result<BtcScript, Error> {
     let mut t = TranslateTweak(claim_script, secp);
 
-    let tweaked_desc = bitcoin_miniscript::TranslatePk::translate_pk(fed_desc, &mut t)
+    let tweaked_desc = fed_desc
+        .translate_pk(&mut t)
         .expect("Tweaking must succeed");
     Ok(tweaked_desc.explicit_script()?)
 }
@@ -313,12 +316,14 @@ struct TranslateTweak<'a, 'b, C: secp256k1_zkp::Verification>(
     &'b secp256k1_zkp::Secp256k1<C>,
 );
 
-impl<'a, 'b, Pk, C> bitcoin_miniscript::Translator<Pk, bitcoin::PublicKey, ()>
-    for TranslateTweak<'a, 'b, C>
+impl<'a, 'b, Pk, C> bitcoin_miniscript::Translator<Pk> for TranslateTweak<'a, 'b, C>
 where
     Pk: MiniscriptKey + ToPublicKey,
     C: secp256k1_zkp::Verification,
 {
+    type TargetPk = bitcoin::PublicKey;
+    type Error = ();
+
     fn pk(&mut self, pk: &Pk) -> Result<bitcoin::PublicKey, ()> {
         Ok(tweak_key(&pk.to_public_key(), self.1, self.0))
     }
@@ -342,7 +347,7 @@ mod tests {
         type Segwitv0Script =
             bitcoin_miniscript::Miniscript<bitcoin::PublicKey, bitcoin_miniscript::Segwitv0>;
 
-        let m = Segwitv0Script::parse(&s).unwrap();
+        let m = Segwitv0Script::decode(&s).unwrap();
         assert_eq!(m.encode(), s);
         BtcDescriptor::<_>::new_wsh(m).unwrap()
     }

@@ -207,7 +207,7 @@ mod test {
             (&format!("elwsh(multi(2,{xpub}/<0;1>/*,{xpub}/0/<0;1;2>/*))"), Error::MultipathDescLenMismatch),
         ] {
             let err = confidential_descriptor(invalid_desc).unwrap_err();
-            assert_eq!(err, expected_err);
+            assert_eq!(format!("{:?}", err), format!("{:?}", expected_err));
             /*
             _i = _i + 1;
             println!("* Invalid Test vector {}", _i);

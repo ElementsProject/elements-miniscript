@@ -32,7 +32,6 @@ use bitcoin::blockdata::{opcodes, script};
 use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
 use bitcoin::{self, hashes, ScriptBuf as BtcScript};
 use bitcoin_miniscript::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
-use bitcoin_miniscript::TranslatePk as BtcTranslatePk;
 use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{self, verify_checksum};
@@ -237,7 +236,10 @@ impl<Pk: MiniscriptKey> LegacyPegin<Pk> {
         };
         struct TranslateUnTweak;
 
-        impl bitcoin_miniscript::Translator<LegacyPeginKey, bitcoin::PublicKey, ()> for TranslateUnTweak {
+        impl bitcoin_miniscript::Translator<LegacyPeginKey> for TranslateUnTweak {
+            type TargetPk = bitcoin::PublicKey;
+            type Error = ();
+
             fn pk(&mut self, pk: &LegacyPeginKey) -> Result<bitcoin::PublicKey, ()> {
                 Ok(*pk.as_untweaked())
             }
@@ -349,7 +351,7 @@ impl_from_tree!(
             let ms_str = top.args[0].to_string();
             let ms_expr = BtcTree::from_str(&ms_str)?;
             //
-            let ms = BtcMiniscript::<LegacyPeginKey, BtcSegwitv0>::from_tree(&ms_expr);
+            let ms = BtcMiniscript::<LegacyPeginKey, BtcSegwitv0>::from_tree(ms_expr.root());
             let desc = Descriptor::<Pk, CovenantExt<CovExtArgs>>::from_tree(&top.args[1]);
             Ok(LegacyPegin::from_ms_and_desc(desc?, ms?))
         } else {

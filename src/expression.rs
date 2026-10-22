@@ -7,7 +7,8 @@
 use std::fmt;
 use std::str::FromStr;
 
-use bitcoin_miniscript::expression::check_valid_chars;
+use bitcoin_miniscript::descriptor::checksum::Error as ChecksumError;
+use bitcoin_miniscript::{ParseError, ParseTreeError};
 
 use crate::{errstr, Error, MAX_RECURSION_DEPTH};
 
@@ -213,6 +214,22 @@ impl<'a> Tree<'a> {
             Err(errstr(rem))
         }
     }
+}
+
+// TODO: remove this when we replace our expression.rs module with calls to the rust-miniscript expression module
+/// Check that a string contains only characters from the descriptor `INPUT_CHARSET`
+///
+/// `INPUT_CHARSET` is exactly the printable ASCII characters. rust-miniscript 13
+/// no longer exports its `check_valid_chars`, so this replaces it.
+pub(crate) fn check_valid_chars(s: &str) -> Result<(), Error> {
+    for (pos, ch) in s.char_indices() {
+        if !(32..127).contains(&u32::from(ch)) {
+            let e = ChecksumError::InvalidCharacter { ch, pos };
+            let e = ParseError::Tree(ParseTreeError::Checksum(e));
+            return Err(Error::BtcError(bitcoin_miniscript::Error::Parse(e)));
+        }
+    }
+    Ok(())
 }
 
 /// Parse a string as a u32, for timelocks or thresholds

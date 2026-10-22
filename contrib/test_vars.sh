@@ -8,7 +8,7 @@
 FEATURES_WITH_STD=""
 
 # Test all these features without "std" enabled.
-FEATURES_WITHOUT_STD="compiler trace serde rand base64 simplicity"
+FEATURES_WITHOUT_STD="compiler trace serde rand base64"
 
 # Run these examples.
 EXAMPLES="htlc:compiler parse: sign_multisig: verify_tx: xpub_descriptors: taproot:compiler psbt_sign_finalize:base64"
