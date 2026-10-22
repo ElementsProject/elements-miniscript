@@ -27,7 +27,7 @@ use {
 };
 
 use super::ENTAILMENT_MAX_TERMINALS;
-use crate::expression::{self, check_valid_chars, FromTree};
+use crate::expression::{self, FromTree};
 use crate::miniscript::types::extra_props::TimelockInfo;
 #[cfg(all(doc, not(feature = "compiler")))]
 use crate::Descriptor;
@@ -1100,10 +1100,8 @@ impl_from_str!(
     Policy<Pk>,
     type Err = Error;,
     fn from_str(s: &str) -> Result<Policy<Pk>, Error> {
-        check_valid_chars(s)?;
-
         let tree = expression::Tree::from_str(s)?;
-        let policy: Policy<Pk> = FromTree::from_tree(&tree)?;
+        let policy: Policy<Pk> = FromTree::from_tree(tree.root())?;
         policy.check_timelocks()?;
         Ok(policy)
     }
@@ -1116,12 +1114,14 @@ impl_block_str!(
     Policy<Pk>,
     /// Helper function for `from_tree` to parse subexpressions with
     /// names of the form x@y
-    fn from_tree_prob(top: &expression::Tree, allow_prob: bool,)
+    fn from_tree_prob(top: expression::TreeIterItem<'_>, allow_prob: bool,)
         -> Result<(usize, Policy<Pk>), Error>
     {
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
         let frag_prob;
         let frag_name;
-        let mut name_split = top.name.split('@');
+        let mut name_split = top.name().split('@');
         match (name_split.next(), name_split.next(), name_split.next()) {
             (None, _, _) => {
                 frag_prob = 1;
@@ -1133,21 +1133,21 @@ impl_block_str!(
             }
             (Some(prob), Some(name), None) => {
                 if !allow_prob {
-                    return Err(Error::AtOutsideOr(top.name.to_owned()));
+                    return Err(Error::AtOutsideOr(top.name().to_owned()));
                 }
                 frag_prob = expression::parse_num::<u32>(prob)? as usize;
                 frag_name = name;
             }
             (Some(_), Some(_), Some(_)) => {
-                return Err(Error::MultiColon(top.name.to_owned()));
+                return Err(Error::MultiColon(top.name().to_owned()));
             }
         }
-        match (frag_name, top.args.len() as u32) {
-            ("UNSATISFIABLE", 0) => Ok(Policy::Unsatisfiable),
-            ("TRIVIAL", 0) => Ok(Policy::Trivial),
-            ("pk", 1) => expression::terminal(&top.args[0], |pk| Pk::from_str(pk).map(Policy::Key)),
-            ("after", 1) => {
-                let num = expression::terminal(&top.args[0], expression::parse_num)?;
+        match (frag_name, top.n_children() as u32, top.first_child()) {
+            ("UNSATISFIABLE", 0, _) => Ok(Policy::Unsatisfiable),
+            ("TRIVIAL", 0, _) => Ok(Policy::Trivial),
+            ("pk", 1, Some(child)) => expression::terminal(child, |pk| Pk::from_str(pk).map(Policy::Key)),
+            ("after", 1, Some(child)) => {
+                let num = expression::terminal(child, expression::parse_num)?;
                 if num > 2u32.pow(31) {
                     return Err(Error::PolicyError(PolicyError::TimeTooFar));
                 } else if num == 0 {
@@ -1155,8 +1155,8 @@ impl_block_str!(
                 }
                 Ok(Policy::after(num))
             }
-            ("older", 1) => {
-                let num = expression::terminal(&top.args[0], expression::parse_num)?;
+            ("older", 1, Some(child)) => {
+                let num = expression::terminal(child, expression::parse_num)?;
                 if num > 2u32.pow(31) {
                     return Err(Error::PolicyError(PolicyError::TimeTooFar));
                 } else if num == 0 {
@@ -1164,55 +1164,56 @@ impl_block_str!(
                 }
                 Ok(Policy::older(num))
             }
-            ("sha256", 1) => expression::terminal(&top.args[0], |x| {
+            ("sha256", 1, Some(child)) => expression::terminal(child, |x| {
                 <Pk::Sha256 as core::str::FromStr>::from_str(x).map(Policy::Sha256)
             }),
-            ("hash256", 1) => expression::terminal(&top.args[0], |x| {
+            ("hash256", 1, Some(child)) => expression::terminal(child, |x| {
                 <Pk::Hash256 as core::str::FromStr>::from_str(x).map(Policy::Hash256)
             }),
-            ("ripemd160", 1) => expression::terminal(&top.args[0], |x| {
+            ("ripemd160", 1, Some(child)) => expression::terminal(child, |x| {
                 <Pk::Ripemd160 as core::str::FromStr>::from_str(x).map(Policy::Ripemd160)
             }),
-            ("hash160", 1) => expression::terminal(&top.args[0], |x| {
+            ("hash160", 1, Some(child)) => expression::terminal(child, |x| {
                 <Pk::Hash160 as core::str::FromStr>::from_str(x).map(Policy::Hash160)
             }),
-            ("and", _) => {
-                if top.args.len() != 2 {
+            ("and", _, _) => {
+                if top.n_children() != 2 {
                     return Err(Error::PolicyError(PolicyError::NonBinaryArgAnd));
                 }
-                let mut subs = Vec::with_capacity(top.args.len());
-                for arg in &top.args {
+                let mut subs = Vec::with_capacity(top.n_children());
+                for arg in args {
                     subs.push(Policy::from_tree(arg)?);
                 }
                 Ok(Policy::And(subs))
             }
-            ("or", _) => {
-                if top.args.len() != 2 {
+            ("or", _, _) => {
+                if top.n_children() != 2 {
                     return Err(Error::PolicyError(PolicyError::NonBinaryArgOr));
                 }
-                let mut subs = Vec::with_capacity(top.args.len());
-                for arg in &top.args {
+                let mut subs = Vec::with_capacity(top.n_children());
+                for arg in args {
                     subs.push(Policy::from_tree_prob(arg, true)?);
                 }
                 Ok(Policy::Or(subs))
             }
-            ("thresh", nsubs) => {
-                if top.args.is_empty() || !top.args[0].args.is_empty() {
-                    return Err(Error::PolicyError(PolicyError::IncorrectThresh));
-                }
+            ("thresh", nsubs, _) => {
+                let k = match args.next() {
+                    Some(k) if k.n_children() == 0 => k,
+                    _ => return Err(Error::PolicyError(PolicyError::IncorrectThresh)),
+                };
 
-                let thresh = expression::parse_num::<u32>(top.args[0].name)?;
+                let thresh = expression::parse_num::<u32>(k.name())?;
                 if thresh >= nsubs || thresh == 0 {
                     return Err(Error::PolicyError(PolicyError::IncorrectThresh));
                 }
 
-                let mut subs = Vec::with_capacity(top.args.len() - 1);
-                for arg in &top.args[1..] {
+                let mut subs = Vec::with_capacity(top.n_children() - 1);
+                for arg in args {
                     subs.push(Policy::from_tree(arg)?);
                 }
                 Ok(Policy::Threshold(thresh as usize, subs))
             }
-            _ => Err(errstr(top.name)),
+            _ => Err(errstr(top.name())),
         }
         .map(|res| (frag_prob, res))
     }
@@ -1220,7 +1221,7 @@ impl_block_str!(
 
 impl_from_tree!(
     Policy<Pk>,
-    fn from_tree(top: &expression::Tree) -> Result<Policy<Pk>, Error> {
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Policy<Pk>, Error> {
         Policy::from_tree_prob(top, false).map(|(_, result)| result)
     }
 );

@@ -139,11 +139,12 @@ impl<Pk: MiniscriptKey> Wsh<Pk> {
 impl_block_str!(
     Wsh<Pk>,
     // Constructor for creating inner wsh for the sh fragment
-    pub(super) fn from_inner_tree(top: &expression::Tree<'_>, ) -> Result<Self, Error>
+    pub(super) fn from_inner_tree(top: expression::TreeIterItem<'_>, ) -> Result<Self, Error>
     {
-        if top.name == "wsh" && top.args.len() == 1 {
-            let top = &top.args[0];
-            if top.name == "sortedmulti" {
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
+        if let ("wsh", Some(top), None) = (top.name(), args.next(), args.next()) {
+            if top.name() == "sortedmulti" {
                 return Ok(Wsh {
                     inner: WshInner::SortedMulti(SortedMultiVec::from_tree(top)?),
                 });
@@ -156,8 +157,8 @@ impl_block_str!(
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing wsh descriptor",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             )))
         }
     }
@@ -252,10 +253,11 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Wsh<Pk> {
 
 impl_from_tree!(
     Wsh<Pk>,
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        if top.name == "elwsh" && top.args.len() == 1 {
-            let top = &top.args[0];
-            if top.name == "sortedmulti" {
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
+        if let ("elwsh", Some(top), None) = (top.name(), args.next(), args.next()) {
+            if top.name() == "sortedmulti" {
                 return Ok(Wsh {
                     inner: WshInner::SortedMulti(SortedMultiVec::from_tree(top)?),
                 });
@@ -268,8 +270,8 @@ impl_from_tree!(
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing wsh descriptor",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             )))
         }
     }
@@ -301,7 +303,7 @@ impl_from_str!(
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
-        Wsh::<Pk>::from_tree(&top)
+        Wsh::<Pk>::from_tree(top.root())
     }
 );
 
@@ -402,20 +404,23 @@ impl<Pk: MiniscriptKey> Wpkh<Pk> {
     }
 
     // Parse a bitcoin style wpkh tree. Useful when parsing nested trees
-    pub(super) fn from_inner_tree(top: &expression::Tree<'_>) -> Result<Self, Error>
+    pub(super) fn from_inner_tree(top: expression::TreeIterItem<'_>) -> Result<Self, Error>
     where
         Pk: FromStr,
         <Pk as FromStr>::Err: ToString,
     {
-        if top.name == "wpkh" && top.args.len() == 1 {
-            Ok(Wpkh::new(expression::terminal(&top.args[0], |pk| {
-                Pk::from_str(pk)
-            })?)?)
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
+        if let ("wpkh", Some(child), None) = (top.name(), args.next(), args.next()) {
+            Ok(Wpkh::new(expression::terminal(
+                child,
+                |pk| Pk::from_str(pk),
+            )?)?)
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing wpkh descriptor",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             )))
         }
     }
@@ -508,16 +513,19 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Wpkh<Pk> {
 
 impl_from_tree!(
     Wpkh<Pk>,
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        if top.name == "elwpkh" && top.args.len() == 1 {
-            Ok(Wpkh::new(expression::terminal(&top.args[0], |pk| {
-                Pk::from_str(pk)
-            })?)?)
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
+        if let ("elwpkh", Some(child), None) = (top.name(), args.next(), args.next()) {
+            Ok(Wpkh::new(expression::terminal(
+                child,
+                |pk| Pk::from_str(pk),
+            )?)?)
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing wpkh descriptor",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             )))
         }
     }
@@ -529,7 +537,7 @@ impl_from_str!(
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
-        Self::from_tree(&top)
+        Self::from_tree(top.root())
     }
 );
 

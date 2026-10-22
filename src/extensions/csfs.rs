@@ -100,14 +100,16 @@ impl<T: ExtParam> Extension for CheckSigFromStack<T> {
 
     fn from_name_tree(
         name: &str,
-        children: &[expression::Tree<'_>],
+        children: &[expression::TreeIterItem<'_>],
     ) -> Result<Self, FromTokenIterError> {
         if children.len() == 2 && name == "csfs" {
-            if !children[0].args.is_empty() || !children[1].args.is_empty() {
+            if children[0].n_children() != 0 || children[1].n_children() != 0 {
                 return Err(FromTokenIterError);
             }
-            let pk = T::arg_from_str(children[0].name, name, 0).map_err(|_| FromTokenIterError)?;
-            let msg = T::arg_from_str(children[1].name, name, 1).map_err(|_| FromTokenIterError)?;
+            let pk =
+                T::arg_from_str(children[0].name(), name, 0).map_err(|_| FromTokenIterError)?;
+            let msg =
+                T::arg_from_str(children[1].name(), name, 1).map_err(|_| FromTokenIterError)?;
             Ok(Self { pk, msg })
         } else {
             // Correct error handling while parsing fromtree

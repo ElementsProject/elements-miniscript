@@ -12,7 +12,7 @@ use elements::{opcodes, script, secp256k1_zkp as secp256k1, SchnorrSig, Transact
 
 use super::param::{ExtParamTranslator, TranslateExtParam};
 use super::{CovExtArgs, CsfsKey, ExtParam, FromTokenIterError, IdxExpr, ParseableExt, TxEnv};
-use crate::expression::{FromTree, Tree};
+use crate::expression::{FromTree, TreeIterItem};
 use crate::extensions::check_sig_price_oracle_1;
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
@@ -1151,35 +1151,20 @@ impl<T: ExtParam> FromStr for Expr<T> {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let top = expression::Tree::from_str(s)?;
-        Self::from_tree(&top)
+        Self::from_tree(top.root())
     }
 }
 
 impl<T: ExtParam> FromTree for Box<Expr<T>> {
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
+    fn from_tree(top: TreeIterItem<'_>) -> Result<Self, Error> {
         expression::FromTree::from_tree(top).map(Box::new)
     }
 }
 
 impl<T: ExtParam> FromTree for Expr<T> {
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
-        fn unary<F, T: ExtParam>(top: &expression::Tree<'_>, frag: F) -> Result<Expr<T>, Error>
-        where
-            F: FnOnce(Box<Expr<T>>) -> ExprInner<T>,
-        {
-            let l: Expr<T> = FromTree::from_tree(&top.args[0])?;
-            Ok(Expr::from_inner(frag(Box::new(l))))
-        }
-
-        fn binary<F, T: ExtParam>(top: &expression::Tree<'_>, frag: F) -> Result<Expr<T>, Error>
-        where
-            F: FnOnce(Box<Expr<T>>, Box<Expr<T>>) -> ExprInner<T>,
-        {
-            let l: Expr<T> = FromTree::from_tree(&top.args[0])?;
-            let r: Expr<T> = FromTree::from_tree(&top.args[1])?;
-            Ok(Expr::from_inner(frag(Box::new(l), Box::new(r))))
-        }
-        match (top.name, top.args.len()) {
+    fn from_tree(top: TreeIterItem<'_>) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        match (top.name(), top.n_children()) {
             ("inp_v", 1) => Ok(Expr::from_inner(expression::unary(top, ExprInner::Input)?)),
             ("curr_inp_v", 0) => Ok(Expr::from_inner(ExprInner::CurrInputIdx)),
             ("out_v", 1) => Ok(Expr::from_inner(expression::unary(top, ExprInner::Output)?)),
@@ -1192,29 +1177,33 @@ impl<T: ExtParam> FromTree for Expr<T> {
                 ExprInner::InputReIssue,
             )?)),
             ("price_oracle1", 2) | ("price_oracle1_w", 2) => {
-                if !top.args[0].args.is_empty() || !top.args[1].args.is_empty() {
+                let (pk, t) = top.verify_binary("price_oracle1")?;
+                if pk.n_children() != 0 || t.n_children() != 0 {
                     return Err(Error::Unexpected(String::from(
                         "price_oracle1 expects 2 terminal arguments",
                     )));
                 }
-                let pk = T::arg_from_str(top.args[0].name, top.name, 0)?;
-                let t: u64 = expression::parse_num::<u64>(top.args[1].name)?;
-                if top.name == "price_oracle1" {
+                let pk = T::arg_from_str(pk.name(), top.name(), 0)?;
+                let t: u64 = expression::parse_num::<u64>(t.name())?;
+                if top.name() == "price_oracle1" {
                     Ok(Expr::from_inner(ExprInner::PriceOracle1(pk, t)))
                 } else {
                     Ok(Expr::from_inner(ExprInner::PriceOracle1W(pk, t)))
                 }
             }
-            ("add", 2) => binary(top, ExprInner::Add),
-            ("sub", 2) => binary(top, ExprInner::Sub),
-            ("mul", 2) => binary(top, ExprInner::Mul),
-            ("div", 2) => binary(top, ExprInner::Div),
-            ("mod", 2) => binary(top, ExprInner::Mod),
-            ("bitand", 2) => binary(top, ExprInner::BitAnd),
-            ("bitor", 2) => binary(top, ExprInner::BitOr),
-            ("bitxor", 2) => binary(top, ExprInner::Xor),
-            ("bitinv", 1) => unary(top, ExprInner::Invert),
-            ("neg", 1) => unary(top, ExprInner::Negate),
+            ("add", 2) => Ok(Expr::from_inner(expression::binary(top, ExprInner::Add)?)),
+            ("sub", 2) => Ok(Expr::from_inner(expression::binary(top, ExprInner::Sub)?)),
+            ("mul", 2) => Ok(Expr::from_inner(expression::binary(top, ExprInner::Mul)?)),
+            ("div", 2) => Ok(Expr::from_inner(expression::binary(top, ExprInner::Div)?)),
+            ("mod", 2) => Ok(Expr::from_inner(expression::binary(top, ExprInner::Mod)?)),
+            ("bitand", 2) => Ok(Expr::from_inner(expression::binary(
+                top,
+                ExprInner::BitAnd,
+            )?)),
+            ("bitor", 2) => Ok(Expr::from_inner(expression::binary(top, ExprInner::BitOr)?)),
+            ("bitxor", 2) => Ok(Expr::from_inner(expression::binary(top, ExprInner::Xor)?)),
+            ("bitinv", 1) => Ok(Expr::from_inner(expression::unary(top, ExprInner::Invert)?)),
+            ("neg", 1) => Ok(Expr::from_inner(expression::unary(top, ExprInner::Negate)?)),
             (_num, 0) => {
                 Ok(Expr {
                     inner: expression::terminal(top, expression::parse_num::<i64>)
@@ -1225,8 +1214,8 @@ impl<T: ExtParam> FromTree for Expr<T> {
             }
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             ))),
         }
     }
@@ -1237,7 +1226,7 @@ impl<T: ExtParam> FromStr for ArithInner<T> {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let top = expression::Tree::from_str(s)?;
-        Self::from_tree(&top)
+        Self::from_tree(top.root())
     }
 }
 
@@ -1251,26 +1240,41 @@ impl<T: ExtParam> FromStr for Arith<T> {
 }
 
 impl<T: ExtParam> FromTree for Box<ArithInner<T>> {
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
+    fn from_tree(top: TreeIterItem<'_>) -> Result<Self, Error> {
         ArithInner::from_tree(top).map(Box::new)
     }
 }
 
 impl<T: ExtParam> FromTree for ArithInner<T> {
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
-        match (top.name, top.args.len()) {
-            // Disambiguiate with num64_eq to avoid confusion with asset_eq
-            ("num64_eq", 2) => expression::binary(top, ArithInner::Eq),
-            ("num64_geq", 2) => expression::binary(top, ArithInner::Geq),
-            ("num64_gt", 2) => expression::binary(top, ArithInner::Gt),
-            ("num64_lt", 2) => expression::binary(top, ArithInner::Lt),
-            ("num64_leq", 2) => expression::binary(top, ArithInner::Leq),
-            _ => Err(Error::Unexpected(format!(
-                "{}({} args) while parsing Extension",
-                top.name,
-                top.args.len(),
-            ))),
-        }
+    fn from_tree(top: TreeIterItem<'_>) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        Self::from_name_children(top.name(), top.n_children(), top.children())
+    }
+}
+
+impl<T: ExtParam> ArithInner<T> {
+    fn from_name_children<'a>(
+        name: &str,
+        n_children: usize,
+        mut args: impl Iterator<Item = TreeIterItem<'a>>,
+    ) -> Result<Self, Error> {
+        let children = [args.next(), args.next(), args.next()];
+        let (frag, left, right): (fn(Expr<T>, Expr<T>) -> Self, _, _) = match (name, children) {
+            ("num64_eq", [Some(left), Some(right), None]) => (ArithInner::Eq, left, right),
+            ("num64_geq", [Some(left), Some(right), None]) => (ArithInner::Geq, left, right),
+            ("num64_gt", [Some(left), Some(right), None]) => (ArithInner::Gt, left, right),
+            ("num64_lt", [Some(left), Some(right), None]) => (ArithInner::Lt, left, right),
+            ("num64_leq", [Some(left), Some(right), None]) => (ArithInner::Leq, left, right),
+            _ => {
+                return Err(Error::Unexpected(format!(
+                    "{}({} args) while parsing Extension",
+                    name, n_children,
+                )))
+            }
+        };
+        let l = Expr::from_tree(left)?;
+        let r = Expr::from_tree(right)?;
+        Ok(frag(l, r))
     }
 }
 
@@ -1351,14 +1355,10 @@ impl<T: ExtParam> Extension for Arith<T> {
 
     fn from_name_tree(
         name: &str,
-        children: &[expression::Tree<'_>],
+        children: &[TreeIterItem<'_>],
     ) -> Result<Self, FromTokenIterError> {
-        let tree = Tree {
-            name,
-            args: children.to_vec(), // Cloning two references here, it is possible to avoid the to_vec() here,
-                                     // but it requires lot of refactor.
-        };
-        let inner = ArithInner::from_tree(&tree).map_err(|_| FromTokenIterError)?;
+        let inner = ArithInner::from_name_children(name, children.len(), children.iter().copied())
+            .map_err(|_| FromTokenIterError)?;
         Arith::new(inner).map_err(|_e| FromTokenIterError)
     }
 }

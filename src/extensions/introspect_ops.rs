@@ -14,7 +14,7 @@ use elements::{confidential, encode, script, Address, AddressParams};
 use super::index_ops::IdxExpr;
 use super::param::{ExtParamTranslator, TranslateExtParam};
 use super::{ArgFromStr, CovExtArgs, EvalError, ExtParam, FromTokenIterError, ParseableExt, TxEnv};
-use crate::expression::{FromTree, Tree};
+use crate::expression::{FromTree, TreeIterItem};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::satisfy::{Satisfaction, Witness};
@@ -176,21 +176,22 @@ impl<T: ExtParam> fmt::Debug for AssetExpr<T> {
 impl<T: ExtParam> ArgFromStr for AssetExpr<T> {
     fn arg_from_str(s: &str, parent: &str, pos: usize) -> Result<Self, Error> {
         let top = expression::Tree::from_str(s)?;
-        Self::from_tree_parent(&top, parent, pos)
+        Self::from_tree_parent(top.root(), parent, pos)
     }
 }
 
 impl<T: ExtParam> AssetExpr<T> {
-    fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
-        match (top.name, top.args.len()) {
+    fn from_tree_parent(top: TreeIterItem<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        match (top.name(), top.n_children()) {
             ("curr_inp_asset", 0) => Ok(AssetExpr::CurrInputAsset),
             ("inp_asset", 1) => expression::unary(top, AssetExpr::Input),
             ("out_asset", 1) => expression::unary(top, AssetExpr::Output),
             (asset, 0) => Ok(AssetExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             ))),
         }
     }
@@ -248,21 +249,22 @@ impl<T: ExtParam> fmt::Debug for ValueExpr<T> {
 impl<T: ExtParam> ArgFromStr for ValueExpr<T> {
     fn arg_from_str(s: &str, parent: &str, pos: usize) -> Result<Self, Error> {
         let top = expression::Tree::from_str(s)?;
-        Self::from_tree_parent(&top, parent, pos)
+        Self::from_tree_parent(top.root(), parent, pos)
     }
 }
 
 impl<T: ExtParam> ValueExpr<T> {
-    fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
-        match (top.name, top.args.len()) {
+    fn from_tree_parent(top: TreeIterItem<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        match (top.name(), top.n_children()) {
             ("curr_inp_value", 0) => Ok(ValueExpr::CurrInputValue),
             ("inp_value", 1) => expression::unary(top, ValueExpr::Input),
             ("out_value", 1) => expression::unary(top, ValueExpr::Output),
             (value, 0) => Ok(ValueExpr::Const(T::arg_from_str(value, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             ))),
         }
     }
@@ -320,21 +322,22 @@ impl<T: ExtParam> fmt::Debug for SpkExpr<T> {
 impl<T: ExtParam> ArgFromStr for SpkExpr<T> {
     fn arg_from_str(s: &str, parent: &str, pos: usize) -> Result<Self, Error> {
         let top = expression::Tree::from_str(s)?;
-        Self::from_tree_parent(&top, parent, pos)
+        Self::from_tree_parent(top.root(), parent, pos)
     }
 }
 
 impl<T: ExtParam> SpkExpr<T> {
-    fn from_tree_parent(top: &Tree<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
-        match (top.name, top.args.len()) {
+    fn from_tree_parent(top: TreeIterItem<'_>, parent: &str, pos: usize) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        match (top.name(), top.n_children()) {
             ("curr_inp_spk", 0) => Ok(SpkExpr::CurrInputSpk),
             ("inp_spk", 1) => expression::unary(top, SpkExpr::Input),
             ("out_spk", 1) => expression::unary(top, SpkExpr::Output),
             (asset, 0) => Ok(SpkExpr::Const(T::arg_from_str(asset, parent, pos)?)),
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             ))),
         }
     }
@@ -373,47 +376,57 @@ impl<T: ExtParam> FromStr for CovOps<T> {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let top = expression::Tree::from_str(s)?;
-        Self::from_tree(&top)
+        Self::from_tree(top.root())
     }
 }
 
 impl<T: ExtParam> FromTree for CovOps<T> {
-    fn from_tree(top: &Tree<'_>) -> Result<Self, Error> {
-        match (top.name, top.args.len()) {
-            ("is_exp_asset", 1) => {
-                AssetExpr::from_tree_parent(&top.args[0], top.name, 0).map(CovOps::IsExpAsset)
+    fn from_tree(top: TreeIterItem<'_>) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        Self::from_name_children(top.name(), top.n_children(), top.children())
+    }
+}
+
+impl<T: ExtParam> CovOps<T> {
+    fn from_name_children<'a>(
+        name: &str,
+        n_children: usize,
+        mut args: impl Iterator<Item = TreeIterItem<'a>>,
+    ) -> Result<Self, Error> {
+        let children = [args.next(), args.next(), args.next()];
+        match (name, children) {
+            ("is_exp_asset", [Some(child), None, None]) => {
+                AssetExpr::from_tree_parent(child, name, 0).map(CovOps::IsExpAsset)
             }
-            ("is_exp_value", 1) => {
-                ValueExpr::from_tree_parent(&top.args[0], top.name, 0).map(CovOps::IsExpValue)
+            ("is_exp_value", [Some(child), None, None]) => {
+                ValueExpr::from_tree_parent(child, name, 0).map(CovOps::IsExpValue)
             }
-            ("asset_eq", 2) => {
-                let l = AssetExpr::from_tree_parent(&top.args[0], top.name, 0)?;
-                let r = AssetExpr::from_tree_parent(&top.args[1], top.name, 1)?;
+            ("asset_eq", [Some(left), Some(right), None]) => {
+                let l = AssetExpr::from_tree_parent(left, name, 0)?;
+                let r = AssetExpr::from_tree_parent(right, name, 1)?;
                 Ok(CovOps::AssetEq(l, r))
             }
-            ("value_eq", 2) => {
-                let l = ValueExpr::from_tree_parent(&top.args[0], top.name, 0)?;
-                let r = ValueExpr::from_tree_parent(&top.args[1], top.name, 1)?;
+            ("value_eq", [Some(left), Some(right), None]) => {
+                let l = ValueExpr::from_tree_parent(left, name, 0)?;
+                let r = ValueExpr::from_tree_parent(right, name, 1)?;
                 Ok(CovOps::ValueEq(l, r))
             }
-            ("spk_eq", 2) => {
-                let l = SpkExpr::from_tree_parent(&top.args[0], top.name, 0)?;
-                let r = SpkExpr::from_tree_parent(&top.args[1], top.name, 1)?;
+            ("spk_eq", [Some(left), Some(right), None]) => {
+                let l = SpkExpr::from_tree_parent(left, name, 0)?;
+                let r = SpkExpr::from_tree_parent(right, name, 1)?;
                 Ok(CovOps::SpkEq(l, r))
             }
-            ("curr_idx_eq", 1) => {
-                expression::terminal(&top.args[0], expression::parse_num::<usize>)
-                    .map(CovOps::CurrIndEq)
+            ("curr_idx_eq", [Some(child), None, None]) => {
+                expression::terminal(child, expression::parse_num::<usize>).map(CovOps::CurrIndEq)
             }
-            ("idx_eq", 2) => {
-                let l = IdxExpr::from_tree(&top.args[0])?;
-                let r = IdxExpr::from_tree(&top.args[1])?;
+            ("idx_eq", [Some(left), Some(right), None]) => {
+                let l = IdxExpr::from_tree(left)?;
+                let r = IdxExpr::from_tree(right)?;
                 Ok(CovOps::IdxEq(l, r))
             }
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Extension",
-                top.name,
-                top.args.len(),
+                name, n_children,
             ))),
         }
     }
@@ -470,13 +483,12 @@ impl<T: ExtParam> Extension for CovOps<T> {
         }
     }
 
-    fn from_name_tree(name: &str, children: &[Tree<'_>]) -> Result<Self, FromTokenIterError> {
-        let tree = Tree {
-            name,
-            args: children.to_vec(), // Cloning references here, it is possible to avoid the to_vec() here,
-                                     // but it requires lot of refactor.
-        };
-        Self::from_tree(&tree).map_err(|_| FromTokenIterError)
+    fn from_name_tree(
+        name: &str,
+        children: &[TreeIterItem<'_>],
+    ) -> Result<Self, FromTokenIterError> {
+        Self::from_name_children(name, children.len(), children.iter().copied())
+            .map_err(|_| FromTokenIterError)
     }
 
     fn segwit_ctx_checks(&self) -> Result<(), ScriptContextError> {

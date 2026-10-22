@@ -8,7 +8,7 @@ use bitcoin::hashes::{sha256, Hash};
 use elements::script::Builder;
 use elements::{secp256k1_zkp, Transaction, TxOut};
 
-use crate::expression::Tree;
+use crate::expression::TreeIterItem;
 use crate::interpreter::{self, Stack};
 use crate::miniscript::context::ScriptContextError;
 use crate::miniscript::lex::TokenIter;
@@ -64,11 +64,14 @@ pub trait Extension: Clone + Eq + Ord + fmt::Debug + fmt::Display + hash::Hash {
         Ok(())
     }
 
-    /// Create an instance of this object from a Tree with root name and children as
-    /// `Vec<Tree>`.
+    /// Create an instance of this object from the name of an expression tree node,
+    /// with any wrappers removed, and the node's children.
     // Ideally, we would want a FromTree implementation here, but that is not possible
-    // as we would need to create a new Tree by removing wrappers from root.
-    fn from_name_tree(_name: &str, children: &[Tree<'_>]) -> Result<Self, FromTokenIterError>;
+    // as the node name still includes the wrappers.
+    fn from_name_tree(
+        _name: &str,
+        children: &[TreeIterItem<'_>],
+    ) -> Result<Self, FromTokenIterError>;
 }
 
 /// Support for parsing/serializing/satisfaction of extensions.
@@ -143,7 +146,10 @@ impl Extension for NoExt {
         match *self {}
     }
 
-    fn from_name_tree(_name: &str, _children: &[Tree<'_>]) -> Result<Self, FromTokenIterError> {
+    fn from_name_tree(
+        _name: &str,
+        _children: &[TreeIterItem<'_>],
+    ) -> Result<Self, FromTokenIterError> {
         // No extensions should not parse any extensions from String
         Err(FromTokenIterError)
     }
@@ -280,7 +286,10 @@ impl<T: ExtParam> Extension for CovenantExt<T> {
         all_arms_fn!(self, Extension, script_size,)
     }
 
-    fn from_name_tree(name: &str, children: &[Tree<'_>]) -> Result<Self, FromTokenIterError> {
+    fn from_name_tree(
+        name: &str,
+        children: &[TreeIterItem<'_>],
+    ) -> Result<Self, FromTokenIterError> {
         try_from_arms!(Extension, T, from_name_tree, name, children,)
     }
 

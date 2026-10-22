@@ -290,18 +290,21 @@ impl<Ext: ParseableExt> LegacyCSFSCov<bitcoin::PublicKey, Ext> {
 impl_from_tree!(
     LegacyCSFSCov<Pk, Ext>,
     => Ext; Extension,
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
-        if top.name == "elcovwsh" && top.args.len() == 2 {
-            let pk = expression::terminal(&top.args[0], |pk| Pk::from_str(pk))?;
-            let top = &top.args[1];
-            let sub = Miniscript::from_tree(top)?;
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
+        if let ("elcovwsh", Some(key), Some(script), None) =
+            (top.name(), args.next(), args.next(), args.next())
+        {
+            let pk = expression::terminal(key, |pk| Pk::from_str(pk))?;
+            let sub = Miniscript::from_tree(script)?;
             Segwitv0::top_level_checks(&sub)?;
             Ok(LegacyCSFSCov { pk, ms: sub })
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing elcovwsh descriptor",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             )))
         }
     }
@@ -337,7 +340,7 @@ impl_from_str!(
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
-        LegacyCSFSCov::<Pk, Ext>::from_tree(&top)
+        LegacyCSFSCov::<Pk, Ext>::from_tree(top.root())
     }
 );
 

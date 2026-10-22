@@ -107,10 +107,10 @@ impl Extension for LegacyOutputsPref {
 
     fn from_name_tree(
         name: &str,
-        children: &[expression::Tree<'_>],
+        children: &[expression::TreeIterItem<'_>],
     ) -> Result<Self, FromTokenIterError> {
         if children.len() == 1 && name == "outputs_pref" {
-            let pref = expression::terminal(&children[0], Vec::<u8>::from_hex)
+            let pref = expression::terminal(children[0], Vec::<u8>::from_hex)
                 .map_err(|_| FromTokenIterError)?;
             Ok(Self { pref })
         } else {
