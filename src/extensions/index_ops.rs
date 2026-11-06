@@ -7,7 +7,7 @@ use elements::opcodes::{self};
 use elements::script;
 
 use super::{EvalError, TxEnv};
-use crate::expression::{FromTree, Tree};
+use crate::expression::{FromTree, TreeIterItem};
 use crate::miniscript::lex::Token as Tk;
 use crate::{expression, script_num_size, Error};
 
@@ -76,29 +76,30 @@ impl fmt::Debug for IdxExpr {
 }
 
 impl FromTree for IdxExpr {
-    fn from_tree(top: &Tree<'_>) -> Result<Self, Error> {
-        match (top.name, top.args.len()) {
+    fn from_tree(top: TreeIterItem<'_>) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        match (top.name(), top.n_children()) {
             ("curr_idx", 0) => Ok(IdxExpr::CurrIdx),
-            ("idx_add", 2) => Ok(IdxExpr::Add(
-                Box::new(Self::from_tree(&top.args[0])?),
-                Box::new(Self::from_tree(&top.args[1])?),
-            )),
-            ("idx_sub", 2) => Ok(IdxExpr::Sub(
-                Box::new(Self::from_tree(&top.args[0])?),
-                Box::new(Self::from_tree(&top.args[1])?),
-            )),
-            ("idx_mul", 2) => Ok(IdxExpr::Mul(
-                Box::new(Self::from_tree(&top.args[0])?),
-                Box::new(Self::from_tree(&top.args[1])?),
-            )),
-            ("idx_div", 2) => Ok(IdxExpr::Div(
-                Box::new(Self::from_tree(&top.args[0])?),
-                Box::new(Self::from_tree(&top.args[1])?),
-            )),
+            ("idx_add", 2) => expression::binary(top, |left, right| {
+                IdxExpr::Add(Box::new(left), Box::new(right))
+            }),
+            ("idx_sub", 2) => expression::binary(top, |left, right| {
+                IdxExpr::Sub(Box::new(left), Box::new(right))
+            }),
+            ("idx_mul", 2) => expression::binary(top, |left, right| {
+                IdxExpr::Mul(Box::new(left), Box::new(right))
+            }),
+            ("idx_div", 2) => expression::binary(top, |left, right| {
+                IdxExpr::Div(Box::new(left), Box::new(right))
+            }),
             (_num, 0) => {
                 expression::terminal(top, expression::parse_num::<usize>).map(IdxExpr::Const)
             }
-            _ => Err(Error::Unexpected(format!("Unexpected token: {:?}", top))),
+            _ => Err(Error::Unexpected(format!(
+                "Unexpected token: {}({} args)",
+                top.name(),
+                top.n_children()
+            ))),
         }
     }
 }

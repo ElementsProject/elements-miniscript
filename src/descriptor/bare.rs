@@ -20,7 +20,7 @@ use crate::policy::{semantic, Liftable};
 use crate::util::{varint_len, witness_to_scriptsig};
 use crate::{
     elementssig_to_rawsig, BareCtx, Error, ForEachKey, Miniscript, MiniscriptKey, Satisfier,
-    ToPublicKey, TranslatePk, Translator,
+    Terminal, ToPublicKey, TranslatePk, Translator,
 };
 
 /// Create a Bare Descriptor. That is descriptor that is
@@ -157,14 +157,10 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Bare<Pk> {
 
 impl_from_tree!(
     Bare<Pk>,
-    fn from_tree(top: &expression::Tree<'_>) -> Result<Self, Error> {
-        // extra allocations to use the existing code as is.
-        if top.name.starts_with("el") {
-            let new_tree = expression::Tree {
-                name: top.name.split_at(2).1,
-                args: top.args.clone(),
-            };
-            let sub = Miniscript::<Pk, BareCtx>::from_tree(&new_tree)?;
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Self, Error> {
+        if let Some(name) = top.name().strip_prefix("el") {
+            let sub =
+                Miniscript::<Pk, BareCtx>::from_ast(Terminal::from_tree_with_name(name, top)?)?;
             BareCtx::top_level_checks(&sub)?;
             Bare::new(sub)
         } else {
@@ -179,7 +175,7 @@ impl_from_str!(
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(&desc_str[2..])?;
-        Self::from_tree(&top)
+        Self::from_tree(top.root())
     }
 );
 
@@ -345,16 +341,19 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Pkh<Pk> {
 
 impl_from_tree!(
     Pkh<Pk>,
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        if top.name == "elpkh" && top.args.len() == 1 {
-            Ok(Pkh::new(expression::terminal(&top.args[0], |pk| {
-                Pk::from_str(pk)
-            })?))
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
+        if let ("elpkh", Some(child), None) = (top.name(), args.next(), args.next()) {
+            Ok(Pkh::new(expression::terminal(
+                child,
+                |pk| Pk::from_str(pk),
+            )?))
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing pkh descriptor",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             )))
         }
     }
@@ -366,7 +365,7 @@ impl_from_str!(
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
-        Self::from_tree(&top)
+        Self::from_tree(top.root())
     }
 );
 

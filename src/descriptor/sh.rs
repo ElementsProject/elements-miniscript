@@ -91,10 +91,11 @@ impl<Pk: MiniscriptKey> fmt::Display for Sh<Pk> {
 
 impl_from_tree!(
     Sh<Pk>,
-    fn from_tree(top: &expression::Tree) -> Result<Self, Error> {
-        if top.name == "elsh" && top.args.len() == 1 {
-            let top = &top.args[0];
-            let inner = match top.name {
+    fn from_tree(top: expression::TreeIterItem<'_>) -> Result<Self, Error> {
+        expression::verify_round_parens(top)?;
+        let mut args = top.children();
+        if let ("elsh", Some(top), None) = (top.name(), args.next(), args.next()) {
+            let inner = match top.name() {
                 "wsh" => ShInner::Wsh(Wsh::from_inner_tree(top)?),
                 "wpkh" => ShInner::Wpkh(Wpkh::from_inner_tree(top)?),
                 "sortedmulti" => ShInner::SortedMulti(SortedMultiVec::from_tree(top)?),
@@ -108,8 +109,8 @@ impl_from_tree!(
         } else {
             Err(Error::Unexpected(format!(
                 "{}({} args) while parsing sh descriptor",
-                top.name,
-                top.args.len(),
+                top.name(),
+                top.n_children(),
             )))
         }
     }
@@ -121,7 +122,7 @@ impl_from_str!(
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let desc_str = verify_checksum(s)?;
         let top = expression::Tree::from_str(desc_str)?;
-        Self::from_tree(&top)
+        Self::from_tree(top.root())
     }
 );
 
