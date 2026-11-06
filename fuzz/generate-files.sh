@@ -50,7 +50,7 @@ on:
 jobs:
   fuzz:
     if: \${{ !github.event.act }}
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -59,21 +59,22 @@ $(for name in $(listTargetNames); do echo "$name,"; done)
         ]
     steps:
       - name: Install test dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y binutils-dev libunwind8-dev libcurl4-openssl-dev libelf-dev libdw-dev cmake gcc libiberty-dev
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
+        run: sudo apt-get update -y && sudo apt-get install -y binutils-dev libunwind-dev libcurl4-openssl-dev libelf-dev libdw-dev cmake gcc libiberty-dev
+      - uses: actions/checkout@v6
+      - name: Set dependencies
+        run: cp Cargo-latest.lock Cargo.lock
+      - uses: actions/cache@v5
         id: cache-fuzz
         with:
           path: |
             ~/.cargo/bin
             fuzz/target
             target
-          key: cache-\${{ matrix.target }}-\${{ hashFiles('**/Cargo.toml','**/Cargo.lock') }}
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.74.0
-          override: true
-          profile: minimal
+          key: cache-\${{ matrix.fuzz_target }}-\${{ hashFiles('**/Cargo.toml','**/Cargo.lock') }}
+      - name: Install Rust 1.74.0
+        run: |
+          rustup toolchain install 1.74.0 --profile minimal
+          rustup default 1.74.0
       - name: fuzz
         run: |
           if [[ "\${{ matrix.fuzz_target }}" =~ ^bitcoin ]]; then
@@ -82,7 +83,7 @@ $(for name in $(listTargetNames); do echo "$name,"; done)
           echo "Using RUSTFLAGS \$RUSTFLAGS"
           cd fuzz && ./fuzz.sh "\${{ matrix.fuzz_target }}"
       - run: echo "\${{ matrix.fuzz_target }}" >executed_\${{ matrix.fuzz_target }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: executed_\${{ matrix.fuzz_target }}
           path: executed_\${{ matrix.fuzz_target }}
@@ -92,8 +93,8 @@ $(for name in $(listTargetNames); do echo "$name,"; done)
     needs: fuzz
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
       - name: Display structure of downloaded files
         run: ls -R
       - run: find executed_* -type f -exec cat {} + | sort > executed

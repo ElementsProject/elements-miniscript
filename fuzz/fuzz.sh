@@ -18,11 +18,10 @@ fi
 cargo --version
 rustc --version
 
-cargo update -p byteorder --precise 1.4.3
 cargo update -p cc --precise 1.0.94
 
 # Testing
-cargo install --force honggfuzz --no-default-features
+cargo install --force --version 0.5.57 --locked honggfuzz --no-default-features
 for targetFile in $targetFiles; do
   targetName=$(targetFileToName "$targetFile")
   echo "Fuzzing target $targetName ($targetFile)"
