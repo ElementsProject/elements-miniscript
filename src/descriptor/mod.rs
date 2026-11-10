@@ -824,6 +824,7 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     ///
     /// # Errors
     /// - If index ≥ 2^31
+    /// - If the descriptor contains multi-path derivations
     pub fn at_derivation_index(
         &self,
         index: u32,
@@ -876,7 +877,8 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     ///
     /// # Errors
     ///
-    /// This function will return an error if hardened derivation is attempted.
+    /// This function will return an error for multi-path descriptors
+    /// or if hardened derivation is attempted,
     pub fn derived_descriptor<C: secp256k1_zkp::Verification>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
