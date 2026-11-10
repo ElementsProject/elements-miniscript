@@ -54,7 +54,7 @@ pub(crate) use self::key::maybe_fmt_master_id;
 pub use self::key::{
     ConversionError, DefiniteDescriptorKey, DerivPaths, DescriptorKeyParseError,
     DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey, InnerXKey,
-    SinglePriv, SinglePub, SinglePubKey, Wildcard,
+    MalformedKeyDataKind, SinglePriv, SinglePub, SinglePubKey, Wildcard,
 };
 pub use self::tr::{TapLeafScript, TapTree, Tr};
 /// Alias type for a map of public key to secret key

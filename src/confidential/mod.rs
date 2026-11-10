@@ -487,7 +487,7 @@ mod tests {
             ),
             (
                 "ct(L3jXxwef3fpB7hcrFozcWgHeJCPSAFiZ1Ji2YJMPxceaGvy3PC1q,elwpkh(03774eec7a3d550d18e9f89414152025b3b0ad6a342b19481f702d843cff06dfc4))#gcy6hcfz",
-                "unexpected «Key too short (<66 char), doesn't match any format»",
+                "unexpected «key too short»",
             ),
         ];
 
