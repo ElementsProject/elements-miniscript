@@ -453,6 +453,7 @@ pub enum NonDefiniteKeyError {
     Wildcard,
     Multipath,
     HardenedStep,
+    MaximumDepthExceeded,
 }
 
 impl fmt::Display for NonDefiniteKeyError {
@@ -463,6 +464,9 @@ impl fmt::Display for NonDefiniteKeyError {
             Self::HardenedStep => {
                 f.write_str("key with hardened derivation steps cannot be a DerivedDescriptorKey")
             }
+            Self::MaximumDepthExceeded => f.write_str(
+                "key deeper than BIP32's maximum depth of 255 cannot be a DerivedDescriptorKey",
+            ),
         }
     }
 }
@@ -868,6 +872,24 @@ impl DescriptorPublicKey {
         false
     }
 
+    /// Whether deriving this key, including a wildcard step, would go deeper than BIP32's maximum
+    /// depth of 255.
+    fn exceeds_max_depth(&self) -> bool {
+        match self {
+            Self::Single(..) => false,
+            Self::XPub(xpub) => derivation_exceeds_max_depth(
+                xpub.xkey.depth,
+                core::slice::from_ref(&xpub.derivation_path),
+                xpub.wildcard,
+            ),
+            Self::MultiXPub(xpub) => derivation_exceeds_max_depth(
+                xpub.xkey.depth,
+                xpub.derivation_paths.paths(),
+                xpub.wildcard,
+            ),
+        }
+    }
+
     /// Replaces any wildcard (i.e. `/*`) in the key with a particular derivation index, turning it into a
     /// *definite* key (i.e. one where all the derivation paths are set).
     ///
@@ -882,6 +904,7 @@ impl DescriptorPublicKey {
     /// - If `index` is hardened.
     /// - If derivation path contains a hardened step.
     /// - If the key contains multi-path derivations
+    /// - If deriving the key would go deeper than BIP32's maximum depth of 255
     pub fn at_derivation_index(
         self,
         index: u32,
@@ -1069,6 +1092,20 @@ fn parse_key_origin(s: &str) -> Result<(&str, Option<bip32::KeySource>), Descrip
     } else {
         Ok((s, None))
     }
+}
+
+/// Whether deriving from an extended key at `depth` along any of `paths`, plus one more step for a
+/// wildcard, would go deeper than BIP32's maximum depth of 255.
+///
+/// The paths hold only the steps after the extended key. Its depth already includes the steps of
+/// its origin, so those are not counted again.
+fn derivation_exceeds_max_depth(
+    depth: u8,
+    paths: &[bip32::DerivationPath],
+    wildcard: Wildcard,
+) -> bool {
+    let longest = paths.iter().map(|path| path.len()).max().unwrap_or(0);
+    longest + usize::from(wildcard != Wildcard::None) > usize::from(u8::MAX - depth)
 }
 
 fn parse_bip32_xpub(xkey_str: &str) -> Result<bip32::Xpub, DescriptorKeyParseError> {
@@ -1332,9 +1369,10 @@ impl DefiniteDescriptorKey {
         }
     }
 
-    /// Construct an instance from a descriptor key and a derivation index
+    /// Constructs an instance from a descriptor key.
     ///
-    /// Returns `None` if the key contains a wildcard
+    /// Returns an error if the key has a wildcard, a hardened derivation step or several derivation
+    /// paths, or if deriving it would go deeper than BIP32's maximum depth of 255.
     pub fn new(key: DescriptorPublicKey) -> Result<Self, NonDefiniteKeyError> {
         if key.has_wildcard() {
             Err(NonDefiniteKeyError::Wildcard)
@@ -1342,6 +1380,8 @@ impl DefiniteDescriptorKey {
             Err(NonDefiniteKeyError::HardenedStep)
         } else if key.is_multipath() {
             Err(NonDefiniteKeyError::Multipath)
+        } else if key.exceeds_max_depth() {
+            Err(NonDefiniteKeyError::MaximumDepthExceeded)
         } else {
             Ok(Self(key))
         }
@@ -1468,10 +1508,11 @@ mod test {
     use serde_test::{assert_tokens, Token};
 
     use super::{
-        DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey, MiniscriptKey, Wildcard,
+        DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey,
+        MiniscriptKey, Wildcard,
     };
     use crate::descriptor::key::NonDefiniteKeyError;
-    use crate::DefiniteDescriptorKey;
+    use crate::{DefiniteDescriptorKey, Descriptor};
 
     #[test]
     fn parse_descriptor_key_errors() {
@@ -1872,5 +1913,54 @@ mod test {
             DefiniteDescriptorKey::new(desc),
             Err(NonDefiniteKeyError::HardenedStep)
         ));
+    }
+
+    #[test]
+    fn definite_key_maximum_depth() {
+        let key = |depth: u8, steps: usize, wildcard: Wildcard| {
+            let mut xkey = bip32::Xpub::from_str("xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8").unwrap();
+            xkey.depth = depth;
+            DescriptorPublicKey::XPub(DescriptorXKey {
+                origin: None,
+                xkey,
+                derivation_path: vec![bip32::ChildNumber::from(0); steps].into(),
+                wildcard,
+            })
+        };
+        let new = |key| DefiniteDescriptorKey::new(key).map(|_| ());
+        let too_deep = Err(NonDefiniteKeyError::MaximumDepthExceeded);
+
+        // BIP32 depth stops at 255, so an xpub at `depth` can take 255 - depth more steps.
+        assert_eq!(new(key(0, 255, Wildcard::None)), Ok(()));
+        assert_eq!(new(key(0, 256, Wildcard::None)), too_deep);
+        assert_eq!(new(key(200, 55, Wildcard::None)), Ok(()));
+        assert_eq!(new(key(200, 56, Wildcard::None)), too_deep);
+
+        // Deriving at an index turns the wildcard into one more step.
+        assert!(key(200, 54, Wildcard::Unhardened)
+            .at_derivation_index(7)
+            .is_ok());
+        assert_eq!(
+            key(200, 55, Wildcard::Unhardened)
+                .at_derivation_index(7)
+                .map(|_| ()),
+            too_deep
+        );
+
+        // Origin steps don't count, since the xpub's depth already includes them.
+        let mut key_with_origin = key(0, 255, Wildcard::None);
+        if let DescriptorPublicKey::XPub(ref mut xpub) = key_with_origin {
+            xpub.origin = Some((
+                bip32::Fingerprint::default(),
+                vec![bip32::ChildNumber::from(0); 300].into(),
+            ));
+        }
+        assert_eq!(new(key_with_origin), Ok(()));
+
+        // A descriptor with such a key doesn't become definite, so it can't panic later when
+        // deriving its script pubkey.
+        let desc = Descriptor::<DescriptorPublicKey>::new_tr(key(0, 256, Wildcard::None), None)
+            .unwrap();
+        assert_eq!(desc.at_derivation_index(0).map(|_| ()), too_deep);
     }
 }
