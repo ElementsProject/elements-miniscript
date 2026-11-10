@@ -851,7 +851,7 @@ impl DescriptorPublicKey {
         }
     }
 
-    /// Whether or not the key has a wildcard
+    /// Whether or not the key has a hardened step in path
     pub fn has_hardened_step(&self) -> bool {
         let paths = match self {
             DescriptorPublicKey::Single(..) => &[],
