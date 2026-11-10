@@ -1063,20 +1063,20 @@ struct KeySourceLookUp(
     pub secp256k1::Secp256k1<VerifyOnly>,
 );
 
-impl Translator<DefiniteDescriptorKey, bitcoin::PublicKey, descriptor::ConversionError>
+impl Translator<DefiniteDescriptorKey, bitcoin::PublicKey, core::convert::Infallible>
     for KeySourceLookUp
 {
     fn pk(
         &mut self,
         xpk: &DefiniteDescriptorKey,
-    ) -> Result<bitcoin::PublicKey, descriptor::ConversionError> {
-        let derived = xpk.derive_public_key(&self.1)?;
+    ) -> Result<bitcoin::PublicKey, core::convert::Infallible> {
+        let derived = xpk.derive_public_key(&self.1);
         self.0.insert(
             derived.to_public_key(),
             (
                 xpk.master_fingerprint(),
                 xpk.full_derivation_path()
-                    .ok_or(descriptor::ConversionError::MultiKey)?,
+                    .expect("definite keys cannot be multikeys"),
             ),
         );
         Ok(derived)
@@ -1085,7 +1085,7 @@ impl Translator<DefiniteDescriptorKey, bitcoin::PublicKey, descriptor::Conversio
     translate_hash_clone!(
         DescriptorPublicKey,
         bitcoin::PublicKey,
-        descriptor::ConversionError
+        core::convert::Infallible
     );
 }
 
@@ -1181,6 +1181,9 @@ impl PsbtFields for psbt::Output {
     }
 }
 
+// Deriving a definite descriptor can no longer fail, but upstream rust-miniscript keeps the
+// `Result` of this helper, so keep it too. Upstream does not enable this lint.
+#[allow(clippy::unnecessary_wraps)]
 fn update_item_with_descriptor_helper<F: PsbtFields>(
     item: &mut F,
     descriptor: &Descriptor<DefiniteDescriptorKey, CovenantExt<CovExtArgs>>,
@@ -1198,7 +1201,7 @@ fn update_item_with_descriptor_helper<F: PsbtFields>(
     let secp = secp256k1::Secp256k1::verification_only();
 
     let derived = if let Descriptor::Tr(_) = &descriptor {
-        let derived = descriptor.derived_descriptor(&secp)?;
+        let derived = descriptor.derived_descriptor(&secp);
 
         if let Some(check_script) = check_script {
             if check_script != &derived.script_pubkey() {
@@ -1210,13 +1213,13 @@ fn update_item_with_descriptor_helper<F: PsbtFields>(
 
         // NOTE: they will both always be Tr
         if let (Descriptor::Tr(tr_derived), Descriptor::Tr(tr_xpk)) = (&derived, descriptor) {
-            update_tr_psbt_helper(item, tr_derived, tr_xpk)?;
+            update_tr_psbt_helper(item, tr_derived, tr_xpk);
         }
 
         derived
     } else if let Descriptor::TrExt(_) = &descriptor {
         // Repeat the same code for Tr with extensions. Annoying to dedup this code without macros
-        let derived = descriptor.derived_descriptor(&secp)?;
+        let derived = descriptor.derived_descriptor(&secp);
 
         if let Some(check_script) = check_script {
             if check_script != &derived.script_pubkey() {
@@ -1226,13 +1229,16 @@ fn update_item_with_descriptor_helper<F: PsbtFields>(
 
         // NOTE: they will both always be Tr
         if let (Descriptor::TrExt(tr_derived), Descriptor::TrExt(tr_xpk)) = (&derived, descriptor) {
-            update_tr_psbt_helper(item, tr_derived, tr_xpk)?;
+            update_tr_psbt_helper(item, tr_derived, tr_xpk);
         }
 
         derived
     } else {
         let mut bip32_derivation = KeySourceLookUp(BTreeMap::new(), Secp256k1::verification_only());
-        let derived = descriptor.translate_pk(&mut bip32_derivation)?;
+        let derived = match descriptor.translate_pk(&mut bip32_derivation) {
+            Ok(derived) => derived,
+            Err(e) => match e {},
+        };
 
         if let Some(check_script) = check_script {
             if check_script != &derived.script_pubkey() {
@@ -1272,7 +1278,7 @@ fn update_tr_psbt_helper<Ext, Ext2, F: PsbtFields>(
     item: &mut F,
     tr_derived: &Tr<bitcoin::PublicKey, Ext>,
     tr_xpk: &Tr<DefiniteDescriptorKey, Ext2>,
-) -> Result<(), descriptor::ConversionError>
+)
 where
     Ext: ParseableExt,
     Ext2: Extension,
@@ -1292,7 +1298,7 @@ where
                 ik_xpk.master_fingerprint(),
                 ik_xpk
                     .full_derivation_path()
-                    .ok_or(descriptor::ConversionError::MultiKey)?,
+                    .expect("definite keys cannot be multikeys"),
             ),
         ),
     );
@@ -1331,7 +1337,7 @@ where
                         (
                             xpk.master_fingerprint(),
                             xpk.full_derivation_path()
-                                .ok_or(descriptor::ConversionError::MultiKey)?,
+                                .expect("definite keys cannot be multikeys"),
                         ),
                     )
                 });
@@ -1354,7 +1360,6 @@ where
         }
         _ => {}
     }
-    Ok(())
 }
 
 // Get a script from witness script pubkey hash

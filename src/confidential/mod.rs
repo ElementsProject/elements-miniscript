@@ -84,7 +84,7 @@ impl Key {
                     // since there is not wildcard. This fails for a hardened derivation step.
                     // Consider adding DescriptorPublicKey::to_definite_descriptor
                     let pk = pk.clone().at_derivation_index(0)?;
-                    let pk = pk.derive_public_key(secp)?;
+                    let pk = pk.derive_public_key(secp);
                     Ok(bare::tweak_key(secp, spk, &pk))
                 }
             },
