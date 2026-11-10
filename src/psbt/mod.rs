@@ -1008,14 +1008,14 @@ pub trait PsbtInputExt {
     fn update_with_descriptor_unchecked(
         &mut self,
         descriptor: &Descriptor<DefiniteDescriptorKey, CovenantExt<CovExtArgs>>,
-    ) -> Result<Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>, descriptor::ConversionError>;
+    ) -> Result<Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>, descriptor::NonDefiniteKeyError>;
 }
 
 impl PsbtInputExt for psbt::Input {
     fn update_with_descriptor_unchecked(
         &mut self,
         descriptor: &Descriptor<DefiniteDescriptorKey, CovenantExt<CovExtArgs>>,
-    ) -> Result<Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>, descriptor::ConversionError>
+    ) -> Result<Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>, descriptor::NonDefiniteKeyError>
     {
         let (derived, _) = update_item_with_descriptor_helper(self, descriptor, None)?;
         Ok(derived)
@@ -1043,14 +1043,14 @@ pub trait PsbtOutputExt {
     fn update_with_descriptor_unchecked(
         &mut self,
         descriptor: &Descriptor<DefiniteDescriptorKey>,
-    ) -> Result<Descriptor<bitcoin::PublicKey>, descriptor::ConversionError>;
+    ) -> Result<Descriptor<bitcoin::PublicKey>, descriptor::NonDefiniteKeyError>;
 }
 
 impl PsbtOutputExt for psbt::Output {
     fn update_with_descriptor_unchecked(
         &mut self,
         descriptor: &Descriptor<DefiniteDescriptorKey>,
-    ) -> Result<Descriptor<bitcoin::PublicKey>, descriptor::ConversionError> {
+    ) -> Result<Descriptor<bitcoin::PublicKey>, descriptor::NonDefiniteKeyError> {
         let (derived, _) = update_item_with_descriptor_helper(self, descriptor, None)?;
         Ok(derived)
     }
@@ -1196,7 +1196,7 @@ fn update_item_with_descriptor_helper<F: PsbtFields>(
         Descriptor<bitcoin::PublicKey, CovenantExt<CovExtArgs>>,
         bool,
     ),
-    descriptor::ConversionError,
+    descriptor::NonDefiniteKeyError,
 > {
     let secp = secp256k1::Secp256k1::verification_only();
 
@@ -1381,7 +1381,7 @@ pub enum UtxoUpdateError {
     /// The unsigned transaction didn't have an input at that index
     MissingInputUtxo,
     /// Derivation error
-    DerivationError(descriptor::ConversionError),
+    DerivationError(descriptor::NonDefiniteKeyError),
     /// The PSBT's `witness_utxo` and/or `non_witness_utxo` were invalid or missing
     UtxoCheck,
     /// The PSBT's `witness_utxo` and/or `non_witness_utxo` had a script_pubkey that did not match
@@ -1429,7 +1429,7 @@ pub enum OutputUpdateError {
     /// The raw unsigned transaction didn't have an output at that index
     MissingTxOut,
     /// Derivation error
-    DerivationError(descriptor::ConversionError),
+    DerivationError(descriptor::NonDefiniteKeyError),
     /// The output's script_pubkey did not match the descriptor
     MismatchedScriptPubkey,
 }
