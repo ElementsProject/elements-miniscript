@@ -449,6 +449,24 @@ where
 #[derive(Debug, PartialEq, Clone)]
 #[non_exhaustive]
 #[allow(missing_docs)]
+pub enum NonDefiniteKeyError {
+    Wildcard,
+}
+
+impl fmt::Display for NonDefiniteKeyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::Wildcard => f.write_str("key with a wildcard cannot be a DerivedDescriptorKey"),
+        }
+    }
+}
+
+impl error::Error for NonDefiniteKeyError {}
+
+/// Kinds of malformed key data
+#[derive(Debug, PartialEq, Clone)]
+#[non_exhaustive]
+#[allow(missing_docs)]
 pub enum MalformedKeyDataKind {
     EmptyKey,
     EncounteredUnprintableCharacter,
@@ -464,7 +482,6 @@ pub enum MalformedKeyDataKind {
     NoKeyAfterOrigin,
     NoMasterFingerprintFound,
     UnclosedSquareBracket,
-    WildcardAsDerivedDescriptorKey,
 }
 
 impl fmt::Display for MalformedKeyDataKind {
@@ -484,7 +501,6 @@ impl fmt::Display for MalformedKeyDataKind {
             Self::NoKeyAfterOrigin => "no key after origin",
             Self::NoMasterFingerprintFound => "no master fingerprint found after '['",
             Self::UnclosedSquareBracket => "unclosed '['",
-            Self::WildcardAsDerivedDescriptorKey => "cannot parse key with a wilcard as a DerivedDescriptorKey",
         };
 
         f.write_str(err)
@@ -519,6 +535,8 @@ pub enum DescriptorKeyParseError {
         /// The underlying parse error
         err: bitcoin::hex::HexToArrayError,
     },
+    /// Attempt to construct a [`DefiniteDescriptorKey`] from an ambiguous key.
+    NonDefiniteKey(NonDefiniteKeyError),
     /// Error while parsing a simple public key.
     FullPublicKey(bitcoin::key::ParsePublicKeyError),
     /// Error while parsing a WIF private key.
@@ -543,6 +561,7 @@ impl fmt::Display for DescriptorKeyParseError {
             Self::MasterFingerprint { fingerprint, err } => {
                 write!(f, "on master fingerprint '{fingerprint}': {err}")
             }
+            Self::NonDefiniteKey(err) => err.fmt(f),
             Self::FullPublicKey(err) => err.fmt(f),
             Self::WifPrivateKey(err) => err.fmt(f),
             Self::XonlyPublicKey(err) => err.fmt(f),
@@ -560,6 +579,7 @@ impl error::Error for DescriptorKeyParseError {
             | Self::DeriveHardenedKey(err)
             | Self::MasterDerivationPath(err) => Some(err),
             Self::MasterFingerprint { err, .. } => Some(err),
+            Self::NonDefiniteKey(err) => Some(err),
             Self::FullPublicKey(err) => Some(err),
             Self::WifPrivateKey(err) => Some(err),
             Self::XonlyPublicKey(err) => Some(err),
@@ -1364,9 +1384,8 @@ impl FromStr for DefiniteDescriptorKey {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let inner = DescriptorPublicKey::from_str(s)?;
-        DefiniteDescriptorKey::new(inner).ok_or(DescriptorKeyParseError::MalformedKeyData(
-            MalformedKeyDataKind::WildcardAsDerivedDescriptorKey,
-        ))
+        DefiniteDescriptorKey::new(inner)
+            .ok_or(DescriptorKeyParseError::NonDefiniteKey(NonDefiniteKeyError::Wildcard))
     }
 }
 
