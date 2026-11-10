@@ -28,7 +28,7 @@ use elements::secp256k1_zkp;
 
 use crate::descriptor::checksum::{self, verify_checksum};
 use crate::descriptor::{
-    ConversionError, DefiniteDescriptorKey, DescriptorSecretKey, DescriptorPublicKey,
+    DefiniteDescriptorKey, DescriptorSecretKey, DescriptorPublicKey, NonDefiniteKeyError,
     DescriptorXKey, Wildcard
 };
 use crate::expression::FromTree;
@@ -128,7 +128,7 @@ impl<T: Extension + ParseableExt> Descriptor<DescriptorPublicKey, T> {
     ///
     /// # Errors
     /// - If index ≥ 2^31
-    pub fn at_derivation_index(&self, index: u32) -> Result<Descriptor<DefiniteDescriptorKey, T>, ConversionError> {
+    pub fn at_derivation_index(&self, index: u32) -> Result<Descriptor<DefiniteDescriptorKey, T>, NonDefiniteKeyError> {
         let definite_key = match self.key.clone() {
             Key::Slip77(k) => Key::Slip77(k),
             Key::Bare(k) => Key::Bare(k.at_derivation_index(index)?.into_descriptor_public_key()),
@@ -141,12 +141,12 @@ impl<T: Extension + ParseableExt> Descriptor<DescriptorPublicKey, T> {
                         Wildcard::Unhardened => xprv.derivation_path.into_child(
                             bip32::ChildNumber::from_normal_idx(index)
                                 .ok()
-                                .ok_or(ConversionError::HardenedChild)?,
+                                .ok_or(NonDefiniteKeyError::HardenedStep)?,
                         ),
                         Wildcard::Hardened => xprv.derivation_path.into_child(
                             bip32::ChildNumber::from_hardened_idx(index)
                                 .ok()
-                                .ok_or(ConversionError::HardenedChild)?,
+                                .ok_or(NonDefiniteKeyError::HardenedStep)?,
                         ),
                     };
                     DescriptorSecretKey::XPrv(DescriptorXKey {
@@ -156,7 +156,7 @@ impl<T: Extension + ParseableExt> Descriptor<DescriptorPublicKey, T> {
                         wildcard: Wildcard::None,
                     })
                 },
-                DescriptorSecretKey::MultiXPrv(_) => return Err(ConversionError::MultiKey),
+                DescriptorSecretKey::MultiXPrv(_) => return Err(NonDefiniteKeyError::Multipath),
             }),
         };
         let definite_descriptor = self.descriptor.at_derivation_index(index)?;
@@ -589,7 +589,7 @@ mod tests {
 
         assert!(matches!(
             desc.address(&secp, params).unwrap_err(),
-            Error::Conversion(ConversionError::HardenedChild)
+            Error::NonDefiniteKey(NonDefiniteKeyError::HardenedStep)
         ));
     }
 
@@ -604,7 +604,7 @@ mod tests {
         let desc = Descriptor::<DescriptorPublicKey, NoExt>::from_str(&desc_str).unwrap();
         assert_eq!(
             desc.at_derivation_index(1).unwrap_err(),
-            ConversionError::HardenedChild
+            NonDefiniteKeyError::HardenedStep
         );
     }
 

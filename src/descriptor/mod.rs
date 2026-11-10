@@ -52,9 +52,9 @@ mod key;
 pub use self::csfs_cov::{CovError, CovOperations, LegacyCSFSCov, LegacyCovSatisfier};
 pub(crate) use self::key::maybe_fmt_master_id;
 pub use self::key::{
-    ConversionError, DefiniteDescriptorKey, DerivPaths, DescriptorKeyParseError,
-    DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey, InnerXKey,
-    MalformedKeyDataKind, SinglePriv, SinglePub, SinglePubKey, Wildcard,
+    DefiniteDescriptorKey, DerivPaths, DescriptorKeyParseError, DescriptorMultiXKey,
+    DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey, InnerXKey, MalformedKeyDataKind,
+    NonDefiniteKeyError, SinglePriv, SinglePub, SinglePubKey, Wildcard,
 };
 pub use self::tr::{TapLeafScript, TapTree, Tr};
 /// Alias type for a map of public key to secret key
@@ -822,18 +822,20 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     pub fn at_derivation_index(
         &self,
         index: u32,
-    ) -> Result<Descriptor<DefiniteDescriptorKey, Ext>, ConversionError> {
+    ) -> Result<Descriptor<DefiniteDescriptorKey, Ext>, NonDefiniteKeyError> {
         struct Derivator(u32);
 
-        impl Translator<DescriptorPublicKey, DefiniteDescriptorKey, ConversionError> for Derivator {
+        impl Translator<DescriptorPublicKey, DefiniteDescriptorKey, NonDefiniteKeyError>
+            for Derivator
+        {
             fn pk(
                 &mut self,
                 pk: &DescriptorPublicKey,
-            ) -> Result<DefiniteDescriptorKey, ConversionError> {
+            ) -> Result<DefiniteDescriptorKey, NonDefiniteKeyError> {
                 pk.clone().at_derivation_index(self.0)
             }
 
-            translate_hash_clone!(DescriptorPublicKey, DescriptorPublicKey, ConversionError);
+            translate_hash_clone!(DescriptorPublicKey, DescriptorPublicKey, NonDefiniteKeyError);
         }
         self.translate_pk(&mut Derivator(index))
     }
@@ -868,7 +870,7 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
         index: u32,
-    ) -> Result<Descriptor<bitcoin::PublicKey, Ext>, ConversionError> {
+    ) -> Result<Descriptor<bitcoin::PublicKey, Ext>, NonDefiniteKeyError> {
         Ok(self.at_derivation_index(index)?.derived_descriptor(secp))
     }
 
@@ -1065,7 +1067,7 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
         secp: &secp256k1_zkp::Secp256k1<C>,
         script_pubkey: &Script,
         range: Range<u32>,
-    ) -> Result<Option<(u32, Descriptor<bitcoin::PublicKey, Ext>)>, ConversionError> {
+    ) -> Result<Option<(u32, Descriptor<bitcoin::PublicKey, Ext>)>, NonDefiniteKeyError> {
         let range = if self.has_wildcard() { range } else { 0..1 };
 
         for i in range {
