@@ -880,6 +880,7 @@ impl DescriptorPublicKey {
     /// # Errors
     ///
     /// - If `index` is hardened.
+    /// - If derivation path contains a hardened step.
     /// - If the key contains multi-path derivations
     pub fn at_derivation_index(
         self,
