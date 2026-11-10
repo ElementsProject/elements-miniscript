@@ -81,11 +81,9 @@ impl Key {
                     Err(Error::Unexpected("wildcard blinding key".into()))
                 } else {
                     // Convert into a DefiniteDescriptorKey, note that we are deriving the xpub
-                    // since there is not wildcard.
+                    // since there is not wildcard. This fails for a hardened derivation step.
                     // Consider adding DescriptorPublicKey::to_definite_descriptor
-                    let pk = pk.clone().at_derivation_index(0).expect("single or xpub without wildcards");
-                    // Derive explicitly rather than relying on ToPublicKey::to_public_key,
-                    // which panics on keys with hardened derivation steps.
+                    let pk = pk.clone().at_derivation_index(0)?;
                     let pk = pk.derive_public_key(secp)?;
                     Ok(bare::tweak_key(secp, spk, &pk))
                 }
@@ -98,7 +96,7 @@ impl Key {
                     if pk.has_wildcard() {
                         Err(Error::Unexpected("wildcard blinding key".into()))
                     } else {
-                        let pk = pk.at_derivation_index(0).expect("single or xprv without wildcards");
+                        let pk = pk.at_derivation_index(0)?;
                         Ok(bare::tweak_key(secp, spk, &pk))
                     }
                 }
@@ -572,9 +570,8 @@ mod tests {
         assert!(matches!(desc.key, Key::View(_)));
     }
 
-    // A blinding key with a hardened derivation step cannot be derived from an xpub. This
-    // must be reported as an error rather than panicking in `ToPublicKey::to_public_key`,
-    // which unwraps the `ConversionError` returned by `derive_public_key`.
+    // A blinding key with a hardened derivation step cannot be derived from an xpub. This is
+    // reported as an error when the blinding key becomes definite.
     #[test]
     fn descriptor_hardened_blinding_key() {
         let secp = secp256k1_zkp::Secp256k1::new();
@@ -597,22 +594,18 @@ mod tests {
     }
 
     // Same case, reached through `at_derivation_index` on a hardened wildcard blinding
-    // key: the wildcard is replaced by a hardened child, which the xpub cannot derive.
+    // key: the wildcard is replaced by a hardened child, which the xpub cannot derive, so
+    // the descriptor does not become definite.
     #[test]
     fn descriptor_hardened_wildcard_blinding_key() {
-        let secp = secp256k1_zkp::Secp256k1::new();
-        let params = &elements::AddressParams::LIQUID;
-
         let xpub = "xpub661MyMwAqRbcEcT9W98HZP2kFzyzQQZkYnrRnrM8uD8kH8kSeFoQHq1x2iihLgC6PXGy5LrjCL66uSNhJ8pwjfx2rMUTLWuRMns2EG9xnjs";
         let desc_str = format!("ct({}/*h,elwpkh({}/*))", xpub, xpub);
 
         let desc = Descriptor::<DescriptorPublicKey, NoExt>::from_str(&desc_str).unwrap();
-        let definite_desc = desc.at_derivation_index(1).unwrap();
-
-        assert!(matches!(
-            definite_desc.address(&secp, params).unwrap_err(),
-            Error::Conversion(ConversionError::HardenedChild)
-        ));
+        assert_eq!(
+            desc.at_derivation_index(1).unwrap_err(),
+            ConversionError::HardenedChild
+        );
     }
 
     #[test]

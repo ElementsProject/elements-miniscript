@@ -452,6 +452,7 @@ where
 pub enum NonDefiniteKeyError {
     Wildcard,
     Multipath,
+    HardenedStep,
 }
 
 impl fmt::Display for NonDefiniteKeyError {
@@ -459,6 +460,9 @@ impl fmt::Display for NonDefiniteKeyError {
         match *self {
             Self::Wildcard => f.write_str("key with a wildcard cannot be a DerivedDescriptorKey"),
             Self::Multipath => f.write_str("multipath key cannot be a DerivedDescriptorKey"),
+            Self::HardenedStep => {
+                f.write_str("key with hardened derivation steps cannot be a DerivedDescriptorKey")
+            }
         }
     }
 }
@@ -879,6 +883,23 @@ impl DescriptorPublicKey {
         }
     }
 
+    /// Whether or not the key has a wildcard
+    pub fn has_hardened_step(&self) -> bool {
+        let paths = match self {
+            DescriptorPublicKey::Single(..) => &[],
+            DescriptorPublicKey::XPub(xpub) => core::slice::from_ref(&xpub.derivation_path),
+            DescriptorPublicKey::MultiXPub(xpub) => &xpub.derivation_paths.paths()[..],
+        };
+        for p in paths {
+            for step in p.into_iter() {
+                if step.is_hardened() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     #[deprecated(note = "use at_derivation_index instead")]
     /// Deprecated name for [`Self::at_derivation_index`].
     pub fn derive(self, index: u32) -> Result<DefiniteDescriptorKey, ConversionError> {
@@ -925,8 +946,14 @@ impl DescriptorPublicKey {
             DescriptorPublicKey::MultiXPub(_) => return Err(ConversionError::MultiKey),
         };
 
-        Ok(DefiniteDescriptorKey::new(definite)
-            .expect("The key should not contain any wildcards at this point"))
+        // Upstream keeps an `expect` here until 97c948d, which panics on a hardened step. Map the
+        // error instead, since Elements callers derive such keys.
+        DefiniteDescriptorKey::new(definite).map_err(|e| match e {
+            NonDefiniteKeyError::HardenedStep => ConversionError::HardenedChild,
+            NonDefiniteKeyError::Wildcard | NonDefiniteKeyError::Multipath => {
+                unreachable!("the wildcard is replaced and multipath keys return early")
+            }
+        })
     }
 
     /// Whether or not this key has multiple derivation paths.
@@ -1355,6 +1382,8 @@ impl DefiniteDescriptorKey {
     pub fn new(key: DescriptorPublicKey) -> Result<Self, NonDefiniteKeyError> {
         if key.has_wildcard() {
             Err(NonDefiniteKeyError::Wildcard)
+        } else if key.has_hardened_step() {
+            Err(NonDefiniteKeyError::HardenedStep)
         } else if key.is_multipath() {
             Err(NonDefiniteKeyError::Multipath)
         } else {
@@ -1879,5 +1908,13 @@ mod test {
             .parse::<DescriptorPublicKey>()
             .unwrap();
         assert!(matches!(DefiniteDescriptorKey::new(desc), Err(NonDefiniteKeyError::Multipath)));
+        // xpub with hardened path
+        let desc = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8/1'/2"
+            .parse::<DescriptorPublicKey>()
+            .unwrap();
+        assert!(matches!(
+            DefiniteDescriptorKey::new(desc),
+            Err(NonDefiniteKeyError::HardenedStep)
+        ));
     }
 }
