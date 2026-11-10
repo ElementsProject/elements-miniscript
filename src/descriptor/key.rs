@@ -487,6 +487,7 @@ pub enum MalformedKeyDataKind {
     InvalidPublicKeyLength,
     InvalidWildcardInDerivationPath,
     KeyTooShort,
+    MaximumDepthExceeded,
     MultipleFingerprintsInPublicKey,
     MultipleDerivationPathIndexSteps,
     NoKeyAfterOrigin,
@@ -506,6 +507,9 @@ impl fmt::Display for MalformedKeyDataKind {
             Self::InvalidPublicKeyLength => "public keys must be 64, 66 or 130 characters in size",
             Self::InvalidWildcardInDerivationPath => "'*' may only appear as last element in a derivation path",
             Self::KeyTooShort => "key too short",
+            Self::MaximumDepthExceeded => {
+                "key derivation would go deeper than BIP32's maximum depth of 255"
+            }
             Self::MultipleFingerprintsInPublicKey => "multiple ']' in Descriptor Public Key",
             Self::MultipleDerivationPathIndexSteps => "'<' may only appear once in a derivation path",
             Self::NoKeyAfterOrigin => "no key after origin",
@@ -733,6 +737,11 @@ impl FromStr for DescriptorPublicKey {
 
         if key_part.contains("pub") {
             let (xpub, derivation_paths, wildcard) = parse_xkey_deriv(parse_bip32_xpub, key_part)?;
+            if derivation_exceeds_max_depth(xpub.depth, &derivation_paths, wildcard) {
+                return Err(DescriptorKeyParseError::MalformedKeyData(
+                    MalformedKeyDataKind::MaximumDepthExceeded,
+                ));
+            }
             if derivation_paths.len() > 1 {
                 Ok(DescriptorPublicKey::MultiXPub(DescriptorMultiXKey {
                     origin,
@@ -1004,6 +1013,11 @@ impl DescriptorSecretKey {
         } else {
             let (xpriv, derivation_paths, wildcard) =
                 parse_xkey_deriv(parse_bip32_xpriv, key_part)?;
+            if derivation_exceeds_max_depth(xpriv.depth, &derivation_paths, wildcard) {
+                return Err(DescriptorKeyParseError::MalformedKeyData(
+                    MalformedKeyDataKind::MaximumDepthExceeded,
+                ));
+            }
             if derivation_paths.len() > 1 {
                 Ok(DescriptorSecretKey::MultiXPrv(DescriptorMultiXKey {
                     origin,
@@ -1508,8 +1522,8 @@ mod test {
     use serde_test::{assert_tokens, Token};
 
     use super::{
-        DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey,
-        MiniscriptKey, Wildcard,
+        DescriptorKeyParseError, DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey,
+        DescriptorXKey, MalformedKeyDataKind, MiniscriptKey, Wildcard,
     };
     use crate::descriptor::key::NonDefiniteKeyError;
     use crate::{DefiniteDescriptorKey, Descriptor};
@@ -1962,5 +1976,41 @@ mod test {
         let desc = Descriptor::<DescriptorPublicKey>::new_tr(key(0, 256, Wildcard::None), None)
             .unwrap();
         assert_eq!(desc.at_derivation_index(0).map(|_| ()), too_deep);
+    }
+
+    #[test]
+    fn parse_key_maximum_depth() {
+        // BIP32 test vector 1 master keys, at depth 0.
+        let xpub = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8";
+        let xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
+        let steps = |n: usize| "/0".repeat(n);
+        let public = |s: String| DescriptorPublicKey::from_str(&s).map(|_| ());
+        let secret = |s: String| DescriptorSecretKey::from_str(&s).map(|_| ());
+        let too_deep = Err(DescriptorKeyParseError::MalformedKeyData(
+            MalformedKeyDataKind::MaximumDepthExceeded,
+        ));
+
+        // BIP32 depth stops at 255. A wildcard or a multipath step counts as one more step.
+        assert_eq!(public(format!("{xpub}{}", steps(255))), Ok(()));
+        assert_eq!(public(format!("{xpub}{}", steps(256))), too_deep);
+        assert_eq!(public(format!("{xpub}{}/*", steps(254))), Ok(()));
+        assert_eq!(public(format!("{xpub}{}/*", steps(255))), too_deep);
+        assert_eq!(public(format!("{xpub}{}/<0;1>", steps(254))), Ok(()));
+        assert_eq!(public(format!("{xpub}{}/<0;1>", steps(255))), too_deep);
+        assert_eq!(secret(format!("{xprv}{}/*", steps(254))), Ok(()));
+        assert_eq!(secret(format!("{xprv}{}/*", steps(255))), too_deep);
+
+        // An xpub at depth 200 can take 55 more steps.
+        let mut xkey = bip32::Xpub::from_str(xpub).unwrap();
+        xkey.depth = 200;
+        assert_eq!(public(format!("{xkey}{}", steps(55))), Ok(()));
+        assert_eq!(public(format!("{xkey}{}", steps(56))), too_deep);
+
+        // Origin steps don't count, since the xpub's depth already includes them.
+        assert_eq!(public(format!("[d34db33f{}]{xpub}{}", steps(300), steps(255))), Ok(()));
+
+        // A descriptor with such a key fails to parse, before anything can be derived from it.
+        let desc = format!("eltr({xpub}{})", steps(256));
+        assert!(Descriptor::<DescriptorPublicKey>::from_str(&desc).is_err());
     }
 }
