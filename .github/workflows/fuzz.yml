@@ -25,6 +25,7 @@ roundtrip_descriptor,
 roundtrip_concrete,
 compile_descriptor,
 roundtrip_confidential,
+parse_descriptor_definite,
         ]
     steps:
       - name: Install test dependencies

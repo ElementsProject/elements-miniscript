@@ -52,9 +52,9 @@ mod key;
 pub use self::csfs_cov::{CovError, CovOperations, LegacyCSFSCov, LegacyCovSatisfier};
 pub(crate) use self::key::maybe_fmt_master_id;
 pub use self::key::{
-    ConversionError, DefiniteDescriptorKey, DerivPaths, DescriptorKeyParseError,
-    DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey, InnerXKey,
-    SinglePriv, SinglePub, SinglePubKey, Wildcard,
+    DefiniteDescriptorKey, DerivPaths, DescriptorKeyParseError, DescriptorMultiXKey,
+    DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey, InnerXKey, MalformedKeyDataKind,
+    NonDefiniteKeyError, SinglePriv, SinglePub, SinglePubKey, Wildcard,
 };
 pub use self::tr::{TapLeafScript, TapTree, Tr};
 /// Alias type for a map of public key to secret key
@@ -808,12 +808,6 @@ impl<Pk: MiniscriptKey, T: Extension> ForEachKey<Pk> for Descriptor<Pk, T> {
 }
 
 impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
-    /// Whether or not the descriptor has any wildcards
-    #[deprecated(note = "use has_wildcards instead")]
-    pub fn is_deriveable(&self) -> bool {
-        self.has_wildcard()
-    }
-
     /// Whether or not the descriptor has any wildcards i.e. `/*`.
     pub fn has_wildcard(&self) -> bool {
         self.for_any_key(|key| key.has_wildcard())
@@ -824,32 +818,27 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     ///
     /// # Errors
     /// - If index ≥ 2^31
+    /// - If the descriptor contains multi-path derivations
+    /// - If deriving a key would go deeper than BIP32's maximum depth of 255
     pub fn at_derivation_index(
         &self,
         index: u32,
-    ) -> Result<Descriptor<DefiniteDescriptorKey, Ext>, ConversionError> {
+    ) -> Result<Descriptor<DefiniteDescriptorKey, Ext>, NonDefiniteKeyError> {
         struct Derivator(u32);
 
-        impl Translator<DescriptorPublicKey, DefiniteDescriptorKey, ConversionError> for Derivator {
+        impl Translator<DescriptorPublicKey, DefiniteDescriptorKey, NonDefiniteKeyError>
+            for Derivator
+        {
             fn pk(
                 &mut self,
                 pk: &DescriptorPublicKey,
-            ) -> Result<DefiniteDescriptorKey, ConversionError> {
+            ) -> Result<DefiniteDescriptorKey, NonDefiniteKeyError> {
                 pk.clone().at_derivation_index(self.0)
             }
 
-            translate_hash_clone!(DescriptorPublicKey, DescriptorPublicKey, ConversionError);
+            translate_hash_clone!(DescriptorPublicKey, DescriptorPublicKey, NonDefiniteKeyError);
         }
         self.translate_pk(&mut Derivator(index))
-    }
-
-    #[deprecated(note = "use at_derivation_index instead")]
-    /// Deprecated name for [`Self::at_derivation_index`].
-    pub fn derive(
-        &self,
-        index: u32,
-    ) -> Result<Descriptor<DefiniteDescriptorKey, Ext>, ConversionError> {
-        self.at_derivation_index(index)
     }
 
     /// Convert all the public keys in the descriptor to [`bitcoin::PublicKey`] by deriving them or
@@ -865,7 +854,7 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     ///     .expect("Valid ranged descriptor");
     /// # let index = 42;
     /// # let secp = Secp256k1::verification_only();
-    /// let derived_descriptor = descriptor.at_derivation_index(index).unwrap().derived_descriptor(&secp).unwrap();
+    /// let derived_descriptor = descriptor.at_derivation_index(index).unwrap().derived_descriptor(&secp);
     /// # assert_eq!(descriptor.derived_descriptor(&secp, index).unwrap(), derived_descriptor);
     /// ```
     ///
@@ -876,13 +865,14 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
     ///
     /// # Errors
     ///
-    /// This function will return an error if hardened derivation is attempted.
+    /// This function will return an error for multi-path descriptors, if hardened derivation is
+    /// attempted, or if deriving a key would go deeper than BIP32's maximum depth of 255.
     pub fn derived_descriptor<C: secp256k1_zkp::Verification>(
         &self,
         secp: &secp256k1_zkp::Secp256k1<C>,
         index: u32,
-    ) -> Result<Descriptor<bitcoin::PublicKey, Ext>, ConversionError> {
-        self.at_derivation_index(index)?.derived_descriptor(secp)
+    ) -> Result<Descriptor<bitcoin::PublicKey, Ext>, NonDefiniteKeyError> {
+        Ok(self.at_derivation_index(index)?.derived_descriptor(secp))
     }
 
     /// Parse a descriptor that may contain secret keys
@@ -1078,7 +1068,7 @@ impl<Ext: Extension + ParseableExt> Descriptor<DescriptorPublicKey, Ext> {
         secp: &secp256k1_zkp::Secp256k1<C>,
         script_pubkey: &Script,
         range: Range<u32>,
-    ) -> Result<Option<(u32, Descriptor<bitcoin::PublicKey, Ext>)>, ConversionError> {
+    ) -> Result<Option<(u32, Descriptor<bitcoin::PublicKey, Ext>)>, NonDefiniteKeyError> {
         let range = if self.has_wildcard() { range } else { 0..1 };
 
         for i in range {
@@ -1145,7 +1135,7 @@ impl<Ext: Extension> Descriptor<DefiniteDescriptorKey, Ext> {
     /// let secp = secp256k1::Secp256k1::verification_only();
     /// let descriptor = Descriptor::<DescriptorPublicKey>::from_str("eltr(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*)")
     ///     .expect("Valid ranged descriptor");
-    /// let result = descriptor.at_derivation_index(0).unwrap().derived_descriptor(&secp).expect("Non-hardened derivation");
+    /// let result = descriptor.at_derivation_index(0).unwrap().derived_descriptor(&secp);
     /// assert_eq!(result.to_string(), "eltr(03cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115)#hr5pt2wj");
     /// ```
     ///
@@ -1155,25 +1145,31 @@ impl<Ext: Extension> Descriptor<DefiniteDescriptorKey, Ext> {
     pub fn derived_descriptor<C: secp256k1::Verification>(
         &self,
         secp: &secp256k1::Secp256k1<C>,
-    ) -> Result<Descriptor<bitcoin::PublicKey, Ext>, ConversionError> {
+    ) -> Descriptor<bitcoin::PublicKey, Ext> {
         struct Derivator<'a, C: secp256k1::Verification>(&'a secp256k1::Secp256k1<C>);
 
         impl<'a, C: secp256k1::Verification>
-            Translator<DefiniteDescriptorKey, bitcoin::PublicKey, ConversionError>
+            Translator<DefiniteDescriptorKey, bitcoin::PublicKey, core::convert::Infallible>
             for Derivator<'a, C>
         {
             fn pk(
                 &mut self,
                 pk: &DefiniteDescriptorKey,
-            ) -> Result<bitcoin::PublicKey, ConversionError> {
-                pk.derive_public_key(self.0)
+            ) -> Result<bitcoin::PublicKey, core::convert::Infallible> {
+                Ok(pk.derive_public_key(self.0))
             }
 
-            translate_hash_clone!(DefiniteDescriptorKey, bitcoin::PublicKey, ConversionError);
+            translate_hash_clone!(
+                DefiniteDescriptorKey,
+                bitcoin::PublicKey,
+                core::convert::Infallible
+            );
         }
 
-        let derived = self.translate_pk(&mut Derivator(secp))?;
-        Ok(derived)
+        match self.translate_pk(&mut Derivator(secp)) {
+            Ok(derived) => derived,
+            Err(e) => match e {},
+        }
     }
 }
 
@@ -2010,14 +2006,12 @@ mod tests {
                 .at_derivation_index(index)
                 .unwrap()
                 .derived_descriptor(&secp_ctx)
-                .unwrap()
                 .address(&elements::AddressParams::ELEMENTS)
                 .unwrap();
             let addr_two = desc_two
                 .at_derivation_index(index)
                 .unwrap()
                 .derived_descriptor(&secp_ctx)
-                .unwrap()
                 .address(&elements::AddressParams::ELEMENTS)
                 .unwrap();
             let addr_expected = elements::Address::from_str(raw_addr_expected).unwrap();

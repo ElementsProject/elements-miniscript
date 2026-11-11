@@ -6,7 +6,6 @@ use std::{error, fmt, hash};
 
 use bitcoin::bip32::XKeyIdentifier;
 use bitcoin::hashes::{hash160, ripemd160, sha256, Hash, HashEngine};
-use bitcoin::hex::FromHex;
 use bitcoin::{self, bip32};
 use elements::secp256k1_zkp::{Secp256k1, Signing, Verification};
 
@@ -276,7 +275,7 @@ impl DescriptorXKey<bip32::Xpriv> {
         let xprv = self
             .xkey
             .derive_priv(secp, &hardened_path)
-            .map_err(|_| DescriptorKeyParseError("Unable to derive the hardened steps"))?;
+            .map_err(DescriptorKeyParseError::DeriveHardenedKey)?;
         let xpub = bip32::Xpub::from_priv(secp, &xprv);
 
         let origin = match &self.origin {
@@ -300,6 +299,91 @@ impl DescriptorXKey<bip32::Xpriv> {
             origin,
             xkey: xpub,
             derivation_path: unhardened_path.into(),
+            wildcard: self.wildcard,
+        })
+    }
+}
+
+impl DescriptorMultiXKey<bip32::Xpriv> {
+    /// Returns the public version of this multi-key, applying all the hardened derivation steps that
+    /// are shared among all derivation paths before turning it into a public key.
+    ///
+    /// Errors if there are hardened derivation steps that are not shared among all paths.
+    fn to_public<C: Signing>(
+        &self,
+        secp: &Secp256k1<C>,
+    ) -> Result<DescriptorMultiXKey<bip32::Xpub>, DescriptorKeyParseError> {
+        let deriv_paths = self.derivation_paths.paths();
+
+        let shared_prefix: Vec<_> = deriv_paths[0]
+            .into_iter()
+            .enumerate()
+            .take_while(|(index, child_num)| {
+                deriv_paths[1..].iter().all(|other_path| {
+                    other_path.len() > *index && other_path[*index] == **child_num
+                })
+            })
+            .map(|(_, child_num)| *child_num)
+            .collect();
+
+        let suffixes: Vec<Vec<_>> = deriv_paths
+            .iter()
+            .map(|path| {
+                path.into_iter()
+                    .skip(shared_prefix.len())
+                    .map(|child_num| {
+                        if child_num.is_normal() {
+                            Ok(*child_num)
+                        } else {
+                            Err(DescriptorKeyParseError::MalformedKeyData(
+                                MalformedKeyDataKind::InvalidMultiXKeyDerivation,
+                            ))
+                        }
+                    })
+                    .collect()
+            })
+            .collect::<Result<_, _>>()?;
+
+        let unhardened = shared_prefix
+            .iter()
+            .rev()
+            .take_while(|c| c.is_normal())
+            .count();
+        let last_hardened_idx = shared_prefix.len() - unhardened;
+        let hardened_path = &shared_prefix[..last_hardened_idx];
+        let unhardened_path = &shared_prefix[last_hardened_idx..];
+
+        let xprv = self
+            .xkey
+            .derive_priv(secp, &hardened_path)
+            .map_err(DescriptorKeyParseError::DeriveHardenedKey)?;
+        let xpub = bip32::Xpub::from_priv(secp, &xprv);
+
+        let origin = match &self.origin {
+            Some((fingerprint, path)) => Some((
+                *fingerprint,
+                path.into_iter()
+                    .chain(hardened_path.iter())
+                    .copied()
+                    .collect(),
+            )),
+            None if !hardened_path.is_empty() => {
+                Some((self.xkey.fingerprint(secp), hardened_path.into()))
+            }
+            None => None,
+        };
+        let new_deriv_paths = suffixes
+            .into_iter()
+            .map(|suffix| {
+                let path = unhardened_path.iter().copied().chain(suffix);
+                path.collect::<Vec<_>>().into()
+            })
+            .collect();
+
+        Ok(DescriptorMultiXKey {
+            origin,
+            xkey: xpub,
+            derivation_paths: DerivPaths::new(new_deriv_paths).expect("not empty"),
             wildcard: self.wildcard,
         })
     }
@@ -361,20 +445,161 @@ where
     }
 }
 
+/// Kinds of malformed key data
+#[derive(Debug, PartialEq, Eq, Clone)]
+#[non_exhaustive]
+#[allow(missing_docs)]
+pub enum NonDefiniteKeyError {
+    Wildcard,
+    Multipath,
+    HardenedStep,
+    MaximumDepthExceeded,
+}
+
+impl fmt::Display for NonDefiniteKeyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::Wildcard => f.write_str("key with a wildcard cannot be a DerivedDescriptorKey"),
+            Self::Multipath => f.write_str("multipath key cannot be a DerivedDescriptorKey"),
+            Self::HardenedStep => {
+                f.write_str("key with hardened derivation steps cannot be a DerivedDescriptorKey")
+            }
+            Self::MaximumDepthExceeded => f.write_str(
+                "key deeper than BIP32's maximum depth of 255 cannot be a DerivedDescriptorKey",
+            ),
+        }
+    }
+}
+
+impl error::Error for NonDefiniteKeyError {}
+
+/// Kinds of malformed key data
+#[derive(Debug, PartialEq, Eq, Clone)]
+#[non_exhaustive]
+#[allow(missing_docs)]
+pub enum MalformedKeyDataKind {
+    EmptyKey,
+    EncounteredUnprintableCharacter,
+    InvalidFullPublicKeyPrefix,
+    InvalidMasterFingerprintLength,
+    InvalidMultiIndexStep,
+    InvalidMultiXKeyDerivation,
+    InvalidPublicKeyLength,
+    InvalidWildcardInDerivationPath,
+    KeyTooShort,
+    MaximumDepthExceeded,
+    MultipleFingerprintsInPublicKey,
+    MultipleDerivationPathIndexSteps,
+    NoKeyAfterOrigin,
+    NoMasterFingerprintFound,
+    UnclosedSquareBracket,
+}
+
+impl fmt::Display for MalformedKeyDataKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let err = match self {
+            Self::EmptyKey => "empty key",
+            Self::EncounteredUnprintableCharacter => "encountered an unprintable character",
+            Self::InvalidFullPublicKeyPrefix => "only full public keys with prefixes '02', '03' or '04' are allowed",
+            Self::InvalidMasterFingerprintLength => "master fingerprint should be 8 characters long",
+            Self::InvalidMultiIndexStep => "invalid multi index step in multipath descriptor",
+            Self::InvalidMultiXKeyDerivation => "can't make a multi-xpriv with hardened derivation steps that are not shared among all paths into a public key",
+            Self::InvalidPublicKeyLength => "public keys must be 64, 66 or 130 characters in size",
+            Self::InvalidWildcardInDerivationPath => "'*' may only appear as last element in a derivation path",
+            Self::KeyTooShort => "key too short",
+            Self::MaximumDepthExceeded => {
+                "key derivation would go deeper than BIP32's maximum depth of 255"
+            }
+            Self::MultipleFingerprintsInPublicKey => "multiple ']' in Descriptor Public Key",
+            Self::MultipleDerivationPathIndexSteps => "'<' may only appear once in a derivation path",
+            Self::NoKeyAfterOrigin => "no key after origin",
+            Self::NoMasterFingerprintFound => "no master fingerprint found after '['",
+            Self::UnclosedSquareBracket => "unclosed '['",
+        };
+
+        f.write_str(err)
+    }
+}
+
 /// Descriptor Key parsing errors
-// FIXME: replace with error enums
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub struct DescriptorKeyParseError(&'static str);
+#[derive(Debug, PartialEq, Eq, Clone)]
+#[non_exhaustive]
+pub enum DescriptorKeyParseError {
+    /// Error while parsing a BIP32 extended private key
+    Bip32Xpriv(bip32::Error),
+    /// Error while parsing a BIP32 extended public key
+    Bip32Xpub(bip32::Error),
+    /// Error while parsing a derivation index
+    DerivationIndexError {
+        /// The invalid index
+        index: String,
+        /// The underlying parse error
+        err: bitcoin::bip32::Error,
+    },
+    /// Error deriving the hardened private key.
+    DeriveHardenedKey(bip32::Error),
+    /// Error indicating the key data was malformed
+    MalformedKeyData(MalformedKeyDataKind),
+    /// Error while parsing the master derivation path.
+    MasterDerivationPath(bip32::Error),
+    /// Error indicating a malformed master fingerprint (invalid hex).
+    MasterFingerprint {
+        /// The invalid fingerprint
+        fingerprint: String,
+        /// The underlying parse error
+        err: bitcoin::hex::HexToArrayError,
+    },
+    /// Attempt to construct a [`DefiniteDescriptorKey`] from an ambiguous key.
+    NonDefiniteKey(NonDefiniteKeyError),
+    /// Error while parsing a simple public key.
+    FullPublicKey(bitcoin::key::ParsePublicKeyError),
+    /// Error while parsing a WIF private key.
+    WifPrivateKey(bitcoin::key::FromWifError),
+    /// Error while parsing an X-only public key (Secp256k1 error).
+    XonlyPublicKey(bitcoin::secp256k1::Error),
+    /// Error while parsing a hex private key, the form of a `ct()` view key. Elements only.
+    HexPrivateKey(bitcoin::secp256k1::Error),
+}
 
 impl fmt::Display for DescriptorKeyParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0)
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Bip32Xpriv(err) => err.fmt(f),
+            Self::Bip32Xpub(err) => err.fmt(f),
+            Self::DerivationIndexError { index, err } => {
+                write!(f, "at derivation index '{index}': {err}")
+            }
+            Self::DeriveHardenedKey(err) => err.fmt(f),
+            Self::MalformedKeyData(err) => err.fmt(f),
+            Self::MasterDerivationPath(err) => err.fmt(f),
+            Self::MasterFingerprint { fingerprint, err } => {
+                write!(f, "on master fingerprint '{fingerprint}': {err}")
+            }
+            Self::NonDefiniteKey(err) => err.fmt(f),
+            Self::FullPublicKey(err) => err.fmt(f),
+            Self::WifPrivateKey(err) => err.fmt(f),
+            Self::XonlyPublicKey(err) => err.fmt(f),
+            Self::HexPrivateKey(err) => err.fmt(f),
+        }
     }
 }
 
 impl error::Error for DescriptorKeyParseError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
+        match self {
+            Self::Bip32Xpriv(err)
+            | Self::Bip32Xpub(err)
+            | Self::DerivationIndexError { err, .. }
+            | Self::DeriveHardenedKey(err)
+            | Self::MasterDerivationPath(err) => Some(err),
+            Self::MasterFingerprint { err, .. } => Some(err),
+            Self::NonDefiniteKey(err) => Some(err),
+            Self::FullPublicKey(err) => Some(err),
+            Self::WifPrivateKey(err) => Some(err),
+            Self::XonlyPublicKey(err) => Some(err),
+            Self::HexPrivateKey(err) => Some(err),
+            Self::MalformedKeyData(_) => None,
+        }
     }
 }
 
@@ -394,9 +619,8 @@ impl DescriptorSecretKey {
     /// If the key is an "XPrv", the hardened derivation steps will be applied
     /// before converting it to a public key.
     ///
-    /// It will return an error if the key is a "multi-xpriv", as we wouldn't
-    /// always be able to apply hardened derivation steps if there are multiple
-    /// paths.
+    /// It will return an error if the key is a "multi-xpriv" that includes
+    /// hardened derivation steps not shared for all paths.
     pub fn to_public<C: Signing>(
         &self,
         secp: &Secp256k1<C>,
@@ -404,10 +628,8 @@ impl DescriptorSecretKey {
         let pk = match self {
             DescriptorSecretKey::Single(prv) => DescriptorPublicKey::Single(prv.to_public(secp)),
             DescriptorSecretKey::XPrv(xprv) => DescriptorPublicKey::XPub(xprv.to_public(secp)?),
-            DescriptorSecretKey::MultiXPrv(_) => {
-                return Err(DescriptorKeyParseError(
-                    "Can't make an extended private key with multiple paths into a public key.",
-                ))
+            DescriptorSecretKey::MultiXPrv(xprv) => {
+                DescriptorPublicKey::MultiXPub(xprv.to_public(secp)?)
             }
         };
 
@@ -506,15 +728,20 @@ impl FromStr for DescriptorPublicKey {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // A "raw" public key without any origin is the least we accept.
         if s.len() < 64 {
-            return Err(DescriptorKeyParseError(
-                "Key too short (<66 char), doesn't match any format",
+            return Err(DescriptorKeyParseError::MalformedKeyData(
+                MalformedKeyDataKind::KeyTooShort,
             ));
         }
 
         let (key_part, origin) = parse_key_origin(s)?;
 
         if key_part.contains("pub") {
-            let (xpub, derivation_paths, wildcard) = parse_xkey_deriv::<bip32::Xpub>(key_part)?;
+            let (xpub, derivation_paths, wildcard) = parse_xkey_deriv(parse_bip32_xpub, key_part)?;
+            if derivation_exceeds_max_depth(xpub.depth, &derivation_paths, wildcard) {
+                return Err(DescriptorKeyParseError::MalformedKeyData(
+                    MalformedKeyDataKind::MaximumDepthExceeded,
+                ));
+            }
             if derivation_paths.len() > 1 {
                 Ok(DescriptorPublicKey::MultiXPub(DescriptorMultiXKey {
                     origin,
@@ -533,10 +760,8 @@ impl FromStr for DescriptorPublicKey {
         } else {
             let key = match key_part.len() {
                 64 => {
-                    let x_only_key =
-                        bitcoin::key::XOnlyPublicKey::from_str(key_part).map_err(|_| {
-                            DescriptorKeyParseError("Error while parsing simple xonly key")
-                        })?;
+                    let x_only_key = bitcoin::key::XOnlyPublicKey::from_str(key_part)
+                        .map_err(DescriptorKeyParseError::XonlyPublicKey)?;
                     SinglePubKey::XOnly(x_only_key)
                 }
                 66 | 130 => {
@@ -544,50 +769,21 @@ impl FromStr for DescriptorPublicKey {
                         || &key_part[0..2] == "03"
                         || &key_part[0..2] == "04")
                     {
-                        return Err(DescriptorKeyParseError(
-                            "Only publickeys with prefixes 02/03/04 are allowed",
+                        return Err(DescriptorKeyParseError::MalformedKeyData(
+                            MalformedKeyDataKind::InvalidFullPublicKeyPrefix,
                         ));
                     }
-                    let key = bitcoin::PublicKey::from_str(key_part).map_err(|_| {
-                        DescriptorKeyParseError("Error while parsing simple public key")
-                    })?;
+                    let key = bitcoin::PublicKey::from_str(key_part)
+                        .map_err(DescriptorKeyParseError::FullPublicKey)?;
                     SinglePubKey::FullKey(key)
                 }
                 _ => {
-                    return Err(DescriptorKeyParseError(
-                        "Public keys must be 64/66/130 characters in size",
+                    return Err(DescriptorKeyParseError::MalformedKeyData(
+                        MalformedKeyDataKind::InvalidPublicKeyLength,
                     ))
                 }
             };
             Ok(DescriptorPublicKey::Single(SinglePub { key, origin }))
-        }
-    }
-}
-
-/// Descriptor key conversion error
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
-pub enum ConversionError {
-    /// Attempted to convert a key with hardened derivations to a bitcoin public key
-    HardenedChild,
-    /// Attempted to convert a key with multiple derivation paths to a bitcoin public key
-    MultiKey,
-}
-
-impl fmt::Display for ConversionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match *self {
-            ConversionError::HardenedChild => "hardened child step in bip32 path",
-            ConversionError::MultiKey => "multiple existing keys",
-        })
-    }
-}
-
-impl error::Error for ConversionError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        use self::ConversionError::*;
-
-        match self {
-            HardenedChild | MultiKey => None,
         }
     }
 }
@@ -660,12 +856,6 @@ impl DescriptorPublicKey {
     }
 
     /// Whether or not the key has a wildcard
-    #[deprecated(note = "use has_wildcard instead")]
-    pub fn is_deriveable(&self) -> bool {
-        self.has_wildcard()
-    }
-
-    /// Whether or not the key has a wildcard
     pub fn has_wildcard(&self) -> bool {
         match *self {
             DescriptorPublicKey::Single(..) => false,
@@ -674,10 +864,39 @@ impl DescriptorPublicKey {
         }
     }
 
-    #[deprecated(note = "use at_derivation_index instead")]
-    /// Deprecated name for [`Self::at_derivation_index`].
-    pub fn derive(self, index: u32) -> Result<DefiniteDescriptorKey, ConversionError> {
-        self.at_derivation_index(index)
+    /// Whether or not the key has a hardened step in path
+    pub fn has_hardened_step(&self) -> bool {
+        let paths = match self {
+            DescriptorPublicKey::Single(..) => &[],
+            DescriptorPublicKey::XPub(xpub) => core::slice::from_ref(&xpub.derivation_path),
+            DescriptorPublicKey::MultiXPub(xpub) => &xpub.derivation_paths.paths()[..],
+        };
+        for p in paths {
+            for step in p.into_iter() {
+                if step.is_hardened() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Whether deriving this key, including a wildcard step, would go deeper than BIP32's maximum
+    /// depth of 255.
+    fn exceeds_max_depth(&self) -> bool {
+        match self {
+            Self::Single(..) => false,
+            Self::XPub(xpub) => derivation_exceeds_max_depth(
+                xpub.xkey.depth,
+                core::slice::from_ref(&xpub.derivation_path),
+                xpub.wildcard,
+            ),
+            Self::MultiXPub(xpub) => derivation_exceeds_max_depth(
+                xpub.xkey.depth,
+                xpub.derivation_paths.paths(),
+                xpub.wildcard,
+            ),
+        }
     }
 
     /// Replaces any wildcard (i.e. `/*`) in the key with a particular derivation index, turning it into a
@@ -692,7 +911,13 @@ impl DescriptorPublicKey {
     /// # Errors
     ///
     /// - If `index` is hardened.
-    pub fn at_derivation_index(self, index: u32) -> Result<DefiniteDescriptorKey, ConversionError> {
+    /// - If derivation path contains a hardened step.
+    /// - If the key contains multi-path derivations
+    /// - If deriving the key would go deeper than BIP32's maximum depth of 255
+    pub fn at_derivation_index(
+        self,
+        index: u32,
+    ) -> Result<DefiniteDescriptorKey, NonDefiniteKeyError> {
         let definite = match self {
             DescriptorPublicKey::Single(_) => self,
             DescriptorPublicKey::XPub(xpub) => {
@@ -701,12 +926,12 @@ impl DescriptorPublicKey {
                     Wildcard::Unhardened => xpub.derivation_path.into_child(
                         bip32::ChildNumber::from_normal_idx(index)
                             .ok()
-                            .ok_or(ConversionError::HardenedChild)?,
+                            .ok_or(NonDefiniteKeyError::HardenedStep)?,
                     ),
                     Wildcard::Hardened => xpub.derivation_path.into_child(
                         bip32::ChildNumber::from_hardened_idx(index)
                             .ok()
-                            .ok_or(ConversionError::HardenedChild)?,
+                            .ok_or(NonDefiniteKeyError::HardenedStep)?,
                     ),
                 };
                 DescriptorPublicKey::XPub(DescriptorXKey {
@@ -716,11 +941,10 @@ impl DescriptorPublicKey {
                     wildcard: Wildcard::None,
                 })
             }
-            DescriptorPublicKey::MultiXPub(_) => return Err(ConversionError::MultiKey),
+            DescriptorPublicKey::MultiXPub(_) => return Err(NonDefiniteKeyError::Multipath),
         };
 
-        Ok(DefiniteDescriptorKey::new(definite)
-            .expect("The key should not contain any wildcards at this point"))
+        DefiniteDescriptorKey::new(definite)
     }
 
     /// Whether or not this key has multiple derivation paths.
@@ -771,24 +995,29 @@ impl DescriptorSecretKey {
         let (key_part, origin) = parse_key_origin(s)?;
 
         if single_hex && key_part.len() == 64 {
-            let bytes = Vec::<u8>::from_hex(key_part)
-                .map_err(|_| DescriptorKeyParseError("Error while parsing a HEX private key"))?;
+            let sk = bitcoin::secp256k1::SecretKey::from_str(key_part)
+                .map_err(DescriptorKeyParseError::HexPrivateKey)?;
             let network = bitcoin::network::Network::Bitcoin; // Use any network
-            let sk = bitcoin::PrivateKey::from_slice(&bytes, network)
-                .map_err(|_| DescriptorKeyParseError("Error while parsing a HEX private key"))?;
+            let sk = bitcoin::PrivateKey::new(sk, network);
             Ok(DescriptorSecretKey::Single(SinglePriv {
                 key: sk,
                 origin: None,
             }))
         } else if !single_hex && key_part.len() <= 52 {
             let sk = bitcoin::PrivateKey::from_str(key_part)
-                .map_err(|_| DescriptorKeyParseError("Error while parsing a WIF private key"))?;
+                .map_err(DescriptorKeyParseError::WifPrivateKey)?;
             Ok(DescriptorSecretKey::Single(SinglePriv {
                 key: sk,
                 origin: None,
             }))
         } else {
-            let (xpriv, derivation_paths, wildcard) = parse_xkey_deriv::<bip32::Xpriv>(key_part)?;
+            let (xpriv, derivation_paths, wildcard) =
+                parse_xkey_deriv(parse_bip32_xpriv, key_part)?;
+            if derivation_exceeds_max_depth(xpriv.depth, &derivation_paths, wildcard) {
+                return Err(DescriptorKeyParseError::MalformedKeyData(
+                    MalformedKeyDataKind::MaximumDepthExceeded,
+                ));
+            }
             if derivation_paths.len() > 1 {
                 Ok(DescriptorSecretKey::MultiXPrv(DescriptorMultiXKey {
                     origin,
@@ -820,47 +1049,56 @@ impl FromStr for DescriptorSecretKey {
 fn parse_key_origin(s: &str) -> Result<(&str, Option<bip32::KeySource>), DescriptorKeyParseError> {
     for ch in s.as_bytes() {
         if *ch < 20 || *ch > 127 {
-            return Err(DescriptorKeyParseError(
-                "Encountered an unprintable character",
+            return Err(DescriptorKeyParseError::MalformedKeyData(
+                MalformedKeyDataKind::EncounteredUnprintableCharacter,
             ));
         }
     }
 
     if s.is_empty() {
-        return Err(DescriptorKeyParseError("Empty key"));
+        return Err(DescriptorKeyParseError::MalformedKeyData(MalformedKeyDataKind::EmptyKey));
     }
     let mut parts = s[1..].split(']');
 
     if let Some('[') = s.chars().next() {
         let mut raw_origin = parts
             .next()
-            .ok_or(DescriptorKeyParseError("Unclosed '['"))?
+            .ok_or(DescriptorKeyParseError::MalformedKeyData(
+                MalformedKeyDataKind::UnclosedSquareBracket,
+            ))?
             .split('/');
 
-        let origin_id_hex = raw_origin.next().ok_or(DescriptorKeyParseError(
-            "No master fingerprint found after '['",
-        ))?;
+        let origin_id_hex = raw_origin
+            .next()
+            .ok_or(DescriptorKeyParseError::MalformedKeyData(
+                MalformedKeyDataKind::NoMasterFingerprintFound,
+            ))?;
 
         if origin_id_hex.len() != 8 {
-            return Err(DescriptorKeyParseError(
-                "Master fingerprint should be 8 characters long",
+            return Err(DescriptorKeyParseError::MalformedKeyData(
+                MalformedKeyDataKind::InvalidMasterFingerprintLength,
             ));
         }
-        let parent_fingerprint = bip32::Fingerprint::from_str(origin_id_hex).map_err(|_| {
-            DescriptorKeyParseError("Malformed master fingerprint, expected 8 hex chars")
+        let parent_fingerprint = bip32::Fingerprint::from_hex(origin_id_hex).map_err(|err| {
+            DescriptorKeyParseError::MasterFingerprint {
+                fingerprint: origin_id_hex.to_owned(),
+                err,
+            }
         })?;
         let origin_path = raw_origin
             .map(bip32::ChildNumber::from_str)
             .collect::<Result<bip32::DerivationPath, bip32::Error>>()
-            .map_err(|_| DescriptorKeyParseError("Error while parsing master derivation path"))?;
+            .map_err(DescriptorKeyParseError::MasterDerivationPath)?;
 
         let key = parts
             .next()
-            .ok_or(DescriptorKeyParseError("No key after origin."))?;
+            .ok_or(DescriptorKeyParseError::MalformedKeyData(
+                MalformedKeyDataKind::NoKeyAfterOrigin,
+            ))?;
 
         if parts.next().is_some() {
-            Err(DescriptorKeyParseError(
-                "Multiple ']' in Descriptor Public Key",
+            Err(DescriptorKeyParseError::MalformedKeyData(
+                MalformedKeyDataKind::MultipleFingerprintsInPublicKey,
             ))
         } else {
             Ok((key, Some((parent_fingerprint, origin_path))))
@@ -870,16 +1108,40 @@ fn parse_key_origin(s: &str) -> Result<(&str, Option<bip32::KeySource>), Descrip
     }
 }
 
-/// Parse an extended key concatenated to a derivation path.
-fn parse_xkey_deriv<K: InnerXKey>(
+/// Whether deriving from an extended key at `depth` along any of `paths`, plus one more step for a
+/// wildcard, would go deeper than BIP32's maximum depth of 255.
+///
+/// The paths hold only the steps after the extended key. Its depth already includes the steps of
+/// its origin, so those are not counted again.
+fn derivation_exceeds_max_depth(
+    depth: u8,
+    paths: &[bip32::DerivationPath],
+    wildcard: Wildcard,
+) -> bool {
+    let longest = paths.iter().map(|path| path.len()).max().unwrap_or(0);
+    longest + usize::from(wildcard != Wildcard::None) > usize::from(u8::MAX - depth)
+}
+
+fn parse_bip32_xpub(xkey_str: &str) -> Result<bip32::Xpub, DescriptorKeyParseError> {
+    bip32::Xpub::from_str(xkey_str).map_err(DescriptorKeyParseError::Bip32Xpub)
+}
+
+fn parse_bip32_xpriv(xkey_str: &str) -> Result<bip32::Xpriv, DescriptorKeyParseError> {
+    bip32::Xpriv::from_str(xkey_str).map_err(DescriptorKeyParseError::Bip32Xpriv)
+}
+
+fn parse_xkey_deriv<Key>(
+    parse_xkey_fn: impl Fn(&str) -> Result<Key, DescriptorKeyParseError>,
     key_deriv: &str,
-) -> Result<(K, Vec<bip32::DerivationPath>, Wildcard), DescriptorKeyParseError> {
+) -> Result<(Key, Vec<bip32::DerivationPath>, Wildcard), DescriptorKeyParseError> {
     let mut key_deriv = key_deriv.split('/');
-    let xkey_str = key_deriv.next().ok_or(DescriptorKeyParseError(
-        "No key found after origin description",
-    ))?;
-    let xkey =
-        K::from_str(xkey_str).map_err(|_| DescriptorKeyParseError("Error while parsing xkey."))?;
+    let xkey_str = key_deriv
+        .next()
+        .ok_or(DescriptorKeyParseError::MalformedKeyData(
+            MalformedKeyDataKind::NoKeyAfterOrigin,
+        ))?;
+
+    let xkey = parse_xkey_fn(xkey_str)?;
 
     let mut wildcard = Wildcard::None;
     let mut multipath = false;
@@ -892,8 +1154,8 @@ fn parse_xkey_deriv<K: InnerXKey>(
                 wildcard = Wildcard::Hardened;
                 None
             } else if wildcard != Wildcard::None {
-                Some(Err(DescriptorKeyParseError(
-                    "'*' may only appear as last element in a derivation path.",
+                Some(Err(DescriptorKeyParseError::MalformedKeyData(
+                    MalformedKeyDataKind::InvalidWildcardInDerivationPath,
                 )))
             } else {
                 // BIP389 defines a new step in the derivation path. This step contains two or more
@@ -901,8 +1163,8 @@ fn parse_xkey_deriv<K: InnerXKey>(
                 if p.starts_with('<') && p.ends_with('>') {
                     // There may only be one occurence of this step.
                     if multipath {
-                        return Some(Err(DescriptorKeyParseError(
-                            "'<' may only appear once in a derivation path.",
+                        return Some(Err(DescriptorKeyParseError::MalformedKeyData(
+                            MalformedKeyDataKind::MultipleDerivationPathIndexSteps,
                         )));
                     }
                     multipath = true;
@@ -910,8 +1172,8 @@ fn parse_xkey_deriv<K: InnerXKey>(
                     // The step must contain at least two derivation indexes.
                     // So it's at least '<' + a number + ';' + a number + '>'.
                     if p.len() < 5 || !p.contains(';') {
-                        return Some(Err(DescriptorKeyParseError(
-                            "Invalid multi index step in multipath descriptor.",
+                        return Some(Err(DescriptorKeyParseError::MalformedKeyData(
+                            MalformedKeyDataKind::InvalidMultiIndexStep,
                         )));
                     }
 
@@ -921,10 +1183,11 @@ fn parse_xkey_deriv<K: InnerXKey>(
                         indexes
                             .into_iter()
                             .map(|s| {
-                                bip32::ChildNumber::from_str(s).map_err(|_| {
-                                    DescriptorKeyParseError(
-                                        "Error while parsing index in key derivation path.",
-                                    )
+                                bip32::ChildNumber::from_str(s).map_err(|err| {
+                                    DescriptorKeyParseError::DerivationIndexError {
+                                        index: s.to_owned(),
+                                        err,
+                                    }
                                 })
                             })
                             .collect::<Result<Vec<bip32::ChildNumber>, _>>(),
@@ -934,8 +1197,9 @@ fn parse_xkey_deriv<K: InnerXKey>(
                     Some(
                         bip32::ChildNumber::from_str(p)
                             .map(|i| vec![i])
-                            .map_err(|_| {
-                                DescriptorKeyParseError("Error while parsing key derivation path")
+                            .map_err(|err| DescriptorKeyParseError::DerivationIndexError {
+                                index: p.to_owned(),
+                                err,
                             }),
                     )
                 }
@@ -1095,41 +1359,45 @@ impl DefiniteDescriptorKey {
     /// avoid this error you should replace any such public keys first with [`translate_pk`].
     ///
     /// [`translate_pk`]: crate::TranslatePk::translate_pk
-    pub fn derive_public_key<C: Verification>(
-        &self,
-        secp: &Secp256k1<C>,
-    ) -> Result<bitcoin::PublicKey, ConversionError> {
+    pub fn derive_public_key<C: Verification>(&self, secp: &Secp256k1<C>) -> bitcoin::PublicKey {
         match self.0 {
             DescriptorPublicKey::Single(ref pk) => match pk.key {
-                SinglePubKey::FullKey(pk) => Ok(pk),
-                SinglePubKey::XOnly(xpk) => Ok(xpk.to_public_key()),
+                SinglePubKey::FullKey(pk) => pk,
+                SinglePubKey::XOnly(xpk) => xpk.to_public_key(),
             },
             DescriptorPublicKey::XPub(ref xpk) => match xpk.wildcard {
                 Wildcard::Unhardened | Wildcard::Hardened => {
-                    unreachable!("we've excluded this error case")
+                    unreachable!("impossible by construction of DefiniteDescriptorKey")
                 }
                 Wildcard::None => match xpk.xkey.derive_pub(secp, &xpk.derivation_path.as_ref()) {
-                    Ok(xpub) => Ok(bitcoin::PublicKey::new(xpub.public_key)),
+                    Ok(xpub) => bitcoin::PublicKey::new(xpub.public_key),
                     Err(bip32::Error::CannotDeriveFromHardenedKey) => {
-                        Err(ConversionError::HardenedChild)
+                        unreachable!("impossible by construction of DefiniteDescriptorKey")
                     }
                     Err(e) => unreachable!("cryptographically unreachable: {}", e),
                 },
             },
             DescriptorPublicKey::MultiXPub(_) => {
-                unreachable!("A definite key cannot contain a multipath key.")
+                unreachable!("impossible by construction of DefiniteDescriptorKey")
             }
         }
     }
 
-    /// Construct an instance from a descriptor key and a derivation index
+    /// Constructs an instance from a descriptor key.
     ///
-    /// Returns `None` if the key contains a wildcard
-    fn new(key: DescriptorPublicKey) -> Option<Self> {
+    /// Returns an error if the key has a wildcard, a hardened derivation step or several derivation
+    /// paths, or if deriving it would go deeper than BIP32's maximum depth of 255.
+    pub fn new(key: DescriptorPublicKey) -> Result<Self, NonDefiniteKeyError> {
         if key.has_wildcard() {
-            None
+            Err(NonDefiniteKeyError::Wildcard)
+        } else if key.has_hardened_step() {
+            Err(NonDefiniteKeyError::HardenedStep)
+        } else if key.is_multipath() {
+            Err(NonDefiniteKeyError::Multipath)
+        } else if key.exceeds_max_depth() {
+            Err(NonDefiniteKeyError::MaximumDepthExceeded)
         } else {
-            Some(Self(key))
+            Ok(Self(key))
         }
     }
 
@@ -1158,10 +1426,8 @@ impl FromStr for DefiniteDescriptorKey {
     type Err = DescriptorKeyParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let inner = DescriptorPublicKey::from_str(s)?;
-        DefiniteDescriptorKey::new(inner).ok_or(DescriptorKeyParseError(
-            "cannot parse key with a wilcard as a DerivedDescriptorKey",
-        ))
+        let d = DescriptorPublicKey::from_str(s)?;
+        DefiniteDescriptorKey::new(d).map_err(DescriptorKeyParseError::NonDefiniteKey)
     }
 }
 
@@ -1193,7 +1459,7 @@ impl MiniscriptKey for DefiniteDescriptorKey {
 impl ToPublicKey for DefiniteDescriptorKey {
     fn to_public_key(&self) -> bitcoin::PublicKey {
         let secp = Secp256k1::verification_only();
-        self.derive_public_key(&secp).unwrap()
+        self.derive_public_key(&secp)
     }
 
     fn to_sha256(hash: &sha256::Hash) -> sha256::Hash {
@@ -1257,70 +1523,60 @@ mod test {
 
     use super::{
         DescriptorKeyParseError, DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey,
-        MiniscriptKey, Wildcard,
+        DescriptorXKey, MalformedKeyDataKind, MiniscriptKey, Wildcard,
     };
+    use crate::descriptor::key::NonDefiniteKeyError;
+    use crate::{DefiniteDescriptorKey, Descriptor};
 
     #[test]
     fn parse_descriptor_key_errors() {
         // And ones with misplaced wildcard
         let desc = "[78412e3a/44'/0'/0']xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL/1/*/44";
         assert_eq!(
-            DescriptorPublicKey::from_str(desc),
-            Err(DescriptorKeyParseError(
-                "\'*\' may only appear as last element in a derivation path."
-            ))
+            DescriptorPublicKey::from_str(desc).unwrap_err().to_string(),
+            "\'*\' may only appear as last element in a derivation path"
         );
 
         // And ones with invalid fingerprints
         let desc = "[NonHexor]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL/1/*";
         assert_eq!(
-            DescriptorPublicKey::from_str(desc),
-            Err(DescriptorKeyParseError(
-                "Malformed master fingerprint, expected 8 hex chars"
-            ))
+            DescriptorPublicKey::from_str(desc).unwrap_err().to_string(),
+            "on master fingerprint 'NonHexor': failed to parse hex digit"
         );
 
         // And ones with invalid xpubs..
         let desc = "[78412e3a]xpub1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaLcgJvLJuZZvRcEL/1/*";
         assert_eq!(
-            DescriptorPublicKey::from_str(desc),
-            Err(DescriptorKeyParseError("Error while parsing xkey."))
+            DescriptorPublicKey::from_str(desc).unwrap_err().to_string(),
+            "base58 encoding error"
         );
 
         // ..or invalid raw keys
         let desc = "[78412e3a]0208a117f3897c3a13c9384b8695eed98dc31bc2500feb19a1af424cd47a5d83/1/*";
         assert_eq!(
-            DescriptorPublicKey::from_str(desc),
-            Err(DescriptorKeyParseError(
-                "Public keys must be 64/66/130 characters in size"
-            ))
+            DescriptorPublicKey::from_str(desc).unwrap_err().to_string(),
+            "public keys must be 64, 66 or 130 characters in size",
         );
 
         // ..or invalid separators
         let desc = "[78412e3a]]03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8";
         assert_eq!(
-            DescriptorPublicKey::from_str(desc),
-            Err(DescriptorKeyParseError(
-                "Multiple \']\' in Descriptor Public Key"
-            ))
+            DescriptorPublicKey::from_str(desc).unwrap_err().to_string(),
+            "multiple \']\' in Descriptor Public Key"
         );
 
         // fuzzer errors
         let desc = "[11111f11]033333333333333333333333333333323333333333333333333333333433333333]]333]]3]]101333333333333433333]]]10]333333mmmm";
         assert_eq!(
-            DescriptorPublicKey::from_str(desc),
-            Err(DescriptorKeyParseError(
-                "Multiple \']\' in Descriptor Public Key"
-            ))
+            DescriptorPublicKey::from_str(desc).unwrap_err().to_string(),
+            "multiple \']\' in Descriptor Public Key"
         );
 
         // fuzz failure, hybrid keys
         let desc = "0777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777";
         assert_eq!(
-            DescriptorPublicKey::from_str(desc),
-            Err(DescriptorKeyParseError(
-                "Only publickeys with prefixes 02/03/04 are allowed"
-            ))
+            DescriptorPublicKey::from_str(desc).unwrap_err().to_string(),
+            "only full public keys with prefixes '02', '03' or '04' are allowed"
         );
     }
 
@@ -1329,27 +1585,22 @@ mod test {
         // Xpubs are invalid
         let secret_key = "xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL";
         assert_eq!(
-            DescriptorSecretKey::from_str(secret_key),
-            Err(DescriptorKeyParseError("Error while parsing xkey."))
+            DescriptorSecretKey::from_str(secret_key)
+                .unwrap_err()
+                .to_string(),
+            "unknown version magic bytes: [4, 136, 178, 30]"
         );
 
         // And ones with invalid fingerprints
         let desc = "[NonHexor]tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/1/*";
         assert_eq!(
-            DescriptorSecretKey::from_str(desc),
-            Err(DescriptorKeyParseError(
-                "Malformed master fingerprint, expected 8 hex chars"
-            ))
+            DescriptorSecretKey::from_str(desc).unwrap_err().to_string(),
+            "on master fingerprint 'NonHexor': failed to parse hex digit"
         );
 
         // ..or invalid raw keys
         let desc = "[78412e3a]L32jTfVLei6BYTPUpwpJSkrHx8iL9GZzeErVS8y4Y/1/*";
-        assert_eq!(
-            DescriptorSecretKey::from_str(desc),
-            Err(DescriptorKeyParseError(
-                "Error while parsing a WIF private key"
-            ))
-        );
+        assert_eq!(DescriptorSecretKey::from_str(desc).unwrap_err().to_string(), "invalid base58");
     }
 
     #[test]
@@ -1630,10 +1881,136 @@ mod test {
     }
 
     #[test]
+    fn test_multixprv_to_public() {
+        let secp = secp256k1::Secp256k1::signing_only();
+
+        // Works if all hardended derivation steps are part of the shared path
+        let xprv = get_multipath_xprv("[01020304/5]tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/1'/2'/3/<4;5>/6");
+        let xpub = DescriptorPublicKey::MultiXPub(xprv.to_public(&secp).unwrap()); // wrap in a DescriptorPublicKey to have Display
+        assert_eq!(xpub.to_string(), "[01020304/5/1'/2']tpubDBTRkEMEFkUbk3WTz6CFSULyswkTPpPr38AWibf5TVkB5GxuBxbSbmdFGr3jmswwemknyYxAGoX7BJnKfyPy4WXaHmcrxZhfzFwoUFvFtm5/3/<4;5>/6");
+
+        // Fails if they're part of the multi-path specifier or following it
+        get_multipath_xprv("tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/1/2/<3';4'>/5").to_public(&secp).unwrap_err();
+        get_multipath_xprv("tprv8ZgxMBicQKsPcwcD4gSnMti126ZiETsuX7qwrtMypr6FBwAP65puFn4v6c3jrN9VwtMRMph6nyT63NrfUL4C3nBzPcduzVSuHD7zbX2JKVc/1/2/<3;4>/5/6'").to_public(&secp).unwrap_err();
+    }
+
+    #[test]
     #[cfg(feature = "serde")]
     fn test_descriptor_public_key_serde() {
         let desc = "[abcdef00/0'/1']tpubDBrgjcxBxnXyL575sHdkpKohWu5qHKoQ7TJXKNrYznh5fVEGBv89hA8ENW7A8MFVpFUSvgLqc4Nj1WZcpePX6rrxviVtPowvMuGF5rdT2Vi/2";
         let public_key = DescriptorPublicKey::from_str(desc).unwrap();
         assert_tokens(&public_key, &[Token::String(desc)]);
+    }
+
+    #[test]
+    fn definite_keys() {
+        // basic xpub
+        let desc = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8"
+            .parse::<DescriptorPublicKey>()
+            .unwrap();
+        assert!(matches!(DefiniteDescriptorKey::new(desc), Ok(..)));
+        // xpub with wildcard
+        let desc = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8/*"
+            .parse::<DescriptorPublicKey>()
+            .unwrap();
+        assert!(matches!(DefiniteDescriptorKey::new(desc), Err(NonDefiniteKeyError::Wildcard)));
+        // multipath xpub
+        let desc = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8/<0;1>"
+            .parse::<DescriptorPublicKey>()
+            .unwrap();
+        assert!(matches!(DefiniteDescriptorKey::new(desc), Err(NonDefiniteKeyError::Multipath)));
+        // xpub with hardened path
+        let desc = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8/1'/2"
+            .parse::<DescriptorPublicKey>()
+            .unwrap();
+        assert!(matches!(
+            DefiniteDescriptorKey::new(desc),
+            Err(NonDefiniteKeyError::HardenedStep)
+        ));
+    }
+
+    #[test]
+    fn definite_key_maximum_depth() {
+        let key = |depth: u8, steps: usize, wildcard: Wildcard| {
+            let mut xkey = bip32::Xpub::from_str("xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8").unwrap();
+            xkey.depth = depth;
+            DescriptorPublicKey::XPub(DescriptorXKey {
+                origin: None,
+                xkey,
+                derivation_path: vec![bip32::ChildNumber::from(0); steps].into(),
+                wildcard,
+            })
+        };
+        let new = |key| DefiniteDescriptorKey::new(key).map(|_| ());
+        let too_deep = Err(NonDefiniteKeyError::MaximumDepthExceeded);
+
+        // BIP32 depth stops at 255, so an xpub at `depth` can take 255 - depth more steps.
+        assert_eq!(new(key(0, 255, Wildcard::None)), Ok(()));
+        assert_eq!(new(key(0, 256, Wildcard::None)), too_deep);
+        assert_eq!(new(key(200, 55, Wildcard::None)), Ok(()));
+        assert_eq!(new(key(200, 56, Wildcard::None)), too_deep);
+
+        // Deriving at an index turns the wildcard into one more step.
+        assert!(key(200, 54, Wildcard::Unhardened)
+            .at_derivation_index(7)
+            .is_ok());
+        assert_eq!(
+            key(200, 55, Wildcard::Unhardened)
+                .at_derivation_index(7)
+                .map(|_| ()),
+            too_deep
+        );
+
+        // Origin steps don't count, since the xpub's depth already includes them.
+        let mut key_with_origin = key(0, 255, Wildcard::None);
+        if let DescriptorPublicKey::XPub(ref mut xpub) = key_with_origin {
+            xpub.origin = Some((
+                bip32::Fingerprint::default(),
+                vec![bip32::ChildNumber::from(0); 300].into(),
+            ));
+        }
+        assert_eq!(new(key_with_origin), Ok(()));
+
+        // A descriptor with such a key doesn't become definite, so it can't panic later when
+        // deriving its script pubkey.
+        let desc = Descriptor::<DescriptorPublicKey>::new_tr(key(0, 256, Wildcard::None), None)
+            .unwrap();
+        assert_eq!(desc.at_derivation_index(0).map(|_| ()), too_deep);
+    }
+
+    #[test]
+    fn parse_key_maximum_depth() {
+        // BIP32 test vector 1 master keys, at depth 0.
+        let xpub = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8";
+        let xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
+        let steps = |n: usize| "/0".repeat(n);
+        let public = |s: String| DescriptorPublicKey::from_str(&s).map(|_| ());
+        let secret = |s: String| DescriptorSecretKey::from_str(&s).map(|_| ());
+        let too_deep = Err(DescriptorKeyParseError::MalformedKeyData(
+            MalformedKeyDataKind::MaximumDepthExceeded,
+        ));
+
+        // BIP32 depth stops at 255. A wildcard or a multipath step counts as one more step.
+        assert_eq!(public(format!("{xpub}{}", steps(255))), Ok(()));
+        assert_eq!(public(format!("{xpub}{}", steps(256))), too_deep);
+        assert_eq!(public(format!("{xpub}{}/*", steps(254))), Ok(()));
+        assert_eq!(public(format!("{xpub}{}/*", steps(255))), too_deep);
+        assert_eq!(public(format!("{xpub}{}/<0;1>", steps(254))), Ok(()));
+        assert_eq!(public(format!("{xpub}{}/<0;1>", steps(255))), too_deep);
+        assert_eq!(secret(format!("{xprv}{}/*", steps(254))), Ok(()));
+        assert_eq!(secret(format!("{xprv}{}/*", steps(255))), too_deep);
+
+        // An xpub at depth 200 can take 55 more steps.
+        let mut xkey = bip32::Xpub::from_str(xpub).unwrap();
+        xkey.depth = 200;
+        assert_eq!(public(format!("{xkey}{}", steps(55))), Ok(()));
+        assert_eq!(public(format!("{xkey}{}", steps(56))), too_deep);
+
+        // Origin steps don't count, since the xpub's depth already includes them.
+        assert_eq!(public(format!("[d34db33f{}]{xpub}{}", steps(300), steps(255))), Ok(()));
+
+        // A descriptor with such a key fails to parse, before anything can be derived from it.
+        let desc = format!("eltr({xpub}{})", steps(256));
+        assert!(Descriptor::<DescriptorPublicKey>::from_str(&desc).is_err());
     }
 }

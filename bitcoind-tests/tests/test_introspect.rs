@@ -49,7 +49,7 @@ pub fn test_desc_satisfy(cl: &ElementsD, testdata: &TestData, desc: &str) -> Vec
         .at_derivation_index(0)
         .unwrap();
 
-    let derived_desc = definite_desc.derived_descriptor(&secp).unwrap();
+    let derived_desc = definite_desc.derived_descriptor(&secp);
     let desc_address = derived_desc.address(&PARAMS).unwrap(); // No blinding
 
     // Next send some btc to each address corresponding to the miniscript
