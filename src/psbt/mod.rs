@@ -1345,15 +1345,14 @@ where
         tapleaf_hashes.dedup();
     }
 
-    match item.tap_tree() {
-        // Only set the tap_tree if the item supports it (it's an output) and the descriptor actually
-        // contains one, otherwise it'll just be empty
-        Some(tap_tree) if tr_derived.taptree().is_some() => {
-            *tap_tree =
-                Some(psbt::TapTree::from_inner(builder).expect("The tree should always be valid"));
-        }
-        _ => {}
+    // Only set the tap_tree if the item supports it (it's an output) and the descriptor actually
+    // contains one, otherwise it'll just be empty
+    if let Some(tap_tree) = item.tap_tree() {
+        *tap_tree = tr_derived.taptree().as_ref().map(|_| {
+            psbt::TapTree::from_inner(builder).expect("The tree should always be valid")
+        });
     }
+
     Ok(())
 }
 
@@ -1693,6 +1692,23 @@ mod tests {
             assert_eq!(leaf_hashes.len(), 1);
             assert!(!leaf_hashes.contains(&first_leaf_hash));
         }
+    }
+
+    #[test]
+    fn test_update_output_tr_key_only_clears_tap_tree() {
+        let xpub = "xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ";
+        let with_tree = Descriptor::from_str(&format!("eltr({xpub}/0/0,pk({xpub}/0/1))")).unwrap();
+        let key_only = Descriptor::from_str(&format!("eltr({xpub}/0/0)")).unwrap();
+
+        let mut psbt_output = psbt::Output::default();
+        psbt_output
+            .update_with_descriptor_unchecked(&with_tree)
+            .unwrap();
+        assert!(psbt_output.tap_tree.is_some());
+        psbt_output
+            .update_with_descriptor_unchecked(&key_only)
+            .unwrap();
+        assert_eq!(psbt_output.tap_tree, None);
     }
 
     #[test]
