@@ -48,3 +48,7 @@ path = "fuzz_targets/compile_descriptor.rs"
 [[bin]]
 name = "roundtrip_confidential"
 path = "fuzz_targets/roundtrip_confidential.rs"
+
+[[bin]]
+name = "parse_descriptor_definite"
+path = "fuzz_targets/parse_descriptor_definite.rs"

@@ -367,8 +367,8 @@ pub enum Error {
     /// The federation descriptor has a type not supported
     UnsupportedAddressForPegin,
 
-    /// Conversion error in descriptor
-    Conversion(descriptor::ConversionError),
+    /// A descriptor key cannot become a [`descriptor::DefiniteDescriptorKey`]
+    NonDefiniteKey(descriptor::NonDefiniteKeyError),
 }
 
 #[doc(hidden)]
@@ -453,9 +453,9 @@ impl From<bitcoin::address::ParseError> for Error {
     }
 }
 
-impl From<descriptor::ConversionError> for Error {
-    fn from(e: descriptor::ConversionError) -> Error {
-        Error::Conversion(e)
+impl From<descriptor::NonDefiniteKeyError> for Error {
+    fn from(e: descriptor::NonDefiniteKeyError) -> Error {
+        Error::NonDefiniteKey(e)
     }
 }
 
@@ -533,7 +533,7 @@ impl fmt::Display for Error {
             Error::MultiATooManyKeys(k) => write!(f, "MultiA too many keys {}", k),
             Error::TrNoScriptCode => write!(f, "No script code for Tr descriptors"),
             Error::MultipathDescLenMismatch => write!(f, "At least two BIP389 key expressions in the descriptor contain tuples of derivation indexes of different lengths"),
-            Error::Conversion(ref e) => e.fmt(f),
+            Error::NonDefiniteKey(ref e) => e.fmt(f),
             Error::UnsupportedAddressForPegin => write!(f, "Cannot create the address from the pegin descriptor, the federation descriptor is of an unsuppported type"),
 
         }
@@ -586,7 +586,7 @@ impl error::Error for Error {
             ContextError(e) => Some(e),
             AnalysisError(e) => Some(e),
             PubKeyCtxError(e, _) => Some(e),
-            Conversion(e) => Some(e),
+            NonDefiniteKey(e) => Some(e),
         }
     }
 }
